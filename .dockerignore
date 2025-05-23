@@ -1,0 +1,68 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build artifacts
+cmd/*/corkscrew
+cmd/*/generator
+cmd/*/plugin-test
+plugins/
+release/
+output/
+
+# Test files
+*_test.go
+test/
+coverage.out
+
+# Development files
+docker-compose.yml
+docker-compose.override.yml
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Generated files that will be rebuilt
+internal/proto/*.pb.go
+generated/
+
+# CI/CD files (not needed in container)
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Package manager files
+vendor/

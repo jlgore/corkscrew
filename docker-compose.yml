@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  corkscrew:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: corkscrew:latest
+    container_name: corkscrew
+    volumes:
+      # Mount AWS credentials (optional)
+      - ~/.aws:/home/corkscrew/.aws:ro
+      # Mount output directory
+      - ./output:/app/output
+    environment:
+      # AWS configuration
+      - AWS_REGION=us-east-1
+      - AWS_PROFILE=default
+    command: ["--help"]
+    
+  # Example service for scanning S3
+  corkscrew-s3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: corkscrew:latest
+    container_name: corkscrew-s3
+    volumes:
+      - ~/.aws:/home/corkscrew/.aws:ro
+      - ./output:/app/output
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_PROFILE=default
+    command: ["--services", "s3", "--region", "us-east-1", "--output", "/app/output/s3-scan.json", "--verbose"]
+    depends_on:
+      - corkscrew
+
+  # Example service for multiple AWS services
+  corkscrew-multi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: corkscrew:latest
+    container_name: corkscrew-multi
+    volumes:
+      - ~/.aws:/home/corkscrew/.aws:ro
+      - ./output:/app/output
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_PROFILE=default
+    command: ["--services", "s3,ec2,rds", "--region", "us-east-1", "--output-db", "/app/output/infrastructure.db", "--verbose"]
+    depends_on:
+      - corkscrew

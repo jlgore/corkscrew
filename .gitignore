@@ -23,3 +23,26 @@ go.work.sum
 
 # env file
 .env
+
+# Built binaries
+cmd/corkscrew/corkscrew
+cmd/generator/generator
+cmd/plugin-test/plugin-test
+plugins/corkscrew-*
+
+# Generated code and temporary files
+generated/
+cmd/generator/generated/
+*.tmp
+*.log
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database files
+*.db
+*.duckdb
