@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package corkscrew;
+option go_package = "github.com/jlgore/corkscrew-generator/internal/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// The scanner service definition
+service Scanner {
+  // Main scanning operation
+  rpc Scan(ScanRequest) returns (ScanResponse);
+  
+  // Get SQL schemas for this service
+  rpc GetSchemas(Empty) returns (SchemaResponse);
+  
+  // Get service metadata
+  rpc GetServiceInfo(Empty) returns (ServiceInfoResponse);
+  
+  // Stream resources for large result sets
+  rpc StreamScan(ScanRequest) returns (stream Resource);
+}
+
+message Empty {}
+
+message ScanRequest {
+  string region = 1;
+  map<string, string> options = 2;
+  repeated string resource_types = 3;
+  // For pagination support
+  string next_token = 4;
+  int32 max_results = 5;
+}
+
+message Resource {
+  string type = 1;
+  string id = 2;
+  string arn = 3;
+  string parent_id = 4;
+  string region = 5;
+  string account_id = 6;
+  
+  // Raw AWS API response as JSON
+  string raw_data = 7;
+  
+  // Extracted key fields for common queries
+  map<string, string> tags = 8;
+  string name = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp modified_at = 11;
+  
+  // For graph relationships
+  repeated Relationship relationships = 12;
+  
+  // Service-specific attributes as JSON
+  string attributes = 13;
+}
+
+message Relationship {
+  string target_id = 1;
+  string target_type = 2;
+  string relationship_type = 3;
+  map<string, string> properties = 4;
+}
+
+message ScanResponse {
+  repeated Resource resources = 1;
+  string next_token = 2;
+  string error = 3;
+  map<string, string> metadata = 4;
+  ScanStats stats = 5;
+}
+
+message ScanStats {
+  int32 total_resources = 1;
+  int32 failed_resources = 2;
+  int64 duration_ms = 3;
+  map<string, int32> resource_counts = 4;
+}
+
+message SchemaResponse {
+  repeated Schema schemas = 1;
+}
+
+message Schema {
+  string name = 1;
+  string sql = 2;
+  string description = 3;
+}
+
+message ServiceInfoResponse {
+  string service_name = 1;
+  string version = 2;
+  repeated string supported_resources = 3;
+  repeated string required_permissions = 4;
+  map<string, string> capabilities = 5;
+}
