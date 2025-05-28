@@ -1,0 +1,219 @@
+{
+  "aws_services": {
+    "cloudformation": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-cloudformation",
+      "resource_types": []
+    },
+    "cloudwatch": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-cloudwatch",
+      "resource_types": []
+    },
+    "dynamodb": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-dynamodb",
+      "resource_types": []
+    },
+    "ebs": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-ebs",
+      "resource_types": []
+    },
+    "ec2": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-ec2",
+      "resource_types": []
+    },
+    "ecs": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-ecs",
+      "resource_types": []
+    },
+    "efs": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-efs",
+      "resource_types": []
+    },
+    "eks": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-eks",
+      "resource_types": []
+    },
+    "elasticache": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-elasticache",
+      "resource_types": []
+    },
+    "glue": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-glue",
+      "resource_types": []
+    },
+    "iam": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-iam",
+      "resource_types": []
+    },
+    "kinesis": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-kinesis",
+      "resource_types": []
+    },
+    "lambda": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-lambda",
+      "resource_types": []
+    },
+    "logs": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-logs",
+      "resource_types": []
+    },
+    "rds": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-rds",
+      "resource_types": []
+    },
+    "redshift": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-redshift",
+      "resource_types": []
+    },
+    "route53": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-route53",
+      "resource_types": []
+    },
+    "s3": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-s3",
+      "resource_types": []
+    },
+    "sns": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-sns",
+      "resource_types": []
+    },
+    "sqs": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-sqs",
+      "resource_types": []
+    },
+    "vpc": {
+      "capabilities": [
+        "scan",
+        "stream",
+        "schemas",
+        "relationships"
+      ],
+      "plugin_name": "corkscrew-vpc",
+      "resource_types": []
+    }
+  },
+  "plugin_manager": {
+    "debug": false,
+    "plugin_dir": "plugins/build",
+    "timeout": "30s"
+  }
+}

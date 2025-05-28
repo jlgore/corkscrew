@@ -1,80 +1,201 @@
 syntax = "proto3";
 
 package corkscrew;
-option go_package = "github.com/jlgore/corkscrew-generator/internal/proto";
+option go_package = "github.com/jlgore/corkscrew/internal/proto";
 
 import "google/protobuf/timestamp.proto";
 
-// The scanner service definition
+// The main cloud provider service definition
+service CloudProvider {
+  // Plugin lifecycle
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+  rpc GetProviderInfo(Empty) returns (ProviderInfoResponse);
+  
+  // Service discovery and generation
+  rpc DiscoverServices(DiscoverServicesRequest) returns (DiscoverServicesResponse);
+  rpc GenerateServiceScanners(GenerateScannersRequest) returns (GenerateScannersResponse);
+  
+  // Resource operations following Discovery -> List -> Describe pattern
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc DescribeResource(DescribeResourceRequest) returns (DescribeResourceResponse);
+  
+  // Schema and metadata
+  rpc GetSchemas(GetSchemasRequest) returns (SchemaResponse);
+  
+  // Batch operations
+  rpc BatchScan(BatchScanRequest) returns (BatchScanResponse);
+  rpc StreamScan(StreamScanRequest) returns (stream Resource);
+}
+
+// Legacy scanner service for backward compatibility
 service Scanner {
-  // Main scanning operation
   rpc Scan(ScanRequest) returns (ScanResponse);
-  
-  // Get SQL schemas for this service
   rpc GetSchemas(Empty) returns (SchemaResponse);
-  
-  // Get service metadata
   rpc GetServiceInfo(Empty) returns (ServiceInfoResponse);
-  
-  // Stream resources for large result sets
   rpc StreamScan(ScanRequest) returns (stream Resource);
 }
 
 message Empty {}
 
-message ScanRequest {
-  string region = 1;
-  map<string, string> options = 2;
-  repeated string resource_types = 3;
-  // For pagination support
-  string next_token = 4;
-  int32 max_results = 5;
+// Plugin lifecycle messages
+message InitializeRequest {
+  string provider = 1;
+  map<string, string> config = 2;
+  string cache_dir = 3;
 }
 
-message Resource {
-  string type = 1;
-  string id = 2;
-  string arn = 3;
-  string parent_id = 4;
+message InitializeResponse {
+  bool success = 1;
+  string error = 2;
+  string version = 3;
+}
+
+message ProviderInfoResponse {
+  string name = 1;
+  string version = 2;
+  repeated string supported_services = 3;
+  map<string, string> capabilities = 4;
+  string description = 5;
+}
+
+// Service discovery messages
+message DiscoverServicesRequest {
+  bool force_refresh = 1;
+  repeated string include_services = 2;
+  repeated string exclude_services = 3;
+}
+
+message DiscoverServicesResponse {
+  repeated ServiceInfo services = 1;
+  google.protobuf.Timestamp discovered_at = 2;
+  string sdk_version = 3;
+}
+
+message ServiceInfo {
+  string name = 1;
+  string display_name = 2;
+  string package_name = 3;
+  string client_type = 4;
+  repeated ResourceType resource_types = 5;
+  repeated string required_permissions = 6;
+}
+
+message ResourceType {
+  string name = 1;
+  string type_name = 2;
+  string list_operation = 3;
+  string describe_operation = 4;
+  string get_operation = 5;
+  string id_field = 6;
+  string name_field = 7;
+  string arn_field = 8;
+  bool supports_tags = 9;
+  bool paginated = 10;
+  repeated ResourceRelationship relationships = 11;
+}
+
+message ResourceRelationship {
+  string target_type = 1;
+  string relationship_type = 2;
+  string field_name = 3;
+  bool is_array = 4;
+}
+
+// Scanner generation messages
+message GenerateScannersRequest {
+  repeated string services = 1;
+  bool generate_all = 2;
+  bool force_regenerate = 3;
+}
+
+message GenerateScannersResponse {
+  repeated GeneratedScanner scanners = 1;
+  repeated string errors = 2;
+  int32 generated_count = 3;
+}
+
+message GeneratedScanner {
+  string service = 1;
+  string file_path = 2;
+  repeated string resource_types = 3;
+  google.protobuf.Timestamp generated_at = 4;
+}
+
+// Resource operation messages
+message ListResourcesRequest {
+  string service = 1;
+  string resource_type = 2;
+  string region = 3;
+  map<string, string> filters = 4;
+  string next_token = 5;
+  int32 max_results = 6;
+}
+
+message ListResourcesResponse {
+  repeated ResourceRef resources = 1;
+  string next_token = 2;
+  int32 total_count = 3;
+}
+
+message ResourceRef {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string service = 4;
   string region = 5;
-  string account_id = 6;
+  map<string, string> basic_attributes = 6;
+}
+
+message DescribeResourceRequest {
+  ResourceRef resource_ref = 1;
+  bool include_relationships = 2;
+  bool include_tags = 3;
+}
+
+message DescribeResourceResponse {
+  Resource resource = 1;
+  string error = 2;
+}
+
+// Universal resource model
+message Resource {
+  // Core identification
+  string provider = 1;
+  string service = 2;
+  string type = 3;
+  string id = 4;
+  string name = 5;
   
-  // Raw AWS API response as JSON
-  string raw_data = 7;
+  // Location and hierarchy
+  string region = 6;
+  string account_id = 7;
+  string parent_id = 8;
+  string arn = 9;
   
-  // Extracted key fields for common queries
-  map<string, string> tags = 8;
-  string name = 9;
-  google.protobuf.Timestamp created_at = 10;
-  google.protobuf.Timestamp modified_at = 11;
+  // Metadata
+  map<string, string> tags = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp modified_at = 12;
+  google.protobuf.Timestamp discovered_at = 13;
   
-  // For graph relationships
-  repeated Relationship relationships = 12;
-  
-  // Service-specific attributes as JSON
-  string attributes = 13;
+  // Relationships and raw data
+  repeated Relationship relationships = 14;
+  string raw_data = 15;
+  string attributes = 16;
 }
 
 message Relationship {
   string target_id = 1;
   string target_type = 2;
-  string relationship_type = 3;
-  map<string, string> properties = 4;
+  string target_service = 3;
+  string relationship_type = 4;
+  map<string, string> properties = 5;
 }
 
-message ScanResponse {
-  repeated Resource resources = 1;
-  string next_token = 2;
-  string error = 3;
-  map<string, string> metadata = 4;
-  ScanStats stats = 5;
-}
-
-message ScanStats {
-  int32 total_resources = 1;
-  int32 failed_resources = 2;
-  int64 duration_ms = 3;
-  map<string, int32> resource_counts = 4;
+// Schema messages
+message GetSchemasRequest {
+  repeated string services = 1;
+  string format = 2; // "sql", "json", etc.
 }
 
 message SchemaResponse {
@@ -83,8 +204,60 @@ message SchemaResponse {
 
 message Schema {
   string name = 1;
-  string sql = 2;
-  string description = 3;
+  string service = 2;
+  string resource_type = 3;
+  string sql = 4;
+  string description = 5;
+  map<string, string> metadata = 6;
+}
+
+// Batch scanning messages
+message BatchScanRequest {
+  repeated string services = 1;
+  repeated string resource_types = 2;
+  string region = 3;
+  map<string, string> filters = 4;
+  bool include_relationships = 5;
+  int32 concurrency = 6;
+}
+
+message BatchScanResponse {
+  repeated Resource resources = 1;
+  ScanStats stats = 2;
+  repeated string errors = 3;
+}
+
+message StreamScanRequest {
+  repeated string services = 1;
+  repeated string resource_types = 2;
+  string region = 3;
+  map<string, string> filters = 4;
+  bool include_relationships = 5;
+}
+
+message ScanStats {
+  int32 total_resources = 1;
+  int32 failed_resources = 2;
+  int64 duration_ms = 3;
+  map<string, int32> resource_counts = 4;
+  map<string, int32> service_counts = 5;
+}
+
+// Legacy messages for backward compatibility
+message ScanRequest {
+  string region = 1;
+  map<string, string> options = 2;
+  repeated string resource_types = 3;
+  string next_token = 4;
+  int32 max_results = 5;
+}
+
+message ScanResponse {
+  repeated Resource resources = 1;
+  string next_token = 2;
+  string error = 3;
+  map<string, string> metadata = 4;
+  ScanStats stats = 5;
 }
 
 message ServiceInfoResponse {

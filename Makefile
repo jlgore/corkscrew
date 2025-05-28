@@ -1,218 +1,439 @@
-# Makefile for Corkscrew Generator Plugin Architecture
+# Makefile for Corkscrew Cloud Resource Scanner
+# Reset for proper DISCOVER → SCAN pattern implementation
 
 # Variables
 PLUGIN_DIR := ./plugins
 PROTO_DIR := ./proto
-EXAMPLES_DIR := ./examples/plugins
-SERVICES := s3 ec2 rds dynamodb lambda
+INTERNAL_DIR := ./internal
+CMD_DIR := ./cmd
 GO_VERSION := 1.21
+AWS_REGION := us-east-1
+
+# Build directories
+BUILD_DIR := ./build
+BIN_DIR := $(BUILD_DIR)/bin
+TEMP_DIR := $(BUILD_DIR)/temp
+CACHE_DIR := $(BUILD_DIR)/cache
 
 # Default target
 .PHONY: all
-all: generate-proto build-cli build-generator build-test-client build-example-plugins
+all: clean setup build test
 
-# Clean everything
+# =============================================================================
+# SETUP AND CLEANUP
+# =============================================================================
+
+.PHONY: setup
+setup: create-dirs install-deps generate-proto
+	@echo "✅ Development environment setup complete!"
+
+.PHONY: create-dirs
+create-dirs:
+	@echo "📁 Creating build directories..."
+	@mkdir -p $(BIN_DIR) $(TEMP_DIR) $(CACHE_DIR) $(PLUGIN_DIR)
+
 .PHONY: clean
-clean: clean-plugins clean-proto clean-binaries
+clean: clean-build clean-plugins clean-proto clean-generated
+	@echo "🧹 Cleanup complete!"
+
+.PHONY: clean-build
+clean-build:
+	@echo "🧹 Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR)
 
 .PHONY: clean-plugins
 clean-plugins:
-	rm -rf $(PLUGIN_DIR)/*
+	@echo "🧹 Cleaning plugins..."
+	@rm -rf $(PLUGIN_DIR)/*
 
 .PHONY: clean-proto
 clean-proto:
-	rm -f internal/proto/*.pb.go
+	@echo "🧹 Cleaning protobuf generated files..."
+	@rm -f $(INTERNAL_DIR)/proto/*.pb.go
 
-.PHONY: clean-binaries
-clean-binaries:
-	rm -f cmd/plugin-test/plugin-test
-	rm -f examples/plugins/*/plugin-*
+.PHONY: clean-generated
+clean-generated:
+	@echo "🧹 Cleaning generated code..."
+	@rm -rf ./generated
 
-# Generate protobuf code
-.PHONY: generate-proto
-generate-proto:
-	@echo "Generating protobuf code..."
-	@cd internal/proto && go generate
-	@echo "Protobuf generation complete"
+# =============================================================================
+# DEPENDENCIES AND PROTOBUF
+# =============================================================================
 
-# Initialize Go modules
-.PHONY: init
-init:
-	@echo "Initializing Go modules..."
-	go mod tidy
-	@echo "Go modules initialized"
-
-# Build main CLI application
-.PHONY: build-cli
-build-cli: generate-proto
-	@echo "Building main CLI application..."
-	cd cmd/corkscrew && go build -o corkscrew .
-	@echo "CLI application built: cmd/corkscrew/corkscrew"
-
-# Build plugin generator
-.PHONY: build-generator
-build-generator: generate-proto
-	@echo "Building plugin generator..."
-	cd cmd/generator && go build -o generator .
-	@echo "Plugin generator built: cmd/generator/generator"
-
-# Build test client
-.PHONY: build-test-client
-build-test-client: generate-proto
-	@echo "Building plugin test client..."
-	cd cmd/plugin-test && go build -o plugin-test .
-	@echo "Test client built: cmd/plugin-test/plugin-test"
-
-# Build example S3 plugin
-.PHONY: build-s3-plugin
-build-s3-plugin: generate-proto
-	@echo "Building S3 plugin..."
-	@mkdir -p $(PLUGIN_DIR)
-	cd $(EXAMPLES_DIR)/s3 && go build -o ../../../$(PLUGIN_DIR)/corkscrew-s3 .
-	@echo "S3 plugin built: $(PLUGIN_DIR)/corkscrew-s3"
-
-# Build all example plugins
-.PHONY: build-example-plugins
-build-example-plugins: build-s3-plugin
-
-# Test the S3 plugin (requires AWS credentials)
-.PHONY: test-s3-plugin
-test-s3-plugin: build-s3-plugin build-test-client
-	@echo "Testing S3 plugin..."
-	./cmd/plugin-test/plugin-test --service s3 --region us-east-1 --info
-
-# Test plugin loading without AWS calls
-.PHONY: test-plugin-loading
-test-plugin-loading: build-example-plugins build-test-client
-	@echo "Testing plugin loading..."
-	./cmd/plugin-test/plugin-test --list
-
-# Run all tests
-.PHONY: test
-test: generate-proto
-	@echo "Running Go tests..."
-	go test ./...
-
-# Format code
-.PHONY: fmt
-fmt:
-	@echo "Formatting Go code..."
-	go fmt ./...
-
-# Lint code
-.PHONY: lint
-lint:
-	@echo "Linting Go code..."
-	golangci-lint run
-
-# Install development dependencies
 .PHONY: install-deps
 install-deps:
-	@echo "Installing development dependencies..."
-	# Install protobuf compiler (platform specific)
-	@if command -v brew >/dev/null 2>&1; then \
-		echo "Installing protobuf via Homebrew..."; \
-		brew install protobuf; \
-	elif command -v apt-get >/dev/null 2>&1; then \
+	@echo "📦 Installing development dependencies..."
+	@if command -v apt-get >/dev/null 2>&1; then \
 		echo "Installing protobuf via apt..."; \
 		sudo apt-get update && sudo apt-get install -y protobuf-compiler; \
 	else \
 		echo "Please install protobuf compiler manually"; \
 	fi
 	
-	# Install Go protobuf plugins
 	@echo "Installing Go protobuf plugins..."
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	
-	# Install linter
-	@echo "Installing golangci-lint..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "Installing linter..."
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	
+	@echo "Initializing Go modules..."
+	@go mod tidy
 
-# Development setup
-.PHONY: setup
-setup: install-deps init generate-proto
-	@echo "Development environment setup complete!"
+.PHONY: generate-proto
+generate-proto:
+	@echo "🔧 Generating protobuf code..."
+	@cd $(INTERNAL_DIR)/proto && go generate
+	@echo "✅ Protobuf generation complete"
 
-# Create a new plugin template
-.PHONY: create-plugin-%
-create-plugin-%:
-	@echo "Creating plugin template for $*..."
-	@mkdir -p $(EXAMPLES_DIR)/$*
-	@echo "package main" > $(EXAMPLES_DIR)/$*/main.go
-	@echo "" >> $(EXAMPLES_DIR)/$*/main.go
-	@echo "// TODO: Implement $* plugin" >> $(EXAMPLES_DIR)/$*/main.go
-	@echo "Plugin template created: $(EXAMPLES_DIR)/$*/main.go"
+# =============================================================================
+# BUILDING
+# =============================================================================
 
-# Build a specific plugin from examples
-.PHONY: build-plugin-%
-build-plugin-%: generate-proto
-	@echo "Building plugin for $*..."
-	@mkdir -p $(PLUGIN_DIR)
-	@if [ -d "$(EXAMPLES_DIR)/$*" ]; then \
-		cd $(EXAMPLES_DIR)/$* && go build -o ../../../$(PLUGIN_DIR)/corkscrew-$* .; \
-		echo "Plugin built: $(PLUGIN_DIR)/corkscrew-$*"; \
+.PHONY: build
+build: build-cli build-aws-plugin build-tools
+	@echo "🔨 Build complete!"
+
+.PHONY: build-cli
+build-cli: generate-proto create-dirs
+	@echo "🔨 Building main CLI application..."
+	@cd $(CMD_DIR)/corkscrew && go build -o ../../$(BIN_DIR)/corkscrew .
+	@echo "✅ CLI built: $(BIN_DIR)/corkscrew"
+
+.PHONY: build-aws-plugin
+build-aws-plugin: generate-proto create-dirs
+	@echo "🔨 Building AWS plugin..."
+	@if [ -d "plugins/aws" ]; then \
+		cd plugins/aws && go build -o ../../$(BIN_DIR)/corkscrew-aws .; \
+		echo "✅ AWS plugin built: $(BIN_DIR)/corkscrew-aws"; \
 	else \
-		echo "Plugin directory $(EXAMPLES_DIR)/$* does not exist"; \
-		echo "Use 'make create-plugin-$*' to create a template first"; \
-		exit 1; \
+		echo "⚠️  AWS plugin directory not found, skipping..."; \
 	fi
 
-# Show help
-.PHONY: help
-help:
-	@echo "Corkscrew Generator Plugin Architecture"
-	@echo ""
-	@echo "Available targets:"
-	@echo "  setup                 - Set up development environment"
-	@echo "  all                   - Build everything"
-	@echo "  clean                 - Clean all generated files"
-	@echo ""
-	@echo "Code generation:"
-	@echo "  generate-proto        - Generate protobuf Go code"
-	@echo ""
-	@echo "Building:"
-	@echo "  build-cli             - Build the main CLI application"
-	@echo "  build-generator       - Build the plugin generator"
-	@echo "  build-test-client     - Build the plugin test client"
-	@echo "  build-example-plugins - Build all example plugins"
-	@echo "  build-plugin-<name>   - Build specific plugin"
-	@echo "  build-s3-plugin       - Build S3 plugin specifically"
-	@echo ""
-	@echo "Plugin development:"
-	@echo "  create-plugin-<name>  - Create new plugin template"
-	@echo ""
-	@echo "Testing:"
-	@echo "  test                  - Run Go tests"
-	@echo "  test-s3-plugin        - Test S3 plugin (requires AWS creds)"
-	@echo "  test-plugin-loading   - Test plugin loading mechanism"
-	@echo ""
-	@echo "Code quality:"
-	@echo "  fmt                   - Format Go code"
-	@echo "  lint                  - Lint Go code"
-	@echo ""
-	@echo "Dependencies:"
-	@echo "  install-deps          - Install development dependencies"
-	@echo "  init                  - Initialize Go modules"
+.PHONY: build-tools
+build-tools: generate-proto create-dirs
+	@echo "🔨 Building development tools..."
+	@if [ -d "$(CMD_DIR)/generator" ]; then \
+		cd $(CMD_DIR)/generator && go build -o ../../$(BIN_DIR)/generator .; \
+		echo "✅ Generator built: $(BIN_DIR)/generator"; \
+	fi
 
-# Show project status
+# =============================================================================
+# TESTING INFRASTRUCTURE
+# =============================================================================
+
+.PHONY: test
+test: test-unit test-scanner test-integration
+	@echo "✅ All tests complete!"
+
+.PHONY: test-unit
+test-unit: generate-proto
+	@echo "🧪 Running unit tests..."
+	@go test -v ./internal/... -short
+	@echo "✅ Unit tests passed"
+
+.PHONY: test-scanner
+test-scanner: generate-proto
+	@echo "🧪 Testing AWS resource lister..."
+	@go test -v ./internal/scanner -run TestAWSListResource
+	@echo "✅ Scanner tests passed"
+
+.PHONY: test-integration
+test-integration: build
+	@echo "🧪 Running integration tests..."
+	@go test -v ./internal/... -tags=integration
+	@echo "✅ Integration tests passed"
+
+.PHONY: test-plugins
+test-plugins: build-aws-plugin
+	@echo "🧪 Testing plugin loading..."
+	@if [ -f "$(BIN_DIR)/corkscrew-aws" ]; then \
+		echo "Testing AWS plugin loading..."; \
+		$(BIN_DIR)/corkscrew scan --services s3 --region $(AWS_REGION) --dry-run --verbose; \
+	else \
+		echo "⚠️  AWS plugin not found, skipping plugin tests"; \
+	fi
+
+.PHONY: test-discover
+test-discover: build
+	@echo "🔍 Testing service discovery..."
+	@$(BIN_DIR)/corkscrew discover --verbose
+
+.PHONY: test-scan-dry
+test-scan-dry: build
+	@echo "🔍 Testing dry-run scanning..."
+	@$(BIN_DIR)/corkscrew scan --services s3,ec2 --region $(AWS_REGION) --dry-run --verbose
+
+.PHONY: test-list-dry
+test-list-dry: build
+	@echo "🔍 Testing dry-run resource listing..."
+	@$(BIN_DIR)/corkscrew list --services s3,ec2,lambda --region $(AWS_REGION) --dry-run --verbose
+
+.PHONY: test-validate
+test-validate: build
+	@echo "🔍 Testing operation validation..."
+	@$(BIN_DIR)/corkscrew validate --services s3,ec2 --verbose
+
+# =============================================================================
+# SCANNING OPERATIONS (DISCOVER → SCAN PATTERN)
+# =============================================================================
+
+.PHONY: scan
+scan: scan-discover scan-list scan-describe
+	@echo "🔍 Complete scan finished!"
+
+.PHONY: scan-discover
+scan-discover: build
+	@echo "🔍 Phase 1: Discovering AWS services..."
+	@$(BIN_DIR)/corkscrew discover --output $(BUILD_DIR)/discovered-services.json --verbose
+
+.PHONY: scan-list
+scan-list: build
+	@echo "🔍 Phase 2: Listing resources (parameter-free operations)..."
+	@$(BIN_DIR)/corkscrew list --services s3,ec2,lambda --region $(AWS_REGION) --output $(BUILD_DIR)/resource-refs.json --verbose
+
+.PHONY: scan-describe
+scan-describe: build
+	@echo "🔍 Phase 3: Describing resources (parameterized operations)..."
+	@$(BIN_DIR)/corkscrew describe --input $(BUILD_DIR)/resource-refs.json --output $(BUILD_DIR)/full-resources.json --verbose
+
+.PHONY: scan-s3
+scan-s3: build
+	@echo "🔍 Scanning S3 resources..."
+	@$(BIN_DIR)/corkscrew scan --services s3 --region $(AWS_REGION) --output $(BUILD_DIR)/s3-resources.json --verbose
+
+.PHONY: scan-ec2
+scan-ec2: build
+	@echo "🔍 Scanning EC2 resources..."
+	@$(BIN_DIR)/corkscrew scan --services ec2 --region $(AWS_REGION) --output $(BUILD_DIR)/ec2-resources.json --verbose
+
+.PHONY: scan-all
+scan-all: build
+	@echo "🔍 Scanning all supported services..."
+	@$(BIN_DIR)/corkscrew scan --services s3,ec2,lambda,rds,dynamodb --region $(AWS_REGION) --output $(BUILD_DIR)/all-resources.json --verbose
+
+# =============================================================================
+# DRY RUN TESTING (Safe testing without AWS calls)
+# =============================================================================
+
+.PHONY: test-dry-run
+test-dry-run: test-list-dry test-scan-dry test-validate
+	@echo "✅ All dry-run tests complete!"
+
+.PHONY: scan-dry-s3
+scan-dry-s3: build
+	@echo "🔍 Dry-run scanning S3..."
+	@$(BIN_DIR)/corkscrew scan --services s3 --region $(AWS_REGION) --dry-run --verbose
+
+.PHONY: scan-dry-ec2
+scan-dry-ec2: build
+	@echo "🔍 Dry-run scanning EC2..."
+	@$(BIN_DIR)/corkscrew scan --services ec2 --region $(AWS_REGION) --dry-run --verbose
+
+.PHONY: scan-dry-all
+scan-dry-all: build
+	@echo "🔍 Dry-run scanning all services..."
+	@$(BIN_DIR)/corkscrew scan --services s3,ec2,lambda,rds,dynamodb --region $(AWS_REGION) --dry-run --verbose
+
+# =============================================================================
+# DEVELOPMENT AND DEBUGGING
+# =============================================================================
+
+.PHONY: dev-setup
+dev-setup: setup
+	@echo "🛠️  Setting up development environment..."
+	@echo "Creating sample configuration..."
+	@mkdir -p ~/.corkscrew
+	@echo "region: $(AWS_REGION)" > ~/.corkscrew/config.yaml
+	@echo "cache_dir: $(CACHE_DIR)" >> ~/.corkscrew/config.yaml
+	@echo "plugin_dir: $(PLUGIN_DIR)" >> ~/.corkscrew/config.yaml
+
+.PHONY: debug-discovery
+debug-discovery: build
+	@echo "🐛 Debugging service discovery..."
+	@$(BIN_DIR)/corkscrew discover --debug --verbose
+
+.PHONY: debug-scan
+debug-scan: build
+	@echo "🐛 Debugging scan operations..."
+	@$(BIN_DIR)/corkscrew scan --services s3 --region $(AWS_REGION) --debug --dry-run --verbose
+
+.PHONY: debug-list
+debug-list: build
+	@echo "🐛 Debugging list operations..."
+	@$(BIN_DIR)/corkscrew list --services s3,ec2 --region $(AWS_REGION) --debug --dry-run --verbose
+
+.PHONY: validate-operations
+validate-operations: build
+	@echo "🔍 Validating AWS operations..."
+	@$(BIN_DIR)/corkscrew validate --services s3,ec2 --verbose
+
+.PHONY: validate-s3
+validate-s3: build
+	@echo "🔍 Validating S3 operations..."
+	@$(BIN_DIR)/corkscrew validate --services s3 --verbose
+
+.PHONY: validate-ec2
+validate-ec2: build
+	@echo "🔍 Validating EC2 operations..."
+	@$(BIN_DIR)/corkscrew validate --services ec2 --verbose
+
+# =============================================================================
+# CODE QUALITY
+# =============================================================================
+
+.PHONY: fmt
+fmt:
+	@echo "🎨 Formatting Go code..."
+	@go fmt ./...
+
+.PHONY: lint
+lint:
+	@echo "🔍 Linting Go code..."
+	@golangci-lint run
+
+.PHONY: vet
+vet:
+	@echo "🔍 Vetting Go code..."
+	@go vet ./...
+
+.PHONY: check
+check: fmt vet lint test-unit test-scanner
+	@echo "✅ Code quality checks passed!"
+
+# =============================================================================
+# PLUGIN DEVELOPMENT
+# =============================================================================
+
+.PHONY: generate-aws-services
+generate-aws-services: build-tools
+	@echo "🔧 Generating AWS service catalog..."
+	@if [ -f "$(BIN_DIR)/generator" ]; then \
+		$(BIN_DIR)/generator --generate-aws-services --output-dir ./generated --verbose; \
+	else \
+		echo "⚠️  Generator not found, please run 'make build-tools' first"; \
+	fi
+
+.PHONY: build-dynamic-plugins
+build-dynamic-plugins: generate-aws-services
+	@echo "🔧 Building dynamic plugins..."
+	@$(BIN_DIR)/corkscrew generate-plugins --services s3,ec2,lambda --output-dir $(PLUGIN_DIR) --verbose
+
+# =============================================================================
+# MONITORING AND STATUS
+# =============================================================================
+
 .PHONY: status
 status:
-	@echo "Project Status:"
-	@echo "==============="
+	@echo "📊 Corkscrew Project Status"
+	@echo "=========================="
 	@echo ""
-	@echo "Go version: $(shell go version)"
-	@echo "Module: $(shell head -1 go.mod)"
+	@echo "Go version: $(shell go version 2>/dev/null || echo 'Not installed')"
+	@echo "Module: $(shell head -1 go.mod 2>/dev/null || echo 'No go.mod found')"
 	@echo ""
-	@echo "Generated files:"
-	@echo "  Protobuf: $(shell ls internal/proto/*.pb.go 2>/dev/null | wc -l) files"
-	@echo ""
-	@echo "Built plugins:"
-	@echo "  $(shell ls $(PLUGIN_DIR)/corkscrew-* 2>/dev/null | wc -l) plugins in $(PLUGIN_DIR)/"
-	@if [ -d "$(PLUGIN_DIR)" ]; then \
-		ls $(PLUGIN_DIR)/corkscrew-* 2>/dev/null | sed 's/.*corkscrew-/  - /' || echo "  (none)"; \
+	@echo "Build artifacts:"
+	@echo "  Binaries: $(shell ls $(BIN_DIR)/* 2>/dev/null | wc -l) files in $(BIN_DIR)/"
+	@if [ -d "$(BIN_DIR)" ]; then \
+		ls $(BIN_DIR)/* 2>/dev/null | sed 's|.*/|  - |' || echo "  (none)"; \
 	fi
 	@echo ""
-	@echo "Example plugins:"
-	@echo "  $(shell find $(EXAMPLES_DIR) -name main.go 2>/dev/null | wc -l) examples in $(EXAMPLES_DIR)/"
-	@find $(EXAMPLES_DIR) -name main.go 2>/dev/null | sed 's|.*/\([^/]*\)/main.go|  - \1|' || echo "  (none)"
+	@echo "Plugins:"
+	@echo "  Built: $(shell ls $(PLUGIN_DIR)/corkscrew-* 2>/dev/null | wc -l) plugins in $(PLUGIN_DIR)/"
+	@if [ -d "$(PLUGIN_DIR)" ]; then \
+		ls $(PLUGIN_DIR)/corkscrew-* 2>/dev/null | sed 's|.*/corkscrew-|  - |' || echo "  (none)"; \
+	fi
+	@echo ""
+	@echo "Generated files:"
+	@echo "  Protobuf: $(shell ls $(INTERNAL_DIR)/proto/*.pb.go 2>/dev/null | wc -l) files"
+	@echo "  Scanner: $(shell ls $(INTERNAL_DIR)/scanner/*.go 2>/dev/null | wc -l) files"
+
+.PHONY: health-check
+health-check: build
+	@echo "🏥 Running health checks..."
+	@echo "Checking AWS credentials..."
+	@aws sts get-caller-identity >/dev/null 2>&1 && echo "✅ AWS credentials OK" || echo "❌ AWS credentials not configured"
+	@echo "Checking protobuf generation..."
+	@[ -f "$(INTERNAL_DIR)/proto/scanner.pb.go" ] && echo "✅ Protobuf files OK" || echo "❌ Protobuf files missing"
+	@echo "Checking CLI binary..."
+	@[ -f "$(BIN_DIR)/corkscrew" ] && echo "✅ CLI binary OK" || echo "❌ CLI binary missing"
+	@echo "Checking scanner component..."
+	@[ -f "$(INTERNAL_DIR)/scanner/aws_resource_lister.go" ] && echo "✅ Scanner component OK" || echo "❌ Scanner component missing"
+
+# =============================================================================
+# HELP
+# =============================================================================
+
+.PHONY: help
+help:
+	@echo "🔧 Corkscrew Cloud Resource Scanner"
+	@echo "=================================="
+	@echo ""
+	@echo "🚀 Quick Start:"
+	@echo "  make setup              - Set up development environment"
+	@echo "  make build              - Build all components"
+	@echo "  make test               - Run all tests"
+	@echo "  make test-dry-run       - Safe testing without AWS calls"
+	@echo "  make scan-dry-s3        - Quick S3 dry-run scan"
+	@echo ""
+	@echo "🔨 Building:"
+	@echo "  make build              - Build everything"
+	@echo "  make build-cli          - Build CLI only"
+	@echo "  make build-aws-plugin   - Build AWS plugin"
+	@echo "  make build-tools        - Build development tools"
+	@echo ""
+	@echo "🧪 Testing:"
+	@echo "  make test               - Run all tests"
+	@echo "  make test-unit          - Unit tests only"
+	@echo "  make test-scanner       - Test AWS resource lister"
+	@echo "  make test-integration   - Integration tests"
+	@echo "  make test-plugins       - Plugin loading tests"
+	@echo "  make test-discover      - Test service discovery"
+	@echo "  make test-scan-dry      - Test dry-run scanning"
+	@echo "  make test-dry-run       - All dry-run tests"
+	@echo ""
+	@echo "🔍 Scanning (DISCOVER → SCAN Pattern):"
+	@echo "  make scan               - Full 3-phase scan"
+	@echo "  make scan-discover      - Phase 1: Discover services"
+	@echo "  make scan-list          - Phase 2: List resources"
+	@echo "  make scan-describe      - Phase 3: Describe resources"
+	@echo "  make scan-s3            - Scan S3 resources"
+	@echo "  make scan-ec2           - Scan EC2 resources"
+	@echo "  make scan-all           - Scan all services"
+	@echo ""
+	@echo "🧪 Dry-Run Testing (Safe):"
+	@echo "  make scan-dry-s3        - Dry-run S3 scan"
+	@echo "  make scan-dry-ec2       - Dry-run EC2 scan"
+	@echo "  make scan-dry-all       - Dry-run all services"
+	@echo "  make test-list-dry      - Test resource listing"
+	@echo "  make test-validate      - Test operation validation"
+	@echo ""
+	@echo "🛠️  Development:"
+	@echo "  make dev-setup          - Development environment"
+	@echo "  make debug-discovery    - Debug service discovery"
+	@echo "  make debug-scan         - Debug scanning"
+	@echo "  make debug-list         - Debug listing"
+	@echo "  make validate-operations - Validate AWS operations"
+	@echo "  make validate-s3        - Validate S3 operations"
+	@echo "  make validate-ec2       - Validate EC2 operations"
+	@echo ""
+	@echo "🎨 Code Quality:"
+	@echo "  make check              - Run all quality checks"
+	@echo "  make fmt                - Format code"
+	@echo "  make lint               - Lint code"
+	@echo "  make vet                - Vet code"
+	@echo ""
+	@echo "🔧 Plugin Development:"
+	@echo "  make generate-aws-services - Generate AWS service catalog"
+	@echo "  make build-dynamic-plugins - Build dynamic plugins"
+	@echo ""
+	@echo "📊 Monitoring:"
+	@echo "  make status             - Show project status"
+	@echo "  make health-check       - Run health checks"
+	@echo ""
+	@echo "🧹 Cleanup:"
+	@echo "  make clean              - Clean everything"
+	@echo "  make clean-build        - Clean build artifacts"
+	@echo "  make clean-plugins      - Clean plugins"
+
+# Set default region for AWS operations
+export AWS_DEFAULT_REGION ?= $(AWS_REGION)

@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jlgore/corkscrew-generator/internal/generator"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/generator"
 )
 
 func main() {
@@ -83,7 +83,7 @@ func listAvailableServices(services map[string]interface{}) {
 	for serviceName, client := range services {
 		clientType := reflect.TypeOf(client)
 		packagePath := clientType.Elem().PkgPath()
-		
+
 		fmt.Printf("  %-10s - %s\n", serviceName, packagePath)
 	}
 
@@ -94,7 +94,7 @@ func listAvailableServices(services map[string]interface{}) {
 }
 
 // generateSinglePlugin generates a plugin for a single service
-func generateSinglePlugin(analyzer *generator.AWSAnalyzer, pluginGen *generator.PluginGenerator, 
+func generateSinglePlugin(analyzer *generator.AWSAnalyzer, pluginGen *generator.PluginGenerator,
 	serviceName string, availableServices map[string]interface{}, outputDir string, verbose bool) error {
 
 	client, exists := availableServices[serviceName]
@@ -158,7 +158,7 @@ func generateAllPlugins(analyzer *generator.AWSAnalyzer, pluginGen *generator.Pl
 	availableServices map[string]interface{}, outputDir string, verbose bool) {
 
 	fmt.Printf("Generating plugins for %d services...\n", len(availableServices))
-	
+
 	successCount := 0
 	failureCount := 0
 
@@ -193,7 +193,7 @@ func printServiceAnalysis(service *generator.AWSServiceInfo) {
 	fmt.Printf("\n=== Service Analysis: %s ===\n", service.Name)
 	fmt.Printf("Package: %s\n", service.PackageName)
 	fmt.Printf("Client:  %s\n", service.ClientType)
-	
+
 	fmt.Printf("\nOperations (%d):\n", len(service.Operations))
 	for _, op := range service.Operations {
 		opType := "Other"
@@ -204,12 +204,12 @@ func printServiceAnalysis(service *generator.AWSServiceInfo) {
 		} else if op.IsGet {
 			opType = "Get"
 		}
-		
+
 		paginated := ""
 		if op.Paginated {
 			paginated = " (paginated)"
 		}
-		
+
 		fmt.Printf("  %-20s %-10s -> %s%s\n", op.Name, opType, op.ResourceType, paginated)
 	}
 
@@ -236,12 +236,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.26.1
 	github.com/aws/aws-sdk-go-v2/service/%s v1.0.0
 	github.com/hashicorp/go-plugin v1.6.0
-	github.com/jlgore/corkscrew-generator v0.1.0
+	github.com/jlgore/corkscrew v0.1.0
 	google.golang.org/protobuf v1.31.0
 )
 
 // Replace with local development path if needed
-// replace github.com/jlgore/corkscrew-generator => ../../..
+// replace github.com/jlgore/corkscrew => ../../..
 `, serviceName, serviceName)
 
 	goModPath := filepath.Join(pluginDir, "go.mod")
