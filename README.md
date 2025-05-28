@@ -479,6 +479,232 @@ export CORKSCREW_DEBUG=1
 - Document all public APIs
 - Include examples in documentation
 
+## Docker Support
+
+### Quick Start with Docker
+
+```bash
+# Build the Docker image
+docker build -t corkscrew:latest .
+
+# Run with help
+docker run --rm corkscrew:latest --help
+
+# Scan S3 with AWS credentials
+docker run --rm \
+  -v ~/.aws:/home/corkscrew/.aws:ro \
+  -v $(pwd)/output:/app/output \
+  corkscrew:latest \
+  --services s3 --region us-east-1 --output /app/output/s3-scan.json --verbose
+```
+
+### Using Docker Compose
+
+```bash
+# Show help
+docker-compose run --rm corkscrew
+
+# Scan S3 resources
+docker-compose run --rm corkscrew-s3
+
+# Scan multiple services
+docker-compose run --rm corkscrew-multi
+```
+
+### Development Helper Script
+
+Use the provided development script for easier Docker workflows:
+
+```bash
+# Build development image
+./scripts/docker-dev.sh build
+
+# Run a scan
+./scripts/docker-dev.sh scan s3,ec2 us-east-1
+
+# Get shell access
+./scripts/docker-dev.sh shell
+
+# Run tests
+./scripts/docker-dev.sh test
+
+# Clean up
+./scripts/docker-dev.sh clean
+```
+
+### GitHub Container Registry
+
+Pull pre-built images from GitHub Container Registry:
+
+```bash
+# Pull latest release
+docker pull ghcr.io/jlgore/corkscrew-generator:latest
+
+# Pull specific version
+docker pull ghcr.io/jlgore/corkscrew-generator:v1.0.0
+
+# Run from registry
+docker run --rm \
+  -v ~/.aws:/home/corkscrew/.aws:ro \
+  -v $(pwd)/output:/app/output \
+  ghcr.io/jlgore/corkscrew-generator:latest \
+  --services s3 --region us-east-1 --verbose
+```
+
+For detailed Docker usage, deployment examples, and production configurations, see [DOCKER.md](DOCKER.md).
+
+## CI/CD Pipeline
+
+### GitHub Actions
+
+The project includes a comprehensive CI/CD pipeline that:
+
+1. **Tests** - Runs on every push and PR
+   - Go tests with multiple versions
+   - Protobuf code generation
+   - Plugin compilation
+   - Binary testing
+
+2. **Build and Push** - Builds multi-architecture Docker images
+   - `linux/amd64` and `linux/arm64` support
+   - Pushes to GitHub Container Registry
+   - Caches layers for faster builds
+
+3. **Release** - Creates releases on git tags
+   - Cross-platform binaries (Linux, macOS, Windows)
+   - Plugin archives
+   - Checksums and signatures
+   - Automated release notes
+
+### Triggering Releases
+
+Create a new release by pushing a git tag:
+
+```bash
+# Create and push a new tag
+git tag v1.0.0
+git push origin v1.0.0
+
+# This triggers:
+# 1. Full test suite
+# 2. Multi-arch Docker build and push
+# 3. Cross-platform binary compilation
+# 4. GitHub release creation
+```
+
+### Available Artifacts
+
+Each release provides:
+
+- **Docker Images**: `ghcr.io/jlgore/corkscrew-generator:v1.0.0`
+- **Linux Binaries**: `corkscrew-linux-amd64`, `corkscrew-linux-arm64`
+- **macOS Binaries**: `corkscrew-darwin-amd64`, `corkscrew-darwin-arm64`
+- **Windows Binaries**: `corkscrew-windows-amd64.exe`
+- **Plugin Archive**: `plugins-linux-amd64.tar.gz`
+- **Checksums**: `checksums.txt`
+
+### Development Workflow
+
+```bash
+# 1. Create feature branch
+git checkout -b feature/new-service
+
+# 2. Make changes and test locally
+make test
+./scripts/docker-dev.sh test
+
+# 3. Push and create PR (triggers CI)
+git push origin feature/new-service
+
+# 4. After merge, tag for release
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+## Production Deployment
+
+### Kubernetes
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: corkscrew-scanner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: corkscrew-scanner
+  template:
+    metadata:
+      labels:
+        app: corkscrew-scanner
+    spec:
+      serviceAccountName: corkscrew-scanner
+      containers:
+      - name: corkscrew
+        image: ghcr.io/jlgore/corkscrew-generator:latest
+        command: ["corkscrew"]
+        args: ["--services", "s3,ec2,rds", "--region", "us-east-1", "--output-db", "/data/scan.db"]
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        env:
+        - name: AWS_REGION
+          value: "us-east-1"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: corkscrew-data
+```
+
+### AWS ECS
+
+```json
+{
+  "family": "corkscrew-scanner",
+  "taskRoleArn": "arn:aws:iam::123456789012:role/CorkscrewTaskRole",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "corkscrew",
+      "image": "ghcr.io/jlgore/corkscrew-generator:latest",
+      "command": ["corkscrew"],
+      "environment": [
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/corkscrew-scanner",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Scheduled Scans
+
+```bash
+# Daily cron job
+0 2 * * * docker run --rm \
+  -v ~/.aws:/home/corkscrew/.aws:ro \
+  -v /var/log/corkscrew:/app/output \
+  ghcr.io/jlgore/corkscrew-generator:latest \
+  --services s3,ec2,rds --region us-east-1 \
+  --output /app/output/daily-scan-$(date +\%Y\%m\%d).json
+```
+
 ## License
 
 [License information here]
@@ -487,5 +713,5 @@ export CORKSCREW_DEBUG=1
 
 - **Issues**: GitHub Issues
 - **Discussions**: GitHub Discussions
-- **Documentation**: This README and inline code comments
+- **Documentation**: This README, [DOCKER.md](DOCKER.md), and inline code comments
 - **Examples**: See `examples/` directory

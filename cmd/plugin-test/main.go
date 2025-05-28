@@ -8,67 +8,74 @@ import (
 	"log"
 	"os"
 
-	"github.com/jlgore/corkscrew-generator/internal/client"
-	pb "github.com/jlgore/corkscrew-generator/internal/proto"
+	"github.com/jlgore/corkscrew/internal/client"
+	pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
 func main() {
 	var (
-		service    = flag.String("service", "", "AWS service to scan")
+		service    = flag.String("service", "", "AWS service to scan (e.g., s3, ec2, iam)")
 		region     = flag.String("region", "us-east-1", "AWS region")
-		pluginDir  = flag.String("plugin-dir", "./plugins", "Plugin directory")
+		pluginDir  = flag.String("plugin-dir", "./build/plugins", "Plugin directory")
 		outputFile = flag.String("output", "", "Output file (default: stdout)")
-		listOnly   = flag.Bool("list", false, "List available plugins")
-		info       = flag.Bool("info", false, "Show service info only")
+		profile    = flag.String("profile", "", "AWS profile to use")
+		debug      = flag.Bool("debug", false, "Enable debug output")
 	)
 	flag.Parse()
 
+	if *service == "" {
+		log.Fatal("Service is required. Use --service=s3 for example.")
+	}
+
+	// Set AWS profile if provided
+	if *profile != "" {
+		os.Setenv("AWS_PROFILE", *profile)
+	}
+
+	if *debug {
+		fmt.Printf("🔧 Plugin Test Configuration:\n")
+		fmt.Printf("  Service: %s\n", *service)
+		fmt.Printf("  Region: %s\n", *region)
+		fmt.Printf("  Plugin Dir: %s\n", *pluginDir)
+		fmt.Printf("  Profile: %s\n", getEffectiveProfile(*profile))
+		fmt.Println()
+	}
+
 	// Create plugin manager
 	pm := client.NewPluginManager(*pluginDir)
+	pm.SetDebug(*debug)
 	defer pm.Shutdown()
 
-	if *listOnly {
-		listAvailablePlugins(*pluginDir)
-		return
-	}
-
-	if *service == "" {
-		log.Fatal("Service is required (use -service flag)")
-	}
+	ctx := context.Background()
 
 	// Load the scanner plugin
-	scanner, err := pm.LoadScanner(*service)
+	if *debug {
+		fmt.Printf("🔌 Loading %s scanner plugin...\n", *service)
+	}
+
+	_, err := pm.LoadScannerPlugin(ctx, *service, *region)
 	if err != nil {
-		log.Fatalf("Failed to load scanner: %v", err)
+		log.Fatalf("Failed to load scanner plugin: %v", err)
 	}
 
 	// Get service info
-	serviceInfo, err := scanner.GetServiceInfo(context.Background(), &pb.Empty{})
+	info, err := pm.GetScannerPluginInfo(ctx, *service)
 	if err != nil {
 		log.Fatalf("Failed to get service info: %v", err)
 	}
 
-	fmt.Printf("Loaded %s scanner v%s\n", serviceInfo.ServiceName, serviceInfo.Version)
-	fmt.Printf("Supported resources: %v\n", serviceInfo.SupportedResources)
-	fmt.Printf("Required permissions: %v\n", serviceInfo.RequiredPermissions)
-
-	if *info {
-		// Show schemas as well
-		schemas, err := scanner.GetSchemas(context.Background(), &pb.Empty{})
-		if err != nil {
-			log.Printf("Warning: Failed to get schemas: %v", err)
-		} else {
-			fmt.Printf("\nAvailable schemas:\n")
-			for _, schema := range schemas.Schemas {
-				fmt.Printf("  - %s: %s\n", schema.Name, schema.Description)
-			}
-		}
-		return
-	}
+	fmt.Printf("✅ Loaded %s scanner v%s\n", info.ServiceName, info.Version)
+	fmt.Printf("📋 Supported resources: %v\n", info.SupportedResources)
+	fmt.Printf("🔑 Required permissions: %v\n", info.RequiredPermissions)
+	fmt.Printf("⚡ Capabilities: %v\n", info.Capabilities)
+	fmt.Println()
 
 	// Perform scan
-	ctx := context.Background()
-	resp, err := scanner.Scan(ctx, &pb.ScanRequest{
+	if *debug {
+		fmt.Printf("🔍 Starting scan of %s in region %s...\n", *service, *region)
+	}
+
+	resp, err := pm.ScanServiceWithPlugin(ctx, *service, *region, &pb.ScanRequest{
 		Region: *region,
 		Options: map[string]string{
 			"include_tags": "true",
@@ -83,56 +90,75 @@ func main() {
 		log.Fatalf("Scan error: %s", resp.Error)
 	}
 
-	fmt.Printf("\nScan Results:\n")
-	fmt.Printf("Total resources: %d\n", resp.Stats.TotalResources)
-	fmt.Printf("Failed resources: %d\n", resp.Stats.FailedResources)
-	fmt.Printf("Duration: %dms\n", resp.Stats.DurationMs)
+	// Display results
+	fmt.Printf("🎉 Scan Results:\n")
+	fmt.Printf("  Total resources: %d\n", resp.Stats.TotalResources)
+	fmt.Printf("  Failed resources: %d\n", resp.Stats.FailedResources)
+	fmt.Printf("  Duration: %dms\n", resp.Stats.DurationMs)
+	fmt.Println()
 
-	fmt.Printf("\nResource counts:\n")
-	for rType, count := range resp.Stats.ResourceCounts {
-		fmt.Printf("  %s: %d\n", rType, count)
+	if len(resp.Stats.ResourceCounts) > 0 {
+		fmt.Printf("📊 Resource counts by type:\n")
+		for resourceType, count := range resp.Stats.ResourceCounts {
+			fmt.Printf("  %s: %d\n", resourceType, count)
+		}
+		fmt.Println()
 	}
 
 	// Show sample resources
 	if len(resp.Resources) > 0 {
-		fmt.Printf("\nSample resources:\n")
+		fmt.Printf("📋 Sample resources:\n")
 		for i, resource := range resp.Resources {
-			if i >= 3 { // Show only first 3
+			if i >= 5 { // Show only first 5
+				fmt.Printf("  ... and %d more\n", len(resp.Resources)-5)
 				break
 			}
-			fmt.Printf("  - %s (%s): %s\n", resource.Type, resource.Id, resource.Name)
+			fmt.Printf("  🔹 %s (%s)\n", resource.Name, resource.Type)
+			fmt.Printf("     ID: %s\n", resource.Id)
+			if resource.Region != "" {
+				fmt.Printf("     Region: %s\n", resource.Region)
+			}
+			if len(resource.Tags) > 0 {
+				fmt.Printf("     Tags: %d\n", len(resource.Tags))
+			}
 			if len(resource.Relationships) > 0 {
-				fmt.Printf("    Relationships: %d\n", len(resource.Relationships))
+				fmt.Printf("     Relationships: %d\n", len(resource.Relationships))
 			}
 		}
+		fmt.Println()
 	}
 
-	// Output results
+	// Output to file if requested
 	if *outputFile != "" {
-		data, err := json.MarshalIndent(resp.Resources, "", "  ")
-		if err != nil {
-			log.Fatalf("Failed to marshal results: %v", err)
+		data := map[string]interface{}{
+			"service":   *service,
+			"region":    *region,
+			"stats":     resp.Stats,
+			"resources": resp.Resources,
+			"metadata":  resp.Metadata,
 		}
 
-		if err := os.WriteFile(*outputFile, data, 0644); err != nil {
+		jsonData, err := json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			log.Fatalf("Failed to marshal JSON: %v", err)
+		}
+
+		if err := os.WriteFile(*outputFile, jsonData, 0644); err != nil {
 			log.Fatalf("Failed to write output file: %v", err)
 		}
 
-		fmt.Printf("\nResults written to %s\n", *outputFile)
+		fmt.Printf("📄 Results written to %s\n", *outputFile)
 	}
+
+	fmt.Printf("✅ Plugin test complete!\n")
 }
 
-func listAvailablePlugins(pluginDir string) {
-	entries, err := os.ReadDir(pluginDir)
-	if err != nil {
-		log.Fatalf("Failed to read plugin directory: %v", err)
+func getEffectiveProfile(flagProfile string) string {
+	if flagProfile != "" {
+		return flagProfile
 	}
-
-	fmt.Printf("Available plugins in %s:\n", pluginDir)
-	for _, entry := range entries {
-		if !entry.IsDir() && entry.Name()[:10] == "corkscrew-" {
-			service := entry.Name()[10:] // Remove "corkscrew-" prefix
-			fmt.Printf("  - %s\n", service)
-		}
+	if envProfile := os.Getenv("AWS_PROFILE"); envProfile != "" {
+		return envProfile
 	}
+	return "default"
 }

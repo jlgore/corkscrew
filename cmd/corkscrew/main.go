@@ -2,337 +2,457 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/jlgore/corkscrew-generator/internal/client"
-	"github.com/jlgore/corkscrew-generator/internal/db"
-	pb "github.com/jlgore/corkscrew-generator/internal/proto"
+	"github.com/hashicorp/go-plugin"
+	"github.com/jlgore/corkscrew/internal/client"
+	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 )
 
-type Config struct {
-	Services   []string
-	Region     string
-	PluginDir  string
-	OutputFile string
-	OutputDB   string
-	Format     string
-	Verbose    bool
-	ListOnly   bool
-	InfoOnly   bool
-}
-
 func main() {
-	config := parseFlags()
-
-	if config.ListOnly {
-		listAvailablePlugins(config.PluginDir)
-		return
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
 
-	if len(config.Services) == 0 {
-		log.Fatal("At least one service must be specified")
-	}
-
-	// Create plugin manager
-	pm := client.NewPluginManager(config.PluginDir)
-	defer pm.Shutdown()
-
-	if config.InfoOnly {
-		showServiceInfo(pm, config.Services)
-		return
-	}
-
-	// Perform scans
-	ctx := context.Background()
-	allResults := make(map[string]*pb.ScanResponse)
-
-	for _, service := range config.Services {
-		if config.Verbose {
-			fmt.Printf("Scanning %s in region %s...\n", service, config.Region)
-		}
-
-		start := time.Now()
-		result, err := pm.ScanService(ctx, service, &pb.ScanRequest{
-			Region: config.Region,
-			Options: map[string]string{
-				"include_tags": "true",
-			},
-		})
-
-		if err != nil {
-			log.Printf("Error scanning %s: %v", service, err)
-			continue
-		}
-
-		if result.Error != "" {
-			log.Printf("Scan error for %s: %s", service, result.Error)
-			continue
-		}
-
-		allResults[service] = result
-
-		if config.Verbose {
-			duration := time.Since(start)
-			fmt.Printf("✓ %s: %d resources in %v\n", 
-				service, result.Stats.TotalResources, duration)
-		}
-	}
-
-	// Output results
-	if err := outputResults(config, allResults); err != nil {
-		log.Fatalf("Failed to output results: %v", err)
-	}
-
-	// Load into database if specified
-	if config.OutputDB != "" {
-		if err := loadIntoDatabase(config, allResults); err != nil {
-			log.Fatalf("Failed to load into database: %v", err)
-		}
-	}
-
-	// Print summary
-	printSummary(allResults)
-}
-
-func parseFlags() *Config {
-	config := &Config{}
-
-	var servicesStr string
-	flag.StringVar(&servicesStr, "services", "", "Comma-separated list of AWS services to scan")
-	flag.StringVar(&config.Region, "region", "us-east-1", "AWS region to scan")
-	flag.StringVar(&config.PluginDir, "plugin-dir", "./plugins", "Directory containing plugins")
-	flag.StringVar(&config.OutputFile, "output", "", "Output file for results (JSON)")
-	flag.StringVar(&config.OutputDB, "output-db", "", "DuckDB file to store results")
-	flag.StringVar(&config.Format, "format", "json", "Output format (json, table)")
-	flag.BoolVar(&config.Verbose, "verbose", false, "Verbose output")
-	flag.BoolVar(&config.ListOnly, "list", false, "List available plugins and exit")
-	flag.BoolVar(&config.InfoOnly, "info", false, "Show service information only")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Corkscrew Generator - Plugin-based AWS resource scanner\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  %s --services s3,ec2 --region us-west-2\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s --services s3 --output s3-resources.json\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s --services s3,ec2,rds --output-db infrastructure.db\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s --list\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s --services s3 --info\n", os.Args[0])
-	}
-
-	flag.Parse()
-
-	if servicesStr != "" {
-		config.Services = strings.Split(servicesStr, ",")
-		for i, service := range config.Services {
-			config.Services[i] = strings.TrimSpace(service)
-		}
-	}
-
-	return config
-}
-
-func listAvailablePlugins(pluginDir string) {
-	entries, err := os.ReadDir(pluginDir)
-	if err != nil {
-		log.Fatalf("Failed to read plugin directory: %v", err)
-	}
-
-	fmt.Printf("Available plugins in %s:\n", pluginDir)
-	count := 0
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "corkscrew-") {
-			service := strings.TrimPrefix(entry.Name(), "corkscrew-")
-			fmt.Printf("  - %s\n", service)
-			count++
-		}
-	}
-
-	if count == 0 {
-		fmt.Printf("  (no plugins found)\n")
-		fmt.Printf("\nTo build plugins, run: make build-example-plugins\n")
-	}
-}
-
-func showServiceInfo(pm *client.PluginManager, services []string) {
-	for _, service := range services {
-		fmt.Printf("\n=== %s Service Information ===\n", strings.ToUpper(service))
-
-		info, err := pm.GetScannerInfo(service)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			continue
-		}
-
-		fmt.Printf("Service: %s\n", info.ServiceName)
-		fmt.Printf("Version: %s\n", info.Version)
-		fmt.Printf("Supported Resources: %s\n", strings.Join(info.SupportedResources, ", "))
-		fmt.Printf("Required Permissions:\n")
-		for _, perm := range info.RequiredPermissions {
-			fmt.Printf("  - %s\n", perm)
-		}
-
-		fmt.Printf("Capabilities:\n")
-		for key, value := range info.Capabilities {
-			fmt.Printf("  - %s: %s\n", key, value)
-		}
-
-		// Get schemas
-		schemas, err := pm.GetServiceSchemas(service)
-		if err != nil {
-			fmt.Printf("Warning: Could not get schemas: %v\n", err)
-		} else if len(schemas.Schemas) > 0 {
-			fmt.Printf("Database Schemas:\n")
-			for _, schema := range schemas.Schemas {
-				fmt.Printf("  - %s: %s\n", schema.Name, schema.Description)
-			}
-		}
-	}
-}
-
-func outputResults(config *Config, results map[string]*pb.ScanResponse) error {
-	if config.OutputFile == "" && config.Format != "table" {
-		return nil // No output requested
-	}
-
-	switch config.Format {
-	case "json":
-		return outputJSON(config, results)
-	case "table":
-		return outputTable(config, results)
+	command := os.Args[1]
+	switch command {
+	case "scan":
+		runScan(os.Args[2:])
+	case "discover":
+		runDiscover(os.Args[2:])
+	case "list":
+		runList(os.Args[2:])
+	case "describe":
+		runDescribe(os.Args[2:])
+	case "info":
+		runInfo(os.Args[2:])
 	default:
-		return fmt.Errorf("unsupported format: %s", config.Format)
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
 	}
 }
 
-func outputJSON(config *Config, results map[string]*pb.ScanResponse) error {
-	// Combine all resources
-	allResources := make(map[string][]*pb.Resource)
-	for service, result := range results {
-		allResources[service] = result.Resources
-	}
+func printUsage() {
+	fmt.Println("🚀 Corkscrew Cloud Resource Scanner v2.0.0")
+	fmt.Println("Plugin Architecture - AWS Provider")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  corkscrew scan --provider aws --services s3,ec2 --region us-east-1")
+	fmt.Println("  corkscrew discover --provider aws")
+	fmt.Println("  corkscrew list --provider aws --services s3 --region us-east-1")
+	fmt.Println("  corkscrew describe --provider aws --resource-id bucket-name --service s3")
+	fmt.Println("  corkscrew info --provider aws")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  scan        - Full resource scanning")
+	fmt.Println("  discover    - Discover available services")
+	fmt.Println("  list        - List resources")
+	fmt.Println("  describe    - Describe specific resources")
+	fmt.Println("  info        - Show provider information")
+}
 
-	data, err := json.MarshalIndent(allResources, "", "  ")
+func runScan(args []string) {
+	fs := flag.NewFlagSet("scan", flag.ExitOnError)
+	
+	provider := fs.String("provider", "aws", "Cloud provider (aws)")
+	servicesStr := fs.String("services", "", "Comma-separated list of services")
+	region := fs.String("region", "us-east-1", "AWS region")
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	includeRelationships := fs.Bool("relationships", false, "Include resource relationships")
+	
+	fs.Parse(args)
+	
+	if *servicesStr == "" {
+		log.Fatal("--services is required")
+	}
+	
+	services := strings.Split(*servicesStr, ",")
+	for i, service := range services {
+		services[i] = strings.TrimSpace(service)
+	}
+	
+	if *verbose {
+		fmt.Printf("🔍 Scanning services %v in region %s using %s provider...\n", services, *region, *provider)
+	}
+	
+	// Load AWS provider plugin
+	providerClient, cleanup, err := loadAWSProvider(*verbose)
 	if err != nil {
-		return fmt.Errorf("failed to marshal results: %w", err)
+		log.Fatalf("Failed to load AWS provider: %v", err)
 	}
-
-	if config.OutputFile != "" {
-		if err := os.WriteFile(config.OutputFile, data, 0644); err != nil {
-			return fmt.Errorf("failed to write output file: %w", err)
-		}
-		fmt.Printf("Results written to %s\n", config.OutputFile)
-	} else {
-		fmt.Println(string(data))
-	}
-
-	return nil
-}
-
-func outputTable(config *Config, results map[string]*pb.ScanResponse) error {
-	fmt.Printf("\n%-15s %-20s %-15s %-30s %-15s\n", 
-		"SERVICE", "TYPE", "REGION", "NAME", "ID")
-	fmt.Println(strings.Repeat("-", 95))
-
-	for service, result := range results {
-		for _, resource := range result.Resources {
-			name := resource.Name
-			if len(name) > 28 {
-				name = name[:25] + "..."
-			}
-			id := resource.Id
-			if len(id) > 13 {
-				id = id[:10] + "..."
-			}
-
-			fmt.Printf("%-15s %-20s %-15s %-30s %-15s\n",
-				service, resource.Type, resource.Region, name, id)
-		}
-	}
-
-	return nil
-}
-
-func loadIntoDatabase(config *Config, results map[string]*pb.ScanResponse) error {
-	if config.Verbose {
-		fmt.Printf("Loading results into database: %s\n", config.OutputDB)
-	}
-
-	// Create graph loader
-	gl, err := db.NewGraphLoader(config.OutputDB)
-	if err != nil {
-		return fmt.Errorf("failed to create graph loader: %w", err)
-	}
-	defer gl.Close()
-
+	defer cleanup()
+	
 	ctx := context.Background()
-
-	// Load resources for each service
-	for service, result := range results {
-		if config.Verbose {
-			fmt.Printf("Loading %d resources from %s...\n", 
-				len(result.Resources), service)
+	
+	// Initialize provider
+	initResp, err := providerClient.Initialize(ctx, &pb.InitializeRequest{
+		Config: map[string]string{
+			"region": *region,
+		},
+		CacheDir: filepath.Join(os.TempDir(), "corkscrew-cache"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize provider: %v", err)
+	}
+	
+	if !initResp.Success {
+		log.Fatalf("Provider initialization failed: %s", initResp.Error)
+	}
+	
+	if *verbose {
+		fmt.Printf("✅ Provider initialized successfully\n")
+	}
+	
+	// Batch scan
+	start := time.Now()
+	scanResp, err := providerClient.BatchScan(ctx, &pb.BatchScanRequest{
+		Services:             services,
+		Region:               *region,
+		IncludeRelationships: *includeRelationships,
+	})
+	if err != nil {
+		log.Fatalf("Failed to scan resources: %v", err)
+	}
+	
+	duration := time.Since(start)
+	
+	// Display results
+	fmt.Printf("\n🎯 Scan Results:\n")
+	fmt.Printf("  Total Resources: %d\n", len(scanResp.Resources))
+	fmt.Printf("  Duration: %v\n", duration)
+	fmt.Printf("  Services Scanned: %d\n", len(services))
+	
+	if scanResp.Stats != nil {
+		fmt.Printf("\n📊 Statistics:\n")
+		for service, count := range scanResp.Stats.ResourceCounts {
+			fmt.Printf("  %s: %d resources\n", service, count)
 		}
-
-		// Load resources
-		if err := gl.LoadResources(ctx, result.Resources); err != nil {
-			return fmt.Errorf("failed to load resources for %s: %w", service, err)
-		}
-
-		// Load scan metadata
-		if err := gl.LoadScanMetadata(ctx, service, config.Region, 
-			result.Stats, result.Metadata); err != nil {
-			return fmt.Errorf("failed to load scan metadata for %s: %w", service, err)
+		fmt.Printf("  Failed Resources: %d\n", scanResp.Stats.FailedResources)
+		fmt.Printf("  Total Duration: %dms\n", scanResp.Stats.DurationMs)
+	}
+	
+	if *verbose && len(scanResp.Resources) > 0 {
+		fmt.Printf("\n📋 Sample Resources:\n")
+		for i, resource := range scanResp.Resources {
+			if i >= 5 { // Show first 5
+				fmt.Printf("  ... and %d more\n", len(scanResp.Resources)-5)
+				break
+			}
+			fmt.Printf("  %s/%s: %s (%s)\n", resource.Service, resource.Type, resource.Name, resource.Id)
 		}
 	}
-
-	// Create property graph (if supported)
-	if err := gl.CreatePropertyGraph(ctx); err != nil {
-		if config.Verbose {
-			fmt.Printf("Warning: Could not create property graph: %v\n", err)
-		}
-	}
-
-	if config.Verbose {
-		fmt.Printf("✓ Database loaded successfully\n")
-	}
-
-	return nil
 }
 
-func printSummary(results map[string]*pb.ScanResponse) {
-	fmt.Printf("\n=== Scan Summary ===\n")
+func runDiscover(args []string) {
+	fs := flag.NewFlagSet("discover", flag.ExitOnError)
+	
+	_ = fs.String("provider", "aws", "Cloud provider (aws)")
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	forceRefresh := fs.Bool("force-refresh", false, "Force refresh of service catalog")
+	
+	fs.Parse(args)
+	
+	if *verbose {
+		fmt.Printf("🔍 Discovering services for aws provider...\n")
+	}
+	
+	// Load AWS provider plugin
+	providerClient, cleanup, err := loadAWSProvider(*verbose)
+	if err != nil {
+		log.Fatalf("Failed to load AWS provider: %v", err)
+	}
+	defer cleanup()
+	
+	ctx := context.Background()
+	
+	// Initialize provider
+	initResp, err := providerClient.Initialize(ctx, &pb.InitializeRequest{
+		Config: map[string]string{
+			"region": "us-east-1",
+		},
+		CacheDir: filepath.Join(os.TempDir(), "corkscrew-cache"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize provider: %v", err)
+	}
+	
+	if !initResp.Success {
+		log.Fatalf("Provider initialization failed: %s", initResp.Error)
+	}
+	
+	// Discover services
+	discoverResp, err := providerClient.DiscoverServices(ctx, &pb.DiscoverServicesRequest{
+		ForceRefresh: *forceRefresh,
+	})
+	if err != nil {
+		log.Fatalf("Failed to discover services: %v", err)
+	}
+	
+	fmt.Printf("✅ Discovered %d services:\n", len(discoverResp.Services))
+	for _, service := range discoverResp.Services {
+		fmt.Printf("  🔧 %s - %s\n", service.Name, service.DisplayName)
+		if *verbose {
+			fmt.Printf("      Package: %s\n", service.PackageName)
+			fmt.Printf("      Client: %s\n", service.ClientType)
+		}
+	}
+	
+	fmt.Printf("\nSDK Version: %s\n", discoverResp.SdkVersion)
+}
 
-	totalResources := int32(0)
-	totalDuration := int64(0)
-	totalFailed := int32(0)
-
-	for service, result := range results {
-		fmt.Printf("%-10s: %d resources (%d failed) in %dms\n",
-			service,
-			result.Stats.TotalResources,
-			result.Stats.FailedResources,
-			result.Stats.DurationMs)
-
-		totalResources += result.Stats.TotalResources
-		totalFailed += result.Stats.FailedResources
-		totalDuration += result.Stats.DurationMs
-
-		// Show resource type breakdown
-		if len(result.Stats.ResourceCounts) > 0 {
-			for resourceType, count := range result.Stats.ResourceCounts {
-				fmt.Printf("  - %s: %d\n", resourceType, count)
+func runList(args []string) {
+	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	
+	_ = fs.String("provider", "aws", "Cloud provider (aws)")
+	service := fs.String("service", "", "Service to list resources for")
+	region := fs.String("region", "us-east-1", "AWS region")
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	
+	fs.Parse(args)
+	
+	if *service == "" {
+		log.Fatal("--service is required")
+	}
+	
+	if *verbose {
+		fmt.Printf("📋 Listing %s resources in region %s...\n", *service, *region)
+	}
+	
+	// Load AWS provider plugin
+	providerClient, cleanup, err := loadAWSProvider(*verbose)
+	if err != nil {
+		log.Fatalf("Failed to load AWS provider: %v", err)
+	}
+	defer cleanup()
+	
+	ctx := context.Background()
+	
+	// Initialize provider
+	initResp, err := providerClient.Initialize(ctx, &pb.InitializeRequest{
+		Config: map[string]string{
+			"region": *region,
+		},
+		CacheDir: filepath.Join(os.TempDir(), "corkscrew-cache"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize provider: %v", err)
+	}
+	
+	if !initResp.Success {
+		log.Fatalf("Provider initialization failed: %s", initResp.Error)
+	}
+	
+	// List resources
+	listResp, err := providerClient.ListResources(ctx, &pb.ListResourcesRequest{
+		Service: *service,
+		Region:  *region,
+	})
+	if err != nil {
+		log.Fatalf("Failed to list resources: %v", err)
+	}
+	
+	fmt.Printf("📋 Found %d %s resources:\n", len(listResp.Resources), *service)
+	for _, resource := range listResp.Resources {
+		fmt.Printf("  🔍 %s: %s (%s)\n", resource.Type, resource.Name, resource.Id)
+		if *verbose {
+			fmt.Printf("      Region: %s\n", resource.Region)
+			for key, value := range resource.BasicAttributes {
+				fmt.Printf("      %s: %s\n", key, value)
 			}
 		}
 	}
+}
 
-	fmt.Printf("\nTotal: %d resources (%d failed) in %dms across %d services\n",
-		totalResources, totalFailed, totalDuration, len(results))
+func runDescribe(args []string) {
+	fs := flag.NewFlagSet("describe", flag.ExitOnError)
+	
+	_ = fs.String("provider", "aws", "Cloud provider (aws)")
+	service := fs.String("service", "", "Service name")
+	resourceType := fs.String("type", "", "Resource type")
+	resourceId := fs.String("id", "", "Resource ID")
+	region := fs.String("region", "us-east-1", "AWS region")
+	includeTags := fs.Bool("tags", true, "Include tags")
+	includeRelationships := fs.Bool("relationships", false, "Include relationships")
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	
+	fs.Parse(args)
+	
+	if *service == "" || *resourceType == "" || *resourceId == "" {
+		log.Fatal("--service, --type, and --id are required")
+	}
+	
+	if *verbose {
+		fmt.Printf("🔍 Describing %s/%s: %s\n", *service, *resourceType, *resourceId)
+	}
+	
+	// Load AWS provider plugin
+	providerClient, cleanup, err := loadAWSProvider(*verbose)
+	if err != nil {
+		log.Fatalf("Failed to load AWS provider: %v", err)
+	}
+	defer cleanup()
+	
+	ctx := context.Background()
+	
+	// Initialize provider
+	initResp, err := providerClient.Initialize(ctx, &pb.InitializeRequest{
+		Config: map[string]string{
+			"region": *region,
+		},
+		CacheDir: filepath.Join(os.TempDir(), "corkscrew-cache"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize provider: %v", err)
+	}
+	
+	if !initResp.Success {
+		log.Fatalf("Provider initialization failed: %s", initResp.Error)
+	}
+	
+	// Describe resource
+	describeResp, err := providerClient.DescribeResource(ctx, &pb.DescribeResourceRequest{
+		ResourceRef: &pb.ResourceRef{
+			Id:      *resourceId,
+			Type:    *resourceType,
+			Service: *service,
+			Region:  *region,
+		},
+		IncludeTags:          *includeTags,
+		IncludeRelationships: *includeRelationships,
+	})
+	if err != nil {
+		log.Fatalf("Failed to describe resource: %v", err)
+	}
+	
+	resource := describeResp.Resource
+	fmt.Printf("📋 Resource Details:\n")
+	fmt.Printf("  ID: %s\n", resource.Id)
+	fmt.Printf("  Name: %s\n", resource.Name)
+	fmt.Printf("  Type: %s\n", resource.Type)
+	fmt.Printf("  Service: %s\n", resource.Service)
+	fmt.Printf("  Region: %s\n", resource.Region)
+	fmt.Printf("  ARN: %s\n", resource.Arn)
+	fmt.Printf("  Created: %s\n", resource.CreatedAt.AsTime().Format(time.RFC3339))
+	
+	if len(resource.Tags) > 0 {
+		fmt.Printf("  Tags:\n")
+		for key, value := range resource.Tags {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+	
+	if len(resource.Relationships) > 0 {
+		fmt.Printf("  Relationships:\n")
+		for _, rel := range resource.Relationships {
+			fmt.Printf("    %s -> %s (%s)\n", rel.RelationshipType, rel.TargetType, rel.TargetId)
+		}
+	}
+	
+	if *verbose {
+		fmt.Printf("  Raw Data: %s\n", resource.RawData)
+	}
+}
+
+func runInfo(args []string) {
+	fs := flag.NewFlagSet("info", flag.ExitOnError)
+	
+	_ = fs.String("provider", "aws", "Cloud provider (aws)")
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	
+	fs.Parse(args)
+	
+	// Load AWS provider plugin
+	providerClient, cleanup, err := loadAWSProvider(*verbose)
+	if err != nil {
+		log.Fatalf("Failed to load AWS provider: %v", err)
+	}
+	defer cleanup()
+	
+	ctx := context.Background()
+	
+	// Get provider info
+	infoResp, err := providerClient.GetProviderInfo(ctx, &pb.Empty{})
+	if err != nil {
+		log.Fatalf("Failed to get provider info: %v", err)
+	}
+	
+	fmt.Printf("🚀 Provider Information:\n")
+	fmt.Printf("  Name: %s\n", infoResp.Name)
+	fmt.Printf("  Version: %s\n", infoResp.Version)
+	fmt.Printf("  Description: %s\n", infoResp.Description)
+	
+	if len(infoResp.Capabilities) > 0 {
+		fmt.Printf("  Capabilities:\n")
+		for key, value := range infoResp.Capabilities {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+	
+	if len(infoResp.SupportedServices) > 0 {
+		fmt.Printf("  Supported Services: %d\n", len(infoResp.SupportedServices))
+		if *verbose {
+			for _, service := range infoResp.SupportedServices {
+				fmt.Printf("    - %s\n", service)
+			}
+		}
+	}
+}
+
+func loadAWSProvider(verbose bool) (*client.ProviderClient, func(), error) {
+	pluginPath := "./plugins/aws-provider/aws-provider"
+	
+	// Check if plugin exists
+	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("AWS provider plugin not found at %s", pluginPath)
+	}
+	
+	if verbose {
+		fmt.Printf("🔌 Loading AWS provider plugin: %s\n", pluginPath)
+	}
+	
+	// Create plugin client
+	pluginClient := plugin.NewClient(&plugin.ClientConfig{
+		HandshakeConfig: shared.HandshakeConfig,
+		Plugins:         shared.PluginMap,
+		Cmd:             exec.Command(pluginPath),
+		AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
+	})
+	
+	// Connect via RPC
+	rpcClient, err := pluginClient.Client()
+	if err != nil {
+		pluginClient.Kill()
+		return nil, nil, fmt.Errorf("failed to get RPC client: %w", err)
+	}
+	
+	// Request the plugin
+	raw, err := rpcClient.Dispense("provider")
+	if err != nil {
+		pluginClient.Kill()
+		return nil, nil, fmt.Errorf("failed to dispense plugin: %w", err)
+	}
+	
+	// Cast to our provider interface
+	providerInterface := raw.(shared.CloudProvider)
+	provider := client.NewProviderClient(providerInterface)
+	
+	cleanup := func() {
+		pluginClient.Kill()
+	}
+	
+	if verbose {
+		fmt.Printf("✅ AWS provider plugin loaded successfully\n")
+	}
+	
+	return provider, cleanup, nil
 }

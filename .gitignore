@@ -10,39 +10,69 @@
 
 # Test binary, built with `go test -c`
 *.test
-
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-
 # Dependency directories (remove the comment below to include it)
 # vendor/
-
 # Go workspace file
 go.work
 go.work.sum
-
 # env file
 .env
-
 # Built binaries
 cmd/corkscrew/corkscrew
 cmd/generator/generator
 cmd/plugin-test/plugin-test
 plugins/corkscrew-*
-
+plugins/aws-provider/aws-provider
 # Generated code and temporary files
 generated/
 cmd/generator/generated/
 *.tmp
 *.log
 .DS_Store
-
 # IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
-
 # Database files
 *.db
 *.duckdb
+# Added by Claude Task Master
+# Logs
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+# Task files
+tasks.json
+tasks/ 
+# Cleanup additions
+corkscrew
+resource-lister
+hierarchical_discovery_results.json
+iam-resources.json
+test-results/
+temp/
+.cursor/
+.env.example
+.roo/
+.roomodes
+.taskmasterconfig
+.windsurfrules
+github.com/
+examples/
