@@ -1,0 +1,98 @@
+# Corkscrew Plugin Configuration
+# This file defines which services to include when building provider plugins
+
+aws:
+  # Core compute and storage services
+  core:
+    - s3
+    - ec2
+    - lambda
+    - rds
+    - dynamodb
+  
+  # Networking and security
+  network:
+    - vpc
+    - route53
+    - iam
+  
+  # Container and orchestration
+  containers:
+    - ecs
+    - eks
+  
+  # Monitoring and logging
+  observability:
+    - cloudwatch
+    - logs
+  
+  # Data and analytics
+  data:
+    - glue
+    - kinesis
+    - redshift
+  
+  # Messaging
+  messaging:
+    - sns
+    - sqs
+  
+  # All services (use with --config plugins.yaml --section aws.all)
+  all:
+    - s3
+    - ec2
+    - lambda
+    - rds
+    - dynamodb
+    - iam
+    - cloudformation
+    - cloudwatch
+    - ecs
+    - eks
+    - elasticache
+    - glue
+    - kinesis
+    - logs
+    - redshift
+    - route53
+    - sns
+    - sqs
+    - vpc
+    - ebs
+    - efs
+
+azure:
+  # Core compute and storage
+  core:
+    - compute
+    - storage
+    - network
+  
+  # Data services
+  data:
+    - sql
+    - cosmosdb
+  
+  # Application services
+  apps:
+    - appservice
+    - functions
+    - aks
+  
+  # Security and monitoring
+  security:
+    - keyvault
+    - monitor
+  
+  # All services
+  all:
+    - compute
+    - storage
+    - network
+    - keyvault
+    - sql
+    - cosmosdb
+    - appservice
+    - functions
+    - aks
+    - monitor 

@@ -48,6 +48,7 @@ message InitializeResponse {
   bool success = 1;
   string error = 2;
   string version = 3;
+  map<string, string> metadata = 4;
 }
 
 message ProviderInfoResponse {
@@ -135,6 +136,7 @@ message ListResourcesResponse {
   repeated ResourceRef resources = 1;
   string next_token = 2;
   int32 total_count = 3;
+  map<string, string> metadata = 4;
 }
 
 message ResourceRef {

@@ -91,7 +91,7 @@ generate-proto:
 # =============================================================================
 
 .PHONY: build
-build: build-cli build-aws-plugin build-tools
+build: build-cli build-aws-plugin build-azure-plugin build-tools
 	@echo "🔨 Build complete!"
 
 .PHONY: build-cli
@@ -103,11 +103,22 @@ build-cli: generate-proto create-dirs
 .PHONY: build-aws-plugin
 build-aws-plugin: generate-proto create-dirs
 	@echo "🔨 Building AWS plugin..."
-	@if [ -d "plugins/aws" ]; then \
-		cd plugins/aws && go build -o ../../$(BIN_DIR)/corkscrew-aws .; \
+	@if [ -d "plugins/aws-provider" ]; then \
+		cd plugins/aws-provider && go build -o ../../$(BIN_DIR)/corkscrew-aws .; \
 		echo "✅ AWS plugin built: $(BIN_DIR)/corkscrew-aws"; \
 	else \
 		echo "⚠️  AWS plugin directory not found, skipping..."; \
+	fi
+
+.PHONY: build-azure-plugin
+build-azure-plugin: generate-proto create-dirs
+	@echo "🔨 Building Azure plugin..."
+	@if [ -d "plugins/azure-provider" ]; then \
+		cd plugins/azure-provider && go mod tidy && go build -o ../../plugins/build/corkscrew-azure .; \
+		chmod +x ../../plugins/build/corkscrew-azure; \
+		echo "✅ Azure plugin built: plugins/build/corkscrew-azure"; \
+	else \
+		echo "⚠️  Azure plugin directory not found, skipping..."; \
 	fi
 
 .PHONY: build-tools
@@ -117,6 +128,44 @@ build-tools: generate-proto create-dirs
 		cd $(CMD_DIR)/generator && go build -o ../../$(BIN_DIR)/generator .; \
 		echo "✅ Generator built: $(BIN_DIR)/generator"; \
 	fi
+
+# =============================================================================
+# INSTALLATION
+# =============================================================================
+
+.PHONY: install
+install: install-cli install-plugins
+	@echo "✅ Installation complete!"
+
+.PHONY: install-cli
+install-cli: build-cli
+	@echo "📦 Installing Corkscrew CLI..."
+	@mkdir -p $(HOME)/.corkscrew/bin
+	@cp $(BIN_DIR)/corkscrew $(HOME)/.corkscrew/bin/
+	@chmod +x $(HOME)/.corkscrew/bin/corkscrew
+	@echo "✅ CLI installed to $(HOME)/.corkscrew/bin/corkscrew"
+	@echo "💡 Add $(HOME)/.corkscrew/bin to your PATH to use 'corkscrew' from anywhere"
+
+.PHONY: install-plugins
+install-plugins: build-aws-plugin build-azure-plugin
+	@echo "📦 Installing plugins..."
+	@mkdir -p $(HOME)/.corkscrew/bin/plugin
+	@if [ -f "$(BIN_DIR)/corkscrew-aws" ]; then \
+		cp $(BIN_DIR)/corkscrew-aws $(HOME)/.corkscrew/bin/plugin/; \
+		chmod +x $(HOME)/.corkscrew/bin/plugin/corkscrew-aws; \
+		echo "✅ AWS plugin installed"; \
+	fi
+	@if [ -f "plugins/build/corkscrew-azure" ]; then \
+		cp plugins/build/corkscrew-azure $(HOME)/.corkscrew/bin/plugin/; \
+		chmod +x $(HOME)/.corkscrew/bin/plugin/corkscrew-azure; \
+		echo "✅ Azure plugin installed"; \
+	fi
+
+.PHONY: uninstall
+uninstall:
+	@echo "🗑️  Uninstalling Corkscrew..."
+	@rm -rf $(HOME)/.corkscrew
+	@echo "✅ Corkscrew uninstalled"
 
 # =============================================================================
 # TESTING INFRASTRUCTURE
@@ -320,6 +369,56 @@ build-dynamic-plugins: generate-aws-services
 	@$(BIN_DIR)/corkscrew generate-plugins --services s3,ec2,lambda --output-dir $(PLUGIN_DIR) --verbose
 
 # =============================================================================
+# PLUGIN MANAGEMENT
+# =============================================================================
+
+.PHONY: plugin-install-aws
+plugin-install-aws:
+	@echo "🔌 Installing AWS provider plugin..."
+	@./build/bin/corkscrew plugin install aws --all --verbose
+
+.PHONY: plugin-install-azure
+plugin-install-azure:
+	@echo "🔌 Installing Azure provider plugin..."
+	@./build/bin/corkscrew plugin install azure --all --verbose
+
+.PHONY: plugin-install-aws-core
+plugin-install-aws-core:
+	@echo "🔌 Installing AWS provider plugin (core services)..."
+	@./build/bin/corkscrew plugin install aws --services s3,ec2,lambda,rds,dynamodb --verbose
+
+.PHONY: plugin-install-azure-core
+plugin-install-azure-core:
+	@echo "🔌 Installing Azure provider plugin (core services)..."
+	@./build/bin/corkscrew plugin install azure --services compute,storage,network --verbose
+
+.PHONY: plugin-list
+plugin-list: build-cli
+	@echo "🔌 Listing installed plugins..."
+	@./build/bin/corkscrew plugin list --verbose
+
+.PHONY: plugin-status
+plugin-status: build-cli
+	@echo "🔌 Checking plugin status..."
+	@./build/bin/corkscrew plugin status
+
+.PHONY: plugin-remove-aws
+plugin-remove-aws: build-cli
+	@echo "🗑️  Removing AWS provider plugin..."
+	@./build/bin/corkscrew plugin remove aws --verbose
+
+.PHONY: plugin-remove-azure
+plugin-remove-azure: build-cli
+	@echo "🗑️  Removing Azure provider plugin..."
+	@./build/bin/corkscrew plugin remove azure --verbose
+
+.PHONY: plugin-clean
+plugin-clean:
+	@echo "🧹 Cleaning all plugins..."
+	@rm -f ./build/bin/corkscrew-*
+	@rm -f ./plugins/build/corkscrew-*
+
+# =============================================================================
 # MONITORING AND STATUS
 # =============================================================================
 
@@ -371,15 +470,26 @@ help:
 	@echo "🚀 Quick Start:"
 	@echo "  make setup              - Set up development environment"
 	@echo "  make build              - Build all components"
-	@echo "  make test               - Run all tests"
-	@echo "  make test-dry-run       - Safe testing without AWS calls"
-	@echo "  make scan-dry-s3        - Quick S3 dry-run scan"
+	@echo "  make plugin-install-aws-core - Install AWS plugin (core services)"
+	@echo "  make test-dry-run       - Safe testing without cloud calls"
 	@echo ""
 	@echo "🔨 Building:"
 	@echo "  make build              - Build everything"
 	@echo "  make build-cli          - Build CLI only"
 	@echo "  make build-aws-plugin   - Build AWS plugin"
+	@echo "  make build-azure-plugin - Build Azure plugin"
 	@echo "  make build-tools        - Build development tools"
+	@echo ""
+	@echo "🔌 Plugin Management:"
+	@echo "  make plugin-install-aws      - Install AWS plugin (all services)"
+	@echo "  make plugin-install-azure    - Install Azure plugin (all services)"
+	@echo "  make plugin-install-aws-core - Install AWS plugin (core services)"
+	@echo "  make plugin-install-azure-core - Install Azure plugin (core services)"
+	@echo "  make plugin-list            - List installed plugins"
+	@echo "  make plugin-status          - Check plugin status"
+	@echo "  make plugin-remove-aws      - Remove AWS plugin"
+	@echo "  make plugin-remove-azure    - Remove Azure plugin"
+	@echo "  make plugin-clean           - Clean all plugins"
 	@echo ""
 	@echo "🧪 Testing:"
 	@echo "  make test               - Run all tests"
