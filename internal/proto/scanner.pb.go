@@ -124,6 +124,7 @@ type InitializeResponse struct {
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -177,6 +178,13 @@ func (x *InitializeResponse) GetVersion() string {
 		return x.Version
 	}
 	return ""
+}
+
+func (x *InitializeResponse) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
 }
 
 type ProviderInfoResponse struct {
@@ -931,6 +939,7 @@ type ListResourcesResponse struct {
 	Resources     []*ResourceRef         `protobuf:"bytes,1,rep,name=resources,proto3" json:"resources,omitempty"`
 	NextToken     string                 `protobuf:"bytes,2,opt,name=next_token,json=nextToken,proto3" json:"next_token,omitempty"`
 	TotalCount    int32                  `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -984,6 +993,13 @@ func (x *ListResourcesResponse) GetTotalCount() int32 {
 		return x.TotalCount
 	}
 	return 0
+}
+
+func (x *ListResourcesResponse) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
 }
 
 type ResourceRef struct {
@@ -2146,11 +2162,15 @@ const file_scanner_proto_rawDesc = "" +
 	"\tcache_dir\x18\x03 \x01(\tR\bcacheDir\x1a9\n" +
 	"\vConfigEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"^\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe4\x01\n" +
 	"\x12InitializeResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"\xad\x02\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12G\n" +
+	"\bmetadata\x18\x04 \x03(\v2+.corkscrew.InitializeResponse.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xad\x02\n" +
 	"\x14ProviderInfoResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12-\n" +
@@ -2222,13 +2242,17 @@ const file_scanner_proto_rawDesc = "" +
 	"maxResults\x1a:\n" +
 	"\fFiltersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8d\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x96\x02\n" +
 	"\x15ListResourcesResponse\x124\n" +
 	"\tresources\x18\x01 \x03(\v2\x16.corkscrew.ResourceRefR\tresources\x12\x1d\n" +
 	"\n" +
 	"next_token\x18\x02 \x01(\tR\tnextToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\x93\x02\n" +
+	"totalCount\x12J\n" +
+	"\bmetadata\x18\x04 \x03(\v2..corkscrew.ListResourcesResponse.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x93\x02\n" +
 	"\vResourceRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -2398,7 +2422,7 @@ func file_scanner_proto_rawDescGZIP() []byte {
 	return file_scanner_proto_rawDescData
 }
 
-var file_scanner_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_scanner_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_scanner_proto_goTypes = []any{
 	(*Empty)(nil),                    // 0: corkscrew.Empty
 	(*InitializeRequest)(nil),        // 1: corkscrew.InitializeRequest
@@ -2430,85 +2454,89 @@ var file_scanner_proto_goTypes = []any{
 	(*ScanResponse)(nil),             // 27: corkscrew.ScanResponse
 	(*ServiceInfoResponse)(nil),      // 28: corkscrew.ServiceInfoResponse
 	nil,                              // 29: corkscrew.InitializeRequest.ConfigEntry
-	nil,                              // 30: corkscrew.ProviderInfoResponse.CapabilitiesEntry
-	nil,                              // 31: corkscrew.ListResourcesRequest.FiltersEntry
-	nil,                              // 32: corkscrew.ResourceRef.BasicAttributesEntry
-	nil,                              // 33: corkscrew.Resource.TagsEntry
-	nil,                              // 34: corkscrew.Relationship.PropertiesEntry
-	nil,                              // 35: corkscrew.Schema.MetadataEntry
-	nil,                              // 36: corkscrew.BatchScanRequest.FiltersEntry
-	nil,                              // 37: corkscrew.StreamScanRequest.FiltersEntry
-	nil,                              // 38: corkscrew.ScanStats.ResourceCountsEntry
-	nil,                              // 39: corkscrew.ScanStats.ServiceCountsEntry
-	nil,                              // 40: corkscrew.ScanRequest.OptionsEntry
-	nil,                              // 41: corkscrew.ScanResponse.MetadataEntry
-	nil,                              // 42: corkscrew.ServiceInfoResponse.CapabilitiesEntry
-	(*timestamppb.Timestamp)(nil),    // 43: google.protobuf.Timestamp
+	nil,                              // 30: corkscrew.InitializeResponse.MetadataEntry
+	nil,                              // 31: corkscrew.ProviderInfoResponse.CapabilitiesEntry
+	nil,                              // 32: corkscrew.ListResourcesRequest.FiltersEntry
+	nil,                              // 33: corkscrew.ListResourcesResponse.MetadataEntry
+	nil,                              // 34: corkscrew.ResourceRef.BasicAttributesEntry
+	nil,                              // 35: corkscrew.Resource.TagsEntry
+	nil,                              // 36: corkscrew.Relationship.PropertiesEntry
+	nil,                              // 37: corkscrew.Schema.MetadataEntry
+	nil,                              // 38: corkscrew.BatchScanRequest.FiltersEntry
+	nil,                              // 39: corkscrew.StreamScanRequest.FiltersEntry
+	nil,                              // 40: corkscrew.ScanStats.ResourceCountsEntry
+	nil,                              // 41: corkscrew.ScanStats.ServiceCountsEntry
+	nil,                              // 42: corkscrew.ScanRequest.OptionsEntry
+	nil,                              // 43: corkscrew.ScanResponse.MetadataEntry
+	nil,                              // 44: corkscrew.ServiceInfoResponse.CapabilitiesEntry
+	(*timestamppb.Timestamp)(nil),    // 45: google.protobuf.Timestamp
 }
 var file_scanner_proto_depIdxs = []int32{
 	29, // 0: corkscrew.InitializeRequest.config:type_name -> corkscrew.InitializeRequest.ConfigEntry
-	30, // 1: corkscrew.ProviderInfoResponse.capabilities:type_name -> corkscrew.ProviderInfoResponse.CapabilitiesEntry
-	6,  // 2: corkscrew.DiscoverServicesResponse.services:type_name -> corkscrew.ServiceInfo
-	43, // 3: corkscrew.DiscoverServicesResponse.discovered_at:type_name -> google.protobuf.Timestamp
-	7,  // 4: corkscrew.ServiceInfo.resource_types:type_name -> corkscrew.ResourceType
-	8,  // 5: corkscrew.ResourceType.relationships:type_name -> corkscrew.ResourceRelationship
-	11, // 6: corkscrew.GenerateScannersResponse.scanners:type_name -> corkscrew.GeneratedScanner
-	43, // 7: corkscrew.GeneratedScanner.generated_at:type_name -> google.protobuf.Timestamp
-	31, // 8: corkscrew.ListResourcesRequest.filters:type_name -> corkscrew.ListResourcesRequest.FiltersEntry
-	14, // 9: corkscrew.ListResourcesResponse.resources:type_name -> corkscrew.ResourceRef
-	32, // 10: corkscrew.ResourceRef.basic_attributes:type_name -> corkscrew.ResourceRef.BasicAttributesEntry
-	14, // 11: corkscrew.DescribeResourceRequest.resource_ref:type_name -> corkscrew.ResourceRef
-	17, // 12: corkscrew.DescribeResourceResponse.resource:type_name -> corkscrew.Resource
-	33, // 13: corkscrew.Resource.tags:type_name -> corkscrew.Resource.TagsEntry
-	43, // 14: corkscrew.Resource.created_at:type_name -> google.protobuf.Timestamp
-	43, // 15: corkscrew.Resource.modified_at:type_name -> google.protobuf.Timestamp
-	43, // 16: corkscrew.Resource.discovered_at:type_name -> google.protobuf.Timestamp
-	18, // 17: corkscrew.Resource.relationships:type_name -> corkscrew.Relationship
-	34, // 18: corkscrew.Relationship.properties:type_name -> corkscrew.Relationship.PropertiesEntry
-	21, // 19: corkscrew.SchemaResponse.schemas:type_name -> corkscrew.Schema
-	35, // 20: corkscrew.Schema.metadata:type_name -> corkscrew.Schema.MetadataEntry
-	36, // 21: corkscrew.BatchScanRequest.filters:type_name -> corkscrew.BatchScanRequest.FiltersEntry
-	17, // 22: corkscrew.BatchScanResponse.resources:type_name -> corkscrew.Resource
-	25, // 23: corkscrew.BatchScanResponse.stats:type_name -> corkscrew.ScanStats
-	37, // 24: corkscrew.StreamScanRequest.filters:type_name -> corkscrew.StreamScanRequest.FiltersEntry
-	38, // 25: corkscrew.ScanStats.resource_counts:type_name -> corkscrew.ScanStats.ResourceCountsEntry
-	39, // 26: corkscrew.ScanStats.service_counts:type_name -> corkscrew.ScanStats.ServiceCountsEntry
-	40, // 27: corkscrew.ScanRequest.options:type_name -> corkscrew.ScanRequest.OptionsEntry
-	17, // 28: corkscrew.ScanResponse.resources:type_name -> corkscrew.Resource
-	41, // 29: corkscrew.ScanResponse.metadata:type_name -> corkscrew.ScanResponse.MetadataEntry
-	25, // 30: corkscrew.ScanResponse.stats:type_name -> corkscrew.ScanStats
-	42, // 31: corkscrew.ServiceInfoResponse.capabilities:type_name -> corkscrew.ServiceInfoResponse.CapabilitiesEntry
-	1,  // 32: corkscrew.CloudProvider.Initialize:input_type -> corkscrew.InitializeRequest
-	0,  // 33: corkscrew.CloudProvider.GetProviderInfo:input_type -> corkscrew.Empty
-	4,  // 34: corkscrew.CloudProvider.DiscoverServices:input_type -> corkscrew.DiscoverServicesRequest
-	9,  // 35: corkscrew.CloudProvider.GenerateServiceScanners:input_type -> corkscrew.GenerateScannersRequest
-	12, // 36: corkscrew.CloudProvider.ListResources:input_type -> corkscrew.ListResourcesRequest
-	15, // 37: corkscrew.CloudProvider.DescribeResource:input_type -> corkscrew.DescribeResourceRequest
-	19, // 38: corkscrew.CloudProvider.GetSchemas:input_type -> corkscrew.GetSchemasRequest
-	22, // 39: corkscrew.CloudProvider.BatchScan:input_type -> corkscrew.BatchScanRequest
-	24, // 40: corkscrew.CloudProvider.StreamScan:input_type -> corkscrew.StreamScanRequest
-	26, // 41: corkscrew.Scanner.Scan:input_type -> corkscrew.ScanRequest
-	0,  // 42: corkscrew.Scanner.GetSchemas:input_type -> corkscrew.Empty
-	0,  // 43: corkscrew.Scanner.GetServiceInfo:input_type -> corkscrew.Empty
-	26, // 44: corkscrew.Scanner.StreamScan:input_type -> corkscrew.ScanRequest
-	2,  // 45: corkscrew.CloudProvider.Initialize:output_type -> corkscrew.InitializeResponse
-	3,  // 46: corkscrew.CloudProvider.GetProviderInfo:output_type -> corkscrew.ProviderInfoResponse
-	5,  // 47: corkscrew.CloudProvider.DiscoverServices:output_type -> corkscrew.DiscoverServicesResponse
-	10, // 48: corkscrew.CloudProvider.GenerateServiceScanners:output_type -> corkscrew.GenerateScannersResponse
-	13, // 49: corkscrew.CloudProvider.ListResources:output_type -> corkscrew.ListResourcesResponse
-	16, // 50: corkscrew.CloudProvider.DescribeResource:output_type -> corkscrew.DescribeResourceResponse
-	20, // 51: corkscrew.CloudProvider.GetSchemas:output_type -> corkscrew.SchemaResponse
-	23, // 52: corkscrew.CloudProvider.BatchScan:output_type -> corkscrew.BatchScanResponse
-	17, // 53: corkscrew.CloudProvider.StreamScan:output_type -> corkscrew.Resource
-	27, // 54: corkscrew.Scanner.Scan:output_type -> corkscrew.ScanResponse
-	20, // 55: corkscrew.Scanner.GetSchemas:output_type -> corkscrew.SchemaResponse
-	28, // 56: corkscrew.Scanner.GetServiceInfo:output_type -> corkscrew.ServiceInfoResponse
-	17, // 57: corkscrew.Scanner.StreamScan:output_type -> corkscrew.Resource
-	45, // [45:58] is the sub-list for method output_type
-	32, // [32:45] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	30, // 1: corkscrew.InitializeResponse.metadata:type_name -> corkscrew.InitializeResponse.MetadataEntry
+	31, // 2: corkscrew.ProviderInfoResponse.capabilities:type_name -> corkscrew.ProviderInfoResponse.CapabilitiesEntry
+	6,  // 3: corkscrew.DiscoverServicesResponse.services:type_name -> corkscrew.ServiceInfo
+	45, // 4: corkscrew.DiscoverServicesResponse.discovered_at:type_name -> google.protobuf.Timestamp
+	7,  // 5: corkscrew.ServiceInfo.resource_types:type_name -> corkscrew.ResourceType
+	8,  // 6: corkscrew.ResourceType.relationships:type_name -> corkscrew.ResourceRelationship
+	11, // 7: corkscrew.GenerateScannersResponse.scanners:type_name -> corkscrew.GeneratedScanner
+	45, // 8: corkscrew.GeneratedScanner.generated_at:type_name -> google.protobuf.Timestamp
+	32, // 9: corkscrew.ListResourcesRequest.filters:type_name -> corkscrew.ListResourcesRequest.FiltersEntry
+	14, // 10: corkscrew.ListResourcesResponse.resources:type_name -> corkscrew.ResourceRef
+	33, // 11: corkscrew.ListResourcesResponse.metadata:type_name -> corkscrew.ListResourcesResponse.MetadataEntry
+	34, // 12: corkscrew.ResourceRef.basic_attributes:type_name -> corkscrew.ResourceRef.BasicAttributesEntry
+	14, // 13: corkscrew.DescribeResourceRequest.resource_ref:type_name -> corkscrew.ResourceRef
+	17, // 14: corkscrew.DescribeResourceResponse.resource:type_name -> corkscrew.Resource
+	35, // 15: corkscrew.Resource.tags:type_name -> corkscrew.Resource.TagsEntry
+	45, // 16: corkscrew.Resource.created_at:type_name -> google.protobuf.Timestamp
+	45, // 17: corkscrew.Resource.modified_at:type_name -> google.protobuf.Timestamp
+	45, // 18: corkscrew.Resource.discovered_at:type_name -> google.protobuf.Timestamp
+	18, // 19: corkscrew.Resource.relationships:type_name -> corkscrew.Relationship
+	36, // 20: corkscrew.Relationship.properties:type_name -> corkscrew.Relationship.PropertiesEntry
+	21, // 21: corkscrew.SchemaResponse.schemas:type_name -> corkscrew.Schema
+	37, // 22: corkscrew.Schema.metadata:type_name -> corkscrew.Schema.MetadataEntry
+	38, // 23: corkscrew.BatchScanRequest.filters:type_name -> corkscrew.BatchScanRequest.FiltersEntry
+	17, // 24: corkscrew.BatchScanResponse.resources:type_name -> corkscrew.Resource
+	25, // 25: corkscrew.BatchScanResponse.stats:type_name -> corkscrew.ScanStats
+	39, // 26: corkscrew.StreamScanRequest.filters:type_name -> corkscrew.StreamScanRequest.FiltersEntry
+	40, // 27: corkscrew.ScanStats.resource_counts:type_name -> corkscrew.ScanStats.ResourceCountsEntry
+	41, // 28: corkscrew.ScanStats.service_counts:type_name -> corkscrew.ScanStats.ServiceCountsEntry
+	42, // 29: corkscrew.ScanRequest.options:type_name -> corkscrew.ScanRequest.OptionsEntry
+	17, // 30: corkscrew.ScanResponse.resources:type_name -> corkscrew.Resource
+	43, // 31: corkscrew.ScanResponse.metadata:type_name -> corkscrew.ScanResponse.MetadataEntry
+	25, // 32: corkscrew.ScanResponse.stats:type_name -> corkscrew.ScanStats
+	44, // 33: corkscrew.ServiceInfoResponse.capabilities:type_name -> corkscrew.ServiceInfoResponse.CapabilitiesEntry
+	1,  // 34: corkscrew.CloudProvider.Initialize:input_type -> corkscrew.InitializeRequest
+	0,  // 35: corkscrew.CloudProvider.GetProviderInfo:input_type -> corkscrew.Empty
+	4,  // 36: corkscrew.CloudProvider.DiscoverServices:input_type -> corkscrew.DiscoverServicesRequest
+	9,  // 37: corkscrew.CloudProvider.GenerateServiceScanners:input_type -> corkscrew.GenerateScannersRequest
+	12, // 38: corkscrew.CloudProvider.ListResources:input_type -> corkscrew.ListResourcesRequest
+	15, // 39: corkscrew.CloudProvider.DescribeResource:input_type -> corkscrew.DescribeResourceRequest
+	19, // 40: corkscrew.CloudProvider.GetSchemas:input_type -> corkscrew.GetSchemasRequest
+	22, // 41: corkscrew.CloudProvider.BatchScan:input_type -> corkscrew.BatchScanRequest
+	24, // 42: corkscrew.CloudProvider.StreamScan:input_type -> corkscrew.StreamScanRequest
+	26, // 43: corkscrew.Scanner.Scan:input_type -> corkscrew.ScanRequest
+	0,  // 44: corkscrew.Scanner.GetSchemas:input_type -> corkscrew.Empty
+	0,  // 45: corkscrew.Scanner.GetServiceInfo:input_type -> corkscrew.Empty
+	26, // 46: corkscrew.Scanner.StreamScan:input_type -> corkscrew.ScanRequest
+	2,  // 47: corkscrew.CloudProvider.Initialize:output_type -> corkscrew.InitializeResponse
+	3,  // 48: corkscrew.CloudProvider.GetProviderInfo:output_type -> corkscrew.ProviderInfoResponse
+	5,  // 49: corkscrew.CloudProvider.DiscoverServices:output_type -> corkscrew.DiscoverServicesResponse
+	10, // 50: corkscrew.CloudProvider.GenerateServiceScanners:output_type -> corkscrew.GenerateScannersResponse
+	13, // 51: corkscrew.CloudProvider.ListResources:output_type -> corkscrew.ListResourcesResponse
+	16, // 52: corkscrew.CloudProvider.DescribeResource:output_type -> corkscrew.DescribeResourceResponse
+	20, // 53: corkscrew.CloudProvider.GetSchemas:output_type -> corkscrew.SchemaResponse
+	23, // 54: corkscrew.CloudProvider.BatchScan:output_type -> corkscrew.BatchScanResponse
+	17, // 55: corkscrew.CloudProvider.StreamScan:output_type -> corkscrew.Resource
+	27, // 56: corkscrew.Scanner.Scan:output_type -> corkscrew.ScanResponse
+	20, // 57: corkscrew.Scanner.GetSchemas:output_type -> corkscrew.SchemaResponse
+	28, // 58: corkscrew.Scanner.GetServiceInfo:output_type -> corkscrew.ServiceInfoResponse
+	17, // 59: corkscrew.Scanner.StreamScan:output_type -> corkscrew.Resource
+	47, // [47:60] is the sub-list for method output_type
+	34, // [34:47] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_scanner_proto_init() }
@@ -2522,7 +2550,7 @@ func file_scanner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scanner_proto_rawDesc), len(file_scanner_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -64,3 +64,5 @@ require (
 )
 
 replace github.com/jlgore/corkscrew/plugins/aws-provider => ./plugins/aws-provider
+
+replace github.com/jlgore/corkscrew/plugins/azure-provider => ./plugins/azure-provider

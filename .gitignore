@@ -76,3 +76,10 @@ temp/
 .windsurfrules
 github.com/
 examples/
+
+# Plugin binaries
+plugins/aws-provider/aws-provider-v2
+plugins/*/aws-provider-v2
+plugins/*/*-v2
+# Large binaries (over 50MB)
+*.bin
