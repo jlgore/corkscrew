@@ -56,3 +56,19 @@ func (c *ProviderClient) GetSchemas(ctx context.Context, req *pb.GetSchemasReque
 func (c *ProviderClient) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
 	return c.client.GenerateServiceScanners(ctx, req)
 }
+
+// Orchestrator methods
+// ConfigureDiscovery configures discovery sources for the provider
+func (c *ProviderClient) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
+	return c.client.ConfigureDiscovery(ctx, req)
+}
+
+// AnalyzeDiscoveredData analyzes raw discovery data using provider-specific logic
+func (c *ProviderClient) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
+	return c.client.AnalyzeDiscoveredData(ctx, req)
+}
+
+// GenerateFromAnalysis generates code from analysis results
+func (c *ProviderClient) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
+	return c.client.GenerateFromAnalysis(ctx, req)
+}

@@ -2150,6 +2150,1147 @@ func (x *ServiceInfoResponse) GetCapabilities() map[string]string {
 	return nil
 }
 
+// Orchestrator integration messages
+type ConfigureDiscoveryRequest struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Sources       []*DiscoverySourceConfig `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
+	Options       map[string]string        `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureDiscoveryRequest) Reset() {
+	*x = ConfigureDiscoveryRequest{}
+	mi := &file_scanner_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureDiscoveryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureDiscoveryRequest) ProtoMessage() {}
+
+func (x *ConfigureDiscoveryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureDiscoveryRequest.ProtoReflect.Descriptor instead.
+func (*ConfigureDiscoveryRequest) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ConfigureDiscoveryRequest) GetSources() []*DiscoverySourceConfig {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+func (x *ConfigureDiscoveryRequest) GetOptions() map[string]string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+type ConfigureDiscoveryResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Success           bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error             string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	ConfiguredSources []string               `protobuf:"bytes,3,rep,name=configured_sources,json=configuredSources,proto3" json:"configured_sources,omitempty"`
+	Metadata          map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ConfigureDiscoveryResponse) Reset() {
+	*x = ConfigureDiscoveryResponse{}
+	mi := &file_scanner_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureDiscoveryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureDiscoveryResponse) ProtoMessage() {}
+
+func (x *ConfigureDiscoveryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureDiscoveryResponse.ProtoReflect.Descriptor instead.
+func (*ConfigureDiscoveryResponse) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ConfigureDiscoveryResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ConfigureDiscoveryResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *ConfigureDiscoveryResponse) GetConfiguredSources() []string {
+	if x != nil {
+		return x.ConfiguredSources
+	}
+	return nil
+}
+
+func (x *ConfigureDiscoveryResponse) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type DiscoverySourceConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceType    string                 `protobuf:"bytes,1,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // "github" or "api"
+	Config        map[string]string      `protobuf:"bytes,2,rep,name=config,proto3" json:"config,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscoverySourceConfig) Reset() {
+	*x = DiscoverySourceConfig{}
+	mi := &file_scanner_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverySourceConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverySourceConfig) ProtoMessage() {}
+
+func (x *DiscoverySourceConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverySourceConfig.ProtoReflect.Descriptor instead.
+func (*DiscoverySourceConfig) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *DiscoverySourceConfig) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *DiscoverySourceConfig) GetConfig() map[string]string {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+type AnalyzeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceType    string                 `protobuf:"bytes,1,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
+	RawData       []byte                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // Raw discovery data
+	Options       map[string]string      `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnalyzeRequest) Reset() {
+	*x = AnalyzeRequest{}
+	mi := &file_scanner_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnalyzeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnalyzeRequest) ProtoMessage() {}
+
+func (x *AnalyzeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnalyzeRequest.ProtoReflect.Descriptor instead.
+func (*AnalyzeRequest) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *AnalyzeRequest) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *AnalyzeRequest) GetRawData() []byte {
+	if x != nil {
+		return x.RawData
+	}
+	return nil
+}
+
+func (x *AnalyzeRequest) GetOptions() map[string]string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+type AnalysisResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Services      []*ServiceAnalysis     `protobuf:"bytes,1,rep,name=services,proto3" json:"services,omitempty"`
+	Resources     []*ResourceAnalysis    `protobuf:"bytes,2,rep,name=resources,proto3" json:"resources,omitempty"`
+	Operations    []*OperationAnalysis   `protobuf:"bytes,3,rep,name=operations,proto3" json:"operations,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Warnings      []string               `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	Success       bool                   `protobuf:"varint,6,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnalysisResponse) Reset() {
+	*x = AnalysisResponse{}
+	mi := &file_scanner_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnalysisResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnalysisResponse) ProtoMessage() {}
+
+func (x *AnalysisResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnalysisResponse.ProtoReflect.Descriptor instead.
+func (*AnalysisResponse) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *AnalysisResponse) GetServices() []*ServiceAnalysis {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *AnalysisResponse) GetResources() []*ResourceAnalysis {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *AnalysisResponse) GetOperations() []*OperationAnalysis {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *AnalysisResponse) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *AnalysisResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+func (x *AnalysisResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *AnalysisResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type ServiceAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	PackageName   string                 `protobuf:"bytes,5,opt,name=package_name,json=packageName,proto3" json:"package_name,omitempty"`
+	Operations    []string               `protobuf:"bytes,6,rep,name=operations,proto3" json:"operations,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,7,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceAnalysis) Reset() {
+	*x = ServiceAnalysis{}
+	mi := &file_scanner_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceAnalysis) ProtoMessage() {}
+
+func (x *ServiceAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceAnalysis.ProtoReflect.Descriptor instead.
+func (*ServiceAnalysis) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ServiceAnalysis) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ServiceAnalysis) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ServiceAnalysis) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ServiceAnalysis) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ServiceAnalysis) GetPackageName() string {
+	if x != nil {
+		return x.PackageName
+	}
+	return ""
+}
+
+func (x *ServiceAnalysis) GetOperations() []string {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *ServiceAnalysis) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type ResourceAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Service       string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Identifiers   []string               `protobuf:"bytes,5,rep,name=identifiers,proto3" json:"identifiers,omitempty"`
+	Attributes    []*AttributeAnalysis   `protobuf:"bytes,6,rep,name=attributes,proto3" json:"attributes,omitempty"`
+	Operations    []string               `protobuf:"bytes,7,rep,name=operations,proto3" json:"operations,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceAnalysis) Reset() {
+	*x = ResourceAnalysis{}
+	mi := &file_scanner_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceAnalysis) ProtoMessage() {}
+
+func (x *ResourceAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceAnalysis.ProtoReflect.Descriptor instead.
+func (*ResourceAnalysis) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ResourceAnalysis) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ResourceAnalysis) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *ResourceAnalysis) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ResourceAnalysis) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ResourceAnalysis) GetIdentifiers() []string {
+	if x != nil {
+		return x.Identifiers
+	}
+	return nil
+}
+
+func (x *ResourceAnalysis) GetAttributes() []*AttributeAnalysis {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+func (x *ResourceAnalysis) GetOperations() []string {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *ResourceAnalysis) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type AttributeAnalysis struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type           string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Required       bool                   `protobuf:"varint,3,opt,name=required,proto3" json:"required,omitempty"`
+	Description    string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	PossibleValues []string               `protobuf:"bytes,5,rep,name=possible_values,json=possibleValues,proto3" json:"possible_values,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AttributeAnalysis) Reset() {
+	*x = AttributeAnalysis{}
+	mi := &file_scanner_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttributeAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttributeAnalysis) ProtoMessage() {}
+
+func (x *AttributeAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttributeAnalysis.ProtoReflect.Descriptor instead.
+func (*AttributeAnalysis) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *AttributeAnalysis) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AttributeAnalysis) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *AttributeAnalysis) GetRequired() bool {
+	if x != nil {
+		return x.Required
+	}
+	return false
+}
+
+func (x *AttributeAnalysis) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *AttributeAnalysis) GetPossibleValues() []string {
+	if x != nil {
+		return x.PossibleValues
+	}
+	return nil
+}
+
+type OperationAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Service       string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	ResourceType  string                 `protobuf:"bytes,3,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	OperationType string                 `protobuf:"bytes,4,opt,name=operation_type,json=operationType,proto3" json:"operation_type,omitempty"` // List, Get, Create, Update, Delete, Describe
+	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	Parameters    []*ParameterAnalysis   `protobuf:"bytes,6,rep,name=parameters,proto3" json:"parameters,omitempty"`
+	Response      *ResponseAnalysis      `protobuf:"bytes,7,opt,name=response,proto3" json:"response,omitempty"`
+	Paginated     bool                   `protobuf:"varint,8,opt,name=paginated,proto3" json:"paginated,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,9,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationAnalysis) Reset() {
+	*x = OperationAnalysis{}
+	mi := &file_scanner_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationAnalysis) ProtoMessage() {}
+
+func (x *OperationAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationAnalysis.ProtoReflect.Descriptor instead.
+func (*OperationAnalysis) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *OperationAnalysis) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *OperationAnalysis) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *OperationAnalysis) GetResourceType() string {
+	if x != nil {
+		return x.ResourceType
+	}
+	return ""
+}
+
+func (x *OperationAnalysis) GetOperationType() string {
+	if x != nil {
+		return x.OperationType
+	}
+	return ""
+}
+
+func (x *OperationAnalysis) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *OperationAnalysis) GetParameters() []*ParameterAnalysis {
+	if x != nil {
+		return x.Parameters
+	}
+	return nil
+}
+
+func (x *OperationAnalysis) GetResponse() *ResponseAnalysis {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+func (x *OperationAnalysis) GetPaginated() bool {
+	if x != nil {
+		return x.Paginated
+	}
+	return false
+}
+
+func (x *OperationAnalysis) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type ParameterAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Required      bool                   `protobuf:"varint,3,opt,name=required,proto3" json:"required,omitempty"`
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	DefaultValue  string                 `protobuf:"bytes,5,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ParameterAnalysis) Reset() {
+	*x = ParameterAnalysis{}
+	mi := &file_scanner_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ParameterAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ParameterAnalysis) ProtoMessage() {}
+
+func (x *ParameterAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ParameterAnalysis.ProtoReflect.Descriptor instead.
+func (*ParameterAnalysis) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ParameterAnalysis) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ParameterAnalysis) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ParameterAnalysis) GetRequired() bool {
+	if x != nil {
+		return x.Required
+	}
+	return false
+}
+
+func (x *ParameterAnalysis) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ParameterAnalysis) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
+}
+
+type ResponseAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Fields        []*AttributeAnalysis   `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResponseAnalysis) Reset() {
+	*x = ResponseAnalysis{}
+	mi := &file_scanner_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResponseAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResponseAnalysis) ProtoMessage() {}
+
+func (x *ResponseAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResponseAnalysis.ProtoReflect.Descriptor instead.
+func (*ResponseAnalysis) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ResponseAnalysis) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ResponseAnalysis) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ResponseAnalysis) GetFields() []*AttributeAnalysis {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+type GenerateFromAnalysisRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Analysis       *AnalysisResponse      `protobuf:"bytes,1,opt,name=analysis,proto3" json:"analysis,omitempty"`
+	TargetServices []string               `protobuf:"bytes,2,rep,name=target_services,json=targetServices,proto3" json:"target_services,omitempty"`
+	Options        map[string]string      `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GenerateFromAnalysisRequest) Reset() {
+	*x = GenerateFromAnalysisRequest{}
+	mi := &file_scanner_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateFromAnalysisRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateFromAnalysisRequest) ProtoMessage() {}
+
+func (x *GenerateFromAnalysisRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateFromAnalysisRequest.ProtoReflect.Descriptor instead.
+func (*GenerateFromAnalysisRequest) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *GenerateFromAnalysisRequest) GetAnalysis() *AnalysisResponse {
+	if x != nil {
+		return x.Analysis
+	}
+	return nil
+}
+
+func (x *GenerateFromAnalysisRequest) GetTargetServices() []string {
+	if x != nil {
+		return x.TargetServices
+	}
+	return nil
+}
+
+func (x *GenerateFromAnalysisRequest) GetOptions() map[string]string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+type GenerateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Files         []*GeneratedFile       `protobuf:"bytes,3,rep,name=files,proto3" json:"files,omitempty"`
+	Stats         *GenerationStats       `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
+	Warnings      []string               `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerateResponse) Reset() {
+	*x = GenerateResponse{}
+	mi := &file_scanner_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateResponse) ProtoMessage() {}
+
+func (x *GenerateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateResponse.ProtoReflect.Descriptor instead.
+func (*GenerateResponse) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *GenerateResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *GenerateResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *GenerateResponse) GetFiles() []*GeneratedFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *GenerateResponse) GetStats() *GenerationStats {
+	if x != nil {
+		return x.Stats
+	}
+	return nil
+}
+
+func (x *GenerateResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+type GeneratedFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Content       string                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Template      string                 `protobuf:"bytes,3,opt,name=template,proto3" json:"template,omitempty"`
+	Service       string                 `protobuf:"bytes,4,opt,name=service,proto3" json:"service,omitempty"`
+	Resource      string                 `protobuf:"bytes,5,opt,name=resource,proto3" json:"resource,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GeneratedFile) Reset() {
+	*x = GeneratedFile{}
+	mi := &file_scanner_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GeneratedFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GeneratedFile) ProtoMessage() {}
+
+func (x *GeneratedFile) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GeneratedFile.ProtoReflect.Descriptor instead.
+func (*GeneratedFile) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *GeneratedFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *GeneratedFile) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *GeneratedFile) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+func (x *GeneratedFile) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *GeneratedFile) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *GeneratedFile) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type GenerationStats struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TotalFiles       int32                  `protobuf:"varint,1,opt,name=total_files,json=totalFiles,proto3" json:"total_files,omitempty"`
+	TotalServices    int32                  `protobuf:"varint,2,opt,name=total_services,json=totalServices,proto3" json:"total_services,omitempty"`
+	TotalResources   int32                  `protobuf:"varint,3,opt,name=total_resources,json=totalResources,proto3" json:"total_resources,omitempty"`
+	TotalOperations  int32                  `protobuf:"varint,4,opt,name=total_operations,json=totalOperations,proto3" json:"total_operations,omitempty"`
+	GenerationTimeMs int64                  `protobuf:"varint,5,opt,name=generation_time_ms,json=generationTimeMs,proto3" json:"generation_time_ms,omitempty"`
+	FileCountsByType map[string]int32       `protobuf:"bytes,6,rep,name=file_counts_by_type,json=fileCountsByType,proto3" json:"file_counts_by_type,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GenerationStats) Reset() {
+	*x = GenerationStats{}
+	mi := &file_scanner_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerationStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerationStats) ProtoMessage() {}
+
+func (x *GenerationStats) ProtoReflect() protoreflect.Message {
+	mi := &file_scanner_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerationStats.ProtoReflect.Descriptor instead.
+func (*GenerationStats) Descriptor() ([]byte, []int) {
+	return file_scanner_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *GenerationStats) GetTotalFiles() int32 {
+	if x != nil {
+		return x.TotalFiles
+	}
+	return 0
+}
+
+func (x *GenerationStats) GetTotalServices() int32 {
+	if x != nil {
+		return x.TotalServices
+	}
+	return 0
+}
+
+func (x *GenerationStats) GetTotalResources() int32 {
+	if x != nil {
+		return x.TotalResources
+	}
+	return 0
+}
+
+func (x *GenerationStats) GetTotalOperations() int32 {
+	if x != nil {
+		return x.TotalOperations
+	}
+	return 0
+}
+
+func (x *GenerationStats) GetGenerationTimeMs() int64 {
+	if x != nil {
+		return x.GenerationTimeMs
+	}
+	return 0
+}
+
+func (x *GenerationStats) GetFileCountsByType() map[string]int32 {
+	if x != nil {
+		return x.FileCountsByType
+	}
+	return nil
+}
+
 var File_scanner_proto protoreflect.FileDescriptor
 
 const file_scanner_proto_rawDesc = "" +
@@ -2388,7 +3529,143 @@ const file_scanner_proto_rawDesc = "" +
 	"\fcapabilities\x18\x05 \x03(\v20.corkscrew.ServiceInfoResponse.CapabilitiesEntryR\fcapabilities\x1a?\n" +
 	"\x11CapabilitiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xe4\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe0\x01\n" +
+	"\x19ConfigureDiscoveryRequest\x12:\n" +
+	"\asources\x18\x01 \x03(\v2 .corkscrew.DiscoverySourceConfigR\asources\x12K\n" +
+	"\aoptions\x18\x02 \x03(\v21.corkscrew.ConfigureDiscoveryRequest.OptionsEntryR\aoptions\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x89\x02\n" +
+	"\x1aConfigureDiscoveryResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12-\n" +
+	"\x12configured_sources\x18\x03 \x03(\tR\x11configuredSources\x12O\n" +
+	"\bmetadata\x18\x04 \x03(\v23.corkscrew.ConfigureDiscoveryResponse.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb9\x01\n" +
+	"\x15DiscoverySourceConfig\x12\x1f\n" +
+	"\vsource_type\x18\x01 \x01(\tR\n" +
+	"sourceType\x12D\n" +
+	"\x06config\x18\x02 \x03(\v2,.corkscrew.DiscoverySourceConfig.ConfigEntryR\x06config\x1a9\n" +
+	"\vConfigEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xca\x01\n" +
+	"\x0eAnalyzeRequest\x12\x1f\n" +
+	"\vsource_type\x18\x01 \x01(\tR\n" +
+	"sourceType\x12\x19\n" +
+	"\braw_data\x18\x02 \x01(\fR\arawData\x12@\n" +
+	"\aoptions\x18\x03 \x03(\v2&.corkscrew.AnalyzeRequest.OptionsEntryR\aoptions\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x93\x03\n" +
+	"\x10AnalysisResponse\x126\n" +
+	"\bservices\x18\x01 \x03(\v2\x1a.corkscrew.ServiceAnalysisR\bservices\x129\n" +
+	"\tresources\x18\x02 \x03(\v2\x1b.corkscrew.ResourceAnalysisR\tresources\x12<\n" +
+	"\n" +
+	"operations\x18\x03 \x03(\v2\x1c.corkscrew.OperationAnalysisR\n" +
+	"operations\x12E\n" +
+	"\bmetadata\x18\x04 \x03(\v2).corkscrew.AnalysisResponse.MetadataEntryR\bmetadata\x12\x1a\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\x12\x18\n" +
+	"\asuccess\x18\x06 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xca\x02\n" +
+	"\x0fServiceAnalysis\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\x12!\n" +
+	"\fpackage_name\x18\x05 \x01(\tR\vpackageName\x12\x1e\n" +
+	"\n" +
+	"operations\x18\x06 \x03(\tR\n" +
+	"operations\x12D\n" +
+	"\bmetadata\x18\a \x03(\v2(.corkscrew.ServiceAnalysis.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x89\x03\n" +
+	"\x10ResourceAnalysis\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aservice\x18\x02 \x01(\tR\aservice\x12!\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12 \n" +
+	"\videntifiers\x18\x05 \x03(\tR\videntifiers\x12<\n" +
+	"\n" +
+	"attributes\x18\x06 \x03(\v2\x1c.corkscrew.AttributeAnalysisR\n" +
+	"attributes\x12\x1e\n" +
+	"\n" +
+	"operations\x18\a \x03(\tR\n" +
+	"operations\x12E\n" +
+	"\bmetadata\x18\b \x03(\v2).corkscrew.ResourceAnalysis.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa2\x01\n" +
+	"\x11AttributeAnalysis\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
+	"\brequired\x18\x03 \x01(\bR\brequired\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12'\n" +
+	"\x0fpossible_values\x18\x05 \x03(\tR\x0epossibleValues\"\xc9\x03\n" +
+	"\x11OperationAnalysis\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aservice\x18\x02 \x01(\tR\aservice\x12#\n" +
+	"\rresource_type\x18\x03 \x01(\tR\fresourceType\x12%\n" +
+	"\x0eoperation_type\x18\x04 \x01(\tR\roperationType\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\x12<\n" +
+	"\n" +
+	"parameters\x18\x06 \x03(\v2\x1c.corkscrew.ParameterAnalysisR\n" +
+	"parameters\x127\n" +
+	"\bresponse\x18\a \x01(\v2\x1b.corkscrew.ResponseAnalysisR\bresponse\x12\x1c\n" +
+	"\tpaginated\x18\b \x01(\bR\tpaginated\x12F\n" +
+	"\bmetadata\x18\t \x03(\v2*.corkscrew.OperationAnalysis.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9e\x01\n" +
+	"\x11ParameterAnalysis\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
+	"\brequired\x18\x03 \x01(\bR\brequired\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12#\n" +
+	"\rdefault_value\x18\x05 \x01(\tR\fdefaultValue\"~\n" +
+	"\x10ResponseAnalysis\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x124\n" +
+	"\x06fields\x18\x03 \x03(\v2\x1c.corkscrew.AttributeAnalysisR\x06fields\"\x8a\x02\n" +
+	"\x1bGenerateFromAnalysisRequest\x127\n" +
+	"\banalysis\x18\x01 \x01(\v2\x1b.corkscrew.AnalysisResponseR\banalysis\x12'\n" +
+	"\x0ftarget_services\x18\x02 \x03(\tR\x0etargetServices\x12M\n" +
+	"\aoptions\x18\x03 \x03(\v23.corkscrew.GenerateFromAnalysisRequest.OptionsEntryR\aoptions\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc0\x01\n" +
+	"\x10GenerateResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12.\n" +
+	"\x05files\x18\x03 \x03(\v2\x18.corkscrew.GeneratedFileR\x05files\x120\n" +
+	"\x05stats\x18\x04 \x01(\v2\x1a.corkscrew.GenerationStatsR\x05stats\x12\x1a\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"\x90\x02\n" +
+	"\rGeneratedFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\x12\x1a\n" +
+	"\btemplate\x18\x03 \x01(\tR\btemplate\x12\x18\n" +
+	"\aservice\x18\x04 \x01(\tR\aservice\x12\x1a\n" +
+	"\bresource\x18\x05 \x01(\tR\bresource\x12B\n" +
+	"\bmetadata\x18\x06 \x03(\v2&.corkscrew.GeneratedFile.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x81\x03\n" +
+	"\x0fGenerationStats\x12\x1f\n" +
+	"\vtotal_files\x18\x01 \x01(\x05R\n" +
+	"totalFiles\x12%\n" +
+	"\x0etotal_services\x18\x02 \x01(\x05R\rtotalServices\x12'\n" +
+	"\x0ftotal_resources\x18\x03 \x01(\x05R\x0etotalResources\x12)\n" +
+	"\x10total_operations\x18\x04 \x01(\x05R\x0ftotalOperations\x12,\n" +
+	"\x12generation_time_ms\x18\x05 \x01(\x03R\x10generationTimeMs\x12_\n" +
+	"\x13file_counts_by_type\x18\x06 \x03(\v20.corkscrew.GenerationStats.FileCountsByTypeEntryR\x10fileCountsByType\x1aC\n" +
+	"\x15FileCountsByTypeEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x012\xf5\a\n" +
 	"\rCloudProvider\x12I\n" +
 	"\n" +
 	"Initialize\x12\x1c.corkscrew.InitializeRequest\x1a\x1d.corkscrew.InitializeResponse\x12D\n" +
@@ -2401,7 +3678,10 @@ const file_scanner_proto_rawDesc = "" +
 	"GetSchemas\x12\x1c.corkscrew.GetSchemasRequest\x1a\x19.corkscrew.SchemaResponse\x12F\n" +
 	"\tBatchScan\x12\x1b.corkscrew.BatchScanRequest\x1a\x1c.corkscrew.BatchScanResponse\x12A\n" +
 	"\n" +
-	"StreamScan\x12\x1c.corkscrew.StreamScanRequest\x1a\x13.corkscrew.Resource0\x012\xfe\x01\n" +
+	"StreamScan\x12\x1c.corkscrew.StreamScanRequest\x1a\x13.corkscrew.Resource0\x01\x12a\n" +
+	"\x12ConfigureDiscovery\x12$.corkscrew.ConfigureDiscoveryRequest\x1a%.corkscrew.ConfigureDiscoveryResponse\x12O\n" +
+	"\x15AnalyzeDiscoveredData\x12\x19.corkscrew.AnalyzeRequest\x1a\x1b.corkscrew.AnalysisResponse\x12[\n" +
+	"\x14GenerateFromAnalysis\x12&.corkscrew.GenerateFromAnalysisRequest\x1a\x1b.corkscrew.GenerateResponse2\xfe\x01\n" +
 	"\aScanner\x127\n" +
 	"\x04Scan\x12\x16.corkscrew.ScanRequest\x1a\x17.corkscrew.ScanResponse\x129\n" +
 	"\n" +
@@ -2422,121 +3702,175 @@ func file_scanner_proto_rawDescGZIP() []byte {
 	return file_scanner_proto_rawDescData
 }
 
-var file_scanner_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_scanner_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_scanner_proto_goTypes = []any{
-	(*Empty)(nil),                    // 0: corkscrew.Empty
-	(*InitializeRequest)(nil),        // 1: corkscrew.InitializeRequest
-	(*InitializeResponse)(nil),       // 2: corkscrew.InitializeResponse
-	(*ProviderInfoResponse)(nil),     // 3: corkscrew.ProviderInfoResponse
-	(*DiscoverServicesRequest)(nil),  // 4: corkscrew.DiscoverServicesRequest
-	(*DiscoverServicesResponse)(nil), // 5: corkscrew.DiscoverServicesResponse
-	(*ServiceInfo)(nil),              // 6: corkscrew.ServiceInfo
-	(*ResourceType)(nil),             // 7: corkscrew.ResourceType
-	(*ResourceRelationship)(nil),     // 8: corkscrew.ResourceRelationship
-	(*GenerateScannersRequest)(nil),  // 9: corkscrew.GenerateScannersRequest
-	(*GenerateScannersResponse)(nil), // 10: corkscrew.GenerateScannersResponse
-	(*GeneratedScanner)(nil),         // 11: corkscrew.GeneratedScanner
-	(*ListResourcesRequest)(nil),     // 12: corkscrew.ListResourcesRequest
-	(*ListResourcesResponse)(nil),    // 13: corkscrew.ListResourcesResponse
-	(*ResourceRef)(nil),              // 14: corkscrew.ResourceRef
-	(*DescribeResourceRequest)(nil),  // 15: corkscrew.DescribeResourceRequest
-	(*DescribeResourceResponse)(nil), // 16: corkscrew.DescribeResourceResponse
-	(*Resource)(nil),                 // 17: corkscrew.Resource
-	(*Relationship)(nil),             // 18: corkscrew.Relationship
-	(*GetSchemasRequest)(nil),        // 19: corkscrew.GetSchemasRequest
-	(*SchemaResponse)(nil),           // 20: corkscrew.SchemaResponse
-	(*Schema)(nil),                   // 21: corkscrew.Schema
-	(*BatchScanRequest)(nil),         // 22: corkscrew.BatchScanRequest
-	(*BatchScanResponse)(nil),        // 23: corkscrew.BatchScanResponse
-	(*StreamScanRequest)(nil),        // 24: corkscrew.StreamScanRequest
-	(*ScanStats)(nil),                // 25: corkscrew.ScanStats
-	(*ScanRequest)(nil),              // 26: corkscrew.ScanRequest
-	(*ScanResponse)(nil),             // 27: corkscrew.ScanResponse
-	(*ServiceInfoResponse)(nil),      // 28: corkscrew.ServiceInfoResponse
-	nil,                              // 29: corkscrew.InitializeRequest.ConfigEntry
-	nil,                              // 30: corkscrew.InitializeResponse.MetadataEntry
-	nil,                              // 31: corkscrew.ProviderInfoResponse.CapabilitiesEntry
-	nil,                              // 32: corkscrew.ListResourcesRequest.FiltersEntry
-	nil,                              // 33: corkscrew.ListResourcesResponse.MetadataEntry
-	nil,                              // 34: corkscrew.ResourceRef.BasicAttributesEntry
-	nil,                              // 35: corkscrew.Resource.TagsEntry
-	nil,                              // 36: corkscrew.Relationship.PropertiesEntry
-	nil,                              // 37: corkscrew.Schema.MetadataEntry
-	nil,                              // 38: corkscrew.BatchScanRequest.FiltersEntry
-	nil,                              // 39: corkscrew.StreamScanRequest.FiltersEntry
-	nil,                              // 40: corkscrew.ScanStats.ResourceCountsEntry
-	nil,                              // 41: corkscrew.ScanStats.ServiceCountsEntry
-	nil,                              // 42: corkscrew.ScanRequest.OptionsEntry
-	nil,                              // 43: corkscrew.ScanResponse.MetadataEntry
-	nil,                              // 44: corkscrew.ServiceInfoResponse.CapabilitiesEntry
-	(*timestamppb.Timestamp)(nil),    // 45: google.protobuf.Timestamp
+	(*Empty)(nil),                       // 0: corkscrew.Empty
+	(*InitializeRequest)(nil),           // 1: corkscrew.InitializeRequest
+	(*InitializeResponse)(nil),          // 2: corkscrew.InitializeResponse
+	(*ProviderInfoResponse)(nil),        // 3: corkscrew.ProviderInfoResponse
+	(*DiscoverServicesRequest)(nil),     // 4: corkscrew.DiscoverServicesRequest
+	(*DiscoverServicesResponse)(nil),    // 5: corkscrew.DiscoverServicesResponse
+	(*ServiceInfo)(nil),                 // 6: corkscrew.ServiceInfo
+	(*ResourceType)(nil),                // 7: corkscrew.ResourceType
+	(*ResourceRelationship)(nil),        // 8: corkscrew.ResourceRelationship
+	(*GenerateScannersRequest)(nil),     // 9: corkscrew.GenerateScannersRequest
+	(*GenerateScannersResponse)(nil),    // 10: corkscrew.GenerateScannersResponse
+	(*GeneratedScanner)(nil),            // 11: corkscrew.GeneratedScanner
+	(*ListResourcesRequest)(nil),        // 12: corkscrew.ListResourcesRequest
+	(*ListResourcesResponse)(nil),       // 13: corkscrew.ListResourcesResponse
+	(*ResourceRef)(nil),                 // 14: corkscrew.ResourceRef
+	(*DescribeResourceRequest)(nil),     // 15: corkscrew.DescribeResourceRequest
+	(*DescribeResourceResponse)(nil),    // 16: corkscrew.DescribeResourceResponse
+	(*Resource)(nil),                    // 17: corkscrew.Resource
+	(*Relationship)(nil),                // 18: corkscrew.Relationship
+	(*GetSchemasRequest)(nil),           // 19: corkscrew.GetSchemasRequest
+	(*SchemaResponse)(nil),              // 20: corkscrew.SchemaResponse
+	(*Schema)(nil),                      // 21: corkscrew.Schema
+	(*BatchScanRequest)(nil),            // 22: corkscrew.BatchScanRequest
+	(*BatchScanResponse)(nil),           // 23: corkscrew.BatchScanResponse
+	(*StreamScanRequest)(nil),           // 24: corkscrew.StreamScanRequest
+	(*ScanStats)(nil),                   // 25: corkscrew.ScanStats
+	(*ScanRequest)(nil),                 // 26: corkscrew.ScanRequest
+	(*ScanResponse)(nil),                // 27: corkscrew.ScanResponse
+	(*ServiceInfoResponse)(nil),         // 28: corkscrew.ServiceInfoResponse
+	(*ConfigureDiscoveryRequest)(nil),   // 29: corkscrew.ConfigureDiscoveryRequest
+	(*ConfigureDiscoveryResponse)(nil),  // 30: corkscrew.ConfigureDiscoveryResponse
+	(*DiscoverySourceConfig)(nil),       // 31: corkscrew.DiscoverySourceConfig
+	(*AnalyzeRequest)(nil),              // 32: corkscrew.AnalyzeRequest
+	(*AnalysisResponse)(nil),            // 33: corkscrew.AnalysisResponse
+	(*ServiceAnalysis)(nil),             // 34: corkscrew.ServiceAnalysis
+	(*ResourceAnalysis)(nil),            // 35: corkscrew.ResourceAnalysis
+	(*AttributeAnalysis)(nil),           // 36: corkscrew.AttributeAnalysis
+	(*OperationAnalysis)(nil),           // 37: corkscrew.OperationAnalysis
+	(*ParameterAnalysis)(nil),           // 38: corkscrew.ParameterAnalysis
+	(*ResponseAnalysis)(nil),            // 39: corkscrew.ResponseAnalysis
+	(*GenerateFromAnalysisRequest)(nil), // 40: corkscrew.GenerateFromAnalysisRequest
+	(*GenerateResponse)(nil),            // 41: corkscrew.GenerateResponse
+	(*GeneratedFile)(nil),               // 42: corkscrew.GeneratedFile
+	(*GenerationStats)(nil),             // 43: corkscrew.GenerationStats
+	nil,                                 // 44: corkscrew.InitializeRequest.ConfigEntry
+	nil,                                 // 45: corkscrew.InitializeResponse.MetadataEntry
+	nil,                                 // 46: corkscrew.ProviderInfoResponse.CapabilitiesEntry
+	nil,                                 // 47: corkscrew.ListResourcesRequest.FiltersEntry
+	nil,                                 // 48: corkscrew.ListResourcesResponse.MetadataEntry
+	nil,                                 // 49: corkscrew.ResourceRef.BasicAttributesEntry
+	nil,                                 // 50: corkscrew.Resource.TagsEntry
+	nil,                                 // 51: corkscrew.Relationship.PropertiesEntry
+	nil,                                 // 52: corkscrew.Schema.MetadataEntry
+	nil,                                 // 53: corkscrew.BatchScanRequest.FiltersEntry
+	nil,                                 // 54: corkscrew.StreamScanRequest.FiltersEntry
+	nil,                                 // 55: corkscrew.ScanStats.ResourceCountsEntry
+	nil,                                 // 56: corkscrew.ScanStats.ServiceCountsEntry
+	nil,                                 // 57: corkscrew.ScanRequest.OptionsEntry
+	nil,                                 // 58: corkscrew.ScanResponse.MetadataEntry
+	nil,                                 // 59: corkscrew.ServiceInfoResponse.CapabilitiesEntry
+	nil,                                 // 60: corkscrew.ConfigureDiscoveryRequest.OptionsEntry
+	nil,                                 // 61: corkscrew.ConfigureDiscoveryResponse.MetadataEntry
+	nil,                                 // 62: corkscrew.DiscoverySourceConfig.ConfigEntry
+	nil,                                 // 63: corkscrew.AnalyzeRequest.OptionsEntry
+	nil,                                 // 64: corkscrew.AnalysisResponse.MetadataEntry
+	nil,                                 // 65: corkscrew.ServiceAnalysis.MetadataEntry
+	nil,                                 // 66: corkscrew.ResourceAnalysis.MetadataEntry
+	nil,                                 // 67: corkscrew.OperationAnalysis.MetadataEntry
+	nil,                                 // 68: corkscrew.GenerateFromAnalysisRequest.OptionsEntry
+	nil,                                 // 69: corkscrew.GeneratedFile.MetadataEntry
+	nil,                                 // 70: corkscrew.GenerationStats.FileCountsByTypeEntry
+	(*timestamppb.Timestamp)(nil),       // 71: google.protobuf.Timestamp
 }
 var file_scanner_proto_depIdxs = []int32{
-	29, // 0: corkscrew.InitializeRequest.config:type_name -> corkscrew.InitializeRequest.ConfigEntry
-	30, // 1: corkscrew.InitializeResponse.metadata:type_name -> corkscrew.InitializeResponse.MetadataEntry
-	31, // 2: corkscrew.ProviderInfoResponse.capabilities:type_name -> corkscrew.ProviderInfoResponse.CapabilitiesEntry
+	44, // 0: corkscrew.InitializeRequest.config:type_name -> corkscrew.InitializeRequest.ConfigEntry
+	45, // 1: corkscrew.InitializeResponse.metadata:type_name -> corkscrew.InitializeResponse.MetadataEntry
+	46, // 2: corkscrew.ProviderInfoResponse.capabilities:type_name -> corkscrew.ProviderInfoResponse.CapabilitiesEntry
 	6,  // 3: corkscrew.DiscoverServicesResponse.services:type_name -> corkscrew.ServiceInfo
-	45, // 4: corkscrew.DiscoverServicesResponse.discovered_at:type_name -> google.protobuf.Timestamp
+	71, // 4: corkscrew.DiscoverServicesResponse.discovered_at:type_name -> google.protobuf.Timestamp
 	7,  // 5: corkscrew.ServiceInfo.resource_types:type_name -> corkscrew.ResourceType
 	8,  // 6: corkscrew.ResourceType.relationships:type_name -> corkscrew.ResourceRelationship
 	11, // 7: corkscrew.GenerateScannersResponse.scanners:type_name -> corkscrew.GeneratedScanner
-	45, // 8: corkscrew.GeneratedScanner.generated_at:type_name -> google.protobuf.Timestamp
-	32, // 9: corkscrew.ListResourcesRequest.filters:type_name -> corkscrew.ListResourcesRequest.FiltersEntry
+	71, // 8: corkscrew.GeneratedScanner.generated_at:type_name -> google.protobuf.Timestamp
+	47, // 9: corkscrew.ListResourcesRequest.filters:type_name -> corkscrew.ListResourcesRequest.FiltersEntry
 	14, // 10: corkscrew.ListResourcesResponse.resources:type_name -> corkscrew.ResourceRef
-	33, // 11: corkscrew.ListResourcesResponse.metadata:type_name -> corkscrew.ListResourcesResponse.MetadataEntry
-	34, // 12: corkscrew.ResourceRef.basic_attributes:type_name -> corkscrew.ResourceRef.BasicAttributesEntry
+	48, // 11: corkscrew.ListResourcesResponse.metadata:type_name -> corkscrew.ListResourcesResponse.MetadataEntry
+	49, // 12: corkscrew.ResourceRef.basic_attributes:type_name -> corkscrew.ResourceRef.BasicAttributesEntry
 	14, // 13: corkscrew.DescribeResourceRequest.resource_ref:type_name -> corkscrew.ResourceRef
 	17, // 14: corkscrew.DescribeResourceResponse.resource:type_name -> corkscrew.Resource
-	35, // 15: corkscrew.Resource.tags:type_name -> corkscrew.Resource.TagsEntry
-	45, // 16: corkscrew.Resource.created_at:type_name -> google.protobuf.Timestamp
-	45, // 17: corkscrew.Resource.modified_at:type_name -> google.protobuf.Timestamp
-	45, // 18: corkscrew.Resource.discovered_at:type_name -> google.protobuf.Timestamp
+	50, // 15: corkscrew.Resource.tags:type_name -> corkscrew.Resource.TagsEntry
+	71, // 16: corkscrew.Resource.created_at:type_name -> google.protobuf.Timestamp
+	71, // 17: corkscrew.Resource.modified_at:type_name -> google.protobuf.Timestamp
+	71, // 18: corkscrew.Resource.discovered_at:type_name -> google.protobuf.Timestamp
 	18, // 19: corkscrew.Resource.relationships:type_name -> corkscrew.Relationship
-	36, // 20: corkscrew.Relationship.properties:type_name -> corkscrew.Relationship.PropertiesEntry
+	51, // 20: corkscrew.Relationship.properties:type_name -> corkscrew.Relationship.PropertiesEntry
 	21, // 21: corkscrew.SchemaResponse.schemas:type_name -> corkscrew.Schema
-	37, // 22: corkscrew.Schema.metadata:type_name -> corkscrew.Schema.MetadataEntry
-	38, // 23: corkscrew.BatchScanRequest.filters:type_name -> corkscrew.BatchScanRequest.FiltersEntry
+	52, // 22: corkscrew.Schema.metadata:type_name -> corkscrew.Schema.MetadataEntry
+	53, // 23: corkscrew.BatchScanRequest.filters:type_name -> corkscrew.BatchScanRequest.FiltersEntry
 	17, // 24: corkscrew.BatchScanResponse.resources:type_name -> corkscrew.Resource
 	25, // 25: corkscrew.BatchScanResponse.stats:type_name -> corkscrew.ScanStats
-	39, // 26: corkscrew.StreamScanRequest.filters:type_name -> corkscrew.StreamScanRequest.FiltersEntry
-	40, // 27: corkscrew.ScanStats.resource_counts:type_name -> corkscrew.ScanStats.ResourceCountsEntry
-	41, // 28: corkscrew.ScanStats.service_counts:type_name -> corkscrew.ScanStats.ServiceCountsEntry
-	42, // 29: corkscrew.ScanRequest.options:type_name -> corkscrew.ScanRequest.OptionsEntry
+	54, // 26: corkscrew.StreamScanRequest.filters:type_name -> corkscrew.StreamScanRequest.FiltersEntry
+	55, // 27: corkscrew.ScanStats.resource_counts:type_name -> corkscrew.ScanStats.ResourceCountsEntry
+	56, // 28: corkscrew.ScanStats.service_counts:type_name -> corkscrew.ScanStats.ServiceCountsEntry
+	57, // 29: corkscrew.ScanRequest.options:type_name -> corkscrew.ScanRequest.OptionsEntry
 	17, // 30: corkscrew.ScanResponse.resources:type_name -> corkscrew.Resource
-	43, // 31: corkscrew.ScanResponse.metadata:type_name -> corkscrew.ScanResponse.MetadataEntry
+	58, // 31: corkscrew.ScanResponse.metadata:type_name -> corkscrew.ScanResponse.MetadataEntry
 	25, // 32: corkscrew.ScanResponse.stats:type_name -> corkscrew.ScanStats
-	44, // 33: corkscrew.ServiceInfoResponse.capabilities:type_name -> corkscrew.ServiceInfoResponse.CapabilitiesEntry
-	1,  // 34: corkscrew.CloudProvider.Initialize:input_type -> corkscrew.InitializeRequest
-	0,  // 35: corkscrew.CloudProvider.GetProviderInfo:input_type -> corkscrew.Empty
-	4,  // 36: corkscrew.CloudProvider.DiscoverServices:input_type -> corkscrew.DiscoverServicesRequest
-	9,  // 37: corkscrew.CloudProvider.GenerateServiceScanners:input_type -> corkscrew.GenerateScannersRequest
-	12, // 38: corkscrew.CloudProvider.ListResources:input_type -> corkscrew.ListResourcesRequest
-	15, // 39: corkscrew.CloudProvider.DescribeResource:input_type -> corkscrew.DescribeResourceRequest
-	19, // 40: corkscrew.CloudProvider.GetSchemas:input_type -> corkscrew.GetSchemasRequest
-	22, // 41: corkscrew.CloudProvider.BatchScan:input_type -> corkscrew.BatchScanRequest
-	24, // 42: corkscrew.CloudProvider.StreamScan:input_type -> corkscrew.StreamScanRequest
-	26, // 43: corkscrew.Scanner.Scan:input_type -> corkscrew.ScanRequest
-	0,  // 44: corkscrew.Scanner.GetSchemas:input_type -> corkscrew.Empty
-	0,  // 45: corkscrew.Scanner.GetServiceInfo:input_type -> corkscrew.Empty
-	26, // 46: corkscrew.Scanner.StreamScan:input_type -> corkscrew.ScanRequest
-	2,  // 47: corkscrew.CloudProvider.Initialize:output_type -> corkscrew.InitializeResponse
-	3,  // 48: corkscrew.CloudProvider.GetProviderInfo:output_type -> corkscrew.ProviderInfoResponse
-	5,  // 49: corkscrew.CloudProvider.DiscoverServices:output_type -> corkscrew.DiscoverServicesResponse
-	10, // 50: corkscrew.CloudProvider.GenerateServiceScanners:output_type -> corkscrew.GenerateScannersResponse
-	13, // 51: corkscrew.CloudProvider.ListResources:output_type -> corkscrew.ListResourcesResponse
-	16, // 52: corkscrew.CloudProvider.DescribeResource:output_type -> corkscrew.DescribeResourceResponse
-	20, // 53: corkscrew.CloudProvider.GetSchemas:output_type -> corkscrew.SchemaResponse
-	23, // 54: corkscrew.CloudProvider.BatchScan:output_type -> corkscrew.BatchScanResponse
-	17, // 55: corkscrew.CloudProvider.StreamScan:output_type -> corkscrew.Resource
-	27, // 56: corkscrew.Scanner.Scan:output_type -> corkscrew.ScanResponse
-	20, // 57: corkscrew.Scanner.GetSchemas:output_type -> corkscrew.SchemaResponse
-	28, // 58: corkscrew.Scanner.GetServiceInfo:output_type -> corkscrew.ServiceInfoResponse
-	17, // 59: corkscrew.Scanner.StreamScan:output_type -> corkscrew.Resource
-	47, // [47:60] is the sub-list for method output_type
-	34, // [34:47] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	59, // 33: corkscrew.ServiceInfoResponse.capabilities:type_name -> corkscrew.ServiceInfoResponse.CapabilitiesEntry
+	31, // 34: corkscrew.ConfigureDiscoveryRequest.sources:type_name -> corkscrew.DiscoverySourceConfig
+	60, // 35: corkscrew.ConfigureDiscoveryRequest.options:type_name -> corkscrew.ConfigureDiscoveryRequest.OptionsEntry
+	61, // 36: corkscrew.ConfigureDiscoveryResponse.metadata:type_name -> corkscrew.ConfigureDiscoveryResponse.MetadataEntry
+	62, // 37: corkscrew.DiscoverySourceConfig.config:type_name -> corkscrew.DiscoverySourceConfig.ConfigEntry
+	63, // 38: corkscrew.AnalyzeRequest.options:type_name -> corkscrew.AnalyzeRequest.OptionsEntry
+	34, // 39: corkscrew.AnalysisResponse.services:type_name -> corkscrew.ServiceAnalysis
+	35, // 40: corkscrew.AnalysisResponse.resources:type_name -> corkscrew.ResourceAnalysis
+	37, // 41: corkscrew.AnalysisResponse.operations:type_name -> corkscrew.OperationAnalysis
+	64, // 42: corkscrew.AnalysisResponse.metadata:type_name -> corkscrew.AnalysisResponse.MetadataEntry
+	65, // 43: corkscrew.ServiceAnalysis.metadata:type_name -> corkscrew.ServiceAnalysis.MetadataEntry
+	36, // 44: corkscrew.ResourceAnalysis.attributes:type_name -> corkscrew.AttributeAnalysis
+	66, // 45: corkscrew.ResourceAnalysis.metadata:type_name -> corkscrew.ResourceAnalysis.MetadataEntry
+	38, // 46: corkscrew.OperationAnalysis.parameters:type_name -> corkscrew.ParameterAnalysis
+	39, // 47: corkscrew.OperationAnalysis.response:type_name -> corkscrew.ResponseAnalysis
+	67, // 48: corkscrew.OperationAnalysis.metadata:type_name -> corkscrew.OperationAnalysis.MetadataEntry
+	36, // 49: corkscrew.ResponseAnalysis.fields:type_name -> corkscrew.AttributeAnalysis
+	33, // 50: corkscrew.GenerateFromAnalysisRequest.analysis:type_name -> corkscrew.AnalysisResponse
+	68, // 51: corkscrew.GenerateFromAnalysisRequest.options:type_name -> corkscrew.GenerateFromAnalysisRequest.OptionsEntry
+	42, // 52: corkscrew.GenerateResponse.files:type_name -> corkscrew.GeneratedFile
+	43, // 53: corkscrew.GenerateResponse.stats:type_name -> corkscrew.GenerationStats
+	69, // 54: corkscrew.GeneratedFile.metadata:type_name -> corkscrew.GeneratedFile.MetadataEntry
+	70, // 55: corkscrew.GenerationStats.file_counts_by_type:type_name -> corkscrew.GenerationStats.FileCountsByTypeEntry
+	1,  // 56: corkscrew.CloudProvider.Initialize:input_type -> corkscrew.InitializeRequest
+	0,  // 57: corkscrew.CloudProvider.GetProviderInfo:input_type -> corkscrew.Empty
+	4,  // 58: corkscrew.CloudProvider.DiscoverServices:input_type -> corkscrew.DiscoverServicesRequest
+	9,  // 59: corkscrew.CloudProvider.GenerateServiceScanners:input_type -> corkscrew.GenerateScannersRequest
+	12, // 60: corkscrew.CloudProvider.ListResources:input_type -> corkscrew.ListResourcesRequest
+	15, // 61: corkscrew.CloudProvider.DescribeResource:input_type -> corkscrew.DescribeResourceRequest
+	19, // 62: corkscrew.CloudProvider.GetSchemas:input_type -> corkscrew.GetSchemasRequest
+	22, // 63: corkscrew.CloudProvider.BatchScan:input_type -> corkscrew.BatchScanRequest
+	24, // 64: corkscrew.CloudProvider.StreamScan:input_type -> corkscrew.StreamScanRequest
+	29, // 65: corkscrew.CloudProvider.ConfigureDiscovery:input_type -> corkscrew.ConfigureDiscoveryRequest
+	32, // 66: corkscrew.CloudProvider.AnalyzeDiscoveredData:input_type -> corkscrew.AnalyzeRequest
+	40, // 67: corkscrew.CloudProvider.GenerateFromAnalysis:input_type -> corkscrew.GenerateFromAnalysisRequest
+	26, // 68: corkscrew.Scanner.Scan:input_type -> corkscrew.ScanRequest
+	0,  // 69: corkscrew.Scanner.GetSchemas:input_type -> corkscrew.Empty
+	0,  // 70: corkscrew.Scanner.GetServiceInfo:input_type -> corkscrew.Empty
+	26, // 71: corkscrew.Scanner.StreamScan:input_type -> corkscrew.ScanRequest
+	2,  // 72: corkscrew.CloudProvider.Initialize:output_type -> corkscrew.InitializeResponse
+	3,  // 73: corkscrew.CloudProvider.GetProviderInfo:output_type -> corkscrew.ProviderInfoResponse
+	5,  // 74: corkscrew.CloudProvider.DiscoverServices:output_type -> corkscrew.DiscoverServicesResponse
+	10, // 75: corkscrew.CloudProvider.GenerateServiceScanners:output_type -> corkscrew.GenerateScannersResponse
+	13, // 76: corkscrew.CloudProvider.ListResources:output_type -> corkscrew.ListResourcesResponse
+	16, // 77: corkscrew.CloudProvider.DescribeResource:output_type -> corkscrew.DescribeResourceResponse
+	20, // 78: corkscrew.CloudProvider.GetSchemas:output_type -> corkscrew.SchemaResponse
+	23, // 79: corkscrew.CloudProvider.BatchScan:output_type -> corkscrew.BatchScanResponse
+	17, // 80: corkscrew.CloudProvider.StreamScan:output_type -> corkscrew.Resource
+	30, // 81: corkscrew.CloudProvider.ConfigureDiscovery:output_type -> corkscrew.ConfigureDiscoveryResponse
+	33, // 82: corkscrew.CloudProvider.AnalyzeDiscoveredData:output_type -> corkscrew.AnalysisResponse
+	41, // 83: corkscrew.CloudProvider.GenerateFromAnalysis:output_type -> corkscrew.GenerateResponse
+	27, // 84: corkscrew.Scanner.Scan:output_type -> corkscrew.ScanResponse
+	20, // 85: corkscrew.Scanner.GetSchemas:output_type -> corkscrew.SchemaResponse
+	28, // 86: corkscrew.Scanner.GetServiceInfo:output_type -> corkscrew.ServiceInfoResponse
+	17, // 87: corkscrew.Scanner.StreamScan:output_type -> corkscrew.Resource
+	72, // [72:88] is the sub-list for method output_type
+	56, // [56:72] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_scanner_proto_init() }
@@ -2550,7 +3884,7 @@ func file_scanner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scanner_proto_rawDesc), len(file_scanner_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   45,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
