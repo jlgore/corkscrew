@@ -41,6 +41,16 @@ type CloudProvider interface {
 	// Batch operations
 	BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error)
 	StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error
+
+	// Orchestrator integration methods
+	ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error)
+	AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error)
+	GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error)
+}
+
+// GRPCClientProvider is an interface for providers that can expose their underlying gRPC client
+type GRPCClientProvider interface {
+	GetUnderlyingClient() pb.CloudProviderClient
 }
 
 // Scanner is the interface that sophisticated scanner plugins implement
@@ -123,6 +133,18 @@ func (s *grpcProviderServer) StreamScan(req *pb.StreamScanRequest, stream pb.Clo
 	return s.Impl.StreamScan(req, stream)
 }
 
+func (s *grpcProviderServer) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
+	return s.Impl.ConfigureDiscovery(ctx, req)
+}
+
+func (s *grpcProviderServer) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
+	return s.Impl.AnalyzeDiscoveredData(ctx, req)
+}
+
+func (s *grpcProviderServer) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
+	return s.Impl.GenerateFromAnalysis(ctx, req)
+}
+
 // grpcScannerServer is the gRPC server implementation for Scanner
 type grpcScannerServer struct {
 	pb.UnimplementedScannerServer
@@ -149,6 +171,11 @@ func (s *grpcScannerServer) StreamScan(req *pb.ScanRequest, stream pb.Scanner_St
 type grpcProviderClient struct {
 	client pb.CloudProviderClient
 	ctx    context.Context
+}
+
+// GetUnderlyingClient returns the underlying gRPC client for orchestrator integration
+func (c *grpcProviderClient) GetUnderlyingClient() pb.CloudProviderClient {
+	return c.client
 }
 
 func (c *grpcProviderClient) Initialize(ctx context.Context, req *pb.InitializeRequest) (*pb.InitializeResponse, error) {
@@ -200,6 +227,18 @@ func (c *grpcProviderClient) StreamScan(req *pb.StreamScanRequest, stream pb.Clo
 	}
 
 	return nil
+}
+
+func (c *grpcProviderClient) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
+	return c.client.ConfigureDiscovery(ctx, req)
+}
+
+func (c *grpcProviderClient) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
+	return c.client.AnalyzeDiscoveredData(ctx, req)
+}
+
+func (c *grpcProviderClient) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
+	return c.client.GenerateFromAnalysis(ctx, req)
 }
 
 // grpcScannerClient is the gRPC client implementation for Scanner

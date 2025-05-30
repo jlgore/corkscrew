@@ -1,19 +1,18 @@
 # Corkscrew Plugin Development Guide
 
-This guide explains how to develop cloud provider plugins for Corkscrew, enabling support for Azure, Google Cloud Platform (GCP), Kubernetes, and other cloud providers.
+This guide explains how to develop cloud provider plugins for Corkscrew, enabling support for AWS, Azure, Google Cloud Platform (GCP), Kubernetes, and other cloud providers.
 
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
 2. [Plugin Interface](#plugin-interface)
 3. [Directory Structure](#directory-structure)
-4. [Implementation Steps](#implementation-steps)
-5. [Azure Provider Example](#azure-provider-example)
-6. [GCP Provider Example](#gcp-provider-example)
-7. [Kubernetes Provider Example](#kubernetes-provider-example)
-8. [Testing and Validation](#testing-and-validation)
-9. [Build and Deployment](#build-and-deployment)
-10. [Best Practices](#best-practices)
+4. [Real Implementation Examples](#real-implementation-examples)
+5. [Step-by-Step Implementation](#step-by-step-implementation)
+6. [Build and Deployment](#build-and-deployment)
+7. [Testing Your Plugin](#testing-your-plugin)
+8. [Plugin Registration](#plugin-registration)
+9. [Best Practices](#best-practices)
 
 ## Architecture Overview
 
@@ -25,12 +24,25 @@ Corkscrew uses a plugin-based architecture with HashiCorp's go-plugin framework 
 - **Service Discovery**: Dynamically discovers available services from the cloud provider's SDK
 - **Resource Scanner**: Lists and describes cloud resources using SDK operations
 - **Schema Generator**: Creates database schemas for discovered resources
-- **Cache Manager**: Handles caching of discovered services and resources
+- **Rate Limiter**: Handles API rate limiting and retries
+- **Client Factory**: Manages SDK client creation and caching
 
 ### Communication Flow
 
 ```
 Corkscrew Core ←→ gRPC ←→ Provider Plugin ←→ Cloud SDK ←→ Cloud Provider API
+```
+
+### Plugin Handshake
+
+All plugins use a shared handshake configuration:
+
+```go
+var HandshakeConfig = plugin.HandshakeConfig{
+    ProtocolVersion:  2,
+    MagicCookieKey:   "CORKSCREW_PLUGIN",
+    MagicCookieValue: "v2-provider-plugin",
+}
 ```
 
 ## Plugin Interface
@@ -47,7 +59,7 @@ service CloudProvider {
   rpc DiscoverServices(DiscoverServicesRequest) returns (DiscoverServicesResponse);
   rpc GenerateServiceScanners(GenerateScannersRequest) returns (GenerateScannersResponse);
   
-  // Resource operations
+  // Resource operations following Discovery -> List -> Describe pattern
   rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
   rpc DescribeResource(DescribeResourceRequest) returns (DescribeResourceResponse);
   
@@ -60,62 +72,125 @@ service CloudProvider {
 }
 ```
 
+The corresponding Go interface in `internal/shared/plugin.go`:
+
+```go
+type CloudProvider interface {
+    // Plugin lifecycle
+    Initialize(ctx context.Context, req *pb.InitializeRequest) (*pb.InitializeResponse, error)
+    GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.ProviderInfoResponse, error)
+
+    // Service discovery and generation
+    DiscoverServices(ctx context.Context, req *pb.DiscoverServicesRequest) (*pb.DiscoverServicesResponse, error)
+    GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error)
+
+    // Resource operations following Discovery -> List -> Describe pattern
+    ListResources(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error)
+    DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error)
+
+    // Schema and metadata
+    GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error)
+
+    // Batch operations
+    BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error)
+    StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error
+}
+```
+
 ## Directory Structure
 
-Create your plugin following this structure:
+Create your plugin following this structure (based on existing AWS and Azure providers):
 
 ```
 plugins/
 ├── your-provider/
 │   ├── main.go                    # Plugin entry point
-│   ├── provider.go                # Main provider implementation
+│   ├── your_provider.go           # Main provider implementation
 │   ├── go.mod                     # Go module definition
 │   ├── go.sum                     # Go module checksums
-│   ├── discovery/                 # Service discovery logic
-│   │   ├── service_discovery.go
-│   │   └── service_loader.go
-│   ├── scanner/                   # Resource scanning logic
-│   │   ├── resource_lister.go
-│   │   └── response_parser.go
-│   ├── generator/                 # Schema generation
-│   │   └── analyzer.go
-│   └── classification/            # Operation classification
-│       └── classifier.go
-├── your-provider-shared/          # Shared components (optional)
-│   ├── proto/                     # Protocol buffer definitions
-│   │   ├── scanner.proto
-│   │   └── scanner.pb.go
-│   └── shared/                    # Shared utilities
-│       └── plugin.go
-└── build-your-provider.sh         # Build script
+│   ├── discovery.go               # Service discovery logic
+│   ├── scanner.go                 # Resource scanning logic
+│   ├── schema_generator.go        # Schema generation
+│   ├── client_factory.go          # SDK client management
+│   ├── relationships.go           # Resource relationships (optional)
+│   ├── resource_explorer.go       # Advanced resource discovery (optional)
+│   └── test_*.go                  # Test files
+├── build-your-provider.sh         # Build script
+└── plugins.json                   # Plugin registry
 ```
 
-## Implementation Steps
+If you build a plugin for a new cloud provider or have improvements to the current plugins feel free to open a PR or an issue. Claude's DNA is all over this thing in good ways and bad - however it can improve for the better I am here for it :->
+
+## Real Implementation Examples
+
+### AWS Provider Structure
+
+The AWS provider (`plugins/aws-provider/`) demonstrates a full-featured implementation:
+
+```
+aws-provider/
+├── main.go                     # Entry point with test flags
+├── aws_provider.go             # Main provider with Resource Explorer support
+├── discovery.go                # Service discovery using AWS SDK
+├── scanner.go                  # Resource scanning with rate limiting
+├── schema_generator.go         # SQL schema generation
+├── client_factory.go           # AWS client management
+├── relationships.go            # Cross-service relationships
+├── resource_explorer.go        # AWS Resource Explorer integration
+├── aws_dynamic_provider.go     # Dynamic scanner generation
+├── go.mod                      # Dependencies (AWS SDK v2)
+└── test_*.go                   # Various test files
+```
+
+### Azure Provider Structure
+
+The Azure provider (`plugins/azure-provider/`) shows another approach:
+
+```
+azure-provider/
+├── main.go                     # Simple entry point
+├── azure_provider.go           # Main provider with Resource Graph
+├── discovery.go                # Service discovery via ARM
+├── scanner.go                  # Resource scanning with Resource Graph
+├── schema_generator.go         # Table schema generation
+├── client_factory.go           # Azure client management
+├── database_integration.go     # Database operations
+├── resource_graph.go           # Azure Resource Graph queries
+├── db_schema.go               # Database schema definitions
+├── go.mod                     # Dependencies (Azure SDK)
+└── test-azure-provider.sh      # Test script
+```
+
+## Step-by-Step Implementation
 
 ### Step 1: Create the Plugin Module
 
 ```bash
-mkdir -p plugins/azure-provider
-cd plugins/azure-provider
-go mod init github.com/jlgore/corkscrew/plugins/azure-provider
+mkdir -p plugins/your-provider
+cd plugins/your-provider
+go mod init github.com/jlgore/corkscrew/plugins/your-provider
 ```
 
 ### Step 2: Define Dependencies
 
-Add required dependencies to `go.mod`:
+Based on the existing providers, your `go.mod` should look like:
 
 ```go
-module github.com/jlgore/corkscrew/plugins/azure-provider
+module github.com/jlgore/corkscrew/plugins/your-provider
 
 go 1.24
 
 require (
-    github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.0
-    github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.4.0
-    github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
+    // Your cloud provider SDK
+    github.com/your-cloud/sdk v1.0.0
+    
+    // Required Corkscrew dependencies
     github.com/hashicorp/go-plugin v1.6.0
     github.com/jlgore/corkscrew v0.0.0
     google.golang.org/protobuf v1.36.6
+    
+    // Optional but recommended
+    golang.org/x/time v0.8.0  // For rate limiting
 )
 
 replace github.com/jlgore/corkscrew => ../..
@@ -123,21 +198,29 @@ replace github.com/jlgore/corkscrew => ../..
 
 ### Step 3: Implement the Main Entry Point
 
-Create `main.go`:
+Create `main.go` following the established pattern:
 
 ```go
 package main
 
 import (
+    "os"
+    
     "github.com/hashicorp/go-plugin"
     "github.com/jlgore/corkscrew/internal/shared"
 )
 
 func main() {
-    // Create the provider implementation
-    provider := NewAzureProvider()
+    // Optional: Add test flags like AWS provider
+    if len(os.Args) > 1 && os.Args[1] == "--test" {
+        testPlugin()
+        return
+    }
 
-    // Serve the plugin
+    // Create the provider implementation
+    provider := NewYourProvider()
+
+    // Serve the plugin using shared configuration
     plugin.Serve(&plugin.ServeConfig{
         HandshakeConfig: shared.HandshakeConfig,
         Plugins: map[string]plugin.Plugin{
@@ -148,9 +231,171 @@ func main() {
 }
 ```
 
-### Step 4: Implement the Provider Interface
+### Step 4: Implement the Provider Structure
 
-Create `provider.go` with the main provider struct:
+Create `your_provider.go` with the main provider struct:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "sync"
+    "time"
+    
+    // Your cloud SDK imports
+    pb "github.com/jlgore/corkscrew/internal/proto"
+    "golang.org/x/time/rate"
+    "google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// YourProvider implements the CloudProvider interface
+type YourProvider struct {
+    mu          sync.RWMutex
+    initialized bool
+    
+    // Cloud-specific configuration
+    credential  interface{} // Your cloud credential type
+    region      string
+    projectID   string      // Or subscription ID, account ID, etc.
+
+    // Core components
+    discovery     *ServiceDiscovery
+    scanner       *ResourceScanner
+    schemaGen     *SchemaGenerator
+    clientFactory *ClientFactory
+
+    // Performance components
+    rateLimiter    *rate.Limiter
+    maxConcurrency int
+    
+    // Caching
+    cache *Cache
+}
+
+// NewYourProvider creates a new provider instance
+func NewYourProvider() *YourProvider {
+    return &YourProvider{
+        rateLimiter:    rate.NewLimiter(rate.Limit(100), 200), // Adjust per your API limits
+        maxConcurrency: 10,
+        cache:          NewCache(24 * time.Hour),
+    }
+}
+
+// Initialize sets up the provider with credentials and configuration
+func (p *YourProvider) Initialize(ctx context.Context, req *pb.InitializeRequest) (*pb.InitializeResponse, error) {
+    p.mu.Lock()
+    defer p.mu.Unlock()
+
+    // Extract configuration
+    region := req.Config["region"]
+    projectID := req.Config["project_id"] // Adjust key name for your cloud
+
+    // Initialize cloud credentials (implement your auth logic)
+    credential, err := p.initializeCredentials(ctx, req.Config)
+    if err != nil {
+        return &pb.InitializeResponse{
+            Success: false,
+            Error:   fmt.Sprintf("failed to initialize credentials: %v", err),
+        }, nil
+    }
+
+    p.credential = credential
+    p.region = region
+    p.projectID = projectID
+
+    // Initialize components
+    p.clientFactory = NewClientFactory(credential, region)
+    p.discovery = NewServiceDiscovery(p.clientFactory)
+    p.scanner = NewResourceScanner(p.clientFactory)
+    p.schemaGen = NewSchemaGenerator()
+
+    p.initialized = true
+
+    return &pb.InitializeResponse{
+        Success: true,
+        Version: "1.0.0",
+        Metadata: map[string]string{
+            "region":     region,
+            "project_id": projectID,
+        },
+    }, nil
+}
+
+// GetProviderInfo returns provider metadata
+func (p *YourProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.ProviderInfoResponse, error) {
+    return &pb.ProviderInfoResponse{
+        Name:        "your-provider",
+        Version:     "1.0.0",
+        Description: "Your Cloud Provider plugin for Corkscrew",
+        Capabilities: map[string]string{
+            "discovery": "true",
+            "scanning":  "true",
+            "streaming": "true",
+            "schemas":   "true",
+        },
+    }, nil
+}
+
+// Implement other interface methods...
+```
+
+### Step 5: Implement Service Discovery
+
+Create `discovery.go`:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    
+    pb "github.com/jlgore/corkscrew/internal/proto"
+)
+
+type ServiceDiscovery struct {
+    clientFactory *ClientFactory
+}
+
+func NewServiceDiscovery(clientFactory *ClientFactory) *ServiceDiscovery {
+    return &ServiceDiscovery{
+        clientFactory: clientFactory,
+    }
+}
+
+func (sd *ServiceDiscovery) DiscoverServices(ctx context.Context) ([]*pb.ServiceInfo, error) {
+    // Use your cloud's API to discover available services
+    // Example implementation structure:
+    
+    var services []*pb.ServiceInfo
+    
+    // Method 1: Static list of known services
+    knownServices := []string{"compute", "storage", "database", "networking"}
+    
+    for _, serviceName := range knownServices {
+        services = append(services, &pb.ServiceInfo{
+            Name:        serviceName,
+            DisplayName: fmt.Sprintf("Your Cloud %s", serviceName),
+            PackageName: fmt.Sprintf("your-cloud-%s", serviceName),
+        })
+    }
+    
+    // Method 2: Dynamic discovery via API (preferred)
+    // client := sd.clientFactory.GetServiceCatalogClient()
+    // apiServices, err := client.ListServices(ctx)
+    // if err != nil {
+    //     return nil, fmt.Errorf("failed to discover services: %w", err)
+    // }
+    
+    return services, nil
+}
+```
+
+### Step 6: Implement Resource Scanning
+
+Create `scanner.go`:
 
 ```go
 package main
@@ -160,608 +405,118 @@ import (
     "fmt"
     "sync"
     
-    "github.com/Azure/azure-sdk-for-go/sdk/azcore"
-    "github.com/Azure/azure-sdk-for-go/sdk/azidentity"
     pb "github.com/jlgore/corkscrew/internal/proto"
+    "golang.org/x/time/rate"
 )
 
-type AzureProvider struct {
-    mu           sync.RWMutex
-    initialized  bool
-    credential   azcore.TokenCredential
-    subscription string
-    
-    // Discovery and scanning components
-    serviceDiscovery *ServiceDiscovery
-    resourceLister   *ResourceLister
-    schemaGenerator  *SchemaGenerator
+type ResourceScanner struct {
+    clientFactory *ClientFactory
+    rateLimiter  *rate.Limiter
 }
 
-func NewAzureProvider() *AzureProvider {
-    return &AzureProvider{
-        serviceDiscovery: NewServiceDiscovery(),
-        resourceLister:   NewResourceLister(),
-        schemaGenerator:  NewSchemaGenerator(),
+func NewResourceScanner(clientFactory *ClientFactory) *ResourceScanner {
+    return &ResourceScanner{
+        clientFactory: clientFactory,
+        rateLimiter:  rate.NewLimiter(rate.Limit(50), 100),
     }
 }
 
-func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeRequest) (*pb.InitializeResponse, error) {
-    p.mu.Lock()
-    defer p.mu.Unlock()
+func (rs *ResourceScanner) ScanService(ctx context.Context, serviceName, region string) ([]*pb.Resource, error) {
+    // Wait for rate limiter
+    if err := rs.rateLimiter.Wait(ctx); err != nil {
+        return nil, err
+    }
 
-    // Initialize Azure credentials
-    cred, err := azidentity.NewDefaultAzureCredential(nil)
+    // Get service client
+    client, err := rs.clientFactory.GetServiceClient(serviceName)
     if err != nil {
-        return &pb.InitializeResponse{
-            Success: false,
-            Error:   fmt.Sprintf("failed to create Azure credential: %v", err),
-        }, nil
+        return nil, fmt.Errorf("failed to get client for %s: %w", serviceName, err)
     }
 
-    p.credential = cred
-    p.subscription = req.Config["subscription_id"]
-    p.initialized = true
-
-    return &pb.InitializeResponse{
-        Success: true,
-        Version: "1.0.0",
-    }, nil
-}
-
-func (p *AzureProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.ProviderInfoResponse, error) {
-    return &pb.ProviderInfoResponse{
-        Name:        "azure",
-        Version:     "1.0.0",
-        Description: "Microsoft Azure cloud provider plugin",
-        Capabilities: map[string]string{
-            "discovery": "true",
-            "scanning":  "true",
-            "streaming": "true",
-        },
-    }, nil
-}
-
-// Implement other interface methods...
-```
-
-## Azure Provider Example
-
-Here's a complete example for an Azure provider:
-
-### Service Discovery (`discovery/service_discovery.go`)
-
-```go
-package discovery
-
-import (
-    "context"
-    "fmt"
-    "strings"
-    
-    "github.com/Azure/azure-sdk-for-go/sdk/azcore"
-    "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-)
-
-type ServiceDiscovery struct {
-    credential azcore.TokenCredential
-    cache      map[string]*ServiceMetadata
-}
-
-type ServiceMetadata struct {
-    Name         string   `json:"name"`
-    Namespace    string   `json:"namespace"`
-    APIVersion   string   `json:"api_version"`
-    ResourceTypes []string `json:"resource_types"`
-}
-
-func NewServiceDiscovery() *ServiceDiscovery {
-    return &ServiceDiscovery{
-        cache: make(map[string]*ServiceMetadata),
-    }
-}
-
-func (sd *ServiceDiscovery) DiscoverServices(ctx context.Context, subscriptionID string, cred azcore.TokenCredential) ([]string, error) {
-    // Use Azure Resource Manager to discover available resource providers
-    client, err := armresources.NewProvidersClient(subscriptionID, cred, nil)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create providers client: %w", err)
-    }
-
-    var services []string
-    pager := client.NewListPager(nil)
-    
-    for pager.More() {
-        page, err := pager.NextPage(ctx)
-        if err != nil {
-            return nil, fmt.Errorf("failed to get providers: %w", err)
-        }
-
-        for _, provider := range page.Value {
-            if provider.Namespace != nil {
-                // Convert namespace to service name (e.g., Microsoft.Compute -> compute)
-                serviceName := strings.ToLower(strings.TrimPrefix(*provider.Namespace, "Microsoft."))
-                services = append(services, serviceName)
-                
-                // Cache metadata
-                sd.cache[serviceName] = &ServiceMetadata{
-                    Name:      serviceName,
-                    Namespace: *provider.Namespace,
-                }
-            }
-        }
-    }
-
-    return services, nil
-}
-```
-
-### Resource Scanner (`scanner/resource_lister.go`)
-
-```go
-package scanner
-
-import (
-    "context"
-    "fmt"
-    "reflect"
-    
-    "github.com/Azure/azure-sdk-for-go/sdk/azcore"
-    "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-    "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
-)
-
-type ResourceLister struct {
-    credential     azcore.TokenCredential
-    subscriptionID string
-}
-
-type AzureResourceRef struct {
-    ID           string            `json:"id"`
-    Name         string            `json:"name"`
-    Type         string            `json:"type"`
-    Service      string            `json:"service"`
-    Location     string            `json:"location"`
-    ResourceGroup string           `json:"resource_group"`
-    Metadata     map[string]string `json:"metadata"`
-}
-
-func NewResourceLister() *ResourceLister {
-    return &ResourceLister{}
-}
-
-func (rl *ResourceLister) ListResources(ctx context.Context, serviceName string, subscriptionID string, cred azcore.TokenCredential) ([]AzureResourceRef, error) {
-    rl.credential = cred
-    rl.subscriptionID = subscriptionID
+    // Scan resources using your cloud's SDK
+    // This is where you'll implement the actual resource discovery logic
+    var resources []*pb.Resource
 
     switch serviceName {
     case "compute":
-        return rl.listComputeResources(ctx)
+        resources, err = rs.scanComputeResources(ctx, client, region)
     case "storage":
-        return rl.listStorageResources(ctx)
+        resources, err = rs.scanStorageResources(ctx, client, region)
     default:
-        return rl.listGenericResources(ctx, serviceName)
+        return nil, fmt.Errorf("unsupported service: %s", serviceName)
     }
+
+    return resources, err
 }
 
-func (rl *ResourceLister) listComputeResources(ctx context.Context) ([]AzureResourceRef, error) {
-    client, err := armcompute.NewVirtualMachinesClient(rl.subscriptionID, rl.credential, nil)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create compute client: %w", err)
-    }
-
-    var resources []AzureResourceRef
-    pager := client.NewListAllPager(nil)
+func (rs *ResourceScanner) scanComputeResources(ctx context.Context, client interface{}, region string) ([]*pb.Resource, error) {
+    // Implement your cloud's compute resource scanning
+    // Example structure:
     
-    for pager.More() {
-        page, err := pager.NextPage(ctx)
-        if err != nil {
-            return nil, fmt.Errorf("failed to list VMs: %w", err)
-        }
-
-        for _, vm := range page.Value {
-            if vm.ID != nil && vm.Name != nil {
-                resource := AzureResourceRef{
-                    ID:       *vm.ID,
-                    Name:     *vm.Name,
-                    Type:     "VirtualMachine",
-                    Service:  "compute",
-                    Location: *vm.Location,
-                }
-                
-                // Extract resource group from ID
-                if rg := extractResourceGroup(*vm.ID); rg != "" {
-                    resource.ResourceGroup = rg
-                }
-                
-                resources = append(resources, resource)
-            }
-        }
-    }
-
-    return resources, nil
-}
-
-func extractResourceGroup(resourceID string) string {
-    // Parse Azure resource ID to extract resource group
-    // Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/{provider}/{type}/{name}
-    parts := strings.Split(resourceID, "/")
-    for i, part := range parts {
-        if part == "resourceGroups" && i+1 < len(parts) {
-            return parts[i+1]
-        }
-    }
-    return ""
-}
-```
-
-## GCP Provider Example
-
-### Service Discovery for GCP
-
-```go
-package discovery
-
-import (
-    "context"
-    "fmt"
+    var resources []*pb.Resource
     
-    "google.golang.org/api/cloudresourcemanager/v1"
-    "google.golang.org/api/option"
-)
-
-type GCPServiceDiscovery struct {
-    projectID string
-    cache     map[string]*ServiceMetadata
-}
-
-func NewGCPServiceDiscovery() *GCPServiceDiscovery {
-    return &GCPServiceDiscovery{
-        cache: make(map[string]*ServiceMetadata),
-    }
-}
-
-func (sd *GCPServiceDiscovery) DiscoverServices(ctx context.Context, projectID string) ([]string, error) {
-    // Use Cloud Resource Manager to discover enabled APIs
-    service, err := cloudresourcemanager.NewService(ctx, option.WithScopes(cloudresourcemanager.CloudPlatformScope))
-    if err != nil {
-        return nil, fmt.Errorf("failed to create resource manager service: %w", err)
-    }
-
-    // Get enabled services
-    req := service.Projects.GetIamPolicy(projectID, &cloudresourcemanager.GetIamPolicyRequest{})
+    // Cast client to your specific type
+    // computeClient := client.(YourComputeClient)
     
-    // This is a simplified example - in practice, you'd use the Service Usage API
-    // to get enabled services and their resource types
+    // List instances/VMs
+    // instances, err := computeClient.ListInstances(ctx)
+    // if err != nil {
+    //     return nil, err
+    // }
     
-    services := []string{
-        "compute",
-        "storage",
-        "bigquery",
-        "pubsub",
-        "cloudsql",
-        "kubernetes",
-    }
-
-    return services, nil
-}
-```
-
-### GCP Resource Scanner
-
-```go
-package scanner
-
-import (
-    "context"
-    "fmt"
+    // for _, instance := range instances {
+    //     resource := &pb.Resource{
+    //         Provider:    "your-provider",
+    //         Service:     "compute",
+    //         Type:        "Instance",
+    //         Id:          instance.ID,
+    //         Name:        instance.Name,
+    //         Region:      region,
+    //         DiscoveredAt: timestamppb.Now(),
+    //         // ... other fields
+    //     }
+    //     resources = append(resources, resource)
+    // }
     
-    "google.golang.org/api/compute/v1"
-    "google.golang.org/api/storage/v1"
-)
-
-type GCPResourceLister struct {
-    projectID string
-}
-
-type GCPResourceRef struct {
-    ID       string            `json:"id"`
-    Name     string            `json:"name"`
-    Type     string            `json:"type"`
-    Service  string            `json:"service"`
-    Zone     string            `json:"zone,omitempty"`
-    Region   string            `json:"region,omitempty"`
-    Metadata map[string]string `json:"metadata"`
-}
-
-func (rl *GCPResourceLister) ListComputeInstances(ctx context.Context) ([]GCPResourceRef, error) {
-    service, err := compute.NewService(ctx)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create compute service: %w", err)
-    }
-
-    var resources []GCPResourceRef
-    
-    // List instances across all zones
-    req := service.Instances.AggregatedList(rl.projectID)
-    if err := req.Pages(ctx, func(page *compute.InstanceAggregatedList) error {
-        for zone, instanceList := range page.Items {
-            if instanceList.Instances != nil {
-                for _, instance := range instanceList.Instances {
-                    resource := GCPResourceRef{
-                        ID:      fmt.Sprintf("%d", instance.Id),
-                        Name:    instance.Name,
-                        Type:    "Instance",
-                        Service: "compute",
-                        Zone:    extractZoneFromURL(zone),
-                        Metadata: map[string]string{
-                            "machineType": instance.MachineType,
-                            "status":      instance.Status,
-                        },
-                    }
-                    resources = append(resources, resource)
-                }
-            }
-        }
-        return nil
-    }); err != nil {
-        return nil, fmt.Errorf("failed to list instances: %w", err)
-    }
-
     return resources, nil
 }
 ```
 
-## Kubernetes Provider Example
+### Step 7: Implement Other Required Methods
 
-### Kubernetes Service Discovery
+You'll need to implement all the methods in the CloudProvider interface. Look at the AWS and Azure providers for examples of:
 
-```go
-package discovery
-
-import (
-    "context"
-    "fmt"
-    
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/client-go/discovery"
-    "k8s.io/client-go/kubernetes"
-    "k8s.io/client-go/rest"
-    "k8s.io/client-go/tools/clientcmd"
-)
-
-type K8sServiceDiscovery struct {
-    clientset *kubernetes.Clientset
-    discovery discovery.DiscoveryInterface
-}
-
-func NewK8sServiceDiscovery() *K8sServiceDiscovery {
-    return &K8sServiceDiscovery{}
-}
-
-func (sd *K8sServiceDiscovery) Initialize(kubeconfig string) error {
-    var config *rest.Config
-    var err error
-    
-    if kubeconfig != "" {
-        config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-    } else {
-        config, err = rest.InClusterConfig()
-    }
-    
-    if err != nil {
-        return fmt.Errorf("failed to create kubernetes config: %w", err)
-    }
-
-    clientset, err := kubernetes.NewForConfig(config)
-    if err != nil {
-        return fmt.Errorf("failed to create kubernetes clientset: %w", err)
-    }
-
-    sd.clientset = clientset
-    sd.discovery = clientset.Discovery()
-    return nil
-}
-
-func (sd *K8sServiceDiscovery) DiscoverAPIResources(ctx context.Context) ([]string, error) {
-    // Discover all API resources
-    apiResourceLists, err := sd.discovery.ServerPreferredResources()
-    if err != nil {
-        return nil, fmt.Errorf("failed to discover API resources: %w", err)
-    }
-
-    var resources []string
-    for _, apiResourceList := range apiResourceLists {
-        for _, apiResource := range apiResourceList.APIResources {
-            if apiResource.Namespaced {
-                resources = append(resources, apiResource.Kind)
-            }
-        }
-    }
-
-    return resources, nil
-}
-```
-
-### Kubernetes Resource Scanner
-
-```go
-package scanner
-
-import (
-    "context"
-    "fmt"
-    
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/apimachinery/pkg/runtime/schema"
-    "k8s.io/client-go/dynamic"
-    "k8s.io/client-go/kubernetes"
-)
-
-type K8sResourceLister struct {
-    clientset     *kubernetes.Clientset
-    dynamicClient dynamic.Interface
-}
-
-type K8sResourceRef struct {
-    ID        string            `json:"id"`
-    Name      string            `json:"name"`
-    Type      string            `json:"type"`
-    Namespace string            `json:"namespace"`
-    Labels    map[string]string `json:"labels"`
-    Metadata  map[string]string `json:"metadata"`
-}
-
-func (rl *K8sResourceLister) ListPods(ctx context.Context, namespace string) ([]K8sResourceRef, error) {
-    pods, err := rl.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-    if err != nil {
-        return nil, fmt.Errorf("failed to list pods: %w", err)
-    }
-
-    var resources []K8sResourceRef
-    for _, pod := range pods.Items {
-        resource := K8sResourceRef{
-            ID:        string(pod.UID),
-            Name:      pod.Name,
-            Type:      "Pod",
-            Namespace: pod.Namespace,
-            Labels:    pod.Labels,
-            Metadata: map[string]string{
-                "phase":   string(pod.Status.Phase),
-                "node":    pod.Spec.NodeName,
-                "created": pod.CreationTimestamp.String(),
-            },
-        }
-        resources = append(resources, resource)
-    }
-
-    return resources, nil
-}
-
-func (rl *K8sResourceLister) ListGenericResources(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]K8sResourceRef, error) {
-    var resources []K8sResourceRef
-    
-    list, err := rl.dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
-    if err != nil {
-        return nil, fmt.Errorf("failed to list %s: %w", gvr.Resource, err)
-    }
-
-    for _, item := range list.Items {
-        resource := K8sResourceRef{
-            ID:        string(item.GetUID()),
-            Name:      item.GetName(),
-            Type:      item.GetKind(),
-            Namespace: item.GetNamespace(),
-            Labels:    item.GetLabels(),
-        }
-        resources = append(resources, resource)
-    }
-
-    return resources, nil
-}
-```
-
-## Testing and Validation
-
-### Unit Tests
-
-Create comprehensive unit tests for your provider:
-
-```go
-package main
-
-import (
-    "context"
-    "testing"
-    
-    pb "github.com/jlgore/corkscrew/internal/proto"
-)
-
-func TestAzureProvider_Initialize(t *testing.T) {
-    provider := NewAzureProvider()
-    
-    req := &pb.InitializeRequest{
-        Provider: "azure",
-        Config: map[string]string{
-            "subscription_id": "test-subscription",
-        },
-    }
-    
-    resp, err := provider.Initialize(context.Background(), req)
-    if err != nil {
-        t.Fatalf("Initialize failed: %v", err)
-    }
-    
-    if !resp.Success {
-        t.Errorf("Expected success=true, got success=%v, error=%s", resp.Success, resp.Error)
-    }
-}
-
-func TestAzureProvider_DiscoverServices(t *testing.T) {
-    provider := NewAzureProvider()
-    
-    // Initialize first
-    initReq := &pb.InitializeRequest{
-        Provider: "azure",
-        Config: map[string]string{
-            "subscription_id": "test-subscription",
-        },
-    }
-    provider.Initialize(context.Background(), initReq)
-    
-    req := &pb.DiscoverServicesRequest{
-        ForceRefresh: true,
-    }
-    
-    resp, err := provider.DiscoverServices(context.Background(), req)
-    if err != nil {
-        t.Fatalf("DiscoverServices failed: %v", err)
-    }
-    
-    if len(resp.Services) == 0 {
-        t.Error("Expected at least one service to be discovered")
-    }
-}
-```
-
-### Integration Tests
-
-```go
-func TestAzureProvider_Integration(t *testing.T) {
-    if testing.Short() {
-        t.Skip("Skipping integration test in short mode")
-    }
-    
-    // Test with real Azure credentials
-    provider := NewAzureProvider()
-    
-    // Test full workflow: Initialize -> Discover -> List -> Describe
-    // ... implementation
-}
-```
+- `BatchScan`: Concurrent scanning of multiple services
+- `StreamScan`: Streaming results for large datasets
+- `GetSchemas`: Generating database schemas
+- `ListResources` and `DescribeResource`: Resource operations
 
 ## Build and Deployment
 
 ### Build Script
 
-Create `build-azure-provider.sh`:
+Create `build-your-provider.sh` following the established pattern:
 
 ```bash
 #!/bin/bash
 
-echo "🔧 Building Azure Provider Plugin..."
+echo "🔧 Building Your Provider Plugin..."
 
 # Ensure build directory exists
 mkdir -p plugins/build
 
-# Build the Azure provider
-cd plugins/azure-provider
-echo "📦 Building azure-provider..."
-go build -o ../build/azure-provider .
+# Build the provider
+cd plugins/your-provider
+echo "📦 Building your-provider..."
+go build -o ../build/corkscrew-your-provider .
 
 if [ $? -eq 0 ]; then
-    echo "✅ Azure Provider built successfully!"
-    echo "📁 Binary location: plugins/build/azure-provider"
-    echo "📊 Size: $(du -h ../build/azure-provider | cut -f1)"
+    echo "✅ Your Provider built successfully!"
+    echo "📁 Binary location: plugins/build/corkscrew-your-provider"
+    echo "📊 Size: $(du -h ../build/corkscrew-your-provider | cut -f1)"
+    
+    # Make it executable
+    chmod +x ../build/corkscrew-your-provider
 else
     echo "❌ Build failed!"
     exit 1
@@ -769,25 +524,94 @@ fi
 
 echo ""
 echo "🎉 Build complete! You can now use:"
-echo "  ./corkscrew plugin install azure-provider"
+echo "  ./corkscrew scan --provider your-provider --services compute,storage --region us-west-1"
 ```
 
-### Plugin Registration
+### Plugin Binary Naming
 
-Add your plugin to `plugins/plugins.json`:
+Your binary should be named following the pattern: `corkscrew-{provider-name}`
+
+Examples from existing providers:
+- AWS: `corkscrew-aws` or `aws-provider`
+- Azure: `corkscrew-azure`
+
+## Testing Your Plugin
+
+### Basic Plugin Test
+
+Create a simple test to verify your plugin works:
+
+```go
+// test_plugin.go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    
+    pb "github.com/jlgore/corkscrew/internal/proto"
+)
+
+func testPlugin() {
+    log.Printf("🧪 Testing Your Provider Plugin...")
+    
+    provider := NewYourProvider()
+    
+    // Test initialization
+    initReq := &pb.InitializeRequest{
+        Provider: "your-provider",
+        Config: map[string]string{
+            "region":     "us-west-1",
+            "project_id": "test-project",
+        },
+    }
+    
+    initResp, err := provider.Initialize(context.Background(), initReq)
+    if err != nil {
+        log.Fatalf("❌ Initialize failed: %v", err)
+    }
+    
+    if !initResp.Success {
+        log.Fatalf("❌ Initialize unsuccessful: %s", initResp.Error)
+    }
+    
+    log.Printf("✅ Initialize successful, version: %s", initResp.Version)
+    
+    // Test service discovery
+    discReq := &pb.DiscoverServicesRequest{ForceRefresh: true}
+    discResp, err := provider.DiscoverServices(context.Background(), discReq)
+    if err != nil {
+        log.Fatalf("❌ Service discovery failed: %v", err)
+    }
+    
+    log.Printf("✅ Discovered %d services", len(discResp.Services))
+    for _, service := range discResp.Services {
+        log.Printf("  - %s (%s)", service.Name, service.DisplayName)
+    }
+    
+    log.Printf("🎉 Plugin test completed successfully!")
+}
+```
+
+## Plugin Registration
+
+### Adding to plugins.json
+
+Add your provider to the `plugins/plugins.json` file:
 
 ```json
 {
-  "azure_services": {
+  "your_provider_services": {
     "compute": {
       "capabilities": ["scan", "stream", "schemas", "relationships"],
-      "plugin_name": "corkscrew-azure-compute",
-      "resource_types": ["VirtualMachine", "Disk", "NetworkInterface"]
+      "plugin_name": "corkscrew-your-provider-compute",
+      "resource_types": ["Instance", "Volume", "SecurityGroup"]
     },
     "storage": {
       "capabilities": ["scan", "stream", "schemas", "relationships"],
-      "plugin_name": "corkscrew-azure-storage",
-      "resource_types": ["StorageAccount", "Blob", "Queue"]
+      "plugin_name": "corkscrew-your-provider-storage",
+      "resource_types": ["Bucket", "Object", "Snapshot"]
     }
   }
 }
@@ -797,48 +621,51 @@ Add your plugin to `plugins/plugins.json`:
 
 ### 1. Error Handling
 
-- Implement comprehensive error handling with retries
-- Use circuit breakers for external API calls
-- Provide meaningful error messages to users
-
 ```go
-func (p *AzureProvider) handleAPIError(err error, operation string) error {
+func (p *YourProvider) handleAPIError(err error, operation string) error {
+    // Implement retry logic for transient errors
     if isRetryableError(err) {
         return fmt.Errorf("retryable error in %s: %w", operation, err)
     }
     return fmt.Errorf("permanent error in %s: %w", operation, err)
 }
+
+func isRetryableError(err error) bool {
+    // Check for rate limiting, timeouts, etc.
+    // Return true for errors that should be retried
+    return false
+}
 ```
 
 ### 2. Rate Limiting
 
-- Respect cloud provider API rate limits
-- Implement exponential backoff
-- Use connection pooling where appropriate
-
 ```go
-type RateLimiter struct {
-    limiter *rate.Limiter
-}
-
-func (rl *RateLimiter) Wait(ctx context.Context) error {
-    return rl.limiter.Wait(ctx)
+// Always use rate limiting to respect API limits
+func (rs *ResourceScanner) makeAPICall(ctx context.Context, operation func() error) error {
+    if err := rs.rateLimiter.Wait(ctx); err != nil {
+        return err
+    }
+    return operation()
 }
 ```
 
 ### 3. Caching
 
-- Cache service discovery results
-- Implement TTL-based cache invalidation
-- Use memory-efficient data structures
-
 ```go
+type Cache struct {
+    mu   sync.RWMutex
+    data map[string]CacheEntry
+}
+
 type CacheEntry struct {
     Data      interface{}
     ExpiresAt time.Time
 }
 
 func (c *Cache) Get(key string) (interface{}, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    
     entry, exists := c.data[key]
     if !exists || time.Now().After(entry.ExpiresAt) {
         return nil, false
@@ -847,41 +674,14 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 }
 ```
 
-### 4. Configuration
-
-- Support multiple authentication methods
-- Provide sensible defaults
-- Validate configuration early
-
-```go
-type ProviderConfig struct {
-    SubscriptionID string `json:"subscription_id"`
-    TenantID       string `json:"tenant_id"`
-    ClientID       string `json:"client_id"`
-    ClientSecret   string `json:"client_secret"`
-    Region         string `json:"region"`
-}
-
-func (c *ProviderConfig) Validate() error {
-    if c.SubscriptionID == "" {
-        return fmt.Errorf("subscription_id is required")
-    }
-    return nil
-}
-```
-
-### 5. Logging
-
-- Use structured logging
-- Include correlation IDs
-- Log performance metrics
+### 4. Structured Logging
 
 ```go
 import "log/slog"
 
-func (p *AzureProvider) logOperation(operation string, duration time.Duration, err error) {
+func (p *YourProvider) logOperation(operation string, duration time.Duration, err error) {
     logger := slog.With(
-        "provider", "azure",
+        "provider", "your-provider",
         "operation", operation,
         "duration_ms", duration.Milliseconds(),
     )
@@ -894,45 +694,91 @@ func (p *AzureProvider) logOperation(operation string, duration time.Duration, e
 }
 ```
 
-### 6. Resource Relationships
+### 5. Configuration Validation
 
-- Model relationships between resources
-- Support dependency graphs
-- Enable cross-service resource discovery
+```go
+type ProviderConfig struct {
+    Region    string `json:"region"`
+    ProjectID string `json:"project_id"`
+    Endpoint  string `json:"endpoint,omitempty"`
+}
+
+func (c *ProviderConfig) Validate() error {
+    if c.Region == "" {
+        return fmt.Errorf("region is required")
+    }
+    if c.ProjectID == "" {
+        return fmt.Errorf("project_id is required")
+    }
+    return nil
+}
+```
+
+### 6. Resource Relationships
 
 ```go
 type ResourceRelationship struct {
-    SourceID     string `json:"source_id"`
-    TargetID     string `json:"target_id"`
-    Type         string `json:"type"` // "depends_on", "contains", "references"
-    Properties   map[string]interface{} `json:"properties"`
+    SourceID   string                 `json:"source_id"`
+    TargetID   string                 `json:"target_id"`
+    Type       string                 `json:"type"` // "depends_on", "contains", "references"
+    Properties map[string]interface{} `json:"properties"`
+}
+
+func (rs *ResourceScanner) discoverRelationships(ctx context.Context, resources []*pb.Resource) []*ResourceRelationship {
+    var relationships []*ResourceRelationship
+    
+    // Example: Instance -> Volume relationships
+    for _, resource := range resources {
+        if resource.Type == "Instance" {
+            // Parse attached volumes from resource attributes
+            // Create relationships
+        }
+    }
+    
+    return relationships
 }
 ```
 
-### 7. Schema Generation
-
-- Generate consistent database schemas
-- Support schema evolution
-- Include metadata and constraints
+### 7. Performance Optimization
 
 ```go
-func (sg *SchemaGenerator) GenerateTableSchema(resourceType string) *TableSchema {
-    return &TableSchema{
-        Name: fmt.Sprintf("azure_%s", strings.ToLower(resourceType)),
-        Columns: []Column{
-            {Name: "id", Type: "VARCHAR", PrimaryKey: true},
-            {Name: "name", Type: "VARCHAR", Nullable: false},
-            {Name: "resource_group", Type: "VARCHAR", Nullable: false},
-            {Name: "location", Type: "VARCHAR", Nullable: false},
-            {Name: "properties", Type: "JSON", Nullable: true},
-            {Name: "discovered_at", Type: "TIMESTAMP", Nullable: false},
-        },
-        Indexes: []Index{
-            {Name: "idx_resource_group", Columns: []string{"resource_group"}},
-            {Name: "idx_location", Columns: []string{"location"}},
-        },
+// Use worker pools for concurrent scanning
+func (p *YourProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
+    semaphore := make(chan struct{}, p.maxConcurrency)
+    var wg sync.WaitGroup
+    var mu sync.Mutex
+    var allResources []*pb.Resource
+    
+    for _, service := range req.Services {
+        wg.Add(1)
+        go func(serviceName string) {
+            defer wg.Done()
+            
+            semaphore <- struct{}{} // Acquire
+            defer func() { <-semaphore }() // Release
+            
+            resources, err := p.scanner.ScanService(ctx, serviceName, req.Region)
+            if err != nil {
+                log.Printf("Failed to scan %s: %v", serviceName, err)
+                return
+            }
+            
+            mu.Lock()
+            allResources = append(allResources, resources...)
+            mu.Unlock()
+        }(service)
     }
+    
+    wg.Wait()
+    
+    return &pb.BatchScanResponse{
+        Resources: allResources,
+        Stats: &pb.ScanStats{
+            ServicesScanned: int32(len(req.Services)),
+            ResourcesFound:  int32(len(allResources)),
+        },
+    }, nil
 }
 ```
 
-This guide provides a comprehensive foundation for developing cloud provider plugins for Corkscrew. Each provider will have unique characteristics, but following this structure and implementing the required interfaces will ensure compatibility with the Corkscrew ecosystem. 
+This guide provides a comprehensive foundation for developing cloud provider plugins for Corkscrew based on the real implementations in the codebase. The AWS and Azure providers serve as excellent references for production-ready plugin development patterns. 

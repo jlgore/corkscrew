@@ -45,6 +45,10 @@ type DynamicAWSProvider struct {
 	graphLoader  *db.GraphLoader
 	enableDuckDB bool
 
+	// Schema Generation
+	dynamicSchemaGenerator *DynamicSchemaGenerator
+	standardSchemaGenerator *SchemaGenerator
+
 	// Cache Manager
 	cacheManager *cache.CacheManager
 }
@@ -89,6 +93,8 @@ func NewDynamicAWSProvider() *DynamicAWSProvider {
 		enableStreaming:  true,
 		graphLoader:      graphLoader,
 		enableDuckDB:     enableDuckDB,
+		dynamicSchemaGenerator: NewDynamicSchemaGenerator(),
+		standardSchemaGenerator: NewSchemaGenerator(),
 		cacheManager:     cache.NewCacheManager(),
 	}
 }
@@ -610,33 +616,124 @@ func (p *DynamicAWSProvider) generateServiceSchemas(serviceName string, serviceI
 
 	for _, resourceType := range serviceInfo.ResourceTypes {
 		tableName := fmt.Sprintf("aws_%s_%s", serviceName, strings.ToLower(resourceType.Name))
-
-		schema := &pb.Schema{
-			Name:         tableName,
-			Service:      serviceName,
-			ResourceType: resourceType.Name,
-			Sql: fmt.Sprintf(`CREATE TABLE %s (
-				id VARCHAR PRIMARY KEY,
-				name VARCHAR,
-				region VARCHAR,
-				arn VARCHAR,
-				tags JSON,
-				raw_data JSON,
-				created_at TIMESTAMP,
-				modified_at TIMESTAMP
-			)`, tableName),
-			Description: fmt.Sprintf("AWS %s %s resources", strings.ToUpper(serviceName), resourceType.Name),
-			Metadata: map[string]string{
-				"service":       serviceName,
-				"resource_type": resourceType.Name,
-				"provider":      "aws",
-			},
+		
+		// Try to generate dynamic schema from Go struct if available
+		var schema *pb.Schema
+		var err error
+		
+		// Check if we have a Go struct type for this resource
+		if goType := p.getGoTypeForResource(serviceName, resourceType.Name); goType != nil {
+			// Use dynamic schema generator for detailed analysis
+			schema, err = p.dynamicSchemaGenerator.GenerateSchemaFromStruct(
+				goType,
+				tableName,
+				serviceName,
+				fmt.Sprintf("AWS::%s::%s", strings.Title(serviceName), resourceType.Name),
+			)
+			if err != nil {
+				log.Printf("Failed to generate dynamic schema for %s.%s: %v", serviceName, resourceType.Name, err)
+				schema = nil
+			}
+		}
+		
+		// Fallback to standard schema generation if dynamic generation failed or no Go type available
+		if schema == nil {
+			schema = &pb.Schema{
+				Name:         tableName,
+				Service:      serviceName,
+				ResourceType: resourceType.Name,
+				Sql: fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+					id VARCHAR PRIMARY KEY,
+					name VARCHAR,
+					type VARCHAR NOT NULL,
+					region VARCHAR,
+					account_id VARCHAR,
+					arn VARCHAR,
+					tags JSON,
+					attributes JSON,
+					raw_data JSON,
+					discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+					last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+				);
+				
+				-- Standard indexes
+				CREATE INDEX IF NOT EXISTS idx_%s_type ON %s(type);
+				CREATE INDEX IF NOT EXISTS idx_%s_region ON %s(region);
+				CREATE INDEX IF NOT EXISTS idx_%s_name ON %s(name);
+				CREATE INDEX IF NOT EXISTS idx_%s_discovered_at ON %s(discovered_at);`, 
+					tableName,
+					strings.ReplaceAll(serviceName, "-", "_"),
+					tableName,
+					strings.ReplaceAll(serviceName, "-", "_"),
+					tableName,
+					strings.ReplaceAll(serviceName, "-", "_"),
+					tableName,
+					strings.ReplaceAll(serviceName, "-", "_"),
+					tableName,
+				),
+				Description: fmt.Sprintf("AWS %s %s resources", strings.ToUpper(serviceName), resourceType.Name),
+				Metadata: map[string]string{
+					"service":       serviceName,
+					"resource_type": resourceType.Name,
+					"provider":      "aws",
+					"schema_type":   "standard",
+				},
+			}
+		} else {
+			// Mark as dynamically generated
+			if schema.Metadata == nil {
+				schema.Metadata = make(map[string]string)
+			}
+			schema.Metadata["schema_type"] = "dynamic"
 		}
 
 		schemas = append(schemas, schema)
 	}
 
 	return schemas
+}
+
+// getGoTypeForResource returns the Go reflect.Type for a given AWS resource
+// This maps AWS service and resource names to their corresponding Go struct types
+func (p *DynamicAWSProvider) getGoTypeForResource(serviceName, resourceTypeName string) reflect.Type {
+	// Map known AWS resource types to their Go struct types
+	// This would typically be populated from the AWS SDK or generated code
+	
+	resourceKey := fmt.Sprintf("%s.%s", serviceName, resourceTypeName)
+	
+	// Known resource type mappings - this could be loaded from configuration
+	knownTypes := map[string]reflect.Type{
+		"ec2.Instance":        reflect.TypeOf(EC2Instance{}),
+		"s3.Bucket":          reflect.TypeOf(S3Bucket{}),
+		"lambda.Function":    reflect.TypeOf(LambdaFunction{}),
+		// Add more mappings as needed
+	}
+	
+	if goType, exists := knownTypes[resourceKey]; exists {
+		return goType
+	}
+	
+	// Try common patterns
+	switch serviceName {
+	case "ec2":
+		switch strings.ToLower(resourceTypeName) {
+		case "instance", "instances":
+			return reflect.TypeOf(EC2Instance{})
+		}
+	case "s3":
+		switch strings.ToLower(resourceTypeName) {
+		case "bucket", "buckets":
+			return reflect.TypeOf(S3Bucket{})
+		}
+	case "lambda":
+		switch strings.ToLower(resourceTypeName) {
+		case "function", "functions":
+			return reflect.TypeOf(LambdaFunction{})
+		}
+	}
+	
+	// No known Go type found
+	return nil
 }
 
 // saveResourcesToDuckDB saves resources to DuckDB asynchronously

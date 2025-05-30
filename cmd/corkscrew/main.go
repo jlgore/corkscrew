@@ -30,6 +30,10 @@ func main() {
 		runScan(os.Args[2:])
 	case "discover":
 		runDiscover(os.Args[2:])
+	case "orchestrator-discover":
+		if err := runOrchestratorDiscovery(os.Args[2:]); err != nil {
+			log.Fatalf("Orchestrator discovery failed: %v", err)
+		}
 	case "list":
 		runList(os.Args[2:])
 	case "describe":
@@ -53,6 +57,7 @@ func printUsage() {
 	fmt.Println("  # AWS Examples")
 	fmt.Println("  corkscrew scan --provider aws --services s3,ec2 --region us-east-1")
 	fmt.Println("  corkscrew discover --provider aws")
+	fmt.Println("  corkscrew orchestrator-discover --provider aws --generate --verbose")
 	fmt.Println("  corkscrew list --provider aws --services s3 --region us-east-1")
 	fmt.Println("  corkscrew describe --provider aws --resource-id bucket-name --service s3")
 	fmt.Println("  corkscrew info --provider aws")
@@ -65,12 +70,13 @@ func printUsage() {
 	fmt.Println("  corkscrew schemas --provider azure --services storage,compute")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  scan        - Full resource scanning")
-	fmt.Println("  discover    - Discover available services")
-	fmt.Println("  list        - List resources")
-	fmt.Println("  describe    - Describe specific resources")
-	fmt.Println("  info        - Show provider information")
-	fmt.Println("  schemas     - Get database schemas for resources")
+	fmt.Println("  scan                - Full resource scanning")
+	fmt.Println("  discover            - Discover available services")
+	fmt.Println("  orchestrator-discover - Advanced discovery using orchestrator")
+	fmt.Println("  list                - List resources")
+	fmt.Println("  describe            - Describe specific resources")
+	fmt.Println("  info                - Show provider information")
+	fmt.Println("  schemas             - Get database schemas for resources")
 	fmt.Println()
 	fmt.Println("Supported Providers:")
 	fmt.Println("  aws         - Amazon Web Services")

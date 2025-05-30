@@ -28,6 +28,9 @@ const (
 	CloudProvider_GetSchemas_FullMethodName              = "/corkscrew.CloudProvider/GetSchemas"
 	CloudProvider_BatchScan_FullMethodName               = "/corkscrew.CloudProvider/BatchScan"
 	CloudProvider_StreamScan_FullMethodName              = "/corkscrew.CloudProvider/StreamScan"
+	CloudProvider_ConfigureDiscovery_FullMethodName      = "/corkscrew.CloudProvider/ConfigureDiscovery"
+	CloudProvider_AnalyzeDiscoveredData_FullMethodName   = "/corkscrew.CloudProvider/AnalyzeDiscoveredData"
+	CloudProvider_GenerateFromAnalysis_FullMethodName    = "/corkscrew.CloudProvider/GenerateFromAnalysis"
 )
 
 // CloudProviderClient is the client API for CloudProvider service.
@@ -50,6 +53,10 @@ type CloudProviderClient interface {
 	// Batch operations
 	BatchScan(ctx context.Context, in *BatchScanRequest, opts ...grpc.CallOption) (*BatchScanResponse, error)
 	StreamScan(ctx context.Context, in *StreamScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Resource], error)
+	// Orchestrator integration methods
+	ConfigureDiscovery(ctx context.Context, in *ConfigureDiscoveryRequest, opts ...grpc.CallOption) (*ConfigureDiscoveryResponse, error)
+	AnalyzeDiscoveredData(ctx context.Context, in *AnalyzeRequest, opts ...grpc.CallOption) (*AnalysisResponse, error)
+	GenerateFromAnalysis(ctx context.Context, in *GenerateFromAnalysisRequest, opts ...grpc.CallOption) (*GenerateResponse, error)
 }
 
 type cloudProviderClient struct {
@@ -159,6 +166,36 @@ func (c *cloudProviderClient) StreamScan(ctx context.Context, in *StreamScanRequ
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CloudProvider_StreamScanClient = grpc.ServerStreamingClient[Resource]
 
+func (c *cloudProviderClient) ConfigureDiscovery(ctx context.Context, in *ConfigureDiscoveryRequest, opts ...grpc.CallOption) (*ConfigureDiscoveryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfigureDiscoveryResponse)
+	err := c.cc.Invoke(ctx, CloudProvider_ConfigureDiscovery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cloudProviderClient) AnalyzeDiscoveredData(ctx context.Context, in *AnalyzeRequest, opts ...grpc.CallOption) (*AnalysisResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnalysisResponse)
+	err := c.cc.Invoke(ctx, CloudProvider_AnalyzeDiscoveredData_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cloudProviderClient) GenerateFromAnalysis(ctx context.Context, in *GenerateFromAnalysisRequest, opts ...grpc.CallOption) (*GenerateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateResponse)
+	err := c.cc.Invoke(ctx, CloudProvider_GenerateFromAnalysis_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CloudProviderServer is the server API for CloudProvider service.
 // All implementations must embed UnimplementedCloudProviderServer
 // for forward compatibility.
@@ -179,6 +216,10 @@ type CloudProviderServer interface {
 	// Batch operations
 	BatchScan(context.Context, *BatchScanRequest) (*BatchScanResponse, error)
 	StreamScan(*StreamScanRequest, grpc.ServerStreamingServer[Resource]) error
+	// Orchestrator integration methods
+	ConfigureDiscovery(context.Context, *ConfigureDiscoveryRequest) (*ConfigureDiscoveryResponse, error)
+	AnalyzeDiscoveredData(context.Context, *AnalyzeRequest) (*AnalysisResponse, error)
+	GenerateFromAnalysis(context.Context, *GenerateFromAnalysisRequest) (*GenerateResponse, error)
 	mustEmbedUnimplementedCloudProviderServer()
 }
 
@@ -215,6 +256,15 @@ func (UnimplementedCloudProviderServer) BatchScan(context.Context, *BatchScanReq
 }
 func (UnimplementedCloudProviderServer) StreamScan(*StreamScanRequest, grpc.ServerStreamingServer[Resource]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamScan not implemented")
+}
+func (UnimplementedCloudProviderServer) ConfigureDiscovery(context.Context, *ConfigureDiscoveryRequest) (*ConfigureDiscoveryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfigureDiscovery not implemented")
+}
+func (UnimplementedCloudProviderServer) AnalyzeDiscoveredData(context.Context, *AnalyzeRequest) (*AnalysisResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AnalyzeDiscoveredData not implemented")
+}
+func (UnimplementedCloudProviderServer) GenerateFromAnalysis(context.Context, *GenerateFromAnalysisRequest) (*GenerateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GenerateFromAnalysis not implemented")
 }
 func (UnimplementedCloudProviderServer) mustEmbedUnimplementedCloudProviderServer() {}
 func (UnimplementedCloudProviderServer) testEmbeddedByValue()                       {}
@@ -392,6 +442,60 @@ func _CloudProvider_StreamScan_Handler(srv interface{}, stream grpc.ServerStream
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CloudProvider_StreamScanServer = grpc.ServerStreamingServer[Resource]
 
+func _CloudProvider_ConfigureDiscovery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfigureDiscoveryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CloudProviderServer).ConfigureDiscovery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CloudProvider_ConfigureDiscovery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CloudProviderServer).ConfigureDiscovery(ctx, req.(*ConfigureDiscoveryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CloudProvider_AnalyzeDiscoveredData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnalyzeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CloudProviderServer).AnalyzeDiscoveredData(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CloudProvider_AnalyzeDiscoveredData_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CloudProviderServer).AnalyzeDiscoveredData(ctx, req.(*AnalyzeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CloudProvider_GenerateFromAnalysis_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateFromAnalysisRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CloudProviderServer).GenerateFromAnalysis(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CloudProvider_GenerateFromAnalysis_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CloudProviderServer).GenerateFromAnalysis(ctx, req.(*GenerateFromAnalysisRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CloudProvider_ServiceDesc is the grpc.ServiceDesc for CloudProvider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -430,6 +534,18 @@ var CloudProvider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BatchScan",
 			Handler:    _CloudProvider_BatchScan_Handler,
+		},
+		{
+			MethodName: "ConfigureDiscovery",
+			Handler:    _CloudProvider_ConfigureDiscovery_Handler,
+		},
+		{
+			MethodName: "AnalyzeDiscoveredData",
+			Handler:    _CloudProvider_AnalyzeDiscoveredData_Handler,
+		},
+		{
+			MethodName: "GenerateFromAnalysis",
+			Handler:    _CloudProvider_GenerateFromAnalysis_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

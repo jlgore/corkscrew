@@ -25,6 +25,11 @@ service CloudProvider {
   // Batch operations
   rpc BatchScan(BatchScanRequest) returns (BatchScanResponse);
   rpc StreamScan(StreamScanRequest) returns (stream Resource);
+  
+  // Orchestrator integration methods
+  rpc ConfigureDiscovery(ConfigureDiscoveryRequest) returns (ConfigureDiscoveryResponse);
+  rpc AnalyzeDiscoveredData(AnalyzeRequest) returns (AnalysisResponse);
+  rpc GenerateFromAnalysis(GenerateFromAnalysisRequest) returns (GenerateResponse);
 }
 
 // Legacy scanner service for backward compatibility
@@ -268,4 +273,125 @@ message ServiceInfoResponse {
   repeated string supported_resources = 3;
   repeated string required_permissions = 4;
   map<string, string> capabilities = 5;
+}
+
+// Orchestrator integration messages
+message ConfigureDiscoveryRequest {
+  repeated DiscoverySourceConfig sources = 1;
+  map<string, string> options = 2;
+}
+
+message ConfigureDiscoveryResponse {
+  bool success = 1;
+  string error = 2;
+  repeated string configured_sources = 3;
+  map<string, string> metadata = 4;
+}
+
+message DiscoverySourceConfig {
+  string source_type = 1; // "github" or "api"
+  map<string, string> config = 2;
+}
+
+message AnalyzeRequest {
+  string source_type = 1;
+  bytes raw_data = 2; // Raw discovery data
+  map<string, string> options = 3;
+}
+
+message AnalysisResponse {
+  repeated ServiceAnalysis services = 1;
+  repeated ResourceAnalysis resources = 2;
+  repeated OperationAnalysis operations = 3;
+  map<string, string> metadata = 4;
+  repeated string warnings = 5;
+  bool success = 6;
+  string error = 7;
+}
+
+message ServiceAnalysis {
+  string name = 1;
+  string display_name = 2;
+  string description = 3;
+  string version = 4;
+  string package_name = 5;
+  repeated string operations = 6;
+  map<string, string> metadata = 7;
+}
+
+message ResourceAnalysis {
+  string name = 1;
+  string service = 2;
+  string display_name = 3;
+  string description = 4;
+  repeated string identifiers = 5;
+  repeated AttributeAnalysis attributes = 6;
+  repeated string operations = 7;
+  map<string, string> metadata = 8;
+}
+
+message AttributeAnalysis {
+  string name = 1;
+  string type = 2;
+  bool required = 3;
+  string description = 4;
+  repeated string possible_values = 5;
+}
+
+message OperationAnalysis {
+  string name = 1;
+  string service = 2;
+  string resource_type = 3;
+  string operation_type = 4; // List, Get, Create, Update, Delete, Describe
+  string description = 5;
+  repeated ParameterAnalysis parameters = 6;
+  ResponseAnalysis response = 7;
+  bool paginated = 8;
+  map<string, string> metadata = 9;
+}
+
+message ParameterAnalysis {
+  string name = 1;
+  string type = 2;
+  bool required = 3;
+  string description = 4;
+  string default_value = 5;
+}
+
+message ResponseAnalysis {
+  string type = 1;
+  string description = 2;
+  repeated AttributeAnalysis fields = 3;
+}
+
+message GenerateFromAnalysisRequest {
+  AnalysisResponse analysis = 1;
+  repeated string target_services = 2;
+  map<string, string> options = 3;
+}
+
+message GenerateResponse {
+  bool success = 1;
+  string error = 2;
+  repeated GeneratedFile files = 3;
+  GenerationStats stats = 4;
+  repeated string warnings = 5;
+}
+
+message GeneratedFile {
+  string path = 1;
+  string content = 2;
+  string template = 3;
+  string service = 4;
+  string resource = 5;
+  map<string, string> metadata = 6;
+}
+
+message GenerationStats {
+  int32 total_files = 1;
+  int32 total_services = 2;
+  int32 total_resources = 3;
+  int32 total_operations = 4;
+  int64 generation_time_ms = 5;
+  map<string, int32> file_counts_by_type = 6;
 }

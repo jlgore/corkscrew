@@ -1,17 +1,26 @@
-# Corkscrew Generator Plugin Architecture
+# Corkscrew - DuckDB based Cloud Configuration Scanner
+
+Hello, and welcome to my dumb little Don Quixote windmill!
+
+Corkscrew is a modular cloud configuration scanner designed to discover, analyze, and map cloud resources across any provider.
+
+## What it does
+
+- **Multi-Cloud Support**: Plugin architecture supports any cloud provider with a Go SDK
+- **Resource Discovery**: Automatically discovers and catalogs cloud resources via API calls
+- **Relationship Mapping**: Maps dependencies and relationships between resources in a graph database
+- **Powerful Querying**: Stores everything in DuckDB for SQL-based analysis and reporting
+- **Lightweight Core**: Only load the cloud services you need at runtime
+
+This project has a plugin based architecture that aims to integrate with any cloud provider's golang sdk. A cloud provider plugin generates schemas for a service's resource configurations, discovers the resources via SDK API calls, and saves their configuration into DuckDB so they can be queried. 
+
+In the vein of my BSides NOLA talk "We have CSPM at Home" there are also efforts to map resource relationships on a graph database backed by DuckDB. This is still very much in progress and might get scrapped because I am a clueless dolt!! 
 
 A plugin-based architecture for the Corkscrew Generator that solves the compilation size problem by allowing dynamic loading of only the AWS services you need at runtime.
 
 ## Overview
 
 This implementation uses HashiCorp's go-plugin library with gRPC to create a modular, scalable system where each AWS service is implemented as a separate plugin. This approach provides:
-
-- **Selective Loading**: Load only the services you need at runtime
-- **Independent Development**: Services can be developed and tested independently  
-- **Smaller Binaries**: Core binary remains small; each service is its own binary
-- **Better Isolation**: Service crashes don't affect other services
-- **Version Management**: Services can be updated independently
-- **Graph Relationships**: Built-in support for resource relationships with DuckDB PGQ
 
 ## Architecture
 
@@ -34,6 +43,7 @@ This implementation uses HashiCorp's go-plugin library with gRPC to create a mod
                     │ - Query Engine   │
                     └──────────────────┘
 ```
+For more information on writing plugins see: [PLUGIN_DEVELOPMENT.md](/plugins/PLUGIN_DEVELOPMENT.md). If there is a cloud sdk you want to support open an issue or PR!
 
 ## Quick Start
 
@@ -41,39 +51,76 @@ This implementation uses HashiCorp's go-plugin library with gRPC to create a mod
 
 - Go 1.21 or later
 - Protocol Buffers compiler (`protoc`)
-- AWS credentials configured
+- Cloud provider credentials configured (AWS, Azure, etc.)
 
 ### Setup
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd corkscrew-generator
+git clone https://github.com/jlgore/corkscrew.git
+cd corkscrew
 
-# Set up development environment
+# Set up development environment (installs protoc, Go plugins, etc.)
 make setup
 
-# Build everything
-make all
+# Build everything (CLI + all plugins)
+make build
 
-# Check status
-make status
+# Or use the simple build script
+./build-all.sh
+```
+
+### Quick Build (Alternative)
+
+```bash
+# Simple build script - builds main CLI and AWS plugin
+./build-all.sh
+
+# Check build status
+ls -la corkscrew plugins/*/
+```
+
+### Installation
+
+```bash
+# Install to ~/.corkscrew/bin/ (optional)
+make install
+
+# Add to PATH (add this to your ~/.bashrc or ~/.zshrc)
+export PATH="$HOME/.corkscrew/bin:$PATH"
 ```
 
 ### Basic Usage
 
 ```bash
+# Show provider information
+./corkscrew info
+
+# Discover available AWS services
+./corkscrew discover --verbose
+
+# List resources from a specific service
+./corkscrew list --service s3 --verbose
+
+# Scan multiple services
+./corkscrew scan --services s3,ec2 --verbose
+
+# Scan with specific region
+export AWS_REGION=us-east-1
+./corkscrew scan --services iam --verbose
+```
+
+### Plugin-Specific Usage
+
+```bash
+# Test AWS plugin directly
+./plugins/aws-provider/aws-provider --test
+
+# Test Azure plugin directly  
+./plugins/build/corkscrew-azure --test
+
 # List available plugins
-./cmd/plugin-test/plugin-test --list
-
-# Get plugin information
-./cmd/plugin-test/plugin-test --service s3 --info
-
-# Scan S3 resources
-./cmd/plugin-test/plugin-test --service s3 --region us-east-1
-
-# Save results to file
-./cmd/plugin-test/plugin-test --service s3 --region us-east-1 --output s3-resources.json
+make list-plugins
 ```
 
 ## Project Structure
@@ -85,84 +132,46 @@ make status
 │   ├── proto/                 # Generated protobuf code
 │   ├── shared/                # Plugin interface definitions
 │   ├── client/                # Plugin manager and client
-│   └── db/                    # DuckDB integration
+│   ├── db/                    # DuckDB integration
+│   └── provider/              # Provider abstractions
 ├── cmd/
-│   └── plugin-test/           # Test client for plugins
-├── examples/
-│   └── plugins/               # Example plugin implementations
-│       └── s3/                # S3 plugin example
-├── plugins/                   # Built plugin binaries
+│   ├── corkscrew/             # Main CLI application
+│   ├── generator/             # Code generation tools
+│   ├── plugin-test/           # Plugin testing utilities
+│   └── resource-lister/       # Resource listing tools
+├── plugins/
+│   ├── aws-provider/          # AWS provider plugin
+│   ├── azure-provider/        # Azure provider plugin
+│   ├── build/                 # Built plugin binaries
+│   └── PLUGIN_DEVELOPMENT.md  # Plugin development guide
+├── build/                     # Build artifacts
+├── examples/                  # Example configurations
+├── scripts/                   # Build and utility scripts
+├── .github/                   # GitHub workflows
 ├── Makefile                   # Build automation
-└── README.md                  # This file
+├── build-all.sh              # Simple build script
+├── docker-compose.yml        # Docker setup
+└── README.md                 # This file
 ```
 
 ## Plugin Development
 
-### Creating a New Plugin
+Corkscrew has a comprehensive plugin system. See the [Plugin Development Guide](plugins/PLUGIN_DEVELOPMENT.md) for detailed instructions on creating new cloud provider plugins.
+
+### Quick Plugin Testing
 
 ```bash
-# Create plugin template
-make create-plugin-ec2
+# Test AWS plugin functionality
+cd plugins/aws-provider
+go run . --test
 
-# Edit the generated file
-vim examples/plugins/ec2/main.go
+# Test Azure plugin functionality  
+cd plugins/azure-provider
+./test-azure-provider.sh
 
-# Build the plugin
-make build-plugin-ec2
-
-# Test the plugin
-./cmd/plugin-test/plugin-test --service ec2 --info
-```
-
-### Plugin Interface
-
-Each plugin must implement the `Scanner` interface:
-
-```go
-type Scanner interface {
-    Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error)
-    GetSchemas(ctx context.Context, req *pb.Empty) (*pb.SchemaResponse, error)
-    GetServiceInfo(ctx context.Context, req *pb.Empty) (*pb.ServiceInfoResponse, error)
-    StreamScan(req *pb.ScanRequest, stream pb.Scanner_StreamScanServer) error
-}
-```
-
-### Example Plugin Structure
-
-```go
-package main
-
-import (
-    "context"
-    "github.com/hashicorp/go-plugin"
-    "github.com/jlgore/corkscrew-generator/internal/shared"
-    pb "github.com/jlgore/corkscrew-generator/internal/proto"
-)
-
-type MyServiceScanner struct{}
-
-func (s *MyServiceScanner) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error) {
-    // Implement scanning logic
-    return &pb.ScanResponse{
-        Resources: resources,
-        Stats:     stats,
-        Metadata:  metadata,
-    }, nil
-}
-
-// Implement other interface methods...
-
-func main() {
-    plugin.Serve(&plugin.ServeConfig{
-        HandshakeConfig: shared.HandshakeConfig,
-        Plugins: map[string]plugin.Plugin{
-            "scanner": &shared.ScannerGRPCPlugin{
-                Impl: &MyServiceScanner{},
-            },
-        },
-        GRPCServer: plugin.DefaultGRPCServer,
-    })
-}
+# Build a specific plugin
+make build-aws-plugin
+make build-azure-plugin
 ```
 
 ## Resource Model
