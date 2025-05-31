@@ -211,6 +211,68 @@
       "resource_types": []
     }
   },
+  "gcp_services": {
+    "compute": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Instance", "Disk", "Network", "Subnetwork", "Firewall", "Address"]
+    },
+    "storage": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Bucket", "Object"]
+    },
+    "container": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Cluster", "NodePool"]
+    },
+    "bigquery": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Dataset", "Table", "View"]
+    },
+    "cloudsql": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Instance", "Database", "BackupRun"]
+    },
+    "pubsub": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Topic", "Subscription", "Schema"]
+    },
+    "run": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Service", "Revision", "Configuration"]
+    },
+    "cloudfunctions": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Function"]
+    },
+    "appengine": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["Application", "Service", "Version"]
+    },
+    "iam": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["ServiceAccount", "Role", "Policy"]
+    },
+    "logging": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["LogEntry", "LogSink", "LogMetric"]
+    },
+    "monitoring": {
+      "capabilities": ["scan", "stream", "schemas", "relationships"],
+      "plugin_name": "corkscrew-gcp",
+      "resource_types": ["AlertPolicy", "NotificationChannel", "Dashboard"]
+    }
+  },
   "plugin_manager": {
     "debug": false,
     "plugin_dir": "plugins/build",

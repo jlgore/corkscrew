@@ -1,0 +1,197 @@
+{
+  "virtualMachines": [
+    {
+      "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/test-vm-1",
+      "name": "test-vm-1",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "eastus",
+      "resourceGroup": "test-rg",
+      "subscriptionId": "12345678-1234-1234-1234-123456789012",
+      "properties": {
+        "vmId": "11111111-1111-1111-1111-111111111111",
+        "hardwareProfile": {
+          "vmSize": "Standard_D2s_v3"
+        },
+        "storageProfile": {
+          "osDisk": {
+            "osType": "Linux",
+            "name": "test-vm-1_OsDisk_1",
+            "createOption": "FromImage",
+            "caching": "ReadWrite",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS",
+              "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/disks/test-vm-1_OsDisk_1"
+            }
+          },
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-focal",
+            "sku": "20_04-lts-gen2",
+            "version": "latest"
+          }
+        },
+        "osProfile": {
+          "computerName": "test-vm-1",
+          "adminUsername": "azureuser",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "/home/azureuser/.ssh/authorized_keys",
+                  "keyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB..."
+                }
+              ]
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkInterfaces/test-vm-1-nic"
+            }
+          ]
+        },
+        "provisioningState": "Succeeded",
+        "instanceView": {
+          "powerState": {
+            "code": "PowerState/running",
+            "displayStatus": "VM running"
+          }
+        }
+      },
+      "tags": {
+        "environment": "test",
+        "project": "azure-provider",
+        "owner": "platform-team"
+      }
+    },
+    {
+      "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/prod-rg/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+      "name": "prod-web-01",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "westus",
+      "resourceGroup": "prod-rg",
+      "subscriptionId": "12345678-1234-1234-1234-123456789012",
+      "properties": {
+        "vmId": "22222222-2222-2222-2222-222222222222",
+        "hardwareProfile": {
+          "vmSize": "Standard_B2s"
+        },
+        "storageProfile": {
+          "osDisk": {
+            "osType": "Windows",
+            "name": "prod-web-01_OsDisk_1",
+            "createOption": "FromImage",
+            "caching": "ReadWrite",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS",
+              "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/prod-rg/providers/Microsoft.Compute/disks/prod-web-01_OsDisk_1"
+            }
+          }
+        },
+        "osProfile": {
+          "computerName": "prod-web-01",
+          "adminUsername": "azureadmin"
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/prod-rg/providers/Microsoft.Network/networkInterfaces/prod-web-01-nic"
+            }
+          ]
+        },
+        "provisioningState": "Succeeded"
+      },
+      "tags": {
+        "environment": "production",
+        "project": "web-app",
+        "tier": "frontend"
+      }
+    }
+  ],
+  "storageAccounts": [
+    {
+      "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Storage/storageAccounts/teststorage001",
+      "name": "teststorage001",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "eastus",
+      "resourceGroup": "test-rg",
+      "subscriptionId": "12345678-1234-1234-1234-123456789012",
+      "properties": {
+        "accountType": "Standard_LRS",
+        "creationTime": "2023-01-15T10:30:00Z",
+        "primaryEndpoints": {
+          "blob": "https://teststorage001.blob.core.windows.net/",
+          "queue": "https://teststorage001.queue.core.windows.net/",
+          "table": "https://teststorage001.table.core.windows.net/",
+          "file": "https://teststorage001.file.core.windows.net/"
+        },
+        "primaryLocation": "eastus",
+        "statusOfPrimary": "available",
+        "supportsHttpsTrafficOnly": true,
+        "encryption": {
+          "services": {
+            "file": {
+              "enabled": true,
+              "lastEnabledTime": "2023-01-15T10:30:00Z"
+            },
+            "blob": {
+              "enabled": true,
+              "lastEnabledTime": "2023-01-15T10:30:00Z"
+            }
+          },
+          "keySource": "Microsoft.Storage"
+        },
+        "accessTier": "Hot",
+        "provisioningState": "Succeeded"
+      },
+      "tags": {
+        "environment": "test",
+        "purpose": "data-storage"
+      }
+    }
+  ],
+  "virtualNetworks": [
+    {
+      "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/network-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+      "name": "test-vnet",
+      "type": "Microsoft.Network/virtualNetworks",
+      "location": "eastus",
+      "resourceGroup": "network-rg",
+      "subscriptionId": "12345678-1234-1234-1234-123456789012",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.0.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "default",
+            "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/network-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/default",
+            "properties": {
+              "addressPrefix": "10.0.0.0/24",
+              "provisioningState": "Succeeded"
+            }
+          },
+          {
+            "name": "web-subnet",
+            "id": "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/network-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/web-subnet",
+            "properties": {
+              "addressPrefix": "10.0.1.0/24",
+              "provisioningState": "Succeeded"
+            }
+          }
+        ],
+        "virtualNetworkPeerings": [],
+        "resourceGuid": "33333333-3333-3333-3333-333333333333",
+        "provisioningState": "Succeeded"
+      },
+      "tags": {
+        "environment": "test",
+        "network-tier": "application"
+      }
+    }
+  ]
+}

@@ -128,6 +128,10 @@ build-tools: generate-proto create-dirs
 		cd $(CMD_DIR)/generator && go build -o ../../$(BIN_DIR)/generator .; \
 		echo "✅ Generator built: $(BIN_DIR)/generator"; \
 	fi
+	@if [ -d "$(PLUGIN_DIR)/azure-provider/cmd/analyze-azure-sdk" ]; then \
+		cd $(PLUGIN_DIR)/azure-provider/cmd/analyze-azure-sdk && go build -o ../../../../$(BIN_DIR)/analyze-azure-sdk .; \
+		echo "✅ Azure SDK analyzer built: $(BIN_DIR)/analyze-azure-sdk"; \
+	fi
 
 # =============================================================================
 # INSTALLATION
@@ -368,6 +372,35 @@ build-dynamic-plugins: generate-aws-services
 	@echo "🔧 Building dynamic plugins..."
 	@$(BIN_DIR)/corkscrew generate-plugins --services s3,ec2,lambda --output-dir $(PLUGIN_DIR) --verbose
 
+.PHONY: analyze-azure-sdk
+analyze-azure-sdk: build-tools
+	@echo "🔍 Analyzing Azure SDK for Go..."
+	@if [ -f "$(BIN_DIR)/analyze-azure-sdk" ]; then \
+		$(BIN_DIR)/analyze-azure-sdk -update -verbose -output $(BUILD_DIR)/azure-sdk-analysis.json; \
+		echo "✅ Azure SDK analysis complete: $(BUILD_DIR)/azure-sdk-analysis.json"; \
+	else \
+		echo "❌ Azure SDK analyzer not found, please run 'make build-tools' first"; \
+	fi
+
+.PHONY: analyze-azure-sdk-core
+analyze-azure-sdk-core: build-tools
+	@echo "🔍 Analyzing Azure SDK core services..."
+	@if [ -f "$(BIN_DIR)/analyze-azure-sdk" ]; then \
+		$(BIN_DIR)/analyze-azure-sdk -services "compute,storage,network" -update -verbose -output $(BUILD_DIR)/azure-core-analysis.json; \
+		echo "✅ Azure core services analysis complete: $(BUILD_DIR)/azure-core-analysis.json"; \
+	else \
+		echo "❌ Azure SDK analyzer not found, please run 'make build-tools' first"; \
+	fi
+
+.PHONY: test-azure-sdk-analyzer
+test-azure-sdk-analyzer: build-tools
+	@echo "🧪 Testing Azure SDK analyzer..."
+	@if [ -f "scripts/test-azure-sdk-analyzer.sh" ]; then \
+		./scripts/test-azure-sdk-analyzer.sh; \
+	else \
+		echo "❌ Test script not found"; \
+	fi
+
 # =============================================================================
 # PLUGIN MANAGEMENT
 # =============================================================================
@@ -533,8 +566,11 @@ help:
 	@echo "  make vet                - Vet code"
 	@echo ""
 	@echo "🔧 Plugin Development:"
-	@echo "  make generate-aws-services - Generate AWS service catalog"
-	@echo "  make build-dynamic-plugins - Build dynamic plugins"
+	@echo "  make generate-aws-services   - Generate AWS service catalog"
+	@echo "  make build-dynamic-plugins   - Build dynamic plugins"
+	@echo "  make analyze-azure-sdk       - Analyze Azure SDK for Go"
+	@echo "  make analyze-azure-sdk-core  - Analyze Azure SDK core services"
+	@echo "  make test-azure-sdk-analyzer - Test Azure SDK analyzer"
 	@echo ""
 	@echo "📊 Monitoring:"
 	@echo "  make status             - Show project status"
