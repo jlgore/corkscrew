@@ -875,3 +875,39 @@ func (p *AzureProvider) generateCreateTableSQL(schema *TableSchema) string {
 
 	return sql
 }
+
+// ConfigureDiscovery configures the auto-discovery system
+func (p *AzureProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	// Simple implementation for now
+	return &pb.ConfigureDiscoveryResponse{
+		Success: true,
+	}, nil
+}
+
+// AnalyzeDiscoveredData analyzes discovered Azure resources and generates insights
+func (p *AzureProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	// Simple implementation for now
+	return &pb.AnalysisResponse{
+		Success: true,
+	}, nil
+}
+
+// GenerateFromAnalysis generates scanners or configurations based on analysis results
+func (p *AzureProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	// Simple implementation for now
+	return &pb.GenerateResponse{
+		Success: true,
+	}, nil
+}

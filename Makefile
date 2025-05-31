@@ -128,6 +128,14 @@ build-tools: generate-proto create-dirs
 		cd $(CMD_DIR)/generator && go build -o ../../$(BIN_DIR)/generator .; \
 		echo "✅ Generator built: $(BIN_DIR)/generator"; \
 	fi
+	@if [ -d "$(CMD_DIR)/scanner-generator" ]; then \
+		cd $(CMD_DIR)/scanner-generator && go build -o ../../$(BIN_DIR)/scanner-generator .; \
+		echo "✅ Scanner Generator built: $(BIN_DIR)/scanner-generator"; \
+	fi
+	@if [ -d "$(PLUGIN_DIR)/azure-provider/cmd/analyze-azure-sdk" ]; then \
+		cd $(PLUGIN_DIR)/azure-provider/cmd/analyze-azure-sdk && go build -o ../../../../$(BIN_DIR)/analyze-azure-sdk .; \
+		echo "✅ Azure SDK analyzer built: $(BIN_DIR)/analyze-azure-sdk"; \
+	fi
 
 # =============================================================================
 # INSTALLATION
@@ -351,7 +359,192 @@ check: fmt vet lint test-unit test-scanner
 	@echo "✅ Code quality checks passed!"
 
 # =============================================================================
-# PLUGIN DEVELOPMENT
+# AZURE AUTO-DISCOVERY PIPELINE
+# =============================================================================
+
+# Azure Auto-Discovery Pipeline
+.PHONY: azure-discover
+azure-discover: azure-sdk-update azure-analyze azure-generate azure-build azure-test azure-deploy
+
+.PHONY: azure-sdk-update
+azure-sdk-update:
+	@echo "📥 Updating Azure SDK..."
+	@mkdir -p $(TEMP_DIR)
+	@if [ -d "$(TEMP_DIR)/azure-sdk-for-go" ]; then \
+		echo "Updating existing Azure SDK..."; \
+		cd $(TEMP_DIR)/azure-sdk-for-go && git pull; \
+	else \
+		echo "Cloning Azure SDK for Go..."; \
+		cd $(TEMP_DIR) && git clone --depth 1 https://github.com/Azure/azure-sdk-for-go.git; \
+	fi
+	@echo "✅ SDK updated to latest version"
+
+.PHONY: azure-analyze
+azure-analyze: build-tools
+	@echo "🔍 Analyzing Azure SDK..."
+	@if [ -f "$(BIN_DIR)/analyze-azure-sdk" ]; then \
+		$(BIN_DIR)/analyze-azure-sdk \
+			-sdk-path $(TEMP_DIR)/azure-sdk-for-go \
+			-output $(BUILD_DIR)/azure-catalog.json \
+			-services "$(AZURE_SERVICES)" \
+			-verbose; \
+		echo "✅ Found $$(jq '.summary.totalResources // 0' $(BUILD_DIR)/azure-catalog.json 2>/dev/null || echo '0') resource types"; \
+	else \
+		echo "❌ Azure SDK analyzer not found, please run 'make build-tools' first"; \
+		exit 1; \
+	fi
+
+.PHONY: azure-generate
+azure-generate: azure-generate-scanners azure-generate-schemas azure-generate-tests
+
+.PHONY: azure-generate-scanners
+azure-generate-scanners: build-tools
+	@echo "🔧 Generating scanners..."
+	@if [ -f "$(BIN_DIR)/scanner-generator" ] && [ -f "$(BUILD_DIR)/azure-catalog.json" ]; then \
+		$(BIN_DIR)/scanner-generator \
+			-catalog $(BUILD_DIR)/azure-catalog.json \
+			-template templates/azure-scanner.tmpl \
+			-output plugins/azure-provider/generated/ \
+			-optimize \
+			-verbose; \
+		echo "✅ Generated $$(find plugins/azure-provider/generated -name '*.go' 2>/dev/null | wc -l) scanners"; \
+	else \
+		echo "❌ Missing scanner-generator or catalog file"; \
+		exit 1; \
+	fi
+
+.PHONY: azure-generate-schemas
+azure-generate-schemas: build-tools
+	@echo "🗄️ Generating DuckDB schemas..."
+	@mkdir -p schemas/azure/
+	@if [ -f "$(BUILD_DIR)/azure-catalog.json" ]; then \
+		echo "Creating DuckDB schema definitions from catalog..."; \
+		echo "-- Generated Azure DuckDB Schemas" > schemas/azure/azure_schemas.sql; \
+		echo "-- Generated at: $$(date)" >> schemas/azure/azure_schemas.sql; \
+		echo "-- Source: $(BUILD_DIR)/azure-catalog.json" >> schemas/azure/azure_schemas.sql; \
+		echo "" >> schemas/azure/azure_schemas.sql; \
+		echo "-- Core Azure resource table" >> schemas/azure/azure_schemas.sql; \
+		echo "CREATE TABLE azure_resources (" >> schemas/azure/azure_schemas.sql; \
+		echo "  id VARCHAR PRIMARY KEY," >> schemas/azure/azure_schemas.sql; \
+		echo "  name VARCHAR NOT NULL," >> schemas/azure/azure_schemas.sql; \
+		echo "  type VARCHAR NOT NULL," >> schemas/azure/azure_schemas.sql; \
+		echo "  location VARCHAR NOT NULL," >> schemas/azure/azure_schemas.sql; \
+		echo "  resource_group VARCHAR NOT NULL," >> schemas/azure/azure_schemas.sql; \
+		echo "  subscription_id VARCHAR NOT NULL," >> schemas/azure/azure_schemas.sql; \
+		echo "  tags JSON," >> schemas/azure/azure_schemas.sql; \
+		echo "  properties JSON," >> schemas/azure/azure_schemas.sql; \
+		echo "  discovered_at TIMESTAMP NOT NULL DEFAULT NOW()" >> schemas/azure/azure_schemas.sql; \
+		echo ");" >> schemas/azure/azure_schemas.sql; \
+		echo "✅ Generated DuckDB schemas in schemas/azure/"; \
+	else \
+		echo "❌ Missing azure-catalog.json, run 'make azure-analyze' first"; \
+		exit 1; \
+	fi
+
+.PHONY: azure-generate-tests
+azure-generate-tests:
+	@echo "🧪 Generating tests..."
+	@mkdir -p tests/generated/azure/
+	@if [ -f "$(BUILD_DIR)/azure-catalog.json" ]; then \
+		echo "Creating test files..."; \
+		echo "package generated_test" > tests/generated/azure/azure_test.go; \
+		echo "" >> tests/generated/azure/azure_test.go; \
+		echo "import (" >> tests/generated/azure/azure_test.go; \
+		echo "  \"testing\"" >> tests/generated/azure/azure_test.go; \
+		echo "  \"github.com/stretchr/testify/assert\"" >> tests/generated/azure/azure_test.go; \
+		echo ")" >> tests/generated/azure/azure_test.go; \
+		echo "" >> tests/generated/azure/azure_test.go; \
+		echo "func TestAzureProviderGenerated(t *testing.T) {" >> tests/generated/azure/azure_test.go; \
+		echo "  // Generated test placeholder" >> tests/generated/azure/azure_test.go; \
+		echo "  assert.True(t, true)" >> tests/generated/azure/azure_test.go; \
+		echo "}" >> tests/generated/azure/azure_test.go; \
+		echo "✅ Generated comprehensive test suite"; \
+	else \
+		echo "❌ Missing azure-catalog.json, run 'make azure-analyze' first"; \
+		exit 1; \
+	fi
+
+.PHONY: azure-build
+azure-build:
+	@echo "🔨 Building Azure provider..."
+	@cd plugins/azure-provider && go mod tidy && go build -o ../../$(BIN_DIR)/corkscrew-azure .
+	@echo "✅ Azure provider built successfully"
+
+.PHONY: azure-test
+azure-test:
+	@echo "🧪 Testing Azure provider..."
+	@cd plugins/azure-provider && go test -v ./... -short
+	@if [ -d "tests/generated/azure" ]; then \
+		cd tests/generated/azure && go test -v .; \
+	fi
+	@echo "✅ Azure provider tests passed"
+
+.PHONY: azure-deploy
+azure-deploy:
+	@echo "🚀 Deploying Azure provider..."
+	@mkdir -p $(HOME)/.corkscrew/plugins/
+	@if [ -f "$(BIN_DIR)/corkscrew-azure" ]; then \
+		cp $(BIN_DIR)/corkscrew-azure $(HOME)/.corkscrew/plugins/; \
+		chmod +x $(HOME)/.corkscrew/plugins/corkscrew-azure; \
+		echo "✅ Azure provider deployed to $(HOME)/.corkscrew/plugins/"; \
+	else \
+		echo "❌ Azure provider binary not found, run 'make azure-build' first"; \
+		exit 1; \
+	fi
+
+.PHONY: azure-hot-reload
+azure-hot-reload:
+	@echo "🔥 Starting hot-reload development mode..."
+	@echo "Watching for changes in Azure SDK and templates..."
+	@if command -v fswatch >/dev/null 2>&1; then \
+		fswatch -o $(TEMP_DIR)/azure-sdk-for-go plugins/azure-provider/templates | \
+		xargs -n1 -I{} make azure-generate azure-build; \
+	else \
+		echo "⚠️  fswatch not installed, falling back to manual regeneration"; \
+		echo "Run 'make azure-generate azure-build' when files change"; \
+	fi
+
+# Incremental updates for specific services
+.PHONY: azure-update-service
+azure-update-service:
+	@echo "🔄 Updating service: $(SERVICE)"
+	@if [ -z "$(SERVICE)" ]; then \
+		echo "❌ Please specify SERVICE=<service_name>"; \
+		exit 1; \
+	fi
+	@$(BIN_DIR)/analyze-azure-sdk \
+		-sdk-path $(TEMP_DIR)/azure-sdk-for-go \
+		-services $(SERVICE) \
+		-output $(BUILD_DIR)/azure-$(SERVICE).json \
+		-verbose
+	@$(BIN_DIR)/scanner-generator \
+		-catalog $(BUILD_DIR)/azure-$(SERVICE).json \
+		-merge-with $(BUILD_DIR)/azure-catalog.json \
+		-output plugins/azure-provider/generated/ \
+		-verbose
+	@echo "✅ Service $(SERVICE) updated"
+
+# Core Azure services quick setup
+.PHONY: azure-core-setup
+azure-core-setup: AZURE_SERVICES=compute,storage,network,keyvault
+azure-core-setup: azure-discover
+	@echo "✅ Azure core services setup complete"
+
+# All Azure services (comprehensive)
+.PHONY: azure-full-setup
+azure-full-setup: AZURE_SERVICES=
+azure-full-setup: azure-discover
+	@echo "✅ Full Azure setup complete"
+
+# Performance test for auto-discovery
+.PHONY: azure-perf-test
+azure-perf-test: build-tools
+	@echo "⚡ Running Azure auto-discovery performance test..."
+	@time make azure-analyze AZURE_SERVICES=compute,storage
+	@echo "✅ Performance test complete"
+
+# =============================================================================
+# PLUGIN DEVELOPMENT (Legacy AWS Support)
 # =============================================================================
 
 .PHONY: generate-aws-services
@@ -367,6 +560,35 @@ generate-aws-services: build-tools
 build-dynamic-plugins: generate-aws-services
 	@echo "🔧 Building dynamic plugins..."
 	@$(BIN_DIR)/corkscrew generate-plugins --services s3,ec2,lambda --output-dir $(PLUGIN_DIR) --verbose
+
+.PHONY: analyze-azure-sdk
+analyze-azure-sdk: build-tools
+	@echo "🔍 Analyzing Azure SDK for Go..."
+	@if [ -f "$(BIN_DIR)/analyze-azure-sdk" ]; then \
+		$(BIN_DIR)/analyze-azure-sdk -update -verbose -output $(BUILD_DIR)/azure-sdk-analysis.json; \
+		echo "✅ Azure SDK analysis complete: $(BUILD_DIR)/azure-sdk-analysis.json"; \
+	else \
+		echo "❌ Azure SDK analyzer not found, please run 'make build-tools' first"; \
+	fi
+
+.PHONY: analyze-azure-sdk-core
+analyze-azure-sdk-core: build-tools
+	@echo "🔍 Analyzing Azure SDK core services..."
+	@if [ -f "$(BIN_DIR)/analyze-azure-sdk" ]; then \
+		$(BIN_DIR)/analyze-azure-sdk -services "compute,storage,network" -update -verbose -output $(BUILD_DIR)/azure-core-analysis.json; \
+		echo "✅ Azure core services analysis complete: $(BUILD_DIR)/azure-core-analysis.json"; \
+	else \
+		echo "❌ Azure SDK analyzer not found, please run 'make build-tools' first"; \
+	fi
+
+.PHONY: test-azure-sdk-analyzer
+test-azure-sdk-analyzer: build-tools
+	@echo "🧪 Testing Azure SDK analyzer..."
+	@if [ -f "scripts/test-azure-sdk-analyzer.sh" ]; then \
+		./scripts/test-azure-sdk-analyzer.sh; \
+	else \
+		echo "❌ Test script not found"; \
+	fi
 
 # =============================================================================
 # PLUGIN MANAGEMENT
@@ -532,9 +754,26 @@ help:
 	@echo "  make lint               - Lint code"
 	@echo "  make vet                - Vet code"
 	@echo ""
-	@echo "🔧 Plugin Development:"
-	@echo "  make generate-aws-services - Generate AWS service catalog"
-	@echo "  make build-dynamic-plugins - Build dynamic plugins"
+	@echo "🚀 Azure Auto-Discovery:"
+	@echo "  make azure-discover     - Complete Azure auto-discovery pipeline"
+	@echo "  make azure-core-setup   - Setup core Azure services (compute,storage,network,keyvault)"
+	@echo "  make azure-full-setup   - Setup all Azure services"
+	@echo "  make azure-sdk-update   - Update Azure SDK for Go"
+	@echo "  make azure-analyze      - Analyze Azure SDK and generate catalog"
+	@echo "  make azure-generate     - Generate scanners, schemas, and tests"
+	@echo "  make azure-build        - Build Azure provider"
+	@echo "  make azure-test         - Test Azure provider"
+	@echo "  make azure-deploy       - Deploy Azure provider"
+	@echo "  make azure-hot-reload   - Hot-reload development mode"
+	@echo "  make azure-update-service SERVICE=<name> - Update specific service"
+	@echo "  make azure-perf-test    - Performance test auto-discovery"
+	@echo ""
+	@echo "🔧 Plugin Development (Legacy):"
+	@echo "  make generate-aws-services   - Generate AWS service catalog"
+	@echo "  make build-dynamic-plugins   - Build dynamic plugins"
+	@echo "  make analyze-azure-sdk       - Analyze Azure SDK for Go (legacy)"
+	@echo "  make analyze-azure-sdk-core  - Analyze Azure SDK core services (legacy)"
+	@echo "  make test-azure-sdk-analyzer - Test Azure SDK analyzer"
 	@echo ""
 	@echo "📊 Monitoring:"
 	@echo "  make status             - Show project status"

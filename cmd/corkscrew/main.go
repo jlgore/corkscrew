@@ -12,10 +12,16 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hashicorp/go-plugin"
+	"github.com/jlgore/corkscrew/diagrams/pkg/renderer"
+	"github.com/jlgore/corkscrew/diagrams/pkg/ui"
 	"github.com/jlgore/corkscrew/internal/client"
+	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func main() {
@@ -42,6 +48,10 @@ func main() {
 		runInfo(os.Args[2:])
 	case "schemas":
 		runSchemas(os.Args[2:])
+	case "diagram":
+		runDiagram(os.Args[2:])
+	case "plugin":
+		runPlugin(os.Args[2:])
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -77,6 +87,8 @@ func printUsage() {
 	fmt.Println("  describe            - Describe specific resources")
 	fmt.Println("  info                - Show provider information")
 	fmt.Println("  schemas             - Get database schemas for resources")
+	fmt.Println("  diagram             - Interactive resource diagram viewer")
+	fmt.Println("  plugin              - Plugin management (list, build, status)")
 	fmt.Println()
 	fmt.Println("Supported Providers:")
 	fmt.Println("  aws         - Amazon Web Services")
@@ -553,10 +565,14 @@ func loadProvider(providerName string, verbose bool) (*client.ProviderClient, fu
 	// Try different possible plugin paths
 	possiblePaths := []string{}
 	
-	// First, check in user's home directory
+	// First, check in user's home directory using new .corkscrew/plugins/ pattern
 	if usr, err := user.Current(); err == nil {
-		homePluginPath := filepath.Join(usr.HomeDir, ".corkscrew", "bin", "plugin", fmt.Sprintf("corkscrew-%s", providerName))
+		homePluginPath := filepath.Join(usr.HomeDir, ".corkscrew", "plugins", fmt.Sprintf("%s-provider", providerName))
 		possiblePaths = append(possiblePaths, homePluginPath)
+		
+		// Legacy path for backward compatibility
+		legacyPath := filepath.Join(usr.HomeDir, ".corkscrew", "bin", "plugin", fmt.Sprintf("corkscrew-%s", providerName))
+		possiblePaths = append(possiblePaths, legacyPath)
 	}
 	
 	// Then check current directory paths
@@ -576,7 +592,24 @@ func loadProvider(providerName string, verbose bool) (*client.ProviderClient, fu
 	}
 
 	if pluginPath == "" {
-		return nil, nil, fmt.Errorf("%s provider plugin not found. Tried paths: %v", providerName, possiblePaths)
+		if verbose {
+			fmt.Printf("🔍 %s provider plugin not found in any of these paths: %v\n", providerName, possiblePaths)
+		}
+		
+		if err := autoBuildPlugin(providerName, verbose); err != nil {
+			return nil, nil, fmt.Errorf("failed to auto-build %s provider plugin: %w\n\nTry running manually: ./plugins/build-%s-plugin.sh", providerName, err, providerName)
+		}
+		
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); err == nil {
+				pluginPath = path
+				break
+			}
+		}
+		
+		if pluginPath == "" {
+			return nil, nil, fmt.Errorf("plugin built successfully but not found in expected locations: %v", possiblePaths)
+		}
 	}
 
 	if verbose {
@@ -614,8 +647,400 @@ func loadProvider(providerName string, verbose bool) (*client.ProviderClient, fu
 	}
 
 	if verbose {
-		fmt.Printf("✅ %s provider plugin loaded successfully\n", strings.Title(providerName))
+		fmt.Printf("✅ %s provider plugin loaded successfully\n", cases.Title(language.English).String(providerName))
 	}
 
 	return provider, cleanup, nil
+}
+
+func autoBuildPlugin(providerName string, verbose bool) error {
+	if verbose {
+		fmt.Printf("🔧 %s provider not found. Building now...\n", cases.Title(language.English).String(providerName))
+	}
+
+	pluginDir := fmt.Sprintf("./plugins/%s-provider", providerName)
+	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+		return fmt.Errorf("plugin source directory not found: %s", pluginDir)
+	}
+
+	cmd := exec.Command("go", "version")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Go is not installed or not in PATH")
+	}
+
+	if _, err := user.Current(); err != nil {
+		return fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	buildScript := fmt.Sprintf("./plugins/build-%s-plugin.sh", providerName)
+	if _, err := os.Stat(buildScript); err == nil {
+		if verbose {
+			fmt.Printf("📦 Using build script: %s\n", buildScript)
+		}
+		cmd := exec.Command("bash", buildScript)
+		cmd.Stdout = os.Stdout
+		if verbose {
+			cmd.Stderr = os.Stderr
+		}
+		return cmd.Run()
+	} else {
+		if verbose {
+			fmt.Printf("📦 Building plugin with go build...\n")
+		}
+		
+		usr, err := user.Current()
+		if err != nil {
+			return fmt.Errorf("failed to get current user: %w", err)
+		}
+		
+		pluginPath := filepath.Join(usr.HomeDir, ".corkscrew", "plugins")
+		if err := os.MkdirAll(pluginPath, 0755); err != nil {
+			return fmt.Errorf("failed to create plugin directory: %w", err)
+		}
+		
+		outputPath := filepath.Join(pluginPath, fmt.Sprintf("%s-provider", providerName))
+		
+		cmd := exec.Command("go", "build", "-o", outputPath, ".")
+		cmd.Dir = pluginDir
+		if verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+		
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("go build failed: %w", err)
+		}
+		
+		if err := os.Chmod(outputPath, 0755); err != nil {
+			return fmt.Errorf("failed to make plugin executable: %w", err)
+		}
+		
+		if verbose {
+			fmt.Printf("✅ %s provider built successfully!\n", cases.Title(language.English).String(providerName))
+		}
+		
+		return nil
+	}
+}
+
+func detectPluginStatus(providerName string) (bool, string, error) {
+	possiblePaths := []string{}
+	
+	if usr, err := user.Current(); err == nil {
+		homePluginPath := filepath.Join(usr.HomeDir, ".corkscrew", "plugins", fmt.Sprintf("%s-provider", providerName))
+		possiblePaths = append(possiblePaths, homePluginPath)
+		
+		// Legacy path for backward compatibility
+		legacyPath := filepath.Join(usr.HomeDir, ".corkscrew", "bin", "plugin", fmt.Sprintf("corkscrew-%s", providerName))
+		possiblePaths = append(possiblePaths, legacyPath)
+	}
+	
+	possiblePaths = append(possiblePaths,
+		fmt.Sprintf("./plugins/build/corkscrew-%s", providerName),
+		fmt.Sprintf("./build/plugins/corkscrew-%s", providerName),
+		fmt.Sprintf("./plugins/%s-provider/%s-provider", providerName, providerName),
+		fmt.Sprintf("./corkscrew-%s", providerName),
+	)
+
+	for _, path := range possiblePaths {
+		if stat, err := os.Stat(path); err == nil {
+			if stat.Mode()&0111 != 0 {
+				return true, path, nil
+			} else {
+				return false, path, fmt.Errorf("plugin found but not executable")
+			}
+		}
+	}
+	
+	return false, "", nil
+}
+
+func runPlugin(args []string) {
+	if len(args) == 0 {
+		printPluginUsage()
+		return
+	}
+
+	command := args[0]
+	switch command {
+	case "list":
+		runPluginList(args[1:])
+	case "build":
+		runPluginBuild(args[1:])
+	case "status":
+		runPluginStatus(args[1:])
+	default:
+		fmt.Printf("Unknown plugin command: %s\n", command)
+		printPluginUsage()
+		os.Exit(1)
+	}
+}
+
+func printPluginUsage() {
+	fmt.Println("🔌 Plugin Management")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  corkscrew plugin list           - Show all plugins and their status")
+	fmt.Println("  corkscrew plugin build <name>   - Build a specific plugin")
+	fmt.Println("  corkscrew plugin status         - Health check all plugins")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  corkscrew plugin list")
+	fmt.Println("  corkscrew plugin build aws")
+	fmt.Println("  corkscrew plugin build azure")
+	fmt.Println("  corkscrew plugin status")
+}
+
+func runPluginList(args []string) {
+	fs := flag.NewFlagSet("plugin list", flag.ExitOnError)
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	fs.Parse(args)
+
+	providers := []string{"aws", "azure", "gcp"}
+	
+	fmt.Println("🔌 Installed Plugins:")
+	for _, provider := range providers {
+		exists, path, err := detectPluginStatus(provider)
+		
+		if exists {
+			fmt.Printf("  ✅ %s - %s", provider, path)
+			if *verbose {
+				if stat, err := os.Stat(path); err == nil {
+					fmt.Printf(" (%s)", stat.ModTime().Format("2006-01-02 15:04:05"))
+				}
+			}
+			fmt.Println()
+		} else if err != nil {
+			fmt.Printf("  ⚠️  %s - %s\n", provider, err.Error())
+		} else {
+			sourceDir := fmt.Sprintf("./plugins/%s-provider", provider)
+			if _, err := os.Stat(sourceDir); err == nil {
+				fmt.Printf("  📦 %s - available to build\n", provider)
+			} else {
+				fmt.Printf("  ❌ %s - not available\n", provider)
+			}
+		}
+	}
+}
+
+func runPluginBuild(args []string) {
+	fs := flag.NewFlagSet("plugin build", flag.ExitOnError)
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	force := fs.Bool("force", false, "Force rebuild even if plugin exists")
+	fs.Parse(args)
+
+	if len(fs.Args()) == 0 {
+		fmt.Println("Provider name is required")
+		fmt.Println("Usage: corkscrew plugin build <provider>")
+		os.Exit(1)
+	}
+
+	providerName := fs.Args()[0]
+	
+	if !*force {
+		exists, path, _ := detectPluginStatus(providerName)
+		if exists {
+			fmt.Printf("✅ %s plugin already exists at %s\n", providerName, path)
+			fmt.Println("Use --force to rebuild")
+			return
+		}
+	}
+
+	start := time.Now()
+	if err := autoBuildPlugin(providerName, *verbose); err != nil {
+		fmt.Printf("❌ Failed to build %s plugin: %v\n", providerName, err)
+		os.Exit(1)
+	}
+	
+	duration := time.Since(start)
+	fmt.Printf("🎉 %s plugin built successfully in %v\n", providerName, duration)
+}
+
+func runPluginStatus(args []string) {
+	fs := flag.NewFlagSet("plugin status", flag.ExitOnError)
+	verbose := fs.Bool("verbose", false, "Verbose output")
+	fs.Parse(args)
+
+	providers := []string{"aws", "azure", "gcp"}
+	
+	fmt.Println("🏥 Plugin Health Check:")
+	allGood := true
+	
+	for _, provider := range providers {
+		exists, path, err := detectPluginStatus(provider)
+		
+		if exists {
+			fmt.Printf("  %s: ", provider)
+			if *verbose {
+				fmt.Printf("(%s) ", path)
+			}
+			
+			if stat, err := os.Stat(path); err == nil && stat.Mode()&0111 != 0 {
+				fmt.Printf("✅ healthy")
+				if *verbose {
+					fmt.Printf(" (%s)", stat.ModTime().Format("2006-01-02 15:04:05"))
+				}
+				fmt.Printf("\n")
+			} else {
+				fmt.Printf("⚠️  plugin exists but not executable\n")
+				allGood = false
+			}
+		} else if err != nil {
+			fmt.Printf("  %s: ⚠️  %s\n", provider, err.Error())
+			allGood = false
+		} else {
+			fmt.Printf("  %s: ❌ not installed\n", provider)
+			allGood = false
+		}
+	}
+	
+	if allGood {
+		fmt.Println("\n🎉 All available plugins are healthy!")
+	} else {
+		fmt.Println("\n⚠️  Some plugins need attention. Run 'corkscrew plugin build <provider>' to install missing plugins.")
+	}
+}
+
+func runDiagram(args []string) {
+	fs := flag.NewFlagSet("diagram", flag.ExitOnError)
+
+	dbPath := fs.String("db", "corkscrew.db", "Path to DuckDB database")
+	resourceID := fs.String("resource", "", "Specific resource ID to visualize")
+	diagramType := fs.String("type", "relationships", "Diagram type: relationships, dependencies, network, services")
+	depth := fs.Int("depth", 2, "Depth for relationship traversal")
+	export := fs.String("export", "", "Export to file (mermaid.md, ascii.txt)")
+	service := fs.String("service", "", "Filter by service")
+	region := fs.String("region", "", "Filter by region")
+	title := fs.String("title", "", "Custom diagram title")
+	help := fs.Bool("help", false, "Show help")
+
+	fs.Parse(args)
+
+	if *help {
+		showDiagramHelp()
+		return
+	}
+
+	// Initialize database connection
+	graphLoader, err := db.NewGraphLoader(*dbPath)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer graphLoader.Close()
+
+	// Parse diagram type
+	var diagType renderer.DiagramType
+	switch *diagramType {
+	case "relationships", "rel":
+		diagType = renderer.DiagramTypeRelationship
+	case "dependencies", "deps":
+		diagType = renderer.DiagramTypeDependency
+	case "network", "net":
+		diagType = renderer.DiagramTypeNetwork
+	case "services", "svc":
+		diagType = renderer.DiagramTypeService
+	default:
+		fmt.Printf("Unknown diagram type: %s\n", *diagramType)
+		showDiagramHelp()
+		os.Exit(1)
+	}
+
+	// Build options
+	options := renderer.DiagramOptions{
+		Type:       diagType,
+		ResourceID: *resourceID,
+		Depth:      *depth,
+		Title:      *title,
+		Filters:    make(map[string]string),
+	}
+
+	if *service != "" {
+		options.Filters["service"] = *service
+	}
+	if *region != "" {
+		options.Filters["region"] = *region
+	}
+
+	// If export is specified, generate and export diagram
+	if *export != "" {
+		err := exportDiagram(graphLoader, options, *export)
+		if err != nil {
+			log.Fatalf("Failed to export diagram: %v", err)
+		}
+		fmt.Printf("Diagram exported to: %s\n", *export)
+		return
+	}
+
+	// Launch interactive viewer
+	model := ui.NewDiagramModelWithOptions(graphLoader, options)
+	
+	program := tea.NewProgram(
+		model,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := program.Run(); err != nil {
+		log.Fatalf("Error running diagram viewer: %v", err)
+	}
+}
+
+func exportDiagram(graphLoader *db.GraphLoader, options renderer.DiagramOptions, filename string) error {
+	// This function was implemented in the standalone CLI - let me reuse it
+	// Implementation would be similar to the standalone version
+	return fmt.Errorf("export functionality not yet implemented in integrated CLI")
+}
+
+func showDiagramHelp() {
+	fmt.Printf(`Corkscrew Diagram Viewer
+
+USAGE:
+    corkscrew diagram [FLAGS]
+
+FLAGS:
+    -db <path>         Path to DuckDB database (default: corkscrew.db)
+    -resource <id>     Specific resource ID to visualize
+    -type <type>       Diagram type: relationships, dependencies, network, services
+    -depth <int>       Depth for relationship traversal (default: 2)
+    -export <file>     Export to file (.md for Mermaid, .txt for ASCII)
+    -service <name>    Filter by service
+    -region <name>     Filter by region
+    -title <string>    Custom diagram title
+    -help              Show this help
+
+DIAGRAM TYPES:
+    relationships      Show resource relationships (default)
+    dependencies       Show resource dependencies (requires -resource)
+    network           Show network topology
+    services          Show service map with resource counts
+
+EXAMPLES:
+    # Launch interactive viewer
+    corkscrew diagram
+
+    # View relationships for a specific resource
+    corkscrew diagram -resource vpc-123456789 -type relationships
+
+    # View dependencies for an EC2 instance
+    corkscrew diagram -resource i-0123456789abcdef0 -type dependencies
+
+    # Show network topology for a region
+    corkscrew diagram -type network -region us-east-1
+
+    # Export service map to Mermaid file
+    corkscrew diagram -type services -export services.md
+
+INTERACTIVE CONTROLS:
+    q/Ctrl+C     Quit
+    h/?          Show help
+    r            Refresh data
+    1            ASCII view
+    2            Mermaid source view
+    3            List view
+    n            Relationships diagram
+    d            Dependencies diagram (requires resource)
+    t            Network topology diagram
+    s            Services diagram
+    +/-          Increase/decrease depth
+`)
 }

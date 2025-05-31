@@ -1,0 +1,71 @@
+[
+  {
+    "namespace": "Microsoft.Compute",
+    "registrationState": "Registered",
+    "resourceTypes": [
+      {
+        "resourceType": "virtualMachines",
+        "locations": ["East US", "West US", "Central US"],
+        "apiVersions": ["2023-03-01", "2022-11-01", "2022-08-01"],
+        "capabilities": ["SupportsAvailabilityZones"],
+        "properties": {
+          "supports_list": true,
+          "supports_get": true,
+          "supports_tags": true
+        }
+      },
+      {
+        "resourceType": "disks",
+        "locations": ["East US", "West US", "Central US"],
+        "apiVersions": ["2023-01-02", "2022-07-02"],
+        "properties": {
+          "supports_list": true,
+          "supports_get": true,
+          "supports_tags": true
+        }
+      }
+    ]
+  },
+  {
+    "namespace": "Microsoft.Storage",
+    "registrationState": "Registered",
+    "resourceTypes": [
+      {
+        "resourceType": "storageAccounts",
+        "locations": ["East US", "West US", "Central US", "North Europe"],
+        "apiVersions": ["2023-01-01", "2022-09-01"],
+        "properties": {
+          "supports_list": true,
+          "supports_get": true,
+          "supports_tags": true
+        }
+      }
+    ]
+  },
+  {
+    "namespace": "Microsoft.Network",
+    "registrationState": "Registered",
+    "resourceTypes": [
+      {
+        "resourceType": "virtualNetworks",
+        "locations": ["East US", "West US", "Central US"],
+        "apiVersions": ["2023-02-01", "2022-11-01"],
+        "properties": {
+          "supports_list": true,
+          "supports_get": true,
+          "supports_tags": true
+        }
+      },
+      {
+        "resourceType": "networkSecurityGroups",
+        "locations": ["East US", "West US", "Central US"],
+        "apiVersions": ["2023-02-01", "2022-11-01"],
+        "properties": {
+          "supports_list": true,
+          "supports_get": true,
+          "supports_tags": true
+        }
+      }
+    ]
+  }
+]
