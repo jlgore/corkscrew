@@ -14,12 +14,13 @@ type TableSchema struct {
 }
 
 // ColumnDefinition represents a database column definition
-type ColumnDefinition struct {
-	Name       string
-	Type       string
-	Nullable   bool
-	PrimaryKey bool
-}
+// Note: This is now defined in advanced_schema_generator.go to avoid duplication
+// type ColumnDefinition struct {
+//	Name       string
+//	Type       string
+//	Nullable   bool
+//	PrimaryKey bool
+// }
 
 // AzureSchemaGenerator generates database schemas for Azure resources
 type AzureSchemaGenerator struct {

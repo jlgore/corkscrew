@@ -1,10 +1,5 @@
 package generator
 
-import (
-	"fmt"
-	"strings"
-	"text/template"
-)
 
 // createAdvancedScannerTemplate creates a more sophisticated scanner template with proper type handling
 func createAdvancedScannerTemplate() string {
@@ -505,18 +500,3 @@ func (s *{{.ServiceNameCaps}}Scanner) retryDescribeOperation(ctx context.Context
 `
 }
 
-// updateScannerTemplates updates the scanner generator to use the advanced template
-func (g *ScannerGenerator) updateTemplates() error {
-	funcMap := template.FuncMap{
-		"lower": strings.ToLower,
-		"title": strings.Title,
-	}
-
-	tmpl, err := template.New("advancedServiceScanner").Funcs(funcMap).Parse(createAdvancedScannerTemplate())
-	if err != nil {
-		return fmt.Errorf("failed to parse advanced service scanner template: %w", err)
-	}
-
-	g.templates.ServiceScanner = tmpl
-	return nil
-}

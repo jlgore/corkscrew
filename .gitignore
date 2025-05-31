@@ -83,3 +83,20 @@ plugins/*/aws-provider-v2
 plugins/*/*-v2
 # Large binaries (over 50MB)
 *.bin
+
+# Temporary directories
+tmp/
+
+# Build artifacts
+plugins/build/
+
+# Backup files
+*.backup
+*.bak
+
+# Coverage files
+coverage.html
+coverage.out
+
+# Examples archive
+examples-archive/

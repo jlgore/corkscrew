@@ -8,6 +8,9 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // ScannerGenerator generates Go scanner code from AWS service analysis
@@ -150,7 +153,7 @@ func (g *ScannerGenerator) prepareScannerData(service *AWSServiceInfo, opts Gene
 	data := ScannerData{
 		PackageName:     g.packageName,
 		ServiceName:     service.Name,
-		ServiceNameCaps: strings.Title(service.Name),
+		ServiceNameCaps: cases.Title(language.English).String(service.Name),
 		ClientType:      service.ClientType,
 		WithRetry:       opts.WithRetry,
 		WithMetrics:     opts.WithMetrics,
@@ -261,7 +264,7 @@ func (g *ScannerGenerator) generateScannerRegistry(services map[string]*AWSServi
 		if len(opts.Services) > 0 && !contains(opts.Services, name) && !contains(opts.Services, "all") {
 			continue
 		}
-		buf.WriteString(fmt.Sprintf("\t\t\t\"%s\": New%sScanner(clientFactory),\n", name, strings.Title(name)))
+		buf.WriteString(fmt.Sprintf("\t\t\t\"%s\": New%sScanner(clientFactory),\n", name, cases.Title(language.English).String(name)))
 	}
 	
 	buf.WriteString("\t\t},\n")
@@ -309,7 +312,7 @@ func (g *ScannerGenerator) generateScannerRegistry(services map[string]*AWSServi
 func loadScannerTemplates() (*ScannerTemplates, error) {
 	funcMap := template.FuncMap{
 		"lower": strings.ToLower,
-		"title": strings.Title,
+		"title": cases.Title(language.English).String,
 	}
 
 	tmpl, err := template.New("advancedServiceScanner").Funcs(funcMap).Parse(createAdvancedScannerTemplate())
