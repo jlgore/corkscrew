@@ -73,16 +73,16 @@ Build and use the command-line generator:
 
 ```bash
 # Build the generator
-go build -o cmd/gcp-scanner-generator/gcp-scanner-generator cmd/gcp-scanner-generator/main.go
+go build -o plugins/gcp-provider/cmd/gcp-scanner-generator/gcp-scanner-generator plugins/gcp-provider/cmd/gcp-scanner-generator/main.go
 
 # List available services
-./cmd/gcp-scanner-generator/gcp-scanner-generator -list
+./plugins/gcp-provider/cmd/gcp-scanner-generator/gcp-scanner-generator -list
 
 # Generate scanner for specific service
-./cmd/gcp-scanner-generator/gcp-scanner-generator -service compute -output ./generated
+./plugins/gcp-provider/cmd/gcp-scanner-generator/gcp-scanner-generator -service compute -output ./generated
 
 # Generate all scanners
-./cmd/gcp-scanner-generator/gcp-scanner-generator -service all -output ./generated
+./plugins/gcp-provider/cmd/gcp-scanner-generator/gcp-scanner-generator -service all -output ./generated
 ```
 
 ### Programmatic Usage
