@@ -64,6 +64,12 @@ cmd/generator/generated/
 *.log
 .DS_Store
 
+# Generated protobuf files
+*.pb.go
+*_grpc.pb.go
+proto/*.pb.go
+proto/*_grpc.pb.go
+
 # Build artifacts
 build/
 plugins/build/
