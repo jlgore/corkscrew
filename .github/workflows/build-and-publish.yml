@@ -25,7 +25,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'  # Updated to match Makefile
+        go-version: '1.24'  # Updated to supported version
 
     - name: Install protobuf compiler
       run: |
@@ -148,58 +148,10 @@ jobs:
     - name: Generate protobuf code
       run: make generate-proto
 
-    - name: Build plugins for all platforms
+    - name: Build plugins for current platform
       run: |
-        # Create build directory structure
-        mkdir -p build/bin
-        
-        # Build plugins for Linux amd64
-        echo "Building plugins for Linux amd64..."
-        GOOS=linux GOARCH=amd64 make build-plugins
-        
-        # Copy built plugins to a platform-specific directory
-        mkdir -p build/linux-amd64
-        cp build/bin/*-provider build/linux-amd64/ 2>/dev/null || echo "Some plugins may not exist"
-        
-        # Build plugins for Linux arm64
-        echo "Building plugins for Linux arm64..."
-        rm -f build/bin/*-provider  # Clean previous builds
-        GOOS=linux GOARCH=arm64 make build-plugins
-        mkdir -p build/linux-arm64
-        cp build/bin/*-provider build/linux-arm64/ 2>/dev/null || echo "Some plugins may not exist"
-        
-        # Build plugins for Darwin amd64
-        echo "Building plugins for Darwin amd64..."
-        rm -f build/bin/*-provider
-        GOOS=darwin GOARCH=amd64 make build-plugins
-        mkdir -p build/darwin-amd64
-        cp build/bin/*-provider build/darwin-amd64/ 2>/dev/null || echo "Some plugins may not exist"
-        
-        # Build plugins for Darwin arm64
-        echo "Building plugins for Darwin arm64..."
-        rm -f build/bin/*-provider
-        GOOS=darwin GOARCH=arm64 make build-plugins
-        mkdir -p build/darwin-arm64
-        cp build/bin/*-provider build/darwin-arm64/ 2>/dev/null || echo "Some plugins may not exist"
-        
-        # Build plugins for Windows amd64
-        echo "Building plugins for Windows amd64..."
-        rm -f build/bin/*-provider
-        GOOS=windows GOARCH=amd64 make build-plugins
-        mkdir -p build/windows-amd64
-        cp build/bin/*-provider.exe build/windows-amd64/ 2>/dev/null || echo "Some plugins may not exist"
-        
-        # Create plugin archives
-        cd build
-        for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
-          if [ -d "$platform" ] && [ "$(ls -A $platform)" ]; then
-            if [[ $platform == *"windows"* ]]; then
-              zip -r "corkscrew-plugins-${platform}.zip" "$platform"/*
-            else
-              tar -czf "corkscrew-plugins-${platform}.tar.gz" "$platform"/*
-            fi
-          fi
-        done
+        echo "Building plugins for release..."
+        make build-plugins
 
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v5
@@ -212,28 +164,6 @@ jobs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
 
-    - name: Install GitHub CLI
-      run: |
-        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-        sudo apt update
-        sudo apt install gh
-
-    - name: Upload plugin archives to release
-      run: |
-        # Get the release ID from the tag
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        
-        # Upload plugin archives if they exist
-        cd build
-        for archive in corkscrew-plugins-*.{tar.gz,zip}; do
-          if [ -f "$archive" ]; then
-            echo "Uploading $archive..."
-            gh release upload "$TAG_NAME" "$archive" --clobber
-          fi
-        done
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   snapshot-release:
     needs: test

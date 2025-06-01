@@ -24,6 +24,13 @@ import (
 	"golang.org/x/text/language"
 )
 
+// Build-time variables set by GoReleaser
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -52,6 +59,9 @@ func main() {
 		runDiagram(os.Args[2:])
 	case "plugin":
 		runPlugin(os.Args[2:])
+	case "version", "--version", "-v":
+		fmt.Printf("Corkscrew %s (commit: %s, built: %s)\n", version, commit, date)
+		return
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -89,6 +99,7 @@ func printUsage() {
 	fmt.Println("  schemas             - Get database schemas for resources")
 	fmt.Println("  diagram             - Interactive resource diagram viewer")
 	fmt.Println("  plugin              - Plugin management (list, build, status)")
+	fmt.Println("  version             - Show version information")
 	fmt.Println()
 	fmt.Println("Supported Providers:")
 	fmt.Println("  aws         - Amazon Web Services")
@@ -280,6 +291,7 @@ func runDiscover(args []string) {
 
 	fmt.Printf("\nSDK Version: %s\n", discoverResp.SdkVersion)
 }
+
 
 func runList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)

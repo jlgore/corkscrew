@@ -34,7 +34,6 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
-    skip: true  # We'll handle plugins separately in hooks
 
   # Azure Provider Plugin
   - id: azure-provider
@@ -49,7 +48,6 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
-    skip: true  # We'll handle plugins separately in hooks
 
   # GCP Provider Plugin
   - id: gcp-provider
@@ -64,7 +62,6 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
-    skip: true  # We'll handle plugins separately in hooks
 
   # Kubernetes Provider Plugin
   - id: kubernetes-provider
@@ -79,7 +76,6 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
-    skip: true  # We'll handle plugins separately in hooks
 
 # Pre-build hooks
 before:
@@ -91,7 +87,7 @@ before:
 
 # Archive configuration
 archives:
-  - id: default
+  - id: cli
     builds:
       - corkscrew-cli
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
@@ -102,18 +98,17 @@ archives:
       - README.md
       - AWS_SCANNING_DOCUMENTATION.md
       - AZURE_SCANNING_DOCUMENTATION.md
-
-# Plugin archives (built separately)
-archives:
+  
   - id: plugins
-    builds: []  # No builds, we'll add files manually
+    builds:
+      - aws-provider
+      - azure-provider
+      - gcp-provider
+      - kubernetes-provider
     name_template: "{{ .ProjectName }}_plugins_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
-    format: tar.gz
     format_overrides:
       - goos: windows
         format: zip
-    files:
-      - build/bin/*-provider*
 
 # Checksums
 checksum:
