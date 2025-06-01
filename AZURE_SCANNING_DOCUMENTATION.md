@@ -490,7 +490,7 @@ az account set --subscription "16c4066f-9b03-48d1-9ff5-3cf78196c822"
 # Issue: "plugin does not export NewScanner function"
 # Solution: Regenerate scanners
 cd /home/jg/git/corkscrew
-go run cmd/scanner-generator/main.go --provider azure --output plugins/azure-provider/generated/ --force
+go run plugins/azure-provider/cmd/scanner-generator/main.go --catalog $(BUILD_DIR)/azure-catalog.json --output plugins/azure-provider/generated/ --verbose
 ```
 
 #### Permission Errors
