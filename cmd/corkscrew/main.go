@@ -62,6 +62,9 @@ func main() {
 	case "version", "--version", "-v":
 		fmt.Printf("Corkscrew %s (commit: %s, built: %s)\n", version, commit, date)
 		return
+	case "help", "--help", "-h":
+		printUsage()
+		return
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
