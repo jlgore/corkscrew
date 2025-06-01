@@ -11,17 +11,21 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  GITHUB_REPOSITORY: ${{ github.repository }}
+  GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for GoReleaser
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version: '1.21'  # Updated to match Makefile
 
     - name: Install protobuf compiler
       run: |
@@ -41,23 +45,28 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+    - name: Setup dependencies
+      run: make deps
 
     - name: Generate protobuf code
       run: make generate-proto
 
-    - name: Run tests
-      run: go test ./...
+    - name: Format and lint check
+      run: |
+        make fmt
+        make lint || echo "Lint warnings detected but continuing..."
 
-    - name: Build CLI
-      run: make build-cli
+    - name: Run unit tests
+      run: make test-unit
 
-    - name: Build plugins
-      run: make build-example-plugins
+    - name: Build CLI and plugins
+      run: make build
 
     - name: Test CLI binary
-      run: ./cmd/corkscrew/corkscrew --help
+      run: ./build/bin/corkscrew --help
+
+    - name: Run integration tests (dry run)
+      run: make test-dry-run
 
   build-and-push:
     needs: test
@@ -110,15 +119,18 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
+      packages: write
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for GoReleaser
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version: '1.21'
 
     - name: Install protobuf compiler
       run: |
@@ -130,45 +142,145 @@ jobs:
         go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
         go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
+    - name: Setup dependencies
+      run: make deps
+
     - name: Generate protobuf code
       run: make generate-proto
 
-    - name: Build binaries for multiple platforms
+    - name: Build plugins for all platforms
       run: |
-        # Create release directory
-        mkdir -p release
-
-        # Build for Linux amd64
-        GOOS=linux GOARCH=amd64 go build -o release/corkscrew-linux-amd64 ./cmd/corkscrew
+        # Create build directory structure
+        mkdir -p build/bin
         
-        # Build for Linux arm64
-        GOOS=linux GOARCH=arm64 go build -o release/corkscrew-linux-arm64 ./cmd/corkscrew
+        # Build plugins for Linux amd64
+        echo "Building plugins for Linux amd64..."
+        GOOS=linux GOARCH=amd64 make build-plugins
         
-        # Build for macOS amd64
-        GOOS=darwin GOARCH=amd64 go build -o release/corkscrew-darwin-amd64 ./cmd/corkscrew
+        # Copy built plugins to a platform-specific directory
+        mkdir -p build/linux-amd64
+        cp build/bin/*-provider build/linux-amd64/ 2>/dev/null || echo "Some plugins may not exist"
         
-        # Build for macOS arm64
-        GOOS=darwin GOARCH=arm64 go build -o release/corkscrew-darwin-arm64 ./cmd/corkscrew
+        # Build plugins for Linux arm64
+        echo "Building plugins for Linux arm64..."
+        rm -f build/bin/*-provider  # Clean previous builds
+        GOOS=linux GOARCH=arm64 make build-plugins
+        mkdir -p build/linux-arm64
+        cp build/bin/*-provider build/linux-arm64/ 2>/dev/null || echo "Some plugins may not exist"
         
-        # Build for Windows amd64
-        GOOS=windows GOARCH=amd64 go build -o release/corkscrew-windows-amd64.exe ./cmd/corkscrew
+        # Build plugins for Darwin amd64
+        echo "Building plugins for Darwin amd64..."
+        rm -f build/bin/*-provider
+        GOOS=darwin GOARCH=amd64 make build-plugins
+        mkdir -p build/darwin-amd64
+        cp build/bin/*-provider build/darwin-amd64/ 2>/dev/null || echo "Some plugins may not exist"
+        
+        # Build plugins for Darwin arm64
+        echo "Building plugins for Darwin arm64..."
+        rm -f build/bin/*-provider
+        GOOS=darwin GOARCH=arm64 make build-plugins
+        mkdir -p build/darwin-arm64
+        cp build/bin/*-provider build/darwin-arm64/ 2>/dev/null || echo "Some plugins may not exist"
+        
+        # Build plugins for Windows amd64
+        echo "Building plugins for Windows amd64..."
+        rm -f build/bin/*-provider
+        GOOS=windows GOARCH=amd64 make build-plugins
+        mkdir -p build/windows-amd64
+        cp build/bin/*-provider.exe build/windows-amd64/ 2>/dev/null || echo "Some plugins may not exist"
+        
+        # Create plugin archives
+        cd build
+        for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
+          if [ -d "$platform" ] && [ "$(ls -A $platform)" ]; then
+            if [[ $platform == *"windows"* ]]; then
+              zip -r "corkscrew-plugins-${platform}.zip" "$platform"/*
+            else
+              tar -czf "corkscrew-plugins-${platform}.tar.gz" "$platform"/*
+            fi
+          fi
+        done
 
-        # Build plugins for Linux amd64 (most common for containers)
-        make build-example-plugins
-        tar -czf release/plugins-linux-amd64.tar.gz plugins/
-
-    - name: Create checksums
-      run: |
-        cd release
-        sha256sum * > checksums.txt
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v5
       with:
-        files: |
-          release/*
-        generate_release_notes: true
-        draft: false
-        prerelease: ${{ contains(github.ref, '-') }}
+        distribution: goreleaser
+        version: latest
+        args: release --clean
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+
+    - name: Install GitHub CLI
+      run: |
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+        sudo apt update
+        sudo apt install gh
+
+    - name: Upload plugin archives to release
+      run: |
+        # Get the release ID from the tag
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        
+        # Upload plugin archives if they exist
+        cd build
+        for archive in corkscrew-plugins-*.{tar.gz,zip}; do
+          if [ -f "$archive" ]; then
+            echo "Uploading $archive..."
+            gh release upload "$TAG_NAME" "$archive" --clobber
+          fi
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  snapshot-release:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+
+    - name: Install Go protobuf plugins
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+    - name: Setup dependencies
+      run: make deps
+
+    - name: Generate protobuf code
+      run: make generate-proto
+
+    - name: Run GoReleaser in snapshot mode
+      uses: goreleaser/goreleaser-action@v5
+      with:
+        distribution: goreleaser
+        version: latest
+        args: release --snapshot --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload snapshot artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: snapshot-binaries
+        path: dist/*
+        retention-days: 30

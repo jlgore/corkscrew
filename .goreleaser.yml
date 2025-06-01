@@ -1,0 +1,178 @@
+project_name: corkscrew
+
+# Build configuration
+builds:
+  # Main CLI binary
+  - id: corkscrew-cli
+    main: ./cmd/corkscrew
+    binary: corkscrew
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  # AWS Provider Plugin
+  - id: aws-provider
+    main: ./plugins/aws-provider
+    binary: aws-provider
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    skip: true  # We'll handle plugins separately in hooks
+
+  # Azure Provider Plugin
+  - id: azure-provider
+    main: ./plugins/azure-provider
+    binary: azure-provider
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    skip: true  # We'll handle plugins separately in hooks
+
+  # GCP Provider Plugin
+  - id: gcp-provider
+    main: ./plugins/gcp-provider
+    binary: gcp-provider
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    skip: true  # We'll handle plugins separately in hooks
+
+  # Kubernetes Provider Plugin
+  - id: kubernetes-provider
+    main: ./plugins/kubernetes-provider
+    binary: kubernetes-provider
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    skip: true  # We'll handle plugins separately in hooks
+
+# Pre-build hooks
+before:
+  hooks:
+    - make deps
+    - make generate-proto
+    - make fmt
+    - make test-unit
+
+# Archive configuration
+archives:
+  - id: default
+    builds:
+      - corkscrew-cli
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - AWS_SCANNING_DOCUMENTATION.md
+      - AZURE_SCANNING_DOCUMENTATION.md
+
+# Plugin archives (built separately)
+archives:
+  - id: plugins
+    builds: []  # No builds, we'll add files manually
+    name_template: "{{ .ProjectName }}_plugins_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - build/bin/*-provider*
+
+# Checksums
+checksum:
+  name_template: 'checksums.txt'
+
+# Snapshots (for non-tag builds)
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+# Changelog
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^build:'
+      - Merge pull request
+      - Merge branch
+
+# GitHub release
+release:
+  github:
+    owner: '{{ .Env.GITHUB_REPOSITORY_OWNER }}'
+    name: '{{ .Env.GITHUB_REPOSITORY }}'
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Corkscrew {{ .Tag }}
+    
+    Cloud Resource Scanner release with cross-platform binaries and plugins.
+    
+    ### Installation
+    
+    Download the appropriate binary for your platform:
+    - **Linux**: `corkscrew_linux_amd64.tar.gz` or `corkscrew_linux_arm64.tar.gz`
+    - **macOS**: `corkscrew_darwin_amd64.tar.gz` or `corkscrew_darwin_arm64.tar.gz` (Apple Silicon)
+    - **Windows**: `corkscrew_windows_amd64.zip`
+    
+    ### Plugins
+    
+    Download the plugins archive for your platform to get cloud provider plugins.
+    
+  footer: |
+    **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY }}/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Universal binaries for macOS
+universal_binaries:
+  - replace: true
+
+# Homebrew formula (optional)
+brews:
+  - name: corkscrew
+    homepage: https://github.com/{{ .Env.GITHUB_REPOSITORY }}
+    description: "Cloud Resource Scanner - Discover and analyze cloud resources across multiple providers"
+    license: "MIT"
+    test: |
+      system "#{bin}/corkscrew --version"
+    install: |
+      bin.install "corkscrew" 
