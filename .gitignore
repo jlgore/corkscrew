@@ -111,7 +111,7 @@ tasks.json
 tasks/ 
 
 # Cleanup additions
-corkscrew
+/corkscrew
 resource-lister
 hierarchical_discovery_results.json
 iam-resources.json
