@@ -21,61 +21,8 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
 
-  # AWS Provider Plugin
-  - id: aws-provider
-    main: ./plugins/aws-provider
-    binary: aws-provider
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    env:
-      - CGO_ENABLED=0
-
-  # Azure Provider Plugin
-  - id: azure-provider
-    main: ./plugins/azure-provider
-    binary: azure-provider
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    env:
-      - CGO_ENABLED=0
-
-  # GCP Provider Plugin
-  - id: gcp-provider
-    main: ./plugins/gcp-provider
-    binary: gcp-provider
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    env:
-      - CGO_ENABLED=0
-
-  # Kubernetes Provider Plugin
-  - id: kubernetes-provider
-    main: ./plugins/kubernetes-provider
-    binary: kubernetes-provider
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    env:
-      - CGO_ENABLED=0
+  # Plugins are built on-demand by users
+  # No pre-built plugin binaries in releases
 
 # Pre-build hooks
 before:
@@ -98,17 +45,9 @@ archives:
       - README.md
       - AWS_SCANNING_DOCUMENTATION.md
       - AZURE_SCANNING_DOCUMENTATION.md
+      - plugins/
   
-  - id: plugins
-    builds:
-      - aws-provider
-      - azure-provider
-      - gcp-provider
-      - kubernetes-provider
-    name_template: "{{ .ProjectName }}_plugins_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
-    format_overrides:
-      - goos: windows
-        format: zip
+  # No separate plugin archives - plugins built on-demand from source
 
 # Checksums
 checksum:
@@ -141,7 +80,7 @@ release:
   header: |
     ## Corkscrew {{ .Tag }}
     
-    Cloud Resource Scanner release with cross-platform binaries and plugins.
+    Cloud Resource Scanner release with cross-platform CLI binary.
     
     ### Installation
     
@@ -152,7 +91,20 @@ release:
     
     ### Plugins
     
-    Download the plugins archive for your platform to get cloud provider plugins.
+    Cloud provider plugins are built automatically when first used:
+    ```bash
+    # Plugins auto-build on first use
+    corkscrew discover --provider aws    # Builds AWS plugin if needed
+    corkscrew discover --provider azure  # Builds Azure plugin if needed
+    corkscrew discover --provider gcp    # Builds GCP plugin if needed
+    ```
+    
+    Or build manually:
+    ```bash
+    make build-aws-plugin     # Build AWS plugin
+    make build-azure-plugin   # Build Azure plugin  
+    make build-gcp-plugin     # Build GCP plugin
+    ```
     
   footer: |
     **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY }}/compare/{{ .PreviousTag }}...{{ .Tag }}
