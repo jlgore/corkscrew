@@ -1,0 +1,557 @@
+{
+  "analyzed_at": "2025-05-31T19:12:49-05:00",
+  "asset_mappings": {
+    "bigquery.Dataset": "bigqueryadmin.googleapis.com/Dataset",
+    "bigquery.Table": "bigqueryadmin.googleapis.com/Table",
+    "cloudsql.Instance": "sqladmin.googleapis.com/Instance",
+    "compute.Disk": "compute.googleapis.com/Disk",
+    "compute.Firewall": "compute.googleapis.com/Firewall",
+    "compute.Instance": "compute.googleapis.com/Instance",
+    "compute.Network": "compute.googleapis.com/Network",
+    "compute.Subnetwork": "compute.googleapis.com/Subnetwork",
+    "container.Cluster": "container.googleapis.com/Cluster",
+    "container.NodePool": "container.googleapis.com/NodePool",
+    "functions.Function": "cloudfunctions.googleapis.com/Function",
+    "pubsub.Subscription": "pubsub.googleapis.com/Subscription",
+    "pubsub.Topic": "pubsub.googleapis.com/Topic",
+    "run.Service": "run.googleapis.com/Service",
+    "storage.Bucket": "storage.googleapis.com/Bucket",
+    "storage.Object": "storage.googleapis.com/Object"
+  },
+  "relationships": [
+    {
+      "target_id": "Organization",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Folder",
+        "parent_required": "false",
+        "required_params": "folder",
+        "scope": "organizational"
+      }
+    },
+    {
+      "target_id": "Folder",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Project",
+        "parent_required": "false",
+        "required_params": "project",
+        "scope": "organizational"
+      }
+    },
+    {
+      "target_id": "Project",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Topic",
+        "parent_required": "true",
+        "required_params": "project,topic",
+        "scope": "project"
+      }
+    },
+    {
+      "target_id": "Project",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Bucket",
+        "parent_required": "true",
+        "required_params": "project,bucket",
+        "scope": "global"
+      }
+    },
+    {
+      "target_id": "Bucket",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Object",
+        "parent_required": "true",
+        "required_params": "project,bucket,object",
+        "scope": "bucket"
+      }
+    },
+    {
+      "target_id": "Dataset",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Table",
+        "parent_required": "true",
+        "required_params": "project,dataset,table",
+        "scope": "dataset"
+      }
+    },
+    {
+      "target_id": "storage.Bucket",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "compute.Instance",
+        "parent_required": "false",
+        "relationship_type": "accesses",
+        "scope": "access"
+      }
+    },
+    {
+      "target_id": "Project",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Subscription",
+        "parent_required": "true",
+        "required_params": "project,subscription",
+        "scope": "project"
+      }
+    },
+    {
+      "target_id": "Project",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "Dataset",
+        "parent_required": "true",
+        "required_params": "project,dataset",
+        "scope": "project"
+      }
+    },
+    {
+      "target_id": "compute.Network",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "container.Cluster",
+        "parent_required": "true",
+        "relationship_type": "uses",
+        "scope": "network"
+      }
+    },
+    {
+      "target_id": "container.Cluster",
+      "relationship_type": "parent_of",
+      "properties": {
+        "child_resource": "container.NodePool",
+        "parent_required": "true",
+        "relationship_type": "belongs_to",
+        "scope": "cluster"
+      }
+    }
+  ],
+  "services": {
+    "api": {
+      "service_name": "api",
+      "package_path": "cloud.google.com/go/scheduler/apiv1",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "apiv1beta3": {
+      "service_name": "apiv1beta3",
+      "package_path": "cloud.google.com/go/dataflow/apiv1beta3",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "bigquery": {
+      "service_name": "bigquery",
+      "package_path": "cloud.google.com/go/bigquery",
+      "client_name": "",
+      "resource_patterns": [
+        {
+          "method_name": "ListDatasets",
+          "resource_type": "Dataset",
+          "list_method": true,
+          "get_method": false,
+          "pagination_style": "iterator",
+          "parameters": [
+            "project"
+          ],
+          "return_type": "",
+          "asset_type": "bigqueryadmin.googleapis.com/Dataset",
+          "metadata": {
+            "scope": "project"
+          }
+        },
+        {
+          "method_name": "ListTables",
+          "resource_type": "Table",
+          "list_method": true,
+          "get_method": false,
+          "pagination_style": "iterator",
+          "parameters": [
+            "dataset"
+          ],
+          "return_type": "",
+          "asset_type": "bigqueryadmin.googleapis.com/Table",
+          "metadata": {
+            "scope": "dataset"
+          }
+        }
+      ],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": [
+        {
+          "child_resource": "Dataset",
+          "parent_resource": "Project",
+          "required_params": [
+            "project",
+            "dataset"
+          ],
+          "scope": "project"
+        },
+        {
+          "child_resource": "Table",
+          "parent_resource": "Dataset",
+          "required_params": [
+            "project",
+            "dataset",
+            "table"
+          ],
+          "scope": "dataset"
+        }
+      ]
+    },
+    "cloudsql": {
+      "service_name": "cloudsql",
+      "package_path": "cloud.google.com/go/cloudsql",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "dns": {
+      "service_name": "dns",
+      "package_path": "cloud.google.com/go/dns",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "firestore": {
+      "service_name": "firestore",
+      "package_path": "cloud.google.com/go/firestore",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "logging": {
+      "service_name": "logging",
+      "package_path": "cloud.google.com/go/logging",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "pubsub": {
+      "service_name": "pubsub",
+      "package_path": "cloud.google.com/go/pubsub",
+      "client_name": "",
+      "resource_patterns": [
+        {
+          "method_name": "ListTopics",
+          "resource_type": "Topic",
+          "list_method": true,
+          "get_method": false,
+          "pagination_style": "iterator",
+          "parameters": [
+            "project"
+          ],
+          "return_type": "",
+          "asset_type": "pubsub.googleapis.com/Topic",
+          "metadata": {
+            "scope": "project"
+          }
+        },
+        {
+          "method_name": "ListSubscriptions",
+          "resource_type": "Subscription",
+          "list_method": true,
+          "get_method": false,
+          "pagination_style": "iterator",
+          "parameters": [
+            "project"
+          ],
+          "return_type": "",
+          "asset_type": "pubsub.googleapis.com/Subscription",
+          "metadata": {
+            "scope": "project"
+          }
+        }
+      ],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": [
+        {
+          "child_resource": "Topic",
+          "parent_resource": "Project",
+          "required_params": [
+            "project",
+            "topic"
+          ],
+          "scope": "project"
+        },
+        {
+          "child_resource": "Subscription",
+          "parent_resource": "Project",
+          "required_params": [
+            "project",
+            "subscription"
+          ],
+          "scope": "project"
+        }
+      ]
+    },
+    "spanner": {
+      "service_name": "spanner",
+      "package_path": "cloud.google.com/go/spanner",
+      "client_name": "",
+      "resource_patterns": [],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": []
+    },
+    "storage": {
+      "service_name": "storage",
+      "package_path": "cloud.google.com/go/storage",
+      "client_name": "",
+      "resource_patterns": [
+        {
+          "method_name": "ListBuckets",
+          "resource_type": "Bucket",
+          "list_method": true,
+          "get_method": false,
+          "pagination_style": "iterator",
+          "parameters": [
+            "project"
+          ],
+          "return_type": "",
+          "asset_type": "storage.googleapis.com/Bucket",
+          "metadata": {
+            "scope": "global"
+          }
+        },
+        {
+          "method_name": "ListObjects",
+          "resource_type": "Object",
+          "list_method": true,
+          "get_method": false,
+          "pagination_style": "iterator",
+          "parameters": [
+            "bucket"
+          ],
+          "return_type": "",
+          "asset_type": "storage.googleapis.com/Object",
+          "metadata": {
+            "scope": "bucket"
+          }
+        }
+      ],
+      "iterator_patterns": [],
+      "asset_mappings": {},
+      "parent_hierarchy": [
+        {
+          "child_resource": "Bucket",
+          "parent_resource": "Project",
+          "required_params": [
+            "project",
+            "bucket"
+          ],
+          "scope": "global"
+        },
+        {
+          "child_resource": "Object",
+          "parent_resource": "Bucket",
+          "required_params": [
+            "project",
+            "bucket",
+            "object"
+          ],
+          "scope": "bucket"
+        }
+      ]
+    }
+  },
+  "services_info": [
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/compute/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "storage",
+      "display_name": "Cloud Storage",
+      "package_name": "cloud.google.com/go/storage",
+      "client_type": "google-cloud-go",
+      "resource_types": [
+        {
+          "name": "Bucket",
+          "type_name": "storage.googleapis.com/Bucket"
+        },
+        {
+          "name": "Object",
+          "type_name": "storage.googleapis.com/Object"
+        }
+      ]
+    },
+    {
+      "name": "bigquery",
+      "display_name": "BigQuery",
+      "package_name": "cloud.google.com/go/bigquery",
+      "client_type": "google-cloud-go",
+      "resource_types": [
+        {
+          "name": "Dataset",
+          "type_name": "bigqueryadmin.googleapis.com/Dataset"
+        },
+        {
+          "name": "Table",
+          "type_name": "bigqueryadmin.googleapis.com/Table"
+        }
+      ]
+    },
+    {
+      "name": "pubsub",
+      "display_name": "Pub/Sub",
+      "package_name": "cloud.google.com/go/pubsub",
+      "client_type": "google-cloud-go",
+      "resource_types": [
+        {
+          "name": "Topic",
+          "type_name": "pubsub.googleapis.com/Topic"
+        },
+        {
+          "name": "Subscription",
+          "type_name": "pubsub.googleapis.com/Subscription"
+        }
+      ]
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/container/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "cloudsql",
+      "display_name": "Cloud SQL",
+      "package_name": "cloud.google.com/go/cloudsql",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/run/apiv2",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/functions/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/appengine/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "apiv1beta3",
+      "display_name": "Apiv1beta3",
+      "package_name": "cloud.google.com/go/dataflow/apiv1beta3",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/dataproc/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "spanner",
+      "display_name": "Spanner",
+      "package_name": "cloud.google.com/go/spanner",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "firestore",
+      "display_name": "Firestore",
+      "package_name": "cloud.google.com/go/firestore",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "logging",
+      "display_name": "Cloud Logging",
+      "package_name": "cloud.google.com/go/logging",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/monitoring/apiv3",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/iam/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/resourcemanager/apiv3",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "dns",
+      "display_name": "Cloud DNS",
+      "package_name": "cloud.google.com/go/dns",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/secretmanager/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/artifactregistry/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/kms/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/cloudbuild/apiv1",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/cloudtasks/apiv2",
+      "client_type": "google-cloud-go"
+    },
+    {
+      "name": "api",
+      "display_name": "Api",
+      "package_name": "cloud.google.com/go/scheduler/apiv1",
+      "client_type": "google-cloud-go"
+    }
+  ],
+  "total_iterator_patterns": 0,
+  "total_relationships": 11,
+  "total_resource_patterns": 6,
+  "total_services": 10
+}
