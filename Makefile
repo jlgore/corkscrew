@@ -105,6 +105,22 @@ build-kubernetes-plugin: create-dirs
 	fi
 
 # =============================================================================
+# PROTOBUF GENERATION
+# =============================================================================
+
+.PHONY: generate-proto
+generate-proto:
+	@echo "🔄 Generating protobuf code..."
+	@if [ -d "proto" ]; then \
+		protoc --go_out=. --go_opt=paths=source_relative \
+		       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		       proto/*.proto; \
+		echo "✅ Protobuf code generated"; \
+	else \
+		echo "⚠️ No proto directory found, skipping..."; \
+	fi
+
+# =============================================================================
 # INSTALLATION TO ~/.corkscrew/
 # =============================================================================
 
