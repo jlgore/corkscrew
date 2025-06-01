@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/hashicorp/go-plugin"
-	"github.com/jlgore/corkscrew/diagrams/pkg/renderer"
-	"github.com/jlgore/corkscrew/diagrams/pkg/ui"
+	// "github.com/jlgore/corkscrew/diagrams/pkg/renderer"
+	// "github.com/jlgore/corkscrew/diagrams/pkg/ui"
 	"github.com/jlgore/corkscrew/internal/client"
-	"github.com/jlgore/corkscrew/internal/db"
+	// "github.com/jlgore/corkscrew/internal/db"  // Used by plugins, not main CLI currently
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/text/cases"
@@ -56,7 +56,9 @@ func main() {
 	case "schemas":
 		runSchemas(os.Args[2:])
 	case "diagram":
-		runDiagram(os.Args[2:])
+		fmt.Println("❌ Diagram functionality is temporarily disabled")
+		fmt.Println("This feature will be available in a future release")
+		// runDiagram(os.Args[2:])
 	case "plugin":
 		runPlugin(os.Args[2:])
 	case "version", "--version", "-v":
@@ -916,146 +918,20 @@ func runPluginStatus(args []string) {
 	}
 }
 
+/*
 func runDiagram(args []string) {
-	fs := flag.NewFlagSet("diagram", flag.ExitOnError)
-
-	dbPath := fs.String("db", "corkscrew.db", "Path to DuckDB database")
-	resourceID := fs.String("resource", "", "Specific resource ID to visualize")
-	diagramType := fs.String("type", "relationships", "Diagram type: relationships, dependencies, network, services")
-	depth := fs.Int("depth", 2, "Depth for relationship traversal")
-	export := fs.String("export", "", "Export to file (mermaid.md, ascii.txt)")
-	service := fs.String("service", "", "Filter by service")
-	region := fs.String("region", "", "Filter by region")
-	title := fs.String("title", "", "Custom diagram title")
-	help := fs.Bool("help", false, "Show help")
-
-	fs.Parse(args)
-
-	if *help {
-		showDiagramHelp()
-		return
-	}
-
-	// Initialize database connection
-	graphLoader, err := db.NewGraphLoader(*dbPath)
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	defer graphLoader.Close()
-
-	// Parse diagram type
-	var diagType renderer.DiagramType
-	switch *diagramType {
-	case "relationships", "rel":
-		diagType = renderer.DiagramTypeRelationship
-	case "dependencies", "deps":
-		diagType = renderer.DiagramTypeDependency
-	case "network", "net":
-		diagType = renderer.DiagramTypeNetwork
-	case "services", "svc":
-		diagType = renderer.DiagramTypeService
-	default:
-		fmt.Printf("Unknown diagram type: %s\n", *diagramType)
-		showDiagramHelp()
-		os.Exit(1)
-	}
-
-	// Build options
-	options := renderer.DiagramOptions{
-		Type:       diagType,
-		ResourceID: *resourceID,
-		Depth:      *depth,
-		Title:      *title,
-		Filters:    make(map[string]string),
-	}
-
-	if *service != "" {
-		options.Filters["service"] = *service
-	}
-	if *region != "" {
-		options.Filters["region"] = *region
-	}
-
-	// If export is specified, generate and export diagram
-	if *export != "" {
-		err := exportDiagram(graphLoader, options, *export)
-		if err != nil {
-			log.Fatalf("Failed to export diagram: %v", err)
-		}
-		fmt.Printf("Diagram exported to: %s\n", *export)
-		return
-	}
-
-	// Launch interactive viewer
-	model := ui.NewDiagramModelWithOptions(graphLoader, options)
-	
-	program := tea.NewProgram(
-		model,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
-
-	if _, err := program.Run(); err != nil {
-		log.Fatalf("Error running diagram viewer: %v", err)
-	}
+	// Temporarily disabled - will be re-enabled when diagram functionality is needed
+	fmt.Println("❌ Diagram functionality is temporarily disabled")
 }
+*/
 
+/*
 func exportDiagram(graphLoader *db.GraphLoader, options renderer.DiagramOptions, filename string) error {
-	// This function was implemented in the standalone CLI - let me reuse it
-	// Implementation would be similar to the standalone version
+	// Temporarily disabled
 	return fmt.Errorf("export functionality not yet implemented in integrated CLI")
 }
 
 func showDiagramHelp() {
-	fmt.Printf(`Corkscrew Diagram Viewer
-
-USAGE:
-    corkscrew diagram [FLAGS]
-
-FLAGS:
-    -db <path>         Path to DuckDB database (default: corkscrew.db)
-    -resource <id>     Specific resource ID to visualize
-    -type <type>       Diagram type: relationships, dependencies, network, services
-    -depth <int>       Depth for relationship traversal (default: 2)
-    -export <file>     Export to file (.md for Mermaid, .txt for ASCII)
-    -service <name>    Filter by service
-    -region <name>     Filter by region
-    -title <string>    Custom diagram title
-    -help              Show this help
-
-DIAGRAM TYPES:
-    relationships      Show resource relationships (default)
-    dependencies       Show resource dependencies (requires -resource)
-    network           Show network topology
-    services          Show service map with resource counts
-
-EXAMPLES:
-    # Launch interactive viewer
-    corkscrew diagram
-
-    # View relationships for a specific resource
-    corkscrew diagram -resource vpc-123456789 -type relationships
-
-    # View dependencies for an EC2 instance
-    corkscrew diagram -resource i-0123456789abcdef0 -type dependencies
-
-    # Show network topology for a region
-    corkscrew diagram -type network -region us-east-1
-
-    # Export service map to Mermaid file
-    corkscrew diagram -type services -export services.md
-
-INTERACTIVE CONTROLS:
-    q/Ctrl+C     Quit
-    h/?          Show help
-    r            Refresh data
-    1            ASCII view
-    2            Mermaid source view
-    3            List view
-    n            Relationships diagram
-    d            Dependencies diagram (requires resource)
-    t            Network topology diagram
-    s            Services diagram
-    +/-          Increase/decrease depth
-`)
+	// Temporarily disabled
 }
+*/
