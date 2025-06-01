@@ -24,12 +24,16 @@ ehthumbs.db
 Thumbs.db
 
 # Build artifacts
+build/
 cmd/*/corkscrew
 cmd/*/generator
 cmd/*/plugin-test
-plugins/
+plugins/**/build/
+plugins/**/*-provider
+plugins/**/corkscrew-*
 release/
 output/
+corkscrew
 
 # Test files
 *_test.go
@@ -55,7 +59,6 @@ yarn-debug.log*
 yarn-error.log*
 
 # Generated files that will be rebuilt
-internal/proto/*.pb.go
 generated/
 
 # CI/CD files (not needed in container)

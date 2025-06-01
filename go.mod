@@ -20,7 +20,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/jlgore/corkscrew/diagrams v0.0.0
-	github.com/jlgore/corkscrew/plugins/aws-provider v0.0.0
 	github.com/marcboeker/go-duckdb v1.8.5
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/text v0.25.0
@@ -85,11 +84,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/jlgore/corkscrew/plugins/aws-provider => ./plugins/aws-provider
-
-replace github.com/jlgore/corkscrew/plugins/azure-provider => ./plugins/azure-provider
-
-replace github.com/jlgore/corkscrew/plugins/gcp-provider => ./plugins/gcp-provider
 
 replace github.com/jlgore/corkscrew/diagrams => ./diagrams

@@ -7,23 +7,19 @@ RUN apk add --no-cache git make protobuf protobuf-dev
 # Set working directory
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy source code
+# Copy source code (needed for local module dependencies)
 COPY . .
+
+# Download dependencies (after copying source to resolve local replaces)
+RUN go mod download
 
 # Install protobuf Go plugins
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-# Generate protobuf code and build
+# Generate protobuf code and build CLI only
 RUN make generate-proto
 RUN make build-cli
-RUN make build-example-plugins
 
 # Runtime stage
 FROM alpine:latest
@@ -38,9 +34,8 @@ RUN addgroup -g 1001 -S corkscrew && \
 # Set working directory
 WORKDIR /app
 
-# Copy binaries from builder
-COPY --from=builder /app/cmd/corkscrew/corkscrew /usr/local/bin/corkscrew
-COPY --from=builder /app/plugins/ /app/plugins/
+# Copy CLI binary only (plugins built on-demand by users)
+COPY --from=builder /app/build/bin/corkscrew /usr/local/bin/corkscrew
 
 # Create directories for output
 RUN mkdir -p /app/output && \
@@ -49,7 +44,7 @@ RUN mkdir -p /app/output && \
 # Switch to non-root user
 USER corkscrew
 
-# Set default plugin directory
+# Set default plugin directory (users can mount their own plugins)
 ENV PLUGIN_DIR=/app/plugins
 
 # Default command
