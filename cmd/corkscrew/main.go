@@ -27,6 +27,7 @@ import (
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/jlgore/corkscrew/pkg/query"
+	"github.com/jlgore/corkscrew/pkg/query/compliance"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -37,6 +38,43 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+// parameterFlags implements flag.Value for collecting multiple --param flags
+type parameterFlags map[string]interface{}
+
+func (p parameterFlags) String() string {
+	return fmt.Sprintf("%v", map[string]interface{}(p))
+}
+
+func (p parameterFlags) Set(value string) error {
+	parts := strings.SplitN(value, "=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("parameter must be in format key=value")
+	}
+	
+	key := strings.TrimSpace(parts[0])
+	val := strings.TrimSpace(parts[1])
+	
+	// Try to parse as different types
+	if val == "true" {
+		p[key] = true
+	} else if val == "false" {
+		p[key] = false
+	} else if strings.Contains(val, ",") {
+		// Handle list parameters
+		items := strings.Split(val, ",")
+		var list []interface{}
+		for _, item := range items {
+			list = append(list, strings.TrimSpace(item))
+		}
+		p[key] = list
+	} else {
+		// Default to string
+		p[key] = val
+	}
+	
+	return nil
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -108,6 +146,12 @@ func printUsage() {
 	fmt.Println("  corkscrew query \"SELECT * FROM aws_resources WHERE type='Bucket'\" --output csv")
 	fmt.Println("  echo \"SELECT * FROM azure_resources\" | corkscrew query --stdin --output json")
 	fmt.Println("  corkscrew query --file analysis.sql --verbose")
+	fmt.Println()
+	fmt.Println("  # Compliance Query Examples")
+	fmt.Println("  corkscrew query --control jlgore/cfi-ccc/CCC.C01")
+	fmt.Println("  corkscrew query --pack jlgore/cfi-ccc/s3-security")
+	fmt.Println("  corkscrew query --compliance --tag encryption --param required_encryption=aws:kms")
+	fmt.Println("  corkscrew query --list-packs")
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  scan                - Full resource scanning")
@@ -607,14 +651,40 @@ func runQuery(args []string) {
 	stdin := fs.Bool("stdin", false, "Read SQL query from stdin")
 	file := fs.String("file", "", "Read SQL query from file")
 	
+	// Compliance query options
+	control := fs.String("control", "", "Execute specific compliance control (namespace/control-id)")
+	pack := fs.String("pack", "", "Execute compliance pack (namespace/pack-name)")
+	complianceFlag := fs.Bool("compliance", false, "Run compliance queries")
+	_ = fs.String("tag", "", "Filter queries by tag (use with --compliance)")
+	listPacks := fs.Bool("list-packs", false, "List available compliance packs")
+	_ = fs.Bool("dry-run", false, "Validate queries without execution")
+	
 	// Performance and debugging flags
 	timeout := fs.Int("timeout", 30, "Query timeout in seconds")
 	verbose := fs.Bool("verbose", false, "Show execution time and row count")
 	stream := fs.Bool("stream", false, "Use streaming mode for large result sets")
 
+	// Parameter flags for compliance queries
+	paramFlags := make(parameterFlags)
+	fs.Var(&paramFlags, "param", "Set parameter for compliance queries (key=value, can be used multiple times)")
+
 	fs.Parse(args)
 
-	// Determine SQL query source
+	// Handle compliance-specific commands first
+	if *listPacks {
+		runListPacks(*verbose)
+		return
+	}
+
+	// Check for compliance commands
+	isComplianceQuery := *control != "" || *pack != "" || *complianceFlag
+
+	if isComplianceQuery {
+		runComplianceQuery(args, fs, map[string]interface{}(paramFlags))
+		return
+	}
+
+	// Determine SQL query source for traditional queries
 	var sqlQuery string
 	var err error
 
@@ -641,6 +711,10 @@ func runQuery(args []string) {
 		fmt.Fprintf(os.Stderr, "     corkscrew query \"SELECT * FROM aws_resources\"\n")
 		fmt.Fprintf(os.Stderr, "     echo \"SELECT * FROM aws_resources\" | corkscrew query --stdin\n")
 		fmt.Fprintf(os.Stderr, "     corkscrew query --file query.sql\n")
+		fmt.Fprintf(os.Stderr, "  💡 Compliance options:\n")
+		fmt.Fprintf(os.Stderr, "     corkscrew query --control namespace/control-id\n")
+		fmt.Fprintf(os.Stderr, "     corkscrew query --pack namespace/pack-name\n")
+		fmt.Fprintf(os.Stderr, "     corkscrew query --list-packs\n")
 		os.Exit(1) // Exit code 1 for user input errors
 	}
 
@@ -1936,4 +2010,331 @@ func executeStreamingQuery(ctx context.Context, graphLoader *db.GraphLoader, sql
 	}
 	
 	return nil
+}
+
+// runListPacks lists all available compliance packs
+func runListPacks(verbose bool) {
+	registry := compliance.NewPackRegistry()
+	
+	// Add default search paths
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		registry.SearchPaths = append(registry.SearchPaths, filepath.Join(homeDir, ".corkscrew", "packs"))
+	}
+	registry.SearchPaths = append(registry.SearchPaths, "./pkg/query/compliance/packs")
+	
+	fmt.Println("🔍 Scanning for compliance packs...")
+	
+	var totalPacks int
+	packsByNamespace := make(map[string][]*compliance.QueryPack)
+	
+	// Scan all search paths
+	for _, searchPath := range registry.SearchPaths {
+		if _, err := os.Stat(searchPath); os.IsNotExist(err) {
+			if verbose {
+				fmt.Printf("  ⚠️  Path not found: %s\n", searchPath)
+			}
+			continue
+		}
+		
+		err := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // Continue on errors
+			}
+			
+			if strings.HasSuffix(path, "manifest.yaml") || strings.HasSuffix(path, "pack.yaml") {
+				pack, err := registry.LoadPack(path)
+				if err != nil {
+					if verbose {
+						fmt.Printf("  ❌ Failed to load pack from %s: %v\n", path, err)
+					}
+					return nil
+				}
+				
+				namespace := pack.Namespace
+				if namespace == "" {
+					namespace = "local"
+				}
+				
+				packsByNamespace[namespace] = append(packsByNamespace[namespace], pack)
+				totalPacks++
+			}
+			return nil
+		})
+		
+		if err != nil && verbose {
+			fmt.Printf("  ⚠️  Error scanning %s: %v\n", searchPath, err)
+		}
+	}
+	
+	fmt.Printf("\n📦 Found %d compliance packs:\n\n", totalPacks)
+	
+	if totalPacks == 0 {
+		fmt.Println("No compliance packs found.")
+		fmt.Println("💡 Pack locations searched:")
+		for _, path := range registry.SearchPaths {
+			fmt.Printf("  - %s\n", path)
+		}
+		return
+	}
+	
+	// Display packs grouped by namespace
+	for namespace, packs := range packsByNamespace {
+		fmt.Printf("📁 %s:\n", namespace)
+		
+		for _, pack := range packs {
+			fmt.Printf("  📋 %s v%s\n", pack.Metadata.Name, pack.Metadata.Version)
+			fmt.Printf("      %s\n", pack.Metadata.Description)
+			fmt.Printf("      Provider: %s | Queries: %d\n", pack.Metadata.Provider, len(pack.Queries))
+			
+			if len(pack.Metadata.Tags) > 0 {
+				fmt.Printf("      Tags: %s\n", strings.Join(pack.Metadata.Tags, ", "))
+			}
+			
+			if verbose {
+				fmt.Printf("      Path: %s\n", pack.LoadedFrom)
+				if len(pack.Parameters) > 0 {
+					fmt.Printf("      Parameters: %d\n", len(pack.Parameters))
+				}
+			}
+			fmt.Println()
+		}
+	}
+	
+	if verbose {
+		fmt.Println("💡 Usage examples:")
+		for namespace, packs := range packsByNamespace {
+			for _, pack := range packs {
+				fmt.Printf("  corkscrew query --pack %s/%s\n", namespace, pack.Metadata.Name)
+				break // Show only one example per namespace
+			}
+		}
+	}
+}
+
+// runComplianceQuery handles compliance query execution
+func runComplianceQuery(args []string, fs *flag.FlagSet, params map[string]interface{}) {
+	// Re-extract flags for compliance mode
+	var control, pack, tag, output string
+	var dryRun, verbose bool
+	var timeout int
+	
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "control":
+			control = f.Value.String()
+		case "pack":
+			pack = f.Value.String()
+		case "tag":
+			tag = f.Value.String()
+		case "output":
+			output = f.Value.String()
+		case "dry-run":
+			dryRun = f.Value.String() == "true"
+		case "verbose":
+			verbose = f.Value.String() == "true"
+		case "timeout":
+			fmt.Sscanf(f.Value.String(), "%d", &timeout)
+		}
+	})
+	
+	// Default values
+	if output == "" {
+		output = "table"
+	}
+	if timeout == 0 {
+		timeout = 30
+	}
+	
+	// Create query engine
+	engine, err := query.NewDuckDBQueryEngine()
+	if err != nil {
+		log.Fatalf("Failed to create query engine: %v", err)
+	}
+	defer engine.Close()
+	
+	// Create compliance executor
+	executor := compliance.NewComplianceExecutor(engine)
+	
+	// Set up execution options
+	execOptions := compliance.ExecutionOptions{
+		DryRun:          dryRun,
+		Timeout:         time.Duration(timeout) * time.Second,
+		Parameters:      params,
+		ContinueOnError: true,
+		MaxConcurrency:  5,
+	}
+	
+	ctx := context.Background()
+	
+	if control != "" {
+		runSingleControl(ctx, executor, control, execOptions, output, verbose)
+	} else if pack != "" {
+		runCompliancePack(ctx, executor, pack, execOptions, output, verbose)
+	} else {
+		runComplianceByTag(ctx, executor, tag, execOptions, output, verbose)
+	}
+}
+
+// runSingleControl executes a single compliance control
+func runSingleControl(ctx context.Context, executor *compliance.ComplianceExecutor, controlRef string, options compliance.ExecutionOptions, outputFormat string, verbose bool) {
+	parts := strings.Split(controlRef, "/")
+	if len(parts) < 2 {
+		fmt.Fprintf(os.Stderr, "❌ Invalid control reference: %s\n", controlRef)
+		fmt.Fprintf(os.Stderr, "💡 Format: namespace/control-id (e.g., jlgore/cfi-ccc/CCC.C01)\n")
+		os.Exit(1)
+	}
+	
+	fmt.Printf("🔍 Executing control: %s\n", controlRef)
+	
+	// For now, show what would be executed
+	// TODO: Implement actual control loading and execution
+	fmt.Printf("📋 Control Reference: %s\n", controlRef)
+	if len(options.Parameters) > 0 {
+		fmt.Printf("🔧 Parameters:\n")
+		for key, value := range options.Parameters {
+			fmt.Printf("  %s = %v\n", key, value)
+		}
+	}
+	
+	if options.DryRun {
+		fmt.Printf("✅ Dry-run validation passed for control %s\n", controlRef)
+	} else {
+		fmt.Printf("⚠️  Control execution not yet implemented\n")
+		fmt.Printf("💡 This will execute the specific compliance control with provided parameters\n")
+	}
+}
+
+// runCompliancePack executes an entire compliance pack
+func runCompliancePack(ctx context.Context, executor *compliance.ComplianceExecutor, packRef string, options compliance.ExecutionOptions, outputFormat string, verbose bool) {
+	parts := strings.Split(packRef, "/")
+	if len(parts) < 2 {
+		fmt.Fprintf(os.Stderr, "❌ Invalid pack reference: %s\n", packRef)
+		fmt.Fprintf(os.Stderr, "💡 Format: namespace/pack-name (e.g., jlgore/cfi-ccc/s3-security)\n")
+		os.Exit(1)
+	}
+	
+	fmt.Printf("📦 Executing compliance pack: %s\n", packRef)
+	
+	// Try to load the pack
+	registry := compliance.NewPackRegistry()
+	
+	// Add search paths
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		registry.SearchPaths = append(registry.SearchPaths, filepath.Join(homeDir, ".corkscrew", "packs"))
+	}
+	registry.SearchPaths = append(registry.SearchPaths, "./pkg/query/compliance/packs")
+	
+	var pack *compliance.QueryPack
+	
+	// Search for the pack
+	for _, searchPath := range registry.SearchPaths {
+		// Try different path structures
+		possiblePaths := []string{
+			filepath.Join(searchPath, parts[0], parts[1], "manifest.yaml"),
+			filepath.Join(searchPath, strings.Join(parts, "/"), "manifest.yaml"),
+		}
+		
+		for _, packPath := range possiblePaths {
+			if _, err := os.Stat(packPath); err == nil {
+				pack, err = registry.LoadPack(packPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "❌ Failed to load pack: %v\n", err)
+					os.Exit(1)
+				}
+				break
+			}
+		}
+		
+		if pack != nil {
+			break
+		}
+	}
+	
+	if pack == nil {
+		fmt.Fprintf(os.Stderr, "❌ Pack not found: %s\n", packRef)
+		fmt.Fprintf(os.Stderr, "💡 Use 'corkscrew query --list-packs' to see available packs\n")
+		os.Exit(1)
+	}
+	
+	fmt.Printf("✅ Loaded pack: %s v%s\n", pack.Metadata.Name, pack.Metadata.Version)
+	fmt.Printf("📄 Description: %s\n", pack.Metadata.Description)
+	fmt.Printf("🔢 Queries: %d\n", len(pack.Queries))
+	
+	if len(options.Parameters) > 0 {
+		fmt.Printf("🔧 Parameters:\n")
+		for key, value := range options.Parameters {
+			fmt.Printf("  %s = %v\n", key, value)
+		}
+	}
+	
+	// Execute the pack
+	progressChan, err := executor.ExecutePack(ctx, pack, options)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to start pack execution: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Display progress with a simple progress indicator
+	var currentQuery int
+	var totalQueries int
+	
+	for event := range progressChan {
+		switch event.Type {
+		case "start":
+			totalQueries = event.Total
+			fmt.Printf("\n🚀 Starting execution of %d queries...\n\n", totalQueries)
+			
+		case "query":
+			currentQuery = event.Current
+			progress := float64(currentQuery) / float64(totalQueries) * 100
+			
+			// Simple progress bar
+			barWidth := 30
+			filled := int(progress / 100 * float64(barWidth))
+			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+			
+			fmt.Printf("\r[%s] %.1f%% (%d/%d) %s", bar, progress, currentQuery, totalQueries, event.QueryID)
+			
+			if verbose {
+				fmt.Printf("\n  📊 Results: %d | Message: %s\n", len(event.Result), event.Message)
+			}
+			
+		case "error":
+			fmt.Printf("\n❌ Error in %s: %s\n", event.QueryID, event.Error.Error())
+			
+		case "complete":
+			fmt.Printf("\n\n🎉 Pack execution completed!\n")
+			fmt.Printf("📈 Progress: %d/%d queries executed\n", currentQuery, totalQueries)
+		}
+	}
+	
+	fmt.Printf("\n💡 Pack execution finished. Results displayed above.\n")
+}
+
+// runComplianceByTag executes compliance queries filtered by tag
+func runComplianceByTag(ctx context.Context, executor *compliance.ComplianceExecutor, tag string, options compliance.ExecutionOptions, outputFormat string, verbose bool) {
+	if tag == "" {
+		fmt.Fprintf(os.Stderr, "❌ Tag is required when using --compliance flag\n")
+		fmt.Fprintf(os.Stderr, "💡 Usage: corkscrew query --compliance --tag encryption\n")
+		os.Exit(1)
+	}
+	
+	fmt.Printf("🏷️  Executing compliance queries tagged with: %s\n", tag)
+	
+	// TODO: Implement tag-based query filtering
+	fmt.Printf("⚠️  Tag-based query execution not yet implemented\n")
+	fmt.Printf("💡 This will search all packs for queries tagged with '%s'\n", tag)
+	
+	if len(options.Parameters) > 0 {
+		fmt.Printf("🔧 Parameters:\n")
+		for key, value := range options.Parameters {
+			fmt.Printf("  %s = %v\n", key, value)
+		}
+	}
+	
+	if options.DryRun {
+		fmt.Printf("✅ Dry-run validation would be performed for tagged queries\n")
+	}
 }

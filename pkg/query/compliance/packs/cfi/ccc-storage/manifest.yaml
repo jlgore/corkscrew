@@ -1,0 +1,184 @@
+apiVersion: v1
+kind: QueryPack
+metadata:
+  name: ccc-storage
+  namespace: cfi/ccc
+  version: 1.0.0
+  description: Common Cloud Controls (CCC) for Object Storage
+  author: Cloud Foundry Initiative
+  maintainers:
+    - security-team@example.org
+  tags:
+    - ccc
+    - storage
+    - security
+    - compliance
+  provider: aws
+  resources:
+    - s3
+    - kms
+  frameworks:
+    - ccc
+    - iso27001
+    - nist
+  min_engine_version: 1.0.0
+  labels:
+    category: security
+    domain: storage
+  annotations:
+    description: Implementation of CCC controls for object storage services
+    documentation: https://github.com/cloud-foundry/common-cloud-controls
+
+spec:
+  parameters:
+    - name: trusted_kms_keys
+      description: List of trusted KMS key ARNs
+      type: list
+      required: true
+      validation:
+        min_length: 1
+      examples:
+        - ["arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"]
+    
+    - name: retention_period_days
+      description: Default object retention period in days
+      type: int
+      default: 90
+      validation:
+        min_value: 1
+        max_value: 7300
+      examples:
+        - 90
+        - 365
+
+  queries:
+    - id: CCC.ObjStor.C01
+      title: Prevent Requests to Buckets or Objects with Untrusted KMS Keys
+      description: |
+        Prevent any requests to object storage buckets or objects using
+        untrusted KMS keys to protect against unauthorized data encryption
+        that can impact data availability and integrity.
+      objective: |
+        Ensure that only trusted KMS keys are used for encryption of
+        object storage buckets and objects.
+      severity: HIGH
+      category: security
+      control_family: Data
+      nist_csf: PR.DS-1
+      tags:
+        - encryption
+        - kms
+        - data-protection
+      query_file: queries/untrusted_kms_keys.sql
+      parameters:
+        - trusted_kms_keys
+      threats:
+        - CCC.TH01
+        - CCC.TH06
+      control_mappings:
+        CCM:
+          - DCS-04
+          - DCS-06
+        ISO_27001:
+          - "2013 A.10.1.1"
+        NIST_800_53:
+          - SC-28
+      test_requirements:
+        - id: CCC.ObjStor.C01.TR01
+          text: |
+            When a request is made to read a protected bucket, the service
+            MUST prevent any request using KMS keys not listed as trusted by
+            the organization.
+          tlp_levels:
+            - tlp_amber
+            - tlp_red
+      remediation:
+        description: Configure bucket policies to restrict access to trusted KMS keys only
+        complexity: MEDIUM
+        estimated_time: 30 minutes
+        automated: true
+        terraform_module: aws-s3-kms-policy
+        steps:
+          - Identify all S3 buckets using untrusted KMS keys
+          - Create or update bucket policies to deny requests with untrusted keys
+          - Test access with both trusted and untrusted keys
+          - Monitor CloudTrail for policy violations
+        risks:
+          - May temporarily disrupt access to encrypted objects
+          - Requires coordination with application teams
+        prerequisites:
+          - List of approved KMS keys
+          - CloudTrail logging enabled
+      references:
+        - name: AWS S3 Bucket Key Configuration
+          url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-key.html
+          type: documentation
+        - name: KMS Key Policies
+          url: https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html
+          type: documentation
+      enabled: true
+
+    - id: CCC.ObjStor.C02
+      title: Enforce Uniform Bucket-level Access to Prevent Inconsistent Permissions
+      description: |
+        Ensure that uniform bucket-level access is enforced across all
+        object storage buckets.
+      objective: |
+        Prevent the use of ad-hoc or inconsistent object-level permissions,
+        ensuring centralized, consistent, and secure access management.
+      severity: MEDIUM
+      category: security
+      control_family: Identity and Access Management
+      nist_csf: PR.AC-4
+      tags:
+        - iam
+        - access-control
+        - permissions
+      query_file: queries/uniform_bucket_access.sql
+      threats:
+        - CCC.TH01
+      control_mappings:
+        CCM:
+          - DCS-09
+        ISO_27001:
+          - "2013 A.9.4.1"
+        NIST_800_53:
+          - AC-3
+          - AC-6
+      remediation:
+        description: Enable uniform bucket-level access on all S3 buckets
+        complexity: LOW
+        estimated_time: 15 minutes
+        automated: true
+        terraform_code: |
+          resource "aws_s3_bucket_public_access_block" "example" {
+            bucket = aws_s3_bucket.example.id
+            
+            block_public_acls       = true
+            block_public_policy     = true
+            ignore_public_acls      = true
+            restrict_public_buckets = true
+          }
+      enabled: true
+
+    - id: CCC.ObjStor.C03
+      title: Prevent Bucket Deletion Through Irrevocable Bucket Retention Policy
+      description: |
+        Ensure that object storage bucket is not deleted after creation,
+        and that the preventative measure cannot be unset.
+      severity: CRITICAL
+      category: security
+      control_family: Data
+      query_file: queries/bucket_deletion_protection.sql
+      parameters:
+        - retention_period_days
+      enabled: true
+
+  depends_on:
+    - name: ccc-common
+      namespace: cfi/ccc
+      version: ">=1.0.0"
+      required: false
+
+  includes:
+    - ccc-iam-common.yaml
