@@ -21,17 +21,29 @@ Corkscrew uses a plugin-based architecture with HashiCorp's go-plugin framework 
 ### Key Components
 
 - **Plugin Binary**: Standalone executable implementing the CloudProvider interface
-- **Service Discovery**: Dynamically discovers available services from the cloud provider's SDK
-- **Resource Scanner**: Lists and describes cloud resources using SDK operations
+- **Unified Scanner**: Single discovery engine that handles all services dynamically
+- **Service Discovery**: Automatically detects available services from cloud provider SDK
+- **Resource Enrichment**: Collects detailed resource configuration via SDK operations  
 - **Schema Generator**: Creates database schemas for discovered resources
-- **Rate Limiter**: Handles API rate limiting and retries
+- **Rate Limiter**: Handles API rate limiting and retries per service
 - **Client Factory**: Manages SDK client creation and caching
 
 ### Communication Flow
 
 ```
-Corkscrew Core ←→ gRPC ←→ Provider Plugin ←→ Cloud SDK ←→ Cloud Provider API
+Corkscrew CLI ←→ gRPC ←→ Provider Plugin ←→ Unified Scanner ←→ Cloud SDK ←→ Cloud APIs
+      ↓                                          ↓
+  DuckDB Storage                        Resource Discovery & Enrichment
 ```
+
+### Simplified Architecture (v2)
+
+The new plugin architecture eliminates complex code generation and circular dependencies:
+
+- **No Generated Scanners**: Single UnifiedScanner handles all services
+- **Direct Integration**: Scanner registry uses UnifiedScanner directly
+- **Separated Concerns**: Plugin discovers resources, CLI persists to database
+- **Dynamic Service Support**: Automatic detection of new cloud services
 
 ### Plugin Handshake
 

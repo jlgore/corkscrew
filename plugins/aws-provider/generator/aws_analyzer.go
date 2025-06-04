@@ -121,17 +121,20 @@ func (a *AWSAnalyzer) analyzeFuncDecl(funcDecl *ast.FuncDecl, service *AWSServic
 		Method: funcName,
 	}
 
-	// Determine operation type
+	// Determine operation type and extract base resource type
 	if strings.HasPrefix(funcName, "List") {
 		operation.IsList = true
-		operation.ResourceType = strings.TrimPrefix(funcName, "List")
+		operation.ResourceType = a.extractBaseResourceType(funcName, "List")
 	} else if strings.HasPrefix(funcName, "Describe") {
 		operation.IsDescribe = true
-		operation.ResourceType = strings.TrimPrefix(funcName, "Describe")
+		operation.ResourceType = a.extractBaseResourceType(funcName, "Describe")
 	} else if strings.HasPrefix(funcName, "Get") {
 		operation.IsGet = true
-		operation.ResourceType = strings.TrimPrefix(funcName, "Get")
+		operation.ResourceType = a.extractBaseResourceType(funcName, "Get")
 	}
+	
+	// Debug: Print what we extracted
+	fmt.Printf("DEBUG: Operation %s -> ResourceType: %s\n", funcName, operation.ResourceType)
 
 	// Extract input/output types
 	if funcDecl.Type.Params != nil && len(funcDecl.Type.Params.List) > 1 {
@@ -196,6 +199,64 @@ func (a *AWSAnalyzer) isPaginated(inputType, outputType string) bool {
 	}
 
 	return false
+}
+
+// extractBaseResourceType extracts the base resource type from an operation name
+func (a *AWSAnalyzer) extractBaseResourceType(operationName, prefix string) string {
+	resourceType := strings.TrimPrefix(operationName, prefix)
+	
+	// Map configuration operations to their base resource types
+	baseResourceMappings := map[string]string{
+		// S3 bucket configuration operations
+		"BucketEncryption":           "Bucket",
+		"BucketVersioning":           "Bucket", 
+		"BucketLocation":             "Bucket",
+		"BucketPolicy":               "Bucket",
+		"BucketLifecycleConfiguration": "Bucket",
+		"BucketLogging":              "Bucket",
+		"BucketNotificationConfiguration": "Bucket",
+		"BucketTagging":              "Bucket",
+		"BucketAcl":                  "Bucket",
+		"BucketCors":                 "Bucket",
+		"BucketWebsite":              "Bucket",
+		"PublicAccessBlock":          "Bucket",
+		
+		// EC2 instance configuration operations  
+		"InstanceAttribute":          "Instance",
+		"InstanceStatus":             "Instance",
+		"InstanceTypes":              "Instance",
+		
+		// Lambda function configuration operations
+		"FunctionConfiguration":     "Function",
+		"FunctionCodeSigningConfig": "Function",
+		"Function":                  "Function", // GetFunction
+		
+		// RDS database configuration operations
+		"DBInstanceAttribute":       "DBInstance",
+		"DBClusterAttribute":        "DBCluster",
+		
+		// DynamoDB table configuration operations
+		"TableTagging":              "Table",
+		
+		// More mappings can be added automatically
+	}
+	
+	// Check if this is a configuration operation
+	if baseResource, exists := baseResourceMappings[resourceType]; exists {
+		return baseResource
+	}
+	
+	// For operations that end with 's' (plurals), remove the 's'
+	if len(resourceType) > 1 && strings.HasSuffix(resourceType, "s") {
+		singular := resourceType[:len(resourceType)-1]
+		// Avoid false positives like "Status" -> "Statu"
+		if !strings.HasSuffix(singular, "Statu") && !strings.HasSuffix(singular, "Acces") {
+			return singular
+		}
+	}
+	
+	// Return as-is for base resource operations
+	return resourceType
 }
 
 // identifyResourceTypes identifies resource types from operations

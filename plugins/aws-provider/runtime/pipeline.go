@@ -9,10 +9,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
-	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/discovery"
-	"golang.org/x/sync/errgroup"
 )
 
 // PipelineConfig contains configuration for the runtime pipeline
@@ -23,11 +21,11 @@ type PipelineConfig struct {
 	UseResourceExplorer bool
 	FallbackToScanners  bool
 	
-	// DuckDB configuration
-	EnableDuckDB     bool
-	DuckDBPath       string
-	BatchSize        int
-	FlushInterval    time.Duration
+	// DuckDB configuration (disabled - handled by main CLI)
+	// EnableDuckDB     bool
+	// DuckDBPath       string
+	BatchSize        int      // Still used for batching resources before returning to CLI
+	FlushInterval    time.Duration  // Still used for periodic flushing
 	
 	// Service discovery
 	EnableAutoDiscovery bool
@@ -47,7 +45,7 @@ func DefaultPipelineConfig() *PipelineConfig {
 		ScanTimeout:         5 * time.Minute,
 		UseResourceExplorer: true,
 		FallbackToScanners:  true,
-		EnableDuckDB:        true,
+		// EnableDuckDB:        true,  // Disabled - handled by main CLI
 		BatchSize:           1000,
 		FlushInterval:       30 * time.Second,
 		EnableAutoDiscovery: true,
@@ -57,11 +55,11 @@ func DefaultPipelineConfig() *PipelineConfig {
 	}
 }
 
+
 // RuntimePipeline orchestrates the resource discovery and storage pipeline
 type RuntimePipeline struct {
 	config       *PipelineConfig
 	registry     *ScannerRegistry
-	graphLoader  *db.GraphLoader
 	reClient     *resourceexplorer2.Client
 	discoverer   *discovery.ServiceDiscovery
 	
@@ -99,14 +97,9 @@ func NewRuntimePipeline(cfg aws.Config, config *PipelineConfig) (*RuntimePipelin
 		pipeline.reClient = resourceexplorer2.NewFromConfig(cfg)
 	}
 	
-	// Initialize DuckDB if enabled
-	if config.EnableDuckDB && config.DuckDBPath != "" {
-		graphLoader, err := db.NewGraphLoader(config.DuckDBPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize DuckDB: %w", err)
-		}
-		pipeline.graphLoader = graphLoader
-	}
+	// Skip DuckDB initialization in plugin - let main CLI handle database operations
+	// This prevents database locking conflicts between plugin and CLI processes
+	log.Printf("DuckDB operations will be handled by main CLI process")
 	
 	// Initialize service discovery
 	if config.EnableAutoDiscovery {
@@ -114,12 +107,24 @@ func NewRuntimePipeline(cfg aws.Config, config *PipelineConfig) (*RuntimePipelin
 	}
 	
 	// Load scanners
+	log.Printf("DEBUG: About to create ScannerLoader")
 	loader := NewScannerLoader(pipeline.registry)
+	log.Printf("DEBUG: ScannerLoader created, about to call LoadAll()")
 	if err := loader.LoadAll(); err != nil {
+		log.Printf("DEBUG: LoadAll() returned error: %v", err)
 		return nil, fmt.Errorf("failed to load scanners: %w", err)
 	}
+	log.Printf("DEBUG: LoadAll() completed successfully")
 	
 	return pipeline, nil
+}
+
+
+// GetScannerRegistry returns the scanner registry for external configuration
+func (p *RuntimePipeline) GetScannerRegistry() *ScannerRegistry {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.registry
 }
 
 // Start starts the runtime pipeline
@@ -156,17 +161,21 @@ func (p *RuntimePipeline) Stop() error {
 		return fmt.Errorf("pipeline not running")
 	}
 	
+	log.Println("Stopping runtime pipeline...")
+	
+	// Close resource channel to signal processor to flush
+	close(p.resourceChan)
+	
+	// Give processor time to flush remaining resources
+	time.Sleep(500 * time.Millisecond)
+	
 	// Cancel context
 	p.cancel()
 	
-	// Close channels
-	close(p.resourceChan)
+	// Close error channel
 	close(p.errorChan)
 	
-	// Close DuckDB connection
-	if p.graphLoader != nil {
-		p.graphLoader.Close()
-	}
+	// No DuckDB connection to close - handled by main CLI
 	
 	p.isRunning = false
 	log.Println("Runtime pipeline stopped")
@@ -190,32 +199,34 @@ func (p *RuntimePipeline) ScanService(ctx context.Context, serviceName string, c
 			result.Resources = resources
 			result.Method = "ResourceExplorer"
 		} else if p.config.FallbackToScanners {
-			// Fallback to generated scanners
+			// Fallback to registry (which uses UnifiedScanner)
 			resources, err = p.registry.ScanService(ctx, serviceName, cfg, region)
 			if err != nil {
 				result.Error = err
 			} else {
 				result.Resources = resources
-				result.Method = "GeneratedScanner"
+				result.Method = "UnifiedScanner"
 			}
 		}
 	} else {
-		// Use generated scanners directly
+		// Use registry directly (which uses UnifiedScanner)
 		resources, err := p.registry.ScanService(ctx, serviceName, cfg, region)
 		if err != nil {
 			result.Error = err
 		} else {
 			result.Resources = resources
-			result.Method = "GeneratedScanner"
+			result.Method = "UnifiedScanner"
 		}
 	}
+	
+	// No circular enrichment - resources are already enriched by registry
 	
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
 	result.ResourceCount = len(result.Resources)
 	
 	// Stream resources if enabled
-	if p.config.StreamingEnabled {
+	if p.config.StreamingEnabled && len(result.Resources) > 0 {
 		for _, resource := range result.Resources {
 			select {
 			case p.resourceChan <- resource:
@@ -233,20 +244,71 @@ func (p *RuntimePipeline) ScanService(ctx context.Context, serviceName string, c
 	return result, result.Error
 }
 
-// ScanAllServices scans all discovered services
+// ScanAllServices scans all discovered services with full configuration collection
 func (p *RuntimePipeline) ScanAllServices(ctx context.Context, cfg aws.Config, region string) (*BatchScanResult, error) {
-	// Get list of services to scan
-	services := p.registry.ListServices()
-	if len(p.config.ServiceFilter) > 0 {
-		services = p.filterServices(services, p.config.ServiceFilter)
+	// Use empty services list to trigger default behavior in ScanServices
+	return p.ScanServices(ctx, []string{}, cfg, region)
+}
+
+// ScanServices scans specified services with full configuration collection
+func (p *RuntimePipeline) ScanServices(ctx context.Context, requestedServices []string, cfg aws.Config, region string) (*BatchScanResult, error) {
+	// Use requested services if provided, otherwise use default service list
+	var services []string
+	if len(requestedServices) > 0 {
+		// Use requested services directly - UnifiedScanner can handle any service
+		services = requestedServices
+	} else {
+		// Default to common AWS services if none specified
+		services = []string{"s3", "ec2", "lambda", "rds", "iam", "dynamodb"}
+		if len(p.config.ServiceFilter) > 0 {
+			services = p.filterServices(services, p.config.ServiceFilter)
+		}
 	}
 	
-	// Create batch scanner
-	batchScanner := NewBatchScanner(p.registry, p.config.MaxConcurrency)
-	batchScanner.timeout = p.config.ScanTimeout
+	startTime := time.Now()
+	batchResult := &BatchScanResult{
+		StartTime:       startTime,
+		ServicesScanned: len(services),
+		Resources:       make([]*pb.Resource, 0),
+		Errors:          make(map[string]error),
+		ServiceStats:    make(map[string]*ServiceScanStats),
+	}
 	
-	// Perform batch scan
-	return batchScanner.ScanServices(ctx, services, cfg, region)
+	// Scan each service and collect detailed configuration
+	for _, service := range services {
+		serviceStartTime := time.Now()
+		
+		// Use pipeline's own ScanService method for rich configuration
+		result, err := p.ScanService(ctx, service, cfg, region)
+		if err != nil {
+			batchResult.Errors[service] = err
+			batchResult.TotalErrors++
+			batchResult.ServiceStats[service] = &ServiceScanStats{
+				Success: false,
+				Error:   err.Error(),
+			}
+			continue
+		}
+		
+		// Add resources to batch result
+		batchResult.Resources = append(batchResult.Resources, result.Resources...)
+		batchResult.TotalResources += len(result.Resources)
+		
+		// Record service stats
+		batchResult.ServiceStats[service] = &ServiceScanStats{
+			ResourceCount: len(result.Resources),
+			Success:       true,
+		}
+		
+		// Resources are automatically streamed to database via pipeline's resourceProcessor
+		log.Printf("Pipeline batch scan: %s completed with %d resources in %v", 
+			service, len(result.Resources), time.Since(serviceStartTime))
+	}
+	
+	batchResult.EndTime = time.Now()
+	batchResult.Duration = batchResult.EndTime.Sub(batchResult.StartTime)
+	
+	return batchResult, nil
 }
 
 // scanWithResourceExplorer uses AWS Resource Explorer for discovery
@@ -294,6 +356,7 @@ func (p *RuntimePipeline) convertResourceExplorerItem(item interface{}) *pb.Reso
 
 // resourceProcessor processes resources in the background
 func (p *RuntimePipeline) resourceProcessor() {
+	log.Printf("DEBUG: resourceProcessor started")
 	batch := make([]*pb.Resource, 0, p.config.BatchSize)
 	ticker := time.NewTicker(p.config.FlushInterval)
 	defer ticker.Stop()
@@ -303,16 +366,19 @@ func (p *RuntimePipeline) resourceProcessor() {
 		case resource, ok := <-p.resourceChan:
 			if !ok {
 				// Channel closed, flush remaining batch
+				log.Printf("DEBUG: resourceChan closed, flushing %d resources", len(batch))
 				if len(batch) > 0 {
 					p.processBatch(batch)
 				}
 				return
 			}
 			
+			log.Printf("DEBUG: Received resource %s in processor", resource.Id)
 			batch = append(batch, resource)
 			
 			// Process batch if it reaches the configured size
 			if len(batch) >= p.config.BatchSize {
+				log.Printf("DEBUG: Batch size reached (%d), processing", len(batch))
 				p.processBatch(batch)
 				batch = make([]*pb.Resource, 0, p.config.BatchSize)
 			}
@@ -320,12 +386,14 @@ func (p *RuntimePipeline) resourceProcessor() {
 		case <-ticker.C:
 			// Periodic flush
 			if len(batch) > 0 {
+				log.Printf("DEBUG: Timer flush - processing %d resources", len(batch))
 				p.processBatch(batch)
 				batch = make([]*pb.Resource, 0, p.config.BatchSize)
 			}
 			
 		case <-p.ctx.Done():
 			// Shutdown requested
+			log.Printf("DEBUG: Context done, flushing %d resources", len(batch))
 			if len(batch) > 0 {
 				p.processBatch(batch)
 			}
@@ -340,16 +408,15 @@ func (p *RuntimePipeline) processBatch(resources []*pb.Resource) {
 		return
 	}
 	
-	// Store in DuckDB if enabled
-	if p.graphLoader != nil {
-		ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
-		defer cancel()
-		
-		if err := p.graphLoader.LoadResources(ctx, resources); err != nil {
-			p.errorChan <- fmt.Errorf("failed to store %d resources in DuckDB: %w", len(resources), err)
-		} else {
-			log.Printf("Stored %d resources in DuckDB", len(resources))
-		}
+	log.Printf("DEBUG: processBatch called with %d resources", len(resources))
+	
+	// Skip DuckDB storage - resources will be saved by main CLI after being returned
+	log.Printf("DEBUG: Processed batch of %d resources (to be saved by main CLI)", len(resources))
+	
+	// Log resource details for debugging
+	for i, res := range resources {
+		log.Printf("DEBUG: Resource %d: ID=%s, Service=%s, Type=%s, RawDataLen=%d, AttributesLen=%d", 
+			i, res.Id, res.Service, res.Type, len(res.RawData), len(res.Attributes))
 	}
 	
 	// Update relationships
@@ -392,7 +459,7 @@ func (p *RuntimePipeline) periodicScanner() {
 			// Discover new services
 			if p.discoverer != nil {
 				ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
-				services, err := p.discoverer.DiscoverServices(ctx)
+				services, err := p.discoverer.DiscoverAWSServices(ctx, false)
 				cancel()
 				
 				if err != nil {

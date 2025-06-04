@@ -18,7 +18,6 @@ var HandshakeConfig = plugin.HandshakeConfig{
 // PluginMap is the map of plugins we can dispense
 var PluginMap = map[string]plugin.Plugin{
 	"provider": &CloudProviderGRPCPlugin{},
-	"scanner":  &ScannerGRPCPlugin{},
 }
 
 // CloudProvider is the interface that all provider plugins must implement
@@ -42,6 +41,11 @@ type CloudProvider interface {
 	BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error)
 	StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error
 
+	// Enhanced scanning methods to support all Scanner use cases
+	ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error)
+	GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error)
+	StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error
+
 	// Orchestrator integration methods
 	ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error)
 	AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error)
@@ -51,14 +55,6 @@ type CloudProvider interface {
 // GRPCClientProvider is an interface for providers that can expose their underlying gRPC client
 type GRPCClientProvider interface {
 	GetUnderlyingClient() pb.CloudProviderClient
-}
-
-// Scanner is the interface that sophisticated scanner plugins implement
-type Scanner interface {
-	Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error)
-	GetSchemas(ctx context.Context, req *pb.Empty) (*pb.SchemaResponse, error)
-	GetServiceInfo(ctx context.Context, req *pb.Empty) (*pb.ServiceInfoResponse, error)
-	StreamScan(req *pb.ScanRequest, stream pb.Scanner_StreamScanServer) error
 }
 
 // CloudProviderGRPCPlugin implements plugin.GRPCPlugin for provider plugins
@@ -76,20 +72,6 @@ func (p *CloudProviderGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin
 	return &grpcProviderClient{client: pb.NewCloudProviderClient(c), ctx: ctx}, nil
 }
 
-// ScannerGRPCPlugin implements plugin.GRPCPlugin for scanner plugins
-type ScannerGRPCPlugin struct {
-	plugin.Plugin
-	Impl Scanner
-}
-
-func (p *ScannerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
-	pb.RegisterScannerServer(s, &grpcScannerServer{Impl: p.Impl})
-	return nil
-}
-
-func (p *ScannerGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
-	return &grpcScannerClient{client: pb.NewScannerClient(c), ctx: ctx}, nil
-}
 
 // grpcProviderServer is the gRPC server implementation for CloudProvider
 type grpcProviderServer struct {
@@ -133,6 +115,18 @@ func (s *grpcProviderServer) StreamScan(req *pb.StreamScanRequest, stream pb.Clo
 	return s.Impl.StreamScan(req, stream)
 }
 
+func (s *grpcProviderServer) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
+	return s.Impl.ScanService(ctx, req)
+}
+
+func (s *grpcProviderServer) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
+	return s.Impl.GetServiceInfo(ctx, req)
+}
+
+func (s *grpcProviderServer) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
+	return s.Impl.StreamScanService(req, stream)
+}
+
 func (s *grpcProviderServer) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
 	return s.Impl.ConfigureDiscovery(ctx, req)
 }
@@ -145,27 +139,6 @@ func (s *grpcProviderServer) GenerateFromAnalysis(ctx context.Context, req *pb.G
 	return s.Impl.GenerateFromAnalysis(ctx, req)
 }
 
-// grpcScannerServer is the gRPC server implementation for Scanner
-type grpcScannerServer struct {
-	pb.UnimplementedScannerServer
-	Impl Scanner
-}
-
-func (s *grpcScannerServer) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error) {
-	return s.Impl.Scan(ctx, req)
-}
-
-func (s *grpcScannerServer) GetSchemas(ctx context.Context, req *pb.Empty) (*pb.SchemaResponse, error) {
-	return s.Impl.GetSchemas(ctx, req)
-}
-
-func (s *grpcScannerServer) GetServiceInfo(ctx context.Context, req *pb.Empty) (*pb.ServiceInfoResponse, error) {
-	return s.Impl.GetServiceInfo(ctx, req)
-}
-
-func (s *grpcScannerServer) StreamScan(req *pb.ScanRequest, stream pb.Scanner_StreamScanServer) error {
-	return s.Impl.StreamScan(req, stream)
-}
 
 // grpcProviderClient is the gRPC client implementation for CloudProvider
 type grpcProviderClient struct {
@@ -241,26 +214,16 @@ func (c *grpcProviderClient) GenerateFromAnalysis(ctx context.Context, req *pb.G
 	return c.client.GenerateFromAnalysis(ctx, req)
 }
 
-// grpcScannerClient is the gRPC client implementation for Scanner
-type grpcScannerClient struct {
-	client pb.ScannerClient
-	ctx    context.Context
+func (c *grpcProviderClient) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
+	return c.client.ScanService(ctx, req)
 }
 
-func (c *grpcScannerClient) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error) {
-	return c.client.Scan(ctx, req)
-}
-
-func (c *grpcScannerClient) GetSchemas(ctx context.Context, req *pb.Empty) (*pb.SchemaResponse, error) {
-	return c.client.GetSchemas(ctx, req)
-}
-
-func (c *grpcScannerClient) GetServiceInfo(ctx context.Context, req *pb.Empty) (*pb.ServiceInfoResponse, error) {
+func (c *grpcProviderClient) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
 	return c.client.GetServiceInfo(ctx, req)
 }
 
-func (c *grpcScannerClient) StreamScan(req *pb.ScanRequest, stream pb.Scanner_StreamScanServer) error {
-	streamClient, err := c.client.StreamScan(c.ctx, req)
+func (c *grpcProviderClient) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
+	streamClient, err := c.client.StreamScanService(c.ctx, req)
 	if err != nil {
 		return err
 	}
@@ -277,3 +240,4 @@ func (c *grpcScannerClient) StreamScan(req *pb.ScanRequest, stream pb.Scanner_St
 
 	return nil
 }
+

@@ -76,17 +76,12 @@ analyze: $(GENERATED_DIR)
 		echo "Using cached service analysis"; \
 	fi
 
-# Generate scanner code for all discovered services
+# Generate scanner code - DEPRECATED: Scanner generation is no longer supported
 generate-scanners: analyze $(SCANNER_DIR)
-	@echo "Generating scanner code..."
-	@if [ -f .force-regenerate ] || [ ! -d $(SCANNER_DIR) ] || [ -z "$$(ls -A $(SCANNER_DIR))" ]; then \
-		go run ./cmd/generator/generate_scanners.go \
-			-services $(GENERATED_DIR)/services.json \
-			-output-dir $(SCANNER_DIR) \
-			-package scanners; \
-	else \
-		echo "Using cached scanner code"; \
-	fi
+	@echo "⚠️  WARNING: Scanner generation is deprecated"
+	@echo "⚠️  Analysis files are preserved for UnifiedScanner configuration collection"
+	@echo "⚠️  Use CloudProvider.ScanService() instead of generated scanner plugins"
+	@echo "✅ Skipping scanner generation (deprecated)"
 
 # Generate schema definitions
 generate-schemas: analyze $(SCHEMA_DIR)
@@ -100,9 +95,9 @@ generate-schemas: analyze $(SCHEMA_DIR)
 		echo "Using cached schema definitions"; \
 	fi
 
-# Generate Go code
-generate-go: generate-scanners generate-schemas
-	@echo "Generating Go integration code..."
+# Generate Go code (schemas only - scanners deprecated)
+generate-go: generate-schemas
+	@echo "Generating Go integration code (schemas only)..."
 	@go generate ./...
 
 # Main generate target

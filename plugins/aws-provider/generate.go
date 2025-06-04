@@ -7,7 +7,6 @@ package main
 // Run 'go generate ./...' or 'make generate' to execute all generators.
 
 //go:generate go run ./cmd/analyzer -output generated/services.json -sdk-path $GOPATH/pkg/mod/github.com/aws/aws-sdk-go-v2@latest
-//go:generate go run ./cmd/generator/generate_scanners.go -services generated/services.json -output-dir generated/scanners -package scanners
 //go:generate go run ./cmd/schema-generator -services generated/services.json -output-dir generated/schemas -format sql
 //go:generate go run ./cmd/registry-generator -services generated/services.json -output generated/scanner_registry.go -package main
 //go:generate go fmt ./generated/...

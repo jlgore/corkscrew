@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -10,6 +11,12 @@ import (
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"golang.org/x/time/rate"
 )
+
+// UnifiedScannerProvider provides access to the unified scanner
+type UnifiedScannerProvider interface {
+	ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error)
+	DescribeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error)
+}
 
 // ScannerFunc is the function signature for service scanners
 type ScannerFunc func(ctx context.Context, cfg aws.Config, region string) ([]*pb.Resource, error)
@@ -55,10 +62,14 @@ type ScannerRegistry struct {
 	// Configuration
 	defaultRateLimit  rate.Limit
 	defaultBurstLimit int
+	
+	// Unified scanner for dynamic resource discovery
+	unifiedScanner UnifiedScannerProvider
 }
 
 // NewScannerRegistry creates a new scanner registry
 func NewScannerRegistry() *ScannerRegistry {
+	log.Printf("DEBUG: NewScannerRegistry() called")
 	return &ScannerRegistry{
 		scanners:          make(map[string]ServiceScanner),
 		metadata:          make(map[string]*ScannerMetadata),
@@ -154,18 +165,89 @@ func (r *ScannerRegistry) GetRateLimiter(serviceName string) *rate.Limiter {
 
 // ScanService scans a single service with rate limiting
 func (r *ScannerRegistry) ScanService(ctx context.Context, serviceName string, cfg aws.Config, region string) ([]*pb.Resource, error) {
-	scanner, exists := r.Get(serviceName)
-	if !exists {
-		return nil, fmt.Errorf("scanner not found for service: %s", serviceName)
-	}
-	
 	// Apply rate limiting
 	limiter := r.GetRateLimiter(serviceName)
 	if err := limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit wait failed: %w", err)
 	}
 	
-	// Perform scan
+	// Use UnifiedScanner directly if available
+	if r.unifiedScanner != nil {
+		// Get ResourceRefs from UnifiedScanner
+		resourceRefs, err := r.unifiedScanner.ScanService(ctx, serviceName)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Convert ResourceRefs to Resources with enrichment
+		resources := make([]*pb.Resource, 0, len(resourceRefs))
+		for _, ref := range resourceRefs {
+			// Get enriched resource directly (no callbacks)
+			resource, err := r.unifiedScanner.DescribeResource(ctx, ref)
+			if err != nil {
+				log.Printf("Failed to enrich %s: %v", ref.Id, err)
+				// Create basic resource on enrichment failure
+				resource = &pb.Resource{
+					Provider: "aws",
+					Service:  ref.Service,
+					Type:     ref.Type,
+					Id:       ref.Id,
+					Name:     ref.Name,
+					Region:   ref.Region,
+					Tags:     make(map[string]string),
+				}
+			}
+			resources = append(resources, resource)
+		}
+		
+		return resources, nil
+	}
+	
+	// Fallback to registered scanner if exists
+	scanner, exists := r.Get(serviceName)
+	if !exists {
+		// For unknown services, try to use UnifiedScanner anyway if available
+		if r.unifiedScanner != nil {
+			log.Printf("No registered scanner for %s, attempting with UnifiedScanner anyway", serviceName)
+			// Create a temporary rate limiter for this service
+			r.mu.Lock()
+			if _, hasLimiter := r.limiters[serviceName]; !hasLimiter {
+				r.limiters[serviceName] = rate.NewLimiter(r.defaultRateLimit, r.defaultBurstLimit)
+			}
+			r.mu.Unlock()
+			
+			// Try UnifiedScanner again for unknown services
+			resourceRefs, err := r.unifiedScanner.ScanService(ctx, serviceName)
+			if err != nil {
+				return nil, fmt.Errorf("unified scanner failed for service %s: %w", serviceName, err)
+			}
+			
+			// Convert ResourceRefs to Resources with enrichment
+			resources := make([]*pb.Resource, 0, len(resourceRefs))
+			for _, ref := range resourceRefs {
+				resource, err := r.unifiedScanner.DescribeResource(ctx, ref)
+				if err != nil {
+					log.Printf("Failed to enrich %s: %v", ref.Id, err)
+					// Create basic resource on enrichment failure
+					resource = &pb.Resource{
+						Provider: "aws",
+						Service:  ref.Service,
+						Type:     ref.Type,
+						Id:       ref.Id,
+						Name:     ref.Name,
+						Region:   ref.Region,
+						Tags:     make(map[string]string),
+					}
+				}
+				resources = append(resources, resource)
+			}
+			
+			return resources, nil
+		}
+		
+		return nil, fmt.Errorf("no scanner available for service: %s", serviceName)
+	}
+	
 	return scanner.Scan(ctx, cfg, region)
 }
 
@@ -348,62 +430,168 @@ func (l *ScannerLoader) AddPath(path string) {
 	l.scannerPaths = append(l.scannerPaths, path)
 }
 
-// LoadAll loads all available scanners
+// LoadAll loads service metadata for rate limiting (no actual scanners)
 func (l *ScannerLoader) LoadAll() error {
-	// This would typically load scanners from:
-	// 1. Generated scanner code
-	// 2. Plugin directories
-	// 3. Built-in scanners
+	log.Printf("Scanner loader: Using UnifiedScanner for all services")
 	
-	// For now, we'll register some example scanners
-	// In production, this would dynamically load from generated code
+	// Don't try to load generated scanners
+	// Instead, register service metadata for rate limiting
 	
-	// Example: Register EC2 scanner
-	ec2Scanner := NewEC2Scanner()
-	ec2Metadata := &ScannerMetadata{
-		ServiceName:          "ec2",
-		ResourceTypes:        []string{"Instance", "Volume", "Snapshot", "SecurityGroup", "VPC"},
-		SupportsPagination:   true,
-		SupportsParallelScan: true,
-		RequiredPermissions:  []string{"ec2:Describe*"},
-		RateLimit:           rate.Limit(20),
-		BurstLimit:          40,
+	services := []struct {
+		name       string
+		rateLimit  rate.Limit
+		burstLimit int
+	}{
+		{"s3", rate.Limit(100), 200},
+		{"ec2", rate.Limit(20), 40},
+		{"lambda", rate.Limit(50), 100},
+		{"rds", rate.Limit(20), 40},
+		{"iam", rate.Limit(10), 20},
+		{"dynamodb", rate.Limit(25), 50},
+		{"kms", rate.Limit(10), 20},
+		{"cloudformation", rate.Limit(15), 30},
+		{"sns", rate.Limit(30), 60},
+		{"sqs", rate.Limit(30), 60},
+		{"apigateway", rate.Limit(20), 40},
+		{"ecs", rate.Limit(20), 40},
+		{"eks", rate.Limit(10), 20},
+		{"elb", rate.Limit(20), 40},
+		{"elbv2", rate.Limit(20), 40},
+		{"route53", rate.Limit(15), 30},
+		{"cloudwatch", rate.Limit(25), 50},
+		{"logs", rate.Limit(25), 50},
+		{"secretsmanager", rate.Limit(10), 20},
+		{"ssm", rate.Limit(20), 40},
+		{"acm", rate.Limit(10), 20},
+		{"apigatewayv2", rate.Limit(20), 40},
+		{"elasticloadbalancingv2", rate.Limit(20), 40},
+		// Add more services as needed
 	}
 	
-	if err := l.registry.Register(ec2Scanner, ec2Metadata); err != nil {
-		return fmt.Errorf("failed to register EC2 scanner: %w", err)
+	// Register metadata only (no actual scanners)
+	for _, svc := range services {
+		metadata := &ScannerMetadata{
+			ServiceName:          svc.name,
+			RateLimit:           svc.rateLimit,
+			BurstLimit:          svc.burstLimit,
+			SupportsPagination:   true,
+			SupportsParallelScan: true,
+			RequiredPermissions:  getPermissionsForService(svc.name),
+			ResourceTypes:        getResourceTypesForService(svc.name),
+		}
+		
+		// Store metadata without scanner
+		l.registry.mu.Lock()
+		l.registry.metadata[svc.name] = metadata
+		l.registry.limiters[svc.name] = rate.NewLimiter(svc.rateLimit, svc.burstLimit)
+		l.registry.mu.Unlock()
 	}
 	
-	// Register more scanners...
-	
+	log.Printf("Registered rate limiters for %d services", len(services))
 	return nil
 }
 
-// Example EC2 scanner implementation
-type EC2Scanner struct{}
 
-func NewEC2Scanner() *EC2Scanner {
-	return &EC2Scanner{}
+// SetUnifiedScanner sets the unified scanner for dynamic resource discovery
+func (r *ScannerRegistry) SetUnifiedScanner(scanner UnifiedScannerProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.unifiedScanner = scanner
+	log.Printf("DEBUG: UnifiedScanner set on registry")
 }
 
-func (s *EC2Scanner) ServiceName() string {
-	return "ec2"
+// SetUnifiedProvider sets the unified scanner provider for fallback (legacy method)
+func (r *ScannerRegistry) SetUnifiedProvider(provider UnifiedScannerProvider) {
+	r.SetUnifiedScanner(provider)
 }
 
-func (s *EC2Scanner) ResourceTypes() []string {
-	return []string{"Instance", "Volume", "Snapshot", "SecurityGroup", "VPC"}
+
+// Helper functions for generated scanner metadata
+func getResourceTypesForService(service string) []string {
+	switch service {
+	case "s3":
+		return []string{"Bucket", "Object"}
+	case "ec2":
+		return []string{"Instance", "Volume", "Snapshot", "SecurityGroup", "VPC"}
+	case "lambda":
+		return []string{"Function", "Layer"}
+	case "kms":
+		return []string{"Key", "Alias"}
+	case "rds":
+		return []string{"DBInstance", "DBCluster"}
+	case "iam":
+		return []string{"User", "Role", "Policy"}
+	case "dynamodb":
+		return []string{"Table"}
+	default:
+		return []string{}
+	}
 }
 
-func (s *EC2Scanner) Scan(ctx context.Context, cfg aws.Config, region string) ([]*pb.Resource, error) {
-	// This would use the generated scanner code
-	// For now, return a placeholder
-	return []*pb.Resource{}, nil
+func getPermissionsForService(service string) []string {
+	switch service {
+	case "s3":
+		return []string{"s3:ListBuckets", "s3:GetBucket*", "s3:ListObjects*"}
+	case "ec2":
+		return []string{"ec2:Describe*", "ec2:List*"}
+	case "lambda":
+		return []string{"lambda:ListFunctions", "lambda:GetFunction*"}
+	case "kms":
+		return []string{"kms:ListKeys", "kms:DescribeKey", "kms:GetKeyPolicy"}
+	case "rds":
+		return []string{"rds:DescribeDBInstances", "rds:DescribeDBClusters"}
+	case "iam":
+		return []string{"iam:ListUsers", "iam:ListRoles", "iam:ListPolicies"}
+	case "dynamodb":
+		return []string{"dynamodb:ListTables", "dynamodb:DescribeTable"}
+	case "cloudformation":
+		return []string{"cloudformation:ListStacks", "cloudformation:DescribeStacks"}
+	case "sns":
+		return []string{"sns:ListTopics", "sns:GetTopicAttributes"}
+	case "sqs":
+		return []string{"sqs:ListQueues", "sqs:GetQueueAttributes"}
+	case "apigateway":
+		return []string{"apigateway:GET"}
+	case "ecs":
+		return []string{"ecs:ListClusters", "ecs:DescribeClusters", "ecs:ListServices"}
+	case "eks":
+		return []string{"eks:ListClusters", "eks:DescribeCluster"}
+	case "elb":
+		return []string{"elasticloadbalancing:DescribeLoadBalancers"}
+	case "elbv2":
+		return []string{"elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeTargetGroups"}
+	case "route53":
+		return []string{"route53:ListHostedZones", "route53:ListResourceRecordSets"}
+	case "cloudwatch":
+		return []string{"cloudwatch:ListMetrics", "cloudwatch:DescribeAlarms"}
+	case "logs":
+		return []string{"logs:DescribeLogGroups", "logs:DescribeLogStreams"}
+	default:
+		return []string{fmt.Sprintf("%s:Describe*", service), fmt.Sprintf("%s:List*", service)}
+	}
 }
 
-func (s *EC2Scanner) SupportsPagination() bool {
-	return true
+func getRateLimitForService(service string) rate.Limit {
+	switch service {
+	case "s3":
+		return rate.Limit(100)
+	case "ec2":
+		return rate.Limit(20)
+	case "lambda":
+		return rate.Limit(50)
+	case "kms":
+		return rate.Limit(10)
+	case "rds":
+		return rate.Limit(20)
+	case "iam":
+		return rate.Limit(10)
+	case "dynamodb":
+		return rate.Limit(25)
+	default:
+		return rate.Limit(10)
+	}
 }
 
-func (s *EC2Scanner) SupportsResourceExplorer() bool {
-	return true
+func getBurstLimitForService(service string) int {
+	return int(getRateLimitForService(service) * 2)
 }

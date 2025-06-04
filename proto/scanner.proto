@@ -26,18 +26,15 @@ service CloudProvider {
   rpc BatchScan(BatchScanRequest) returns (BatchScanResponse);
   rpc StreamScan(StreamScanRequest) returns (stream Resource);
   
+  // Enhanced scanning methods to support all Scanner use cases
+  rpc ScanService(ScanServiceRequest) returns (ScanServiceResponse);
+  rpc GetServiceInfo(GetServiceInfoRequest) returns (ServiceInfoResponse);
+  rpc StreamScanService(ScanServiceRequest) returns (stream Resource);
+  
   // Orchestrator integration methods
   rpc ConfigureDiscovery(ConfigureDiscoveryRequest) returns (ConfigureDiscoveryResponse);
   rpc AnalyzeDiscoveredData(AnalyzeRequest) returns (AnalysisResponse);
   rpc GenerateFromAnalysis(GenerateFromAnalysisRequest) returns (GenerateResponse);
-}
-
-// Legacy scanner service for backward compatibility
-service Scanner {
-  rpc Scan(ScanRequest) returns (ScanResponse);
-  rpc GetSchemas(Empty) returns (SchemaResponse);
-  rpc GetServiceInfo(Empty) returns (ServiceInfoResponse);
-  rpc StreamScan(ScanRequest) returns (stream Resource);
 }
 
 message Empty {}
@@ -250,29 +247,48 @@ message ScanStats {
   map<string, int32> service_counts = 5;
 }
 
-// Legacy messages for backward compatibility
-message ScanRequest {
-  string region = 1;
-  map<string, string> options = 2;
-  repeated string resource_types = 3;
-  string next_token = 4;
-  int32 max_results = 5;
-}
-
-message ScanResponse {
-  repeated Resource resources = 1;
-  string next_token = 2;
-  string error = 3;
-  map<string, string> metadata = 4;
-  ScanStats stats = 5;
-}
-
 message ServiceInfoResponse {
   string service_name = 1;
   string version = 2;
   repeated string supported_resources = 3;
   repeated string required_permissions = 4;
   map<string, string> capabilities = 5;
+}
+
+// Enhanced messages for single-service scanning and compatibility
+message ScanServiceRequest {
+  string service = 1;                    // Single service to scan
+  string region = 2;                     // Target region
+  repeated string resource_types = 3;     // Optional resource type filter
+  map<string, string> filters = 4;       // Resource filters
+  bool include_relationships = 5;         // Include relationships
+  string next_token = 6;                 // Pagination token
+  int32 max_results = 7;                 // Result limit
+  map<string, string> options = 8;       // Legacy compatibility options
+}
+
+message ScanServiceResponse {
+  repeated Resource resources = 1;        // Discovered resources
+  string next_token = 2;                 // Next pagination token
+  string service = 3;                    // Service that was scanned
+  ScanStats stats = 4;                   // Scan statistics
+  map<string, string> metadata = 5;      // Service metadata
+  repeated string errors = 6;            // Non-fatal errors
+}
+
+message GetServiceInfoRequest {
+  string service = 1;                    // Specific service name
+  bool include_resource_types = 2;       // Include detailed resource type info
+  bool include_permissions = 3;          // Include required permissions
+  bool include_capabilities = 4;         // Include service capabilities
+}
+
+message ServiceScanMetadata {
+  string service = 1;
+  int32 resource_count = 2;
+  int64 scan_duration_ms = 3;
+  repeated string errors = 4;
+  map<string, string> metadata = 5;
 }
 
 // Orchestrator integration messages

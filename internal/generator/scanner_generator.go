@@ -113,15 +113,26 @@ func (g *ScannerGenerator) GenerateAllServices(services map[string]*AWSServiceIn
 
 // ScannerData holds template data for code generation
 type ScannerData struct {
-	PackageName     string
-	ServiceName     string
-	ServiceNameCaps string
-	ClientType      string
-	Resources       []ResourceScanData
-	WithRetry       bool
-	WithMetrics     bool
-	GeneratedAt     string
-	Package         string
+	PackageName      string
+	ServiceName      string
+	ServiceNameCaps  string
+	ClientType       string
+	Resources        []ResourceScanData
+	ConfigOperations []ConfigOperationData
+	WithRetry        bool
+	WithMetrics      bool
+	GeneratedAt      string
+	Package          string
+}
+
+// ConfigOperationData holds data for configuration collection operations
+type ConfigOperationData struct {
+	Name            string
+	InputType       string
+	OutputType      string
+	ConfigKey       string
+	OutputFieldName string
+	Description     string
 }
 
 // ResourceScanData holds data for scanning a specific resource type
@@ -195,6 +206,27 @@ func (g *ScannerGenerator) prepareScannerData(service *AWSServiceInfo, opts Gene
 		}
 
 		data.Resources = append(data.Resources, resourceData)
+	}
+
+	// Extract configuration operations - generic approach for all services
+	for _, op := range service.Operations {
+		// Skip the base list operation
+		if op.IsList {
+			continue
+		}
+		
+		// Configuration operations are non-list operations that get resource details
+		if op.IsGet || op.IsDescribe || strings.HasPrefix(op.Name, "Get") || strings.HasPrefix(op.Name, "Describe") {
+			configOp := ConfigOperationData{
+				Name:            op.Name,
+				InputType:       op.InputType,
+				OutputType:      op.OutputType,
+				ConfigKey:       g.deriveConfigKey(op.Name),
+				OutputFieldName: strings.ToLower(string(op.Name[0])) + op.Name[1:] + "Output",
+				Description:     fmt.Sprintf("Collects %s configuration", op.Name),
+			}
+			data.ConfigOperations = append(data.ConfigOperations, configOp)
+		}
 	}
 
 	return data
@@ -323,6 +355,15 @@ func loadScannerTemplates() (*ScannerTemplates, error) {
 	return &ScannerTemplates{
 		ServiceScanner: tmpl,
 	}, nil
+}
+
+// deriveConfigKey derives a configuration key from operation name
+func (g *ScannerGenerator) deriveConfigKey(operationName string) string {
+	// Simply use the operation name without the "Get" or "Describe" prefix
+	// This creates keys like "BucketEncryption", "InstanceAttributes", etc.
+	key := strings.TrimPrefix(operationName, "Get")
+	key = strings.TrimPrefix(key, "Describe")
+	return key
 }
 
 // contains checks if a slice contains a string

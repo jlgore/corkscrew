@@ -42,6 +42,7 @@ var (
 // parameterFlags implements flag.Value for collecting multiple --param flags
 type parameterFlags map[string]interface{}
 
+
 func (p parameterFlags) String() string {
 	return fmt.Sprintf("%v", map[string]interface{}(p))
 }
@@ -84,6 +85,8 @@ func main() {
 
 	command := os.Args[1]
 	switch command {
+	case "init":
+		runInit(os.Args[2:])
 	case "scan":
 		runScan(os.Args[2:])
 	case "discover":
@@ -153,7 +156,15 @@ func printUsage() {
 	fmt.Println("  corkscrew query --compliance --tag encryption --param required_encryption=aws:kms")
 	fmt.Println("  corkscrew query --list-packs")
 	fmt.Println()
+	fmt.Println("  # Pack Management Examples")
+	fmt.Println("  corkscrew query pack search \"aws security\"")
+	fmt.Println("  corkscrew query pack install jlgore/cfi-ccc")
+	fmt.Println("  corkscrew query pack list")
+	fmt.Println("  corkscrew query pack update --all")
+	fmt.Println("  corkscrew query pack validate jlgore/cfi-ccc")
+	fmt.Println()
 	fmt.Println("Commands:")
+	fmt.Println("  init                - Initialize Corkscrew with dependencies and plugins")
 	fmt.Println("  scan                - Full resource scanning")
 	fmt.Println("  discover            - Discover available services")
 	fmt.Println("  orchestrator-discover - Advanced discovery using orchestrator")
@@ -286,6 +297,39 @@ func runScan(args []string) {
 		}
 		fmt.Printf("  Failed Resources: %d\n", scanResp.Stats.FailedResources)
 		fmt.Printf("  Total Duration: %dms\n", scanResp.Stats.DurationMs)
+	}
+
+	// Save to database
+	if len(scanResp.Resources) > 0 {
+		dbPath, err := db.GetUnifiedDatabasePath()
+		if err != nil {
+			log.Printf("Warning: Failed to get database path: %v", err)
+		} else {
+			graphLoader, err := db.NewGraphLoader(dbPath)
+			if err != nil {
+				log.Printf("Warning: Failed to connect to database: %v", err)
+			} else {
+				defer graphLoader.Close()
+				
+				// Save resources
+				if err := graphLoader.LoadResources(ctx, scanResp.Resources); err != nil {
+					log.Printf("Warning: Failed to save resources to database: %v", err)
+				} else {
+					fmt.Printf("💾 Saved %d resources to database\n", len(scanResp.Resources))
+				}
+				
+				// Save scan metadata
+				if scanResp.Stats != nil {
+					metadata := map[string]string{
+						"scan_id":  fmt.Sprintf("%s-%s-%s-%d", *providerName, strings.Join(services, "-"), *region, time.Now().Unix()),
+						"provider": *providerName,
+					}
+					if err := graphLoader.LoadScanMetadata(ctx, strings.Join(services, ","), *region, scanResp.Stats, metadata); err != nil {
+						log.Printf("Warning: Failed to save scan metadata: %v", err)
+					}
+				}
+			}
+		}
 	}
 
 	if *verbose && len(scanResp.Resources) > 0 {
@@ -639,6 +683,15 @@ func runSchemas(args []string) {
 }
 
 func runQuery(args []string) {
+	// Check for pack subcommands first
+	if len(args) > 0 {
+		switch args[0] {
+		case "pack":
+			runPack(args[1:])
+			return
+		}
+	}
+	
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
 
 	// Output format flags
@@ -1678,14 +1731,20 @@ func printPluginUsage() {
 	fmt.Println("🔌 Plugin Management")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  corkscrew plugin list           - Show all plugins and their status")
-	fmt.Println("  corkscrew plugin build <name>   - Build a specific plugin")
-	fmt.Println("  corkscrew plugin status         - Health check all plugins")
+	fmt.Println("  corkscrew plugin list                    - Show all plugins and their status")
+	fmt.Println("  corkscrew plugin build <name> [flags]    - Build a specific plugin")
+	fmt.Println("  corkscrew plugin status                  - Health check all plugins")
+	fmt.Println()
+	fmt.Println("Build Flags:")
+	fmt.Println("  --regenerate    Regenerate analysis files for enhanced discovery")
+	fmt.Println("  --force         Force rebuild even if plugin exists")
+	fmt.Println("  --verbose       Show detailed output")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  corkscrew plugin list")
 	fmt.Println("  corkscrew plugin build aws")
-	fmt.Println("  corkscrew plugin build azure")
+	fmt.Println("  corkscrew plugin build aws --regenerate")
+	fmt.Println("  corkscrew plugin build azure --force")
 	fmt.Println("  corkscrew plugin status")
 }
 
@@ -1725,6 +1784,7 @@ func runPluginBuild(args []string) {
 	fs := flag.NewFlagSet("plugin build", flag.ExitOnError)
 	verbose := fs.Bool("verbose", false, "Verbose output")
 	force := fs.Bool("force", false, "Force rebuild even if plugin exists")
+	regenerate := fs.Bool("regenerate", false, "Regenerate analysis files")
 	fs.Parse(args)
 
 	if len(fs.Args()) == 0 {
@@ -1750,9 +1810,60 @@ func runPluginBuild(args []string) {
 		os.Exit(1)
 	}
 	
+	// Generate or regenerate analysis files
+	if *regenerate || !analysisFilesExist(providerName) {
+		fmt.Printf("📊 Generating analysis files for %s...\n", providerName)
+		if err := generateAnalysisForPlugin(providerName, *verbose); err != nil {
+			fmt.Printf("⚠️  Analysis generation failed: %v\n", err)
+			fmt.Println("   Plugin will work with basic discovery only")
+		} else {
+			fmt.Printf("✅ Analysis files generated successfully\n")
+		}
+	}
+	
 	duration := time.Since(start)
 	fmt.Printf("🎉 %s plugin built successfully in %v\n", providerName, duration)
 }
+
+// analysisFilesExist checks if analysis files exist for the provider
+func analysisFilesExist(providerName string) bool {
+	homeDir, _ := os.UserHomeDir()
+	generatedDir := filepath.Join(homeDir, ".corkscrew", "plugins", 
+		fmt.Sprintf("%s-provider", providerName), "generated")
+	
+	// Check if directory exists and has .json files
+	entries, err := os.ReadDir(generatedDir)
+	if err != nil {
+		return false
+	}
+	
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), "_final.json") {
+			return true
+		}
+	}
+	
+	return false
+}
+
+func generateAnalysisForPlugin(providerName string, verbose bool) error {
+	// Load configuration to get service list
+	config, err := readConfiguration()
+	if err != nil {
+		// Use default services if no config
+		config = getDefaultConfig()
+	}
+	
+	providerConfig, exists := config.Providers[providerName]
+	if !exists || !providerConfig.Enabled {
+		return fmt.Errorf("provider %s not enabled in configuration", providerName)
+	}
+	
+	pluginDir := fmt.Sprintf("./plugins/%s-provider", providerName)
+	return generateAnalysisFilesForProvider(providerName, 
+		providerConfig.Services, pluginDir)
+}
+
 
 func runPluginStatus(args []string) {
 	fs := flag.NewFlagSet("plugin status", flag.ExitOnError)
