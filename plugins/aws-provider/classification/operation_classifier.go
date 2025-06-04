@@ -1,7 +1,6 @@
 package classification
 
 import (
-	"reflect"
 	"regexp"
 	"strings"
 
@@ -42,44 +41,34 @@ type PatternRule struct {
 // OperationClassifier uses semantic patterns to classify AWS operations
 type OperationClassifier struct {
 	patterns        []PatternRule
-	serviceHandlers map[string]ServiceHandler
 }
 
-// ServiceHandler provides service-specific classification logic
-type ServiceHandler interface {
-	ClassifyOperation(operationName string, inputType reflect.Type) OperationClassification
-	CanProvideDefaults(operationName string, requiredFields []string) bool
-	GetDefaultParameters(operationName string) map[string]interface{}
+// Note: ServiceHandler interface removed in favor of dynamic pattern-based classification
+// The OperationClassifier now handles all classification logic dynamically
+
+// ConfigurationOperation represents a configuration API call needed to enrich a resource
+type ConfigurationOperation struct {
+	Name           string            `json:"name"`            // e.g., "GetBucketEncryption"
+	ParameterName  string            `json:"parameter_name"`  // e.g., "Bucket" 
+	ParameterField string            `json:"parameter_field"` // e.g., "Name" from bucket.Name
+	ConfigKey      string            `json:"config_key"`      // e.g., "Encryption" for storing in raw_data
+	Required       bool              `json:"required"`        // Whether this config is critical
+	DefaultParams  map[string]string `json:"default_params"`  // Any additional default parameters
 }
 
 // NewOperationClassifier creates a new classifier with built-in patterns
 func NewOperationClassifier() *OperationClassifier {
 	classifier := &OperationClassifier{
-		patterns:        buildDefaultPatterns(),
-		serviceHandlers: make(map[string]ServiceHandler),
+		patterns: buildDefaultPatterns(),
 	}
-
-	// Register service-specific handlers
-	classifier.RegisterServiceHandler("iam", &IAMHandler{})
-	classifier.RegisterServiceHandler("s3", &S3Handler{})
-	classifier.RegisterServiceHandler("ec2", &EC2Handler{})
-	classifier.RegisterServiceHandler("lambda", &LambdaHandler{})
-	classifier.RegisterServiceHandler("sns", &SNSHandler{})
-	classifier.RegisterServiceHandler("dynamodb", &DynamoDBHandler{})
 
 	return classifier
 }
 
 // ClassifyOperation analyzes an operation and determines if it can be called parameter-free
 func (c *OperationClassifier) ClassifyOperation(serviceName, operationName string, operation generator.AWSOperation) OperationClassification {
-	// Try service-specific handler first
-	if handler, exists := c.serviceHandlers[serviceName]; exists {
-		if result := handler.ClassifyOperation(operationName, nil); result.Type != Unknown {
-			return result
-		}
-	}
-
-	// Use pattern-based classification
+	// Use dynamic pattern-based classification for all services
+	// This replaces the previous hardcoded service handlers with a more flexible approach
 	return c.classifyByPatterns(operationName, operation)
 }
 
@@ -215,10 +204,7 @@ func (c *OperationClassifier) getDefaultParameters(operationName string, classif
 	return defaults
 }
 
-// RegisterServiceHandler registers a service-specific handler
-func (c *OperationClassifier) RegisterServiceHandler(serviceName string, handler ServiceHandler) {
-	c.serviceHandlers[serviceName] = handler
-}
+// Note: RegisterServiceHandler method removed - using dynamic pattern-based classification
 
 // buildDefaultPatterns creates the default pattern rules
 func buildDefaultPatterns() []PatternRule {
@@ -357,10 +343,151 @@ func (c *OperationClassifier) IsParameterFreeOperation(serviceName string, opera
 
 // GetOperationDefaults returns default parameters for an operation if available
 func (c *OperationClassifier) GetOperationDefaults(serviceName, operationName string) map[string]interface{} {
-	if handler, exists := c.serviceHandlers[serviceName]; exists {
-		return handler.GetDefaultParameters(operationName)
-	}
+	// Use built-in defaults based on dynamic pattern classification
+	classification := c.fallbackClassification(operationName)
+	return c.getDefaultParameters(operationName, classification)
+}
 
-	// Use built-in defaults
-	return c.getDefaultParameters(operationName, c.fallbackClassification(operationName))
+// GetConfigurationOperations dynamically discovers configuration operations for a resource type
+func (c *OperationClassifier) GetConfigurationOperations(serviceName, resourceType string) []ConfigurationOperation {
+	var operations []ConfigurationOperation
+	
+	// Define common configuration operation patterns by service
+	configPatterns := map[string][]string{
+		"s3": {
+			"GetBucketEncryption", "GetBucketVersioning", "GetPublicAccessBlock", 
+			"GetBucketPolicy", "GetBucketLifecycleConfiguration", "GetBucketLogging",
+			"GetBucketNotificationConfiguration", "GetBucketWebsite", "GetBucketCors",
+		},
+		"ec2": {
+			"DescribeInstanceAttribute", "DescribeVolumeAttribute", "DescribeSnapshotAttribute",
+			"DescribeImageAttribute", "GetGroupsForCapacityReservation", "DescribeInstanceTypes",
+		},
+		"lambda": {
+			"GetFunctionConfiguration", "GetFunctionCodeSigningConfig", "GetFunction",
+			"GetLayerVersionPolicy", "GetAlias", "GetEventSourceMapping",
+		},
+		"iam": {
+			"GetUser", "GetRole", "GetPolicy", "GetGroup", "GetInstanceProfile",
+			"GetUserPolicy", "GetRolePolicy", "GetGroupPolicy",
+		},
+		"dynamodb": {
+			"DescribeTable", "DescribeTimeToLive", "DescribeBackup", "DescribeContinuousBackups",
+			"DescribeContributorInsights", "ListTagsOfResource",
+		},
+		"sns": {
+			"GetTopicAttributes", "GetSubscriptionAttributes", "GetPlatformApplicationAttributes",
+		},
+	}
+	
+	// Get service-specific patterns, or use generic ones if service not found
+	patterns := configPatterns[serviceName]
+	if patterns == nil {
+		// Generic patterns for unknown services
+		patterns = []string{
+			"Get" + resourceType, "Describe" + resourceType, "Get" + resourceType + "Attributes",
+			"Get" + resourceType + "Configuration", "Describe" + resourceType + "Attributes",
+		}
+	}
+	
+	// Create configuration operations based on patterns
+	for _, pattern := range patterns {
+		// Determine parameter name based on common AWS conventions
+		parameterName := c.getParameterNameForResource(serviceName, resourceType)
+		
+		operations = append(operations, ConfigurationOperation{
+			Name:           pattern,
+			ParameterName:  parameterName,
+			ParameterField: c.getParameterFieldForResource(serviceName, resourceType),
+			ConfigKey:      c.getConfigKeyFromOperation(pattern),
+			Required:       c.isConfigurationRequired(pattern),
+		})
+	}
+	
+	return operations
+}
+
+// Helper methods for dynamic configuration operation discovery
+
+func (c *OperationClassifier) getParameterNameForResource(serviceName, resourceType string) string {
+	// Common parameter name patterns by service
+	parameterNames := map[string]map[string]string{
+		"s3": {"Bucket": "Bucket", "Object": "Bucket"}, // S3 uses "Bucket" parameter
+		"ec2": {"Instance": "InstanceId", "Volume": "VolumeId", "SecurityGroup": "GroupId"},
+		"lambda": {"Function": "FunctionName", "Layer": "LayerName"},
+		"iam": {"User": "UserName", "Role": "RoleName", "Policy": "PolicyArn", "Group": "GroupName"},
+		"dynamodb": {"Table": "TableName"},
+		"sns": {"Topic": "TopicArn", "Subscription": "SubscriptionArn"},
+	}
+	
+	if serviceParams, exists := parameterNames[serviceName]; exists {
+		if param, exists := serviceParams[resourceType]; exists {
+			return param
+		}
+	}
+	
+	// Default: use resource type + "Name" or "Id"
+	if resourceType == "Bucket" || resourceType == "Function" || resourceType == "Table" {
+		return resourceType + "Name"
+	}
+	return resourceType + "Id"
+}
+
+func (c *OperationClassifier) getParameterFieldForResource(serviceName, resourceType string) string {
+	// Most AWS resources use "Name" or "Id" fields
+	commonIdFields := map[string]string{
+		"Bucket": "Name",
+		"Function": "FunctionName", 
+		"Table": "TableName",
+		"Topic": "TopicArn",
+		"User": "UserName",
+		"Role": "RoleName",
+		"Group": "GroupName",
+		"Policy": "Arn",
+	}
+	
+	if field, exists := commonIdFields[resourceType]; exists {
+		return field
+	}
+	
+	// Default to common patterns
+	return "Name"
+}
+
+func (c *OperationClassifier) getConfigKeyFromOperation(operationName string) string {
+	// Extract config key from operation name
+	configKey := strings.TrimPrefix(operationName, "Get")
+	configKey = strings.TrimPrefix(configKey, "Describe")
+	
+	// Handle special cases
+	specialCases := map[string]string{
+		"BucketEncryption": "ServerSideEncryptionConfiguration",
+		"PublicAccessBlock": "PublicAccessBlockConfiguration", 
+		"BucketLifecycleConfiguration": "LifecycleConfiguration",
+		"BucketNotificationConfiguration": "NotificationConfiguration",
+	}
+	
+	if special, exists := specialCases[configKey]; exists {
+		return special
+	}
+	
+	return configKey
+}
+
+func (c *OperationClassifier) isConfigurationRequired(operationName string) bool {
+	// Core security and compliance configurations are typically required
+	requiredConfigs := []string{
+		"GetBucketEncryption", "GetBucketVersioning", "GetPublicAccessBlock",
+		"DescribeInstanceAttribute", "GetFunctionConfiguration",
+		"DescribeTable", "GetTopicAttributes",
+	}
+	
+	for _, required := range requiredConfigs {
+		if operationName == required {
+			return true
+		}
+	}
+	
+	// Default to false (optional configuration)
+	return false
 }

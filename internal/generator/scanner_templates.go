@@ -9,12 +9,14 @@ package {{.PackageName}}
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 	{{if .WithRetry}}"math"{{end}}
 	{{if .WithMetrics}}"github.com/prometheus/client_golang/prometheus"{{end}}
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/{{.ServiceName}}"
 	"github.com/aws/aws-sdk-go-v2/service/{{.ServiceName}}/types"
 	pb "github.com/jlgore/corkscrew/proto"
@@ -420,18 +422,107 @@ func (s *{{.ServiceNameCaps}}Scanner) DescribeResource(ctx context.Context, id s
 		return nil, fmt.Errorf("failed to get {{.ServiceName}} client: %w", err)
 	}
 
-	{{range .Resources}}
-	{{if .GetOperation}}
-	// Try {{.GetOperation.Name}} for {{.Name}} resources
-	{{if eq $.ServiceName "s3"}}
-	// S3 bucket-specific describe logic would go here
+	// Try to determine resource type from the first resource type available
+	{{if .Resources}}
+	resourceType := "{{(index .Resources 0).Name}}"
 	{{else}}
-	// Generic describe logic for {{.Name}}
+	resourceType := "Resource"
 	{{end}}
-	{{end}}
-	{{end}}
+	
+	// Use generic configuration collection
+	return s.describeResourceWithConfig(ctx, client, id, resourceType)
+}
 
-	return nil, fmt.Errorf("DescribeResource not yet implemented for {{.ServiceName}} resource: %s", id)
+// describeResourceWithConfig collects comprehensive configuration for any resource
+func (s *{{.ServiceNameCaps}}Scanner) describeResourceWithConfig(ctx context.Context, client *{{.ServiceName}}.Client, resourceID string, resourceType string) (*pb.ResourceRef, error) {
+	// Create base resource reference
+	ref := &pb.ResourceRef{
+		Id:      resourceID,
+		Name:    resourceID,
+		Type:    resourceType,
+		Service: "{{.ServiceName}}",
+	}
+
+	// Collect all configuration data
+	configData := make(map[string]interface{})
+
+	{{range .ConfigOperations}}
+	// {{.Name}} - {{.Description}}
+	if {{.OutputFieldName}}, err := s.call{{.Name}}(ctx, client, resourceID); err == nil {
+		configData["{{.ConfigKey}}"] = {{.OutputFieldName}}
+	} else {
+		// Some configurations may not exist - that's normal for some resources
+		fmt.Printf("Debug: Could not get {{.ConfigKey}} for %s %s: %v\n", resourceType, resourceID, err)
+	}
+
+	{{end}}
+	// Store configuration as JSON in RawData
+	if configJSON, err := json.Marshal(configData); err == nil {
+		ref.RawData = string(configJSON)
+	}
+
+	return ref, nil
+}
+
+{{range .ConfigOperations}}
+// call{{.Name}} makes a {{.Name}} API call with appropriate input parameters
+func (s *{{$.ServiceNameCaps}}Scanner) call{{.Name}}(ctx context.Context, client *{{$.ServiceName}}.Client, resourceID string) (*{{$.ServiceName}}.{{.OutputType}}, error) {
+	input := &{{$.ServiceName}}.{{.InputType}}{}
+	
+	// Use reflection to set the resource identifier field
+	s.setResourceIDField(input, resourceID)
+	
+	return client.{{.Name}}(ctx, input)
+}
+
+{{end}}
+
+// setResourceIDField sets the appropriate resource ID field using reflection
+func (s *{{.ServiceNameCaps}}Scanner) setResourceIDField(input interface{}, resourceID string) {
+	inputValue := reflect.ValueOf(input)
+	if inputValue.Kind() == reflect.Ptr {
+		inputValue = inputValue.Elem()
+	}
+
+	// Common field names for resource identifiers
+	idFields := []string{
+		"Bucket",           // S3
+		"InstanceId",       // EC2
+		"InstanceIds",      // EC2 (array)
+		"Name",             // Generic
+		"Id",               // Generic
+		"Arn",              // Generic
+		"ResourceArn",      // Generic
+		"FunctionName",     // Lambda
+		"ClusterName",      // EKS/ECS
+		"GroupName",        // Security Groups
+	}
+
+	for _, fieldName := range idFields {
+		field := inputValue.FieldByName(fieldName)
+		if !field.IsValid() || !field.CanSet() {
+			continue
+		}
+
+		switch field.Kind() {
+		case reflect.Ptr:
+			if field.Type().Elem().Kind() == reflect.String {
+				// *string field
+				field.Set(reflect.ValueOf(&resourceID))
+				return
+			}
+		case reflect.Slice:
+			if field.Type().Elem().Kind() == reflect.String {
+				// []string field (like InstanceIds)
+				field.Set(reflect.ValueOf([]string{resourceID}))
+				return
+			}
+		case reflect.String:
+			// string field
+			field.SetString(resourceID)
+			return
+		}
+	}
 }
 
 {{if .WithRetry}}

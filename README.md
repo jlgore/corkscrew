@@ -12,26 +12,27 @@ Corkscrew is a modular cloud configuration scanner designed to discover, analyze
 - **Powerful Querying**: Stores everything in DuckDB for SQL-based analysis and reporting
 - **Lightweight Core**: Only load the cloud services you need at runtime
 
-This project has a plugin based architecture that aims to integrate with any cloud provider's golang sdk. A cloud provider plugin generates schemas for a service's resource configurations, discovers the resources via SDK API calls, and saves their configuration into DuckDB so they can be queried. 
+This project uses a plugin-based architecture that integrates with cloud provider Go SDKs. CloudProvider plugins use dynamic service discovery to automatically detect available services, discover resources via SDK API calls, and save their configuration into DuckDB for SQL-based analysis.
 
-In the vein of my BSides NOLA talk "We have CSPM at Home" there are also efforts to map resource relationships on a graph database backed by DuckDB. This is still very much in progress and might get scrapped because I am a clueless dolt!! 
+## Plugin Architecture
 
-A plugin-based architecture for the Corkscrew Generator that solves the compilation size problem by allowing dynamic loading of only the AWS services you need at runtime.
+Corkscrew uses HashiCorp's go-plugin library with gRPC to create a modular system where CloudProvider plugins handle resource discovery while the core CLI manages data persistence and querying. Key benefits:
 
-## Overview
-
-This implementation uses HashiCorp's go-plugin library with gRPC to create a modular, scalable system where each AWS service is implemented as a separate plugin. This approach provides:
+- **Separation of Concerns**: Plugins focus on resource discovery, CLI handles data management
+- **No Database Conflicts**: Eliminates plugin database locking issues  
+- **Unified Scanner Pattern**: Single discovery engine per provider, no generated code
+- **Dynamic Service Support**: Automatic detection of new cloud services
 
 ## Architecture
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Core Client   │    │  Plugin Manager  │    │   AWS Plugins   │
+│   Core Client   │    │  Plugin Manager  │    │ CloudProviders  │
 │                 │◄──►│                  │◄──►│                 │
-│ - CLI Interface │    │ - Plugin Loading │    │ - S3 Scanner    │
-│ - Configuration │    │ - gRPC Client    │    │ - EC2 Scanner   │
-│ - Result Output │    │ - Lifecycle Mgmt │    │ - RDS Scanner   │
-└─────────────────┘    └──────────────────┘    │ - ...           │
+│ - CLI Interface │    │ - Plugin Loading │    │ - AWS Provider  │
+│ - Configuration │    │ - gRPC Client    │    │ - Azure Provider│
+│ - Result Output │    │ - Lifecycle Mgmt │    │ - GCP Provider  │
+└─────────────────┘    └──────────────────┘    │ - K8s Provider  │
                                                └─────────────────┘
                               │
                               ▼

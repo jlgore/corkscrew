@@ -1,0 +1,75 @@
+# Corkscrew Configuration File
+# This file configures which providers are enabled and their settings
+
+version: "2.0"
+
+# Provider configuration
+providers:
+  aws:
+    enabled: true
+    default_region: "us-east-1"
+    services:
+      - s3
+      - ec2
+      - lambda
+      - iam
+      - rds
+      - dynamodb
+      - kms
+
+  azure:
+    enabled: true
+    default_region: "eastus"
+    services:
+      - storage
+      - compute
+      - keyvault
+      - sql
+
+  gcp:
+    enabled: false
+    default_region: "us-central1-a"
+    services:
+      - storage
+      - compute
+      - bigquery
+
+  kubernetes:
+    enabled: false
+    # Will auto-detect kubeconfig if available
+
+# Dependencies configuration
+dependencies:
+  protoc:
+    version: "25.3"
+    auto_download: true
+  
+  duckdb:
+    version: "1.2.2"  # Locked to tested version with duckpgq support
+    auto_download: true
+
+# Database configuration
+database:
+  path: "~/.corkscrew/db/corkscrew.duckdb"
+  auto_create: true
+
+# Query engine settings
+query:
+  timeout: 30s
+  streaming_threshold: 10000  # Switch to streaming for results > 10k rows
+  max_memory: "1GB"
+
+# Compliance settings
+compliance:
+  packs_dir: "~/.corkscrew/packs"
+  auto_update: false
+
+# Logging and output
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "text"  # text, json
+  
+output:
+  default_format: "table"  # table, json, csv
+  colors: true
+  progress_bars: true

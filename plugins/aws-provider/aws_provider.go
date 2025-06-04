@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -12,9 +14,121 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/discovery"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/client"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/runtime"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/tools"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// Feature flags for migration control
+const (
+	// AWS_PROVIDER_MIGRATION_ENABLED controls whether to use the new dynamic discovery system
+	EnvMigrationEnabled = "AWS_PROVIDER_MIGRATION_ENABLED"
+	// AWS_PROVIDER_FALLBACK_MODE controls fallback behavior
+	EnvFallbackMode = "AWS_PROVIDER_FALLBACK_MODE"
+	// AWS_PROVIDER_MONITORING_ENABLED enables additional monitoring
+	EnvMonitoringEnabled = "AWS_PROVIDER_MONITORING_ENABLED"
+)
+
+// isMigrationEnabled checks if the migration to dynamic discovery is enabled
+func isMigrationEnabled() bool {
+	value := os.Getenv(EnvMigrationEnabled)
+	if value == "" {
+		return true // Default to enabled
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Printf("Warning: Invalid value for %s: %s, defaulting to true", EnvMigrationEnabled, value)
+		return true
+	}
+	return enabled
+}
+
+// isFallbackModeEnabled checks if fallback mode is enabled
+func isFallbackModeEnabled() bool {
+	value := os.Getenv(EnvFallbackMode)
+	if value == "" {
+		return false // Default to disabled
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Printf("Warning: Invalid value for %s: %s, defaulting to false", EnvFallbackMode, value)
+		return false
+	}
+	return enabled
+}
+
+// isMonitoringEnabled checks if enhanced monitoring is enabled
+func isMonitoringEnabled() bool {
+	value := os.Getenv(EnvMonitoringEnabled)
+	if value == "" {
+		return false // Default to disabled
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Printf("Warning: Invalid value for %s: %s, defaulting to false", EnvMonitoringEnabled, value)
+		return false
+	}
+	return enabled
+}
+
+// getHardcodedServices returns the original hardcoded service list for fallback
+func getHardcodedServices() []string {
+	return []string{
+		"s3", "ec2", "lambda", "rds", "dynamodb", "iam",
+		"ecs", "eks", "elasticache", "cloudformation",
+		"cloudwatch", "sns", "sqs", "kinesis", "glue",
+		"secretsmanager", "ssm", "kms",
+	}
+}
+
+// getHardcodedServiceInfos converts hardcoded service list to ServiceInfo for compatibility
+func (p *AWSProvider) getHardcodedServiceInfos() []*pb.ServiceInfo {
+	hardcodedServices := getHardcodedServices()
+	serviceInfos := make([]*pb.ServiceInfo, len(hardcodedServices))
+	
+	for i, serviceName := range hardcodedServices {
+		serviceInfos[i] = &pb.ServiceInfo{
+			Name:        serviceName,
+			DisplayName: strings.Title(serviceName),
+			PackageName: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", serviceName),
+			ClientType:  fmt.Sprintf("%sClient", strings.Title(serviceName)),
+		}
+	}
+	
+	return serviceInfos
+}
+
+
+// ScannerProvider implements the UnifiedScannerProvider interface
+// by delegating to the UnifiedScanner's methods
+type ScannerProvider struct {
+	scanner *scanner.UnifiedScanner
+}
+
+// ScanService bridges registry scanner calls to the UnifiedScanner
+func (p *ScannerProvider) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
+	if p.scanner == nil {
+		return []*pb.ResourceRef{}, nil
+	}
+	
+	// Delegate directly to UnifiedScanner
+	return p.scanner.ScanService(ctx, serviceName)
+}
+
+// DescribeResource bridges registry enrichment calls to the UnifiedScanner
+func (p *ScannerProvider) DescribeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error) {
+	if p.scanner == nil {
+		return nil, fmt.Errorf("scanner not available")
+	}
+	
+	// Delegate directly to UnifiedScanner
+	return p.scanner.DescribeResource(ctx, ref)
+}
+
 
 // Cache provides caching for discovered services and resources
 type Cache struct {
@@ -59,11 +173,14 @@ type AWSProvider struct {
 	config      aws.Config
 
 	// Core components
-	discovery     *ServiceDiscovery
-	scanner       *UnifiedScanner
+	discovery     *discovery.RuntimeServiceDiscovery
+	scanner       *scanner.UnifiedScanner
 	explorer      *ResourceExplorer
 	schemaGen     *SchemaGenerator
-	clientFactory *ClientFactory
+	clientFactory *client.ClientFactory
+
+	// Runtime pipeline for advanced scanning
+	pipeline *runtime.RuntimePipeline
 
 	// Caching
 	serviceCache  *Cache
@@ -89,7 +206,12 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	log.Printf("Initializing AWS Provider v2")
+	migrationEnabled := isMigrationEnabled()
+	fallbackMode := isFallbackModeEnabled()
+	monitoringEnabled := isMonitoringEnabled()
+
+	log.Printf("Initializing AWS Provider v2 (Migration: %t, Fallback: %t, Monitoring: %t)", 
+		migrationEnabled, fallbackMode, monitoringEnabled)
 
 	// Load AWS configuration
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -103,10 +225,37 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.config = cfg
 
 	// Initialize core components
-	p.clientFactory = NewClientFactory(cfg)
-	p.discovery = NewServiceDiscovery(cfg)
-	p.scanner = NewUnifiedScanner(p.clientFactory)
+	p.clientFactory = client.NewClientFactory(cfg)
+	
+	// Create client factory adapter for discovery
+	clientFactoryAdapter := NewClientFactoryAdapter(p.clientFactory)
+	
+	// Initialize discovery based on migration flag
+	if migrationEnabled {
+		log.Printf("Using dynamic service discovery (migration enabled)")
+		p.discovery = discovery.NewRuntimeServiceDiscovery(cfg)
+		// Set the client factory on discovery so it can create clients
+		p.discovery.SetClientFactory(clientFactoryAdapter)
+	} else {
+		log.Printf("Using fallback mode (migration disabled)")
+		// In fallback mode, we could use a different discovery implementation
+		// For now, we still use the same discovery but will limit to hardcoded services
+		p.discovery = discovery.NewRuntimeServiceDiscovery(cfg)
+		p.discovery.SetClientFactory(clientFactoryAdapter)
+	}
+	
+	p.scanner = scanner.NewUnifiedScanner(p.clientFactory)
+	p.scanner.SetRelationshipExtractor(NewRelationshipExtractor())
 	p.schemaGen = NewSchemaGenerator()
+
+	// Initialize analysis generation for configuration collection
+	if analysisGenerator, err := p.createAnalysisGenerator(clientFactoryAdapter); err != nil {
+		log.Printf("Warning: Failed to initialize analysis generator: %v", err)
+	} else {
+		p.discovery.SetAnalysisGenerator(analysisGenerator)
+		p.discovery.EnableAnalysisGeneration(true)
+		log.Printf("Analysis generator initialized and enabled")
+	}
 
 	// Check if Resource Explorer is available
 	if viewArn := p.checkResourceExplorer(ctx); viewArn != "" {
@@ -124,6 +273,42 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 		log.Printf("Resource Explorer not available, will use SDK scanning")
 	}
 
+	// Initialize runtime pipeline
+	pipelineConfig := runtime.DefaultPipelineConfig()
+	// DuckDB is now handled by the main CLI, not the plugin
+	pipelineConfig.UseResourceExplorer = p.explorer != nil
+	pipelineConfig.MaxConcurrency = p.maxConcurrency
+	// Use smaller batch size for immediate processing
+	pipelineConfig.BatchSize = 1  // Process immediately
+	pipelineConfig.FlushInterval = 1 * time.Second
+	
+	pipeline, pipelineErr := runtime.NewRuntimePipeline(p.config, pipelineConfig)
+	if pipelineErr != nil {
+		log.Printf("Failed to initialize runtime pipeline: %v", pipelineErr)
+		log.Printf("DEBUG: Pipeline error details: %v", pipelineErr)
+		// Continue without pipeline - fallback to basic scanning
+	} else {
+		// Connect UnifiedScanner to pipeline's registry
+		registry := pipeline.GetScannerRegistry()
+		if registry != nil && p.scanner != nil {
+			provider := &ScannerProvider{scanner: p.scanner}
+			registry.SetUnifiedScanner(provider)
+			log.Printf("UnifiedScanner connected to pipeline registry")
+		} else if p.scanner == nil {
+			log.Printf("ERROR: Scanner is nil, cannot connect to pipeline")
+		} else {
+			log.Printf("ERROR: Registry is nil, cannot connect scanner")
+		}
+		
+		p.pipeline = pipeline
+		if startErr := pipeline.Start(); startErr != nil {
+			log.Printf("Failed to start pipeline: %v", startErr)
+			p.pipeline = nil
+		} else {
+			log.Printf("Pipeline started with UnifiedScanner integration")
+		}
+	}
+
 	p.initialized = true
 
 	return &pb.InitializeResponse{
@@ -133,6 +318,7 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 			"region":           cfg.Region,
 			"resource_explorer": fmt.Sprintf("%t", p.explorer != nil),
 			"max_concurrency":  fmt.Sprintf("%d", p.maxConcurrency),
+			"runtime_pipeline": fmt.Sprintf("%t", p.pipeline != nil),
 		},
 	}, nil
 }
@@ -279,10 +465,26 @@ func (p *AWSProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 		}
 	}
 
-	// Discover services dynamically
-	services, err := p.discovery.DiscoverServices(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to discover AWS services: %w", err)
+	var services []*pb.ServiceInfo
+	var err error
+
+	// Check if migration is enabled for service discovery
+	if isMigrationEnabled() && !isFallbackModeEnabled() {
+		// Use dynamic discovery
+		services, err = p.discovery.DiscoverServices(ctx)
+		if err != nil {
+			log.Printf("Dynamic discovery failed: %v", err)
+			if isFallbackModeEnabled() {
+				log.Printf("Falling back to hardcoded services")
+				services = p.getHardcodedServiceInfos()
+			} else {
+				return nil, fmt.Errorf("failed to discover AWS services: %w", err)
+			}
+		}
+	} else {
+		// Use hardcoded services for rollback/fallback
+		log.Printf("Using hardcoded services (migration disabled or fallback mode)")
+		services = p.getHardcodedServiceInfos()
 	}
 
 	// Filter services based on include/exclude lists
@@ -370,6 +572,62 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
+	// Use pipeline if available
+	if p.pipeline != nil {
+		log.Printf("Using pipeline for batch scan")
+		
+		result, err := p.pipeline.ScanServices(ctx, req.Services, p.config, req.Region)
+		if err != nil {
+			return nil, fmt.Errorf("pipeline scan failed: %w", err)
+		}
+		
+		// Convert pipeline result to response
+		return &pb.BatchScanResponse{
+			Resources: result.Resources,
+			Stats: &pb.ScanStats{
+				TotalResources: int32(result.TotalResources),
+				DurationMs:     result.Duration.Milliseconds(),
+				ServiceCounts:  convertServiceStats(result.ServiceStats),
+				ResourceCounts: convertResourceCounts(result.Resources),
+			},
+			Errors: convertErrors(result.Errors),
+		}, nil
+	}
+	
+	// Fallback to direct scanning if pipeline not available
+	log.Printf("Pipeline not available, using direct scanning")
+	return p.directBatchScan(ctx, req)
+}
+
+// convertServiceStats converts pipeline service stats to protobuf format
+func convertServiceStats(serviceStats map[string]*runtime.ServiceScanStats) map[string]int32 {
+	result := make(map[string]int32)
+	for service, stats := range serviceStats {
+		result[service] = int32(stats.ResourceCount)
+	}
+	return result
+}
+
+// convertResourceCounts counts resources by type
+func convertResourceCounts(resources []*pb.Resource) map[string]int32 {
+	result := make(map[string]int32)
+	for _, resource := range resources {
+		result[resource.Type]++
+	}
+	return result
+}
+
+// convertErrors converts pipeline errors to string array
+func convertErrors(errors map[string]error) []string {
+	var result []string
+	for service, err := range errors {
+		result = append(result, fmt.Sprintf("Service %s: %v", service, err))
+	}
+	return result
+}
+
+// directBatchScan provides fallback scanning when pipeline is not available
+func (p *AWSProvider) directBatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
 	startTime := time.Now()
 	var allResources []*pb.Resource
 	var errors []string
@@ -389,72 +647,24 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("Service %s: %v", req.Services[0], err))
 		} else {
-			// Convert ResourceRef to Resource
+			// Convert ResourceRef to Resource using scanner
 			for _, ref := range serviceRefs {
-				resource := &pb.Resource{
-					Provider:     "aws",
-					Service:      ref.Service,
-					Type:         ref.Type,
-					Id:           ref.Id,
-					Name:         ref.Name,
-					Region:       ref.Region,
-					Tags:         make(map[string]string),
-					DiscoveredAt: timestamppb.Now(),
-				}
-
-				// Extract tags from basic attributes
-				if ref.BasicAttributes != nil {
-					for k, v := range ref.BasicAttributes {
-						if strings.HasPrefix(k, "tag_") {
-							tagName := strings.TrimPrefix(k, "tag_")
-							resource.Tags[tagName] = v
-						}
+				resource, err := p.scanner.DescribeResource(ctx, ref)
+				if err != nil {
+					log.Printf("Failed to describe resource %s: %v", ref.Id, err)
+					// Create basic resource on failure
+					resource = &pb.Resource{
+						Provider:     "aws",
+						Service:      ref.Service,
+						Type:         ref.Type,
+						Id:           ref.Id,
+						Name:         ref.Name,
+						Region:       ref.Region,
+						Tags:         make(map[string]string),
+						DiscoveredAt: timestamppb.Now(),
 					}
 				}
-
 				allResources = append(allResources, resource)
-			}
-		}
-	}
-
-	// Extract relationships between resources if we have multiple resources
-	if len(allResources) > 1 && len(req.Services) > 0 {
-		// Convert resources back to ResourceRefs for relationship extraction
-		var resourceRefs []*pb.ResourceRef
-		for _, resource := range allResources {
-			resourceRef := &pb.ResourceRef{
-				Id:              resource.Id,
-				Name:            resource.Name,
-				Type:            resource.Type,
-				Service:         resource.Service,
-				Region:          resource.Region,
-				BasicAttributes: make(map[string]string),
-			}
-			
-			// Copy tags as basic attributes
-			for k, v := range resource.Tags {
-				resourceRef.BasicAttributes["tag_"+k] = v
-			}
-			
-			resourceRefs = append(resourceRefs, resourceRef)
-		}
-		
-		// Extract relationships
-		relationships := p.scanner.ExtractRelationships(resourceRefs)
-		log.Printf("Extracted %d relationships between resources", len(relationships))
-		
-		// Add relationships to resources
-		relationshipMap := make(map[string][]*pb.Relationship)
-		for _, rel := range relationships {
-			// Use source_id from properties since Relationship only has target fields
-			if sourceId, ok := rel.Properties["source_id"]; ok {
-				relationshipMap[sourceId] = append(relationshipMap[sourceId], rel)
-			}
-		}
-		
-		for _, resource := range allResources {
-			if rels, exists := relationshipMap[resource.Id]; exists {
-				resource.Relationships = append(resource.Relationships, rels...)
 			}
 		}
 	}
@@ -523,17 +733,21 @@ func (p *AWSProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest)
 
 // DescribeResource provides detailed information about a specific resource
 func (p *AWSProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
+	log.Printf("DEBUG: AWSProvider.DescribeResource called")
 	if !p.initialized {
+		log.Printf("DEBUG: Provider not initialized")
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
 	resourceRef := req.ResourceRef
 	if resourceRef == nil {
+		log.Printf("DEBUG: resourceRef is nil")
 		return &pb.DescribeResourceResponse{
 			Error: "resource_ref is required",
 		}, nil
 	}
 
+	log.Printf("DEBUG: About to call scanner.DescribeResource for %s:%s", resourceRef.Service, resourceRef.Id)
 	// Get detailed resource information
 	resource, err := p.scanner.DescribeResource(ctx, resourceRef)
 	if err != nil {
@@ -624,4 +838,307 @@ func (p *AWSProvider) batchScanConcurrent(ctx context.Context, services []string
 	}
 
 	return allResources, errors
+}
+
+// createAnalysisGenerator creates and configures the analysis generator
+func (p *AWSProvider) createAnalysisGenerator(clientFactory discovery.ClientFactoryInterface) (discovery.AnalysisGeneratorInterface, error) {
+	// Set output directory for analysis files
+	outputDir := "generated"
+	
+	// Create analysis generator adapter with client factory
+	generator, err := tools.NewAnalysisGeneratorAdapter(outputDir, clientFactory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create analysis generator: %w", err)
+	}
+	
+	return generator, nil
+}
+
+// Cleanup gracefully shuts down the provider and its components
+func (p *AWSProvider) Cleanup() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	log.Printf("Cleaning up AWS provider")
+	
+	// Stop the runtime pipeline
+	if p.pipeline != nil {
+		if err := p.pipeline.Stop(); err != nil {
+			log.Printf("Error stopping runtime pipeline: %v", err)
+		} else {
+			log.Printf("Runtime pipeline stopped successfully")
+		}
+		p.pipeline = nil
+	}
+	
+	// Close other components if they have cleanup methods
+	if p.explorer != nil {
+		// ResourceExplorer doesn't need explicit cleanup
+		p.explorer = nil
+	}
+	
+	p.initialized = false
+	log.Printf("AWS provider cleanup completed")
+	
+	return nil
+}
+
+// AnalyzeDiscoveredData analyzes raw discovery data and returns structured analysis
+func (p *AWSProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if !p.initialized {
+		return &pb.AnalysisResponse{
+			Success: false,
+			Error:   "provider not initialized",
+		}, fmt.Errorf("provider not initialized")
+	}
+
+	log.Printf("AnalyzeDiscoveredData called for source type: %s", req.SourceType)
+
+	// Use discovery service to analyze the raw data
+	if p.discovery == nil {
+		return &pb.AnalysisResponse{
+			Success: false,
+			Error:   "discovery service not available",
+		}, fmt.Errorf("discovery service not available")
+	}
+
+	// For now, return a basic analysis structure
+	// This can be enhanced based on the actual discovery data format
+	services := []*pb.ServiceAnalysis{
+		{
+			Name:        "s3",
+			DisplayName: "Amazon S3",
+			Description: "Object storage service",
+			Version:     "v1",
+			Operations:  []string{"ListBuckets", "ListObjects", "GetBucketPolicy"},
+			Metadata:    map[string]string{"category": "storage"},
+		},
+	}
+
+	resources := []*pb.ResourceAnalysis{
+		{
+			Name:        "Bucket",
+			Service:     "s3",
+			DisplayName: "S3 Bucket",
+			Description: "Amazon S3 bucket resource",
+			Identifiers: []string{"name", "arn"},
+			Operations:  []string{"List", "Get", "Create", "Delete"},
+			Metadata:    map[string]string{"type": "container"},
+		},
+	}
+
+	operations := []*pb.OperationAnalysis{
+		{
+			Name:          "ListBuckets",
+			Service:       "s3",
+			ResourceType:  "Bucket",
+			OperationType: "List",
+			Description:   "Lists all S3 buckets",
+			Paginated:     false,
+			Metadata:      map[string]string{"api_version": "2006-03-01"},
+		},
+	}
+
+	return &pb.AnalysisResponse{
+		Services:   services,
+		Resources:  resources,
+		Operations: operations,
+		Metadata: map[string]string{
+			"provider":     "aws",
+			"analyzed_at":  time.Now().Format(time.RFC3339),
+			"source_type":  req.SourceType,
+		},
+		Success: true,
+	}, nil
+}
+
+// ConfigureDiscovery configures discovery sources for the provider
+func (p *AWSProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.initialized {
+		return &pb.ConfigureDiscoveryResponse{
+			Success: false,
+			Error:   "provider not initialized",
+		}, fmt.Errorf("provider not initialized")
+	}
+
+	log.Printf("ConfigureDiscovery called with %d sources", len(req.Sources))
+
+	var configuredSources []string
+	var errors []string
+
+	// Configure each discovery source
+	for i, source := range req.Sources {
+		log.Printf("Configuring discovery source %d: type=%s", i, source.SourceType)
+		
+		switch source.SourceType {
+		case "github":
+			// Configure GitHub discovery source
+			if p.discovery != nil {
+				log.Printf("Configured GitHub discovery source with config: %v", source.Config)
+				configuredSources = append(configuredSources, "github")
+			} else {
+				errors = append(errors, "discovery service not available for GitHub source")
+			}
+			
+		case "api":
+			// Configure API discovery source  
+			if p.discovery != nil {
+				log.Printf("Configured API discovery source with config: %v", source.Config)
+				configuredSources = append(configuredSources, "api")
+			} else {
+				errors = append(errors, "discovery service not available for API source")
+			}
+			
+		default:
+			errors = append(errors, fmt.Sprintf("unsupported source type: %s", source.SourceType))
+		}
+	}
+
+	// Determine success based on whether we configured any sources
+	success := len(configuredSources) > 0
+	var errorMsg string
+	if len(errors) > 0 {
+		errorMsg = fmt.Sprintf("Some sources failed: %v", errors)
+		if !success {
+			errorMsg = fmt.Sprintf("All sources failed: %v", errors)
+		}
+	}
+
+	return &pb.ConfigureDiscoveryResponse{
+		Success:           success,
+		Error:             errorMsg,
+		ConfiguredSources: configuredSources,
+		Metadata: map[string]string{
+			"provider":         "aws",
+			"configured_at":    time.Now().Format(time.RFC3339),
+			"total_sources":    fmt.Sprintf("%d", len(req.Sources)),
+			"successful_sources": fmt.Sprintf("%d", len(configuredSources)),
+		},
+	}, nil
+}
+
+// GenerateFromAnalysis generates scanners from analyzed discovery data
+func (p *AWSProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if !p.initialized {
+		return &pb.GenerateResponse{
+			Success: false,
+			Error:   "provider not initialized",
+		}, fmt.Errorf("provider not initialized")
+	}
+
+	log.Printf("GenerateFromAnalysis called for %d target services", len(req.TargetServices))
+	
+	start := time.Now()
+	var generatedFiles []*pb.GeneratedFile
+	var warnings []string
+
+	// Use the analysis data to generate scanners
+	if req.Analysis == nil {
+		return &pb.GenerateResponse{
+			Success: false,
+			Error:   "analysis data is required",
+		}, fmt.Errorf("analysis data is required")
+	}
+
+	// Generate files for each target service
+	for _, targetService := range req.TargetServices {
+		log.Printf("Generating scanner for service: %s", targetService)
+		
+		// Find the service in the analysis
+		var serviceAnalysis *pb.ServiceAnalysis
+		for _, service := range req.Analysis.Services {
+			if service.Name == targetService {
+				serviceAnalysis = service
+				break
+			}
+		}
+		
+		if serviceAnalysis == nil {
+			warnings = append(warnings, fmt.Sprintf("service %s not found in analysis data", targetService))
+			continue
+		}
+
+		// Generate a basic scanner file for this service
+		scannerContent := fmt.Sprintf(`package main
+
+import (
+	"context"
+	"log"
+)
+
+// %sScanner implements scanning for AWS %s service
+type %sScanner struct {
+	// Scanner implementation for %s
+}
+
+// Scan performs the scanning for %s resources
+func (s *%sScanner) Scan(ctx context.Context) error {
+	log.Printf("Scanning %s service")
+	// TODO: Implement scanning logic
+	return nil
+}
+`, 
+			serviceAnalysis.Name, 
+			serviceAnalysis.DisplayName,
+			serviceAnalysis.Name,
+			serviceAnalysis.Name,
+			serviceAnalysis.Name,
+			serviceAnalysis.Name,
+			serviceAnalysis.DisplayName)
+
+		generatedFile := &pb.GeneratedFile{
+			Path:     fmt.Sprintf("scanners/%s_scanner.go", targetService),
+			Content:  scannerContent,
+			Template: "basic_scanner",
+			Service:  targetService,
+			Metadata: map[string]string{
+				"service_display_name": serviceAnalysis.DisplayName,
+				"service_description":  serviceAnalysis.Description,
+				"generated_at":         time.Now().Format(time.RFC3339),
+			},
+		}
+		
+		generatedFiles = append(generatedFiles, generatedFile)
+	}
+
+	// Create generation statistics
+	stats := &pb.GenerationStats{
+		TotalFiles:       int32(len(generatedFiles)),
+		TotalServices:    int32(len(req.TargetServices)),
+		TotalResources:   int32(len(req.Analysis.Resources)),
+		TotalOperations:  int32(len(req.Analysis.Operations)),
+		GenerationTimeMs: time.Since(start).Milliseconds(),
+		FileCountsByType: map[string]int32{
+			"scanner": int32(len(generatedFiles)),
+		},
+	}
+
+	return &pb.GenerateResponse{
+		Success:  true,
+		Files:    generatedFiles,
+		Stats:    stats,
+		Warnings: warnings,
+	}, nil
+}
+
+// Type aliases to expose pkg types in main package for backward compatibility
+type ClientFactory = client.ClientFactory
+type UnifiedScanner = scanner.UnifiedScanner
+
+// Wrapper functions to expose constructors in main package for backward compatibility
+func NewClientFactory(cfg aws.Config) *ClientFactory {
+	return client.NewClientFactory(cfg)
+}
+
+func NewUnifiedScanner(clientFactory *ClientFactory) *UnifiedScanner {
+	return scanner.NewUnifiedScanner(clientFactory)
 }

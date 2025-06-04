@@ -200,8 +200,15 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 	case "s3":
 		info.Operations = append(info.Operations,
 			OperationInfo{Name: "ListBuckets", InputType: "ListBucketsInput", OutputType: "ListBucketsOutput", IsList: true, ResourceType: "Bucket"},
-			OperationInfo{Name: "GetBucketLocation", InputType: "GetBucketLocationInput", OutputType: "GetBucketLocationOutput"},
-			OperationInfo{Name: "GetBucketVersioning", InputType: "GetBucketVersioningInput", OutputType: "GetBucketVersioningOutput"},
+			OperationInfo{Name: "GetBucketLocation", InputType: "GetBucketLocationInput", OutputType: "GetBucketLocationOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketVersioning", InputType: "GetBucketVersioningInput", OutputType: "GetBucketVersioningOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketEncryption", InputType: "GetBucketEncryptionInput", OutputType: "GetBucketEncryptionOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetPublicAccessBlock", InputType: "GetPublicAccessBlockInput", OutputType: "GetPublicAccessBlockOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketPolicy", InputType: "GetBucketPolicyInput", OutputType: "GetBucketPolicyOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketLifecycleConfiguration", InputType: "GetBucketLifecycleConfigurationInput", OutputType: "GetBucketLifecycleConfigurationOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketLogging", InputType: "GetBucketLoggingInput", OutputType: "GetBucketLoggingOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketNotificationConfiguration", InputType: "GetBucketNotificationConfigurationInput", OutputType: "GetBucketNotificationConfigurationOutput", ResourceType: "Bucket"},
+			OperationInfo{Name: "GetBucketTagging", InputType: "GetBucketTaggingInput", OutputType: "GetBucketTaggingOutput", ResourceType: "Bucket"},
 		)
 		info.ResourceTypes = append(info.ResourceTypes,
 			ResourceTypeInfo{Name: "Bucket", GoType: "Bucket", PrimaryKey: "Name", Fields: map[string]string{"Name": "*string", "CreationDate": "*time.Time"}},

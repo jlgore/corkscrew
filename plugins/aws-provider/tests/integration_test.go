@@ -31,8 +31,7 @@ func TestIntegrationPipeline(t *testing.T) {
 		MaxConcurrency:      5,
 		ScanTimeout:         2 * time.Minute,
 		UseResourceExplorer: false, // Use generated scanners for testing
-		EnableDuckDB:        true,
-		DuckDBPath:          filepath.Join(t.TempDir(), "test.duckdb"),
+		// DuckDB is handled by main CLI, not the plugin
 		BatchSize:           100,
 		FlushInterval:       5 * time.Second,
 		EnableAutoDiscovery: false,
@@ -239,7 +238,7 @@ func BenchmarkPipeline(b *testing.B) {
 	require.NoError(b, err)
 
 	pipelineConfig := runtime.DefaultPipelineConfig()
-	pipelineConfig.EnableDuckDB = false // Disable for pure scanning benchmark
+	// DuckDB is handled by main CLI, not the plugin
 	pipelineConfig.ServiceFilter = []string{"ec2"}
 
 	pipeline, err := runtime.NewRuntimePipeline(cfg, pipelineConfig)

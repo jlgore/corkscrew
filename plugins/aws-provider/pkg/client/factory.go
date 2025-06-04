@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"fmt"
@@ -23,6 +23,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/acm"
+	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 )
 
 // ClientFactory manages AWS service clients with lazy initialization
@@ -103,6 +110,20 @@ func (cf *ClientFactory) createClient(serviceName string) interface{} {
 		return route53.NewFromConfig(cf.config)
 	case "redshift":
 		return redshift.NewFromConfig(cf.config)
+	case "sts":
+		return sts.NewFromConfig(cf.config)
+	case "kms":
+		return kms.NewFromConfig(cf.config)
+	case "secretsmanager":
+		return secretsmanager.NewFromConfig(cf.config)
+	case "ssm":
+		return ssm.NewFromConfig(cf.config)
+	case "acm":
+		return acm.NewFromConfig(cf.config)
+	case "apigatewayv2":
+		return apigatewayv2.NewFromConfig(cf.config)
+	case "elasticloadbalancingv2":
+		return elasticloadbalancingv2.NewFromConfig(cf.config)
 	default:
 		return nil
 	}
@@ -114,7 +135,8 @@ func (cf *ClientFactory) GetAvailableServices() []string {
 		"s3", "ec2", "lambda", "rds", "dynamodb", "iam",
 		"ecs", "eks", "elasticache", "cloudformation",
 		"cloudwatch", "sns", "sqs", "kinesis", "glue",
-		"route53", "redshift",
+		"route53", "redshift", "sts", "kms", "secretsmanager",
+		"ssm", "acm", "apigatewayv2", "elasticloadbalancingv2",
 	}
 }
 
@@ -254,8 +276,15 @@ func (cf *ClientFactory) GetServiceDisplayName(serviceName string) string {
 		"sqs":            "Simple Queue Service",
 		"kinesis":        "Kinesis",
 		"glue":           "Glue",
-		"route53":        "Route 53",
-		"redshift":       "Redshift",
+		"route53":                 "Route 53",
+		"redshift":                "Redshift",
+		"sts":                     "Security Token Service",
+		"kms":                     "Key Management Service",
+		"secretsmanager":          "Secrets Manager",
+		"ssm":                     "Systems Manager",
+		"acm":                     "Certificate Manager",
+		"apigatewayv2":            "API Gateway V2",
+		"elasticloadbalancingv2":  "Elastic Load Balancing V2",
 	}
 
 	if displayName, exists := displayNames[serviceName]; exists {
@@ -283,8 +312,15 @@ func (cf *ClientFactory) GetServiceDescription(serviceName string) string {
 		"sqs":            "Message queuing service",
 		"kinesis":        "Real-time data streaming service",
 		"glue":           "Extract, transform, and load (ETL) service",
-		"route53":        "Domain name system (DNS) service",
-		"redshift":       "Data warehousing service",
+		"route53":                 "Domain name system (DNS) service",
+		"redshift":                "Data warehousing service",
+		"sts":                     "Temporary security credentials service",
+		"kms":                     "Encryption key management service",
+		"secretsmanager":          "Secrets storage and rotation service",
+		"ssm":                     "Infrastructure management and automation",
+		"acm":                     "SSL/TLS certificate management",
+		"apigatewayv2":            "HTTP and WebSocket API management",
+		"elasticloadbalancingv2":  "Application load balancing service",
 	}
 
 	if description, exists := descriptions[serviceName]; exists {

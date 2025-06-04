@@ -1,0 +1,248 @@
+package generator
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/jlgore/corkscrew/plugins/aws-provider/registry"
+)
+
+// RegistryIntegration provides integration between generators and the service registry
+type RegistryIntegration struct {
+	registry    registry.DynamicServiceRegistry
+	outputDir   string
+	generators  map[string]Generator
+}
+
+// Generator interface for different code generators
+type Generator interface {
+	Generate() error
+	GetName() string
+}
+
+// NewRegistryIntegration creates a new registry integration
+func NewRegistryIntegration(reg registry.DynamicServiceRegistry, outputDir string) *RegistryIntegration {
+	return &RegistryIntegration{
+		registry:   reg,
+		outputDir:  outputDir,
+		generators: make(map[string]Generator),
+	}
+}
+
+// AddGenerator adds a generator to the integration
+func (ri *RegistryIntegration) AddGenerator(name string, gen Generator) {
+	ri.generators[name] = gen
+}
+
+// GenerateAll runs all registered generators
+func (ri *RegistryIntegration) GenerateAll() error {
+	// Ensure output directory exists
+	if err := os.MkdirAll(ri.outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Run each generator
+	for name, gen := range ri.generators {
+		fmt.Printf("Running generator: %s\n", name)
+		if err := gen.Generate(); err != nil {
+			return fmt.Errorf("generator %s failed: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+// SetupDefaultGenerators sets up the default code generators
+func (ri *RegistryIntegration) SetupDefaultGenerators() {
+	// Client Factory Generator
+	clientFactoryGen := &clientFactoryGeneratorWrapper{
+		generator: NewClientFactoryGenerator(ri.registry, filepath.Join(ri.outputDir, "client_factory_generated.go")),
+	}
+	ri.AddGenerator("client_factory", clientFactoryGen)
+
+	// Build Tag Manager
+	buildTagGen := &buildTagGeneratorWrapper{
+		manager: NewBuildTagManager(ri.registry, ri.outputDir),
+	}
+	ri.AddGenerator("build_tags", buildTagGen)
+
+	// Service Registry Loader
+	loaderGen := &registryLoaderGeneratorWrapper{
+		registry:  ri.registry,
+		outputDir: ri.outputDir,
+	}
+	ri.AddGenerator("registry_loader", loaderGen)
+}
+
+// Wrapper types to implement Generator interface
+
+type clientFactoryGeneratorWrapper struct {
+	generator *ClientFactoryGenerator
+}
+
+func (w *clientFactoryGeneratorWrapper) Generate() error {
+	// Generate main factory
+	if err := w.generator.GenerateClientFactory(); err != nil {
+		return err
+	}
+	
+	// Generate dynamic wrapper
+	if err := w.generator.GenerateDynamicWrapper(); err != nil {
+		return err
+	}
+	
+	// Generate reflection fallback
+	return w.generator.GenerateReflectionFallback()
+}
+
+func (w *clientFactoryGeneratorWrapper) GetName() string {
+	return "Client Factory Generator"
+}
+
+type buildTagGeneratorWrapper struct {
+	manager *BuildTagManager
+}
+
+func (w *buildTagGeneratorWrapper) Generate() error {
+	return w.manager.GenerateBuildConfiguration()
+}
+
+func (w *buildTagGeneratorWrapper) GetName() string {
+	return "Build Tag Manager"
+}
+
+type registryLoaderGeneratorWrapper struct {
+	registry  registry.DynamicServiceRegistry
+	outputDir string
+}
+
+func (w *registryLoaderGeneratorWrapper) Generate() error {
+	return generateRegistryLoader(w.registry, w.outputDir)
+}
+
+func (w *registryLoaderGeneratorWrapper) GetName() string {
+	return "Registry Loader Generator"
+}
+
+// generateRegistryLoader generates code to load the registry at startup
+func generateRegistryLoader(reg registry.DynamicServiceRegistry, outputDir string) error {
+	code := registryLoaderTemplate
+
+	outputPath := filepath.Join(outputDir, "registry_loader.go")
+	return os.WriteFile(outputPath, []byte(code), 0644)
+}
+
+// RegistrySync provides functionality to sync registry with various sources
+type RegistrySync struct {
+	registry registry.DynamicServiceRegistry
+	sources  []DiscoverySource
+}
+
+// DiscoverySource represents a source of service discovery information
+type DiscoverySource interface {
+	Name() string
+	DiscoverServices(ctx context.Context) ([]registry.ServiceDefinition, error)
+}
+
+// NewRegistrySync creates a new registry synchronizer
+func NewRegistrySync(reg registry.DynamicServiceRegistry) *RegistrySync {
+	return &RegistrySync{
+		registry: reg,
+		sources:  make([]DiscoverySource, 0),
+	}
+}
+
+// AddSource adds a discovery source
+func (rs *RegistrySync) AddSource(source DiscoverySource) {
+	rs.sources = append(rs.sources, source)
+}
+
+// SyncAll synchronizes the registry with all sources
+func (rs *RegistrySync) SyncAll(ctx context.Context) error {
+	for _, source := range rs.sources {
+		fmt.Printf("Syncing from source: %s\n", source.Name())
+		
+		services, err := source.DiscoverServices(ctx)
+		if err != nil {
+			fmt.Printf("Warning: Failed to discover from %s: %v\n", source.Name(), err)
+			continue
+		}
+
+		for _, service := range services {
+			if err := rs.registry.MergeWithExisting(service); err != nil {
+				fmt.Printf("Warning: Failed to merge service %s: %v\n", service.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// Template for registry loader
+const registryLoaderTemplate = `// Code generated by integration.go. DO NOT EDIT.
+
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/jlgore/corkscrew/plugins/aws-provider/registry"
+)
+
+// LoadServiceRegistry loads the service registry from various sources
+func LoadServiceRegistry() (registry.DynamicServiceRegistry, error) {
+	// Determine registry file path
+	registryPath := getRegistryPath()
+
+	// Create registry configuration
+	config := registry.RegistryConfig{
+		PersistencePath:     registryPath,
+		AutoPersist:         true,
+		EnableCache:         true,
+		CacheTTL:            300, // 5 minutes
+		MaxCacheSize:        1000,
+		UseFallbackServices: true,
+		EnableValidation:    true,
+		EnableMetrics:       true,
+	}
+
+	// Create registry
+	reg := registry.NewServiceRegistry(config)
+
+	// Load from file if exists
+	if _, err := os.Stat(registryPath); err == nil {
+		fmt.Printf("Loading registry from: %s\n", registryPath)
+	} else {
+		fmt.Println("No existing registry found, starting with defaults")
+	}
+
+	return reg, nil
+}
+
+// getRegistryPath determines the registry file path
+func getRegistryPath() string {
+	// Check environment variable
+	if path := os.Getenv("CORKSCREW_REGISTRY_PATH"); path != "" {
+		return path
+	}
+
+	// Check home directory
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".corkscrew", "aws-services.json")
+	}
+
+	// Fallback to /tmp
+	return "/tmp/corkscrew-aws-services.json"
+}
+
+// InitializeRegistry initializes the registry with discovery sources
+func InitializeRegistry(reg registry.DynamicServiceRegistry) error {
+	// This would be called during plugin initialization
+	// to set up discovery sources and perform initial sync
+	return nil
+}
+`

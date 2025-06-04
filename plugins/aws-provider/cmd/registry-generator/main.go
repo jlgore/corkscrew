@@ -32,7 +32,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/runtime"
-	"github.com/jlgore/corkscrew/plugins/aws-provider/generated/scanners"
 	"golang.org/x/time/rate"
 )
 

@@ -73,11 +73,11 @@ type PaginationPattern struct {
 	MaxPageSize     int    `json:"max_page_size"`     // Maximum allowed page size
 }
 
-// OperationType represents the type of AWS operation
-type OperationType int
+// AnalysisOperationType represents the type of AWS operation for analysis
+type AnalysisOperationType int
 
 const (
-	OpTypeUnknown OperationType = iota
+	OpTypeUnknown AnalysisOperationType = iota
 	OpTypeList
 	OpTypeDescribe
 	OpTypeGet
@@ -94,7 +94,7 @@ const (
 )
 
 // String returns the string representation of an operation type
-func (op OperationType) String() string {
+func (op AnalysisOperationType) String() string {
 	switch op {
 	case OpTypeList:
 		return "List"
@@ -128,8 +128,8 @@ func (op OperationType) String() string {
 }
 
 // GetOperationType determines the operation type from the operation name
-func GetOperationType(operationName string) OperationType {
-	prefixes := map[string]OperationType{
+func GetOperationType(operationName string) AnalysisOperationType {
+	prefixes := map[string]AnalysisOperationType{
 		"List":     OpTypeList,
 		"Describe": OpTypeDescribe,
 		"Get":      OpTypeGet,
@@ -155,7 +155,7 @@ func GetOperationType(operationName string) OperationType {
 }
 
 // ExtractResourceType extracts the resource type from an operation name
-func ExtractResourceType(operationName string, opType OperationType) string {
+func ExtractResourceType(operationName string, opType AnalysisOperationType) string {
 	prefix := opType.String()
 	if len(operationName) > len(prefix) {
 		resourceType := operationName[len(prefix):]

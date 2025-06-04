@@ -1,0 +1,22 @@
+# Backup directories created by migration scripts
+backup/
+
+# Generated scanners (optional)
+generated/scanners/
+
+# Test binaries
+*.test
+
+# Temporary files
+*.tmp
+*.temp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

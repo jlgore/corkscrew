@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -16,8 +14,7 @@ import (
 type ReflectionExecutor struct {
 	// Cache for method lookups
 	methodCache map[string]reflect.Method
-	// Database for API action logging
-	dbLogger *db.GraphLoader
+	// Note: API action logging has been moved to the main CLI
 }
 
 // NewReflectionExecutor creates a new reflection executor
@@ -27,11 +24,11 @@ func NewReflectionExecutor() *ReflectionExecutor {
 	}
 }
 
-// NewReflectionExecutorWithLogging creates a new reflection executor with DuckDB logging
-func NewReflectionExecutorWithLogging(dbLogger *db.GraphLoader) *ReflectionExecutor {
+// NewReflectionExecutorWithLogging is deprecated - logging is now handled by the main CLI
+// This function remains for backward compatibility but ignores the dbLogger parameter
+func NewReflectionExecutorWithLogging(dbLogger interface{}) *ReflectionExecutor {
 	return &ReflectionExecutor{
 		methodCache: make(map[string]reflect.Method),
-		dbLogger:    dbLogger,
 	}
 }
 
@@ -66,36 +63,22 @@ func (r *ReflectionExecutor) ExecuteListOperation(ctx context.Context, client in
 		inputValue,
 	}
 
-	start := time.Now()
 	results := method.Func.Call(args)
-	duration := time.Since(start)
 
 	if len(results) != 2 {
 		return nil, fmt.Errorf("unexpected number of return values from %s", operation.Name)
 	}
 
 	// Check for error
-	success := results[1].IsNil()
-	var errorMsg string
-	if !success {
+	if !results[1].IsNil() {
 		err := results[1].Interface().(error)
-		errorMsg = err.Error()
-		
-		// Log the failed API call
-		r.logAPIAction(ctx, operation, region, false, duration, 0, errorMsg)
+		// API action logging is now handled by the main CLI
 		return nil, fmt.Errorf("AWS API call failed: %w", err)
 	}
 
 	// Extract resources from output
 	output := results[0].Interface()
 	resourceRefs, err := r.extractResourceRefs(output, operation.ResourceType, region)
-	
-	// Log the successful API call
-	resourceCount := 0
-	if err == nil {
-		resourceCount = len(resourceRefs)
-	}
-	r.logAPIAction(ctx, operation, region, true, duration, resourceCount, "")
 	
 	return resourceRefs, err
 }
@@ -523,47 +506,8 @@ func (r *ReflectionExecutor) structToMap(obj interface{}) map[string]interface{}
 	return result
 }
 
-// logAPIAction logs an API action execution to DuckDB if logging is enabled
+// logAPIAction is deprecated - API action logging is now handled by the main CLI
+// This method is kept for backward compatibility but does nothing
 func (r *ReflectionExecutor) logAPIAction(ctx context.Context, operation AWSOperation, region string, success bool, duration time.Duration, resourceCount int, errorMsg string) {
-	if r.dbLogger == nil {
-		return // Logging not enabled
-	}
-
-	// Determine operation type
-	opType := "Unknown"
-	switch {
-	case operation.IsList:
-		opType = "List"
-	case operation.IsDescribe:
-		opType = "Describe"
-	case operation.IsGet:
-		opType = "Get"
-	}
-
-	record := db.APIActionRecord{
-		ID:            uuid.New().String(),
-		Service:       operation.Method[:len(operation.Method)-len(operation.Name)], // Extract service from method
-		OperationName: operation.Name,
-		OperationType: opType,
-		ExecutionTime: time.Now().Format(time.RFC3339),
-		Region:        region,
-		Success:       success,
-		DurationMs:    duration.Milliseconds(),
-		ResourceCount: resourceCount,
-		ErrorMessage:  errorMsg,
-		Metadata: map[string]interface{}{
-			"input_type":    operation.InputType,
-			"output_type":   operation.OutputType,
-			"resource_type": operation.ResourceType,
-			"paginated":     operation.Paginated,
-		},
-	}
-
-	// Log asynchronously to avoid blocking the main operation
-	go func() {
-		if err := r.dbLogger.LogAPIAction(context.Background(), record); err != nil {
-			// Log the error but don't fail the operation
-			fmt.Printf("Failed to log API action: %v\n", err)
-		}
-	}()
+	// API action logging has been moved to the main CLI to avoid database locking conflicts
 }
