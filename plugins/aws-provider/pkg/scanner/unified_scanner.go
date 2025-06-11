@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -20,14 +21,26 @@ type UnifiedScanner struct {
 	explorer             ResourceExplorer
 	relationshipExtractor RelationshipExtractor
 	serviceRegistry      ServiceRegistry
+	accountID            string
 	mu                   sync.RWMutex
+}
+
+// GetMetrics returns empty metrics for compatibility
+func (s *UnifiedScanner) GetMetrics() interface{} {
+	return struct{}{}
 }
 
 // NewUnifiedScanner creates a new unified scanner
 func NewUnifiedScanner(clientFactory ClientFactory) *UnifiedScanner {
-	return &UnifiedScanner{
+	scanner := &UnifiedScanner{
 		clientFactory: clientFactory,
 	}
+	
+	// Try to get account ID using STS
+	ctx := context.Background()
+	scanner.initializeAccountID(ctx)
+	
+	return scanner
 }
 
 // SetServiceRegistry sets the service registry for dynamic resource type discovery
@@ -49,6 +62,37 @@ func (s *UnifiedScanner) SetRelationshipExtractor(extractor RelationshipExtracto
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.relationshipExtractor = extractor
+}
+
+// initializeAccountID retrieves the AWS account ID using STS
+func (s *UnifiedScanner) initializeAccountID(ctx context.Context) {
+	// Try to get STS client from factory
+	stsClient := s.clientFactory.GetClient("sts")
+	if stsClient == nil {
+		log.Printf("WARNING: Unable to get STS client for account ID retrieval")
+		return
+	}
+	
+	// Type assert to STS client
+	client, ok := stsClient.(*sts.Client)
+	if !ok {
+		log.Printf("WARNING: STS client type assertion failed")
+		return
+	}
+	
+	// Get caller identity
+	resp, err := client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		log.Printf("WARNING: Failed to get caller identity: %v", err)
+		return
+	}
+	
+	if resp.Account != nil {
+		s.mu.Lock()
+		s.accountID = *resp.Account
+		s.mu.Unlock()
+		log.Printf("INFO: Successfully retrieved AWS account ID: %s", s.accountID)
+	}
 }
 
 // ScanService scans all resources for a specific service
@@ -301,6 +345,11 @@ func (s *UnifiedScanner) extractResources(output interface{}, serviceName, opNam
 func (s *UnifiedScanner) extractResourcesFromSlice(sliceValue reflect.Value, serviceName, fieldName string) []*pb.ResourceRef {
 	var resources []*pb.ResourceRef
 
+	// Special handling for S3 Buckets field
+	if serviceName == "s3" && strings.ToLower(fieldName) == "buckets" {
+		log.Printf("DEBUG: Processing S3 Buckets slice with %d items", sliceValue.Len())
+	}
+
 	for i := 0; i < sliceValue.Len(); i++ {
 		item := sliceValue.Index(i)
 		if resource := s.extractResourceFromItem(item, serviceName, fieldName); resource != nil {
@@ -326,8 +375,12 @@ func (s *UnifiedScanner) extractResourceFromItem(item reflect.Value, serviceName
 
 	resource := &pb.ResourceRef{
 		Service:         serviceName,
+		AccountId:       s.accountID,
 		BasicAttributes: make(map[string]string),
 	}
+
+	// Debug logging
+	log.Printf("DEBUG extractResourceFromItem: serviceName=%s, fieldName=%s, itemType=%s", serviceName, fieldName, item.Type().String())
 
 	// Extract fields from the struct
 	itemType := item.Type()
@@ -344,6 +397,10 @@ func (s *UnifiedScanner) extractResourceFromItem(item reflect.Value, serviceName
 		s.extractFieldValue(field, fieldName, resource)
 	}
 
+	// Debug logging
+	log.Printf("DEBUG after field extraction: service=%s, type=%s, name=%s, id=%s", 
+		resource.Service, resource.Type, resource.Name, resource.Id)
+
 	// Infer resource type from field name or existing data
 	if resource.Type == "" {
 		resource.Type = s.inferResourceType(serviceName, fieldName)
@@ -354,8 +411,22 @@ func (s *UnifiedScanner) extractResourceFromItem(item reflect.Value, serviceName
 		resource.Name = s.extractNameFromId(resource.Id)
 	}
 
+	// Debug before ARN generation
+	log.Printf("DEBUG before ensureARNAsID: service=%s, type=%s, name=%s, id=%s", 
+		resource.Service, resource.Type, resource.Name, resource.Id)
+
 	// Generate ARN if not provided and use as unique ID
 	s.ensureARNAsID(resource, serviceName)
+
+	// For S3 buckets, manually store ARN in BasicAttributes since AWS SDK doesn't provide it
+	if serviceName == "s3" && resource.Type == "Bucket" && strings.HasPrefix(resource.Id, "arn:") {
+		resource.BasicAttributes["arn"] = resource.Id
+		log.Printf("🔧 MANUAL ARN FIX: Stored S3 bucket ARN in BasicAttributes: %s", resource.Id)
+	}
+
+	// Debug after ARN generation
+	log.Printf("DEBUG after ensureARNAsID: service=%s, type=%s, name=%s, id=%s, basicAttrs=%v", 
+		resource.Service, resource.Type, resource.Name, resource.Id, resource.BasicAttributes)
 
 	return resource
 }
@@ -669,14 +740,26 @@ func (s *UnifiedScanner) extractNameFromId(id string) string {
 
 // ensureARNAsID ensures the resource has an ARN as its ID for uniqueness
 func (s *UnifiedScanner) ensureARNAsID(resource *pb.ResourceRef, serviceName string) {
+	log.Printf("DEBUG ensureARNAsID: service=%s, type=%s, id=%s, name=%s", 
+		serviceName, resource.Type, resource.Id, resource.Name)
+	
 	// If ID is already an ARN, we're good
 	if strings.HasPrefix(resource.Id, "arn:") {
+		return
+	}
+
+	// For S3 buckets, use the name as the identifier if ID is empty
+	if serviceName == "s3" && resource.Type == "Bucket" && resource.Id == "" && resource.Name != "" {
+		log.Printf("DEBUG: S3 bucket - using name as identifier: %s", resource.Name)
+		resource.Id = s.generateARN(serviceName, resource.Type, resource.Name, resource.Region)
 		return
 	}
 
 	// Generate ARN based on service and resource type
 	if resource.Id != "" {
 		resource.Id = s.generateARN(serviceName, resource.Type, resource.Id, resource.Region)
+	} else {
+		log.Printf("DEBUG: Cannot generate ARN - no ID available")
 	}
 }
 
@@ -686,17 +769,28 @@ func (s *UnifiedScanner) generateARN(service, resourceType, resourceId, region s
 		return ""
 	}
 
+	// Get account ID
+	s.mu.RLock()
+	accountID := s.accountID
+	s.mu.RUnlock()
+	
+	// S3 buckets have a special ARN format without region/account
+	if service == "s3" && resourceType == "Bucket" {
+		return fmt.Sprintf("arn:aws:s3:::%s", resourceId)
+	}
+
 	// Handle services that don't use regions
-	if service == "iam" || service == "s3" {
-		region = ""
+	if service == "iam" {
+		return fmt.Sprintf("arn:aws:iam::%s:%s/%s", accountID, strings.ToLower(resourceType), resourceId)
 	}
 
 	// Default region if not specified
-	if region == "" && service != "iam" && service != "s3" {
+	if region == "" {
 		region = "us-east-1"
 	}
 
-	return fmt.Sprintf("arn:aws:%s:%s::%s/%s", service, region, resourceType, resourceId)
+	// Standard ARN format
+	return fmt.Sprintf("arn:aws:%s:%s:%s:%s/%s", service, region, accountID, strings.ToLower(resourceType), resourceId)
 }
 
 // DescribeResource provides detailed information about a specific resource
@@ -711,16 +805,19 @@ func (s *UnifiedScanner) DescribeResource(ctx context.Context, resourceRef *pb.R
 		Id:           resourceRef.Id,
 		Name:         resourceRef.Name,
 		Region:       resourceRef.Region,
+		AccountId:    resourceRef.AccountId,
 		Tags:         make(map[string]string),
 		DiscoveredAt: timestamppb.Now(),
 	}
 
-	// Extract tags from basic attributes
+	// Extract tags and ARN from basic attributes
 	if resourceRef.BasicAttributes != nil {
 		for k, v := range resourceRef.BasicAttributes {
 			if strings.HasPrefix(k, "tag_") {
 				tagName := strings.TrimPrefix(k, "tag_")
 				resource.Tags[tagName] = v
+			} else if k == "arn" {
+				resource.Arn = v
 			}
 		}
 	}
@@ -1073,4 +1170,11 @@ func (s *UnifiedScanner) ExtractRelationships(resources []*pb.ResourceRef) []*pb
 		return nil
 	}
 	return extractor.ExtractFromMultipleResources(resources)
+}
+
+// GetAccountID returns the AWS account ID
+func (s *UnifiedScanner) GetAccountID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.accountID
 }

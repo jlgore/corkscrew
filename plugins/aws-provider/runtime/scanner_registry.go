@@ -16,28 +16,9 @@ import (
 type UnifiedScannerProvider interface {
 	ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error)
 	DescribeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error)
+	GetMetrics() interface{} // Optional metrics support
 }
 
-// ScannerFunc is the function signature for service scanners
-type ScannerFunc func(ctx context.Context, cfg aws.Config, region string) ([]*pb.Resource, error)
-
-// ServiceScanner represents a scanner for a specific AWS service
-type ServiceScanner interface {
-	// ServiceName returns the name of the AWS service
-	ServiceName() string
-	
-	// ResourceTypes returns the types of resources this scanner can discover
-	ResourceTypes() []string
-	
-	// Scan performs the resource discovery
-	Scan(ctx context.Context, cfg aws.Config, region string) ([]*pb.Resource, error)
-	
-	// SupportsPagination indicates if the scanner supports pagination
-	SupportsPagination() bool
-	
-	// SupportsResourceExplorer indicates if the scanner can use Resource Explorer
-	SupportsResourceExplorer() bool
-}
 
 // ScannerMetadata contains metadata about a scanner
 type ScannerMetadata struct {
@@ -50,28 +31,24 @@ type ScannerMetadata struct {
 	BurstLimit          int
 }
 
-// ScannerRegistry manages all available service scanners
+// ScannerRegistry manages the unified scanner and rate limiting
 type ScannerRegistry struct {
-	mu       sync.RWMutex
-	scanners map[string]ServiceScanner
-	metadata map[string]*ScannerMetadata
+	unifiedScanner UnifiedScannerProvider
+	mu             sync.RWMutex
 	
-	// Rate limiting
+	// Rate limiting per service
 	limiters map[string]*rate.Limiter
+	metadata map[string]*ScannerMetadata
 	
 	// Configuration
 	defaultRateLimit  rate.Limit
 	defaultBurstLimit int
-	
-	// Unified scanner for dynamic resource discovery
-	unifiedScanner UnifiedScannerProvider
 }
 
 // NewScannerRegistry creates a new scanner registry
 func NewScannerRegistry() *ScannerRegistry {
 	log.Printf("DEBUG: NewScannerRegistry() called")
 	return &ScannerRegistry{
-		scanners:          make(map[string]ServiceScanner),
 		metadata:          make(map[string]*ScannerMetadata),
 		limiters:          make(map[string]*rate.Limiter),
 		defaultRateLimit:  rate.Limit(10), // 10 requests per second
@@ -79,17 +56,11 @@ func NewScannerRegistry() *ScannerRegistry {
 	}
 }
 
-// Register adds a scanner to the registry
-func (r *ScannerRegistry) Register(scanner ServiceScanner, metadata *ScannerMetadata) error {
+// RegisterServiceMetadata registers metadata for a service (for rate limiting)
+func (r *ScannerRegistry) RegisterServiceMetadata(serviceName string, metadata *ScannerMetadata) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	
-	serviceName := scanner.ServiceName()
-	if _, exists := r.scanners[serviceName]; exists {
-		return fmt.Errorf("scanner for service %s already registered", serviceName)
-	}
-	
-	r.scanners[serviceName] = scanner
 	r.metadata[serviceName] = metadata
 	
 	// Create rate limiter for the service
@@ -106,27 +77,6 @@ func (r *ScannerRegistry) Register(scanner ServiceScanner, metadata *ScannerMeta
 	}
 	
 	r.limiters[serviceName] = rate.NewLimiter(rateLimit, burstLimit)
-	
-	return nil
-}
-
-// RegisterFunc registers a scanner function
-func (r *ScannerRegistry) RegisterFunc(serviceName string, scanFunc ScannerFunc, metadata *ScannerMetadata) error {
-	scanner := &functionScanner{
-		serviceName: serviceName,
-		scanFunc:    scanFunc,
-		metadata:    metadata,
-	}
-	return r.Register(scanner, metadata)
-}
-
-// Get returns a scanner for the specified service
-func (r *ScannerRegistry) Get(serviceName string) (ServiceScanner, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	
-	scanner, exists := r.scanners[serviceName]
-	return scanner, exists
 }
 
 // GetMetadata returns metadata for a service scanner
@@ -138,13 +88,13 @@ func (r *ScannerRegistry) GetMetadata(serviceName string) (*ScannerMetadata, boo
 	return metadata, exists
 }
 
-// ListServices returns all registered service names
+// ListServices returns all services with registered metadata
 func (r *ScannerRegistry) ListServices() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	
-	services := make([]string, 0, len(r.scanners))
-	for service := range r.scanners {
+	services := make([]string, 0, len(r.metadata))
+	for service := range r.metadata {
 		services = append(services, service)
 	}
 	return services
@@ -163,92 +113,87 @@ func (r *ScannerRegistry) GetRateLimiter(serviceName string) *rate.Limiter {
 	return rate.NewLimiter(r.defaultRateLimit, r.defaultBurstLimit)
 }
 
-// ScanService scans a single service with rate limiting
-func (r *ScannerRegistry) ScanService(ctx context.Context, serviceName string, cfg aws.Config, region string) ([]*pb.Resource, error) {
+// ScanServiceUnified scans a single service using UnifiedScanner exclusively
+func (r *ScannerRegistry) ScanServiceUnified(ctx context.Context, serviceName string, cfg aws.Config, region string) ([]*pb.Resource, error) {
 	// Apply rate limiting
 	limiter := r.GetRateLimiter(serviceName)
 	if err := limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit wait failed: %w", err)
 	}
 	
-	// Use UnifiedScanner directly if available
-	if r.unifiedScanner != nil {
-		// Get ResourceRefs from UnifiedScanner
-		resourceRefs, err := r.unifiedScanner.ScanService(ctx, serviceName)
+	r.mu.RLock()
+	scanner := r.unifiedScanner
+	r.mu.RUnlock()
+	
+	if scanner == nil {
+		return nil, fmt.Errorf("unified scanner not configured")
+	}
+	
+	// Performance tracking
+	scanStart := time.Now()
+	
+	// Scan and enrich in one pass
+	refs, err := scanner.ScanService(ctx, serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("scan failed for %s: %w", serviceName, err)
+	}
+	
+	scanDuration := time.Since(scanStart)
+	log.Printf("Performance: %s scan phase completed in %v, found %d resources", serviceName, scanDuration, len(refs))
+	
+	// Convert refs to full resources with configuration
+	enrichStart := time.Now()
+	resources := make([]*pb.Resource, 0, len(refs))
+	
+	for i, ref := range refs {
+		// Set region on ref if not already set
+		if ref.Region == "" {
+			ref.Region = region
+		}
+		
+		resource, err := scanner.DescribeResource(ctx, ref)
 		if err != nil {
-			return nil, err
-		}
-		
-		// Convert ResourceRefs to Resources with enrichment
-		resources := make([]*pb.Resource, 0, len(resourceRefs))
-		for _, ref := range resourceRefs {
-			// Get enriched resource directly (no callbacks)
-			resource, err := r.unifiedScanner.DescribeResource(ctx, ref)
-			if err != nil {
-				log.Printf("Failed to enrich %s: %v", ref.Id, err)
-				// Create basic resource on enrichment failure
-				resource = &pb.Resource{
-					Provider: "aws",
-					Service:  ref.Service,
-					Type:     ref.Type,
-					Id:       ref.Id,
-					Name:     ref.Name,
-					Region:   ref.Region,
-					Tags:     make(map[string]string),
+			log.Printf("Failed to enrich resource %s: %v", ref.Id, err)
+			// Create basic resource on enrichment failure
+			resource = &pb.Resource{
+				Provider: "aws",
+				Service:  ref.Service,
+				Type:     ref.Type,
+				Id:       ref.Id,
+				Name:     ref.Name,
+				Region:   ref.Region,
+				Tags:     make(map[string]string),
+			}
+			
+			// Copy ARN from BasicAttributes if available
+			if ref.BasicAttributes != nil {
+				if arn, exists := ref.BasicAttributes["arn"]; exists {
+					resource.Arn = arn
 				}
 			}
-			resources = append(resources, resource)
 		}
 		
-		return resources, nil
-	}
-	
-	// Fallback to registered scanner if exists
-	scanner, exists := r.Get(serviceName)
-	if !exists {
-		// For unknown services, try to use UnifiedScanner anyway if available
-		if r.unifiedScanner != nil {
-			log.Printf("No registered scanner for %s, attempting with UnifiedScanner anyway", serviceName)
-			// Create a temporary rate limiter for this service
-			r.mu.Lock()
-			if _, hasLimiter := r.limiters[serviceName]; !hasLimiter {
-				r.limiters[serviceName] = rate.NewLimiter(r.defaultRateLimit, r.defaultBurstLimit)
-			}
-			r.mu.Unlock()
-			
-			// Try UnifiedScanner again for unknown services
-			resourceRefs, err := r.unifiedScanner.ScanService(ctx, serviceName)
-			if err != nil {
-				return nil, fmt.Errorf("unified scanner failed for service %s: %w", serviceName, err)
-			}
-			
-			// Convert ResourceRefs to Resources with enrichment
-			resources := make([]*pb.Resource, 0, len(resourceRefs))
-			for _, ref := range resourceRefs {
-				resource, err := r.unifiedScanner.DescribeResource(ctx, ref)
-				if err != nil {
-					log.Printf("Failed to enrich %s: %v", ref.Id, err)
-					// Create basic resource on enrichment failure
-					resource = &pb.Resource{
-						Provider: "aws",
-						Service:  ref.Service,
-						Type:     ref.Type,
-						Id:       ref.Id,
-						Name:     ref.Name,
-						Region:   ref.Region,
-						Tags:     make(map[string]string),
-					}
-				}
-				resources = append(resources, resource)
-			}
-			
-			return resources, nil
-		}
+		resources = append(resources, resource)
 		
-		return nil, fmt.Errorf("no scanner available for service: %s", serviceName)
+		// Log performance for every 10th resource
+		if (i+1)%10 == 0 {
+			avgTime := time.Since(enrichStart) / time.Duration(i+1)
+			log.Printf("Performance: Enriched %d/%d resources, avg %v per resource", i+1, len(refs), avgTime)
+		}
 	}
 	
-	return scanner.Scan(ctx, cfg, region)
+	enrichDuration := time.Since(enrichStart)
+	totalDuration := time.Since(scanStart)
+	
+	log.Printf("Performance: %s completed - Scan: %v, Enrich: %v, Total: %v for %d resources", 
+		serviceName, scanDuration, enrichDuration, totalDuration, len(resources))
+	
+	return resources, nil
+}
+
+// ScanService is deprecated - use ScanServiceUnified
+func (r *ScannerRegistry) ScanService(ctx context.Context, serviceName string, cfg aws.Config, region string) ([]*pb.Resource, error) {
+	return r.ScanServiceUnified(ctx, serviceName, cfg, region)
 }
 
 // ScanMultipleServices scans multiple services concurrently
@@ -260,6 +205,8 @@ func (r *ScannerRegistry) ScanMultipleServices(ctx context.Context, services []s
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 	
+	startTime := time.Now()
+	
 	for _, service := range services {
 		wg.Add(1)
 		go func(svc string) {
@@ -270,7 +217,7 @@ func (r *ScannerRegistry) ScanMultipleServices(ctx context.Context, services []s
 			defer func() { <-sem }()
 			
 			// Scan service
-			resources, err := r.ScanService(ctx, svc, cfg, region)
+			resources, err := r.ScanServiceUnified(ctx, svc, cfg, region)
 			
 			// Store results
 			mu.Lock()
@@ -284,39 +231,18 @@ func (r *ScannerRegistry) ScanMultipleServices(ctx context.Context, services []s
 	}
 	
 	wg.Wait()
+	
+	totalResources := 0
+	for _, resources := range results {
+		totalResources += len(resources)
+	}
+	
+	log.Printf("Performance: Scanned %d services in %v, found %d total resources (%d errors)", 
+		len(services), time.Since(startTime), totalResources, len(errors))
+	
 	return results, errors
 }
 
-// functionScanner wraps a scanner function to implement ServiceScanner
-type functionScanner struct {
-	serviceName string
-	scanFunc    ScannerFunc
-	metadata    *ScannerMetadata
-}
-
-func (f *functionScanner) ServiceName() string {
-	return f.serviceName
-}
-
-func (f *functionScanner) ResourceTypes() []string {
-	if f.metadata != nil {
-		return f.metadata.ResourceTypes
-	}
-	return []string{}
-}
-
-func (f *functionScanner) Scan(ctx context.Context, cfg aws.Config, region string) ([]*pb.Resource, error) {
-	return f.scanFunc(ctx, cfg, region)
-}
-
-func (f *functionScanner) SupportsPagination() bool {
-	return f.metadata != nil && f.metadata.SupportsPagination
-}
-
-func (f *functionScanner) SupportsResourceExplorer() bool {
-	// Function scanners typically don't support Resource Explorer
-	return false
-}
 
 // BatchScanner provides batch scanning capabilities
 type BatchScanner struct {
@@ -434,9 +360,7 @@ func (l *ScannerLoader) AddPath(path string) {
 func (l *ScannerLoader) LoadAll() error {
 	log.Printf("Scanner loader: Using UnifiedScanner for all services")
 	
-	// Don't try to load generated scanners
-	// Instead, register service metadata for rate limiting
-	
+	// Register service metadata for rate limiting
 	services := []struct {
 		name       string
 		rateLimit  rate.Limit
@@ -468,7 +392,7 @@ func (l *ScannerLoader) LoadAll() error {
 		// Add more services as needed
 	}
 	
-	// Register metadata only (no actual scanners)
+	// Register metadata for each service
 	for _, svc := range services {
 		metadata := &ScannerMetadata{
 			ServiceName:          svc.name,
@@ -480,11 +404,7 @@ func (l *ScannerLoader) LoadAll() error {
 			ResourceTypes:        getResourceTypesForService(svc.name),
 		}
 		
-		// Store metadata without scanner
-		l.registry.mu.Lock()
-		l.registry.metadata[svc.name] = metadata
-		l.registry.limiters[svc.name] = rate.NewLimiter(svc.rateLimit, svc.burstLimit)
-		l.registry.mu.Unlock()
+		l.registry.RegisterServiceMetadata(svc.name, metadata)
 	}
 	
 	log.Printf("Registered rate limiters for %d services", len(services))

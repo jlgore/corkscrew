@@ -1,0 +1,142 @@
+# Corkscrew Configuration Example
+# This file demonstrates all available configuration options
+version: "1.0"
+
+providers:
+  aws:
+    # Service discovery mode: manual, auto, hybrid
+    # - manual: Only use explicitly included services
+    # - auto: Auto-discover from go.mod and AWS SDK
+    # - hybrid: Combine manual list with auto-discovered services
+    discovery_mode: hybrid
+    
+    # Manually specified services
+    services:
+      include:
+        # Core services (current hardcoded list)
+        - ec2
+        - s3
+        - iam
+        - lambda
+        - rds
+        - dynamodb
+        - sqs
+        - sns
+        - ecs
+        - eks
+        - cloudformation
+        - cloudwatch
+        - route53
+        - elasticloadbalancing
+        - autoscaling
+        - kms
+        - secretsmanager
+        - ssm
+        
+        # Additional commonly used services
+        - athena
+        - glue
+        - kinesis
+        - elasticache
+        - apigateway
+        - cloudtrail
+        - eventbridge
+        - stepfunctions
+        - sagemaker
+        - cloudfront
+        
+      # Services to exclude (useful in auto/hybrid mode)
+      exclude: []
+        # - chatbot  # Rarely used
+        # - gamelift # Gaming specific
+    
+    # Service groups for convenience
+    service_groups:
+      core:
+        - ec2
+        - s3
+        - iam
+        - vpc
+        
+      compute:
+        - lambda
+        - ecs
+        - eks
+        - batch
+        - lightsail
+        
+      data:
+        - rds
+        - dynamodb
+        - elasticache
+        - redshift
+        - athena
+        - glue
+        
+      networking:
+        - vpc
+        - route53
+        - cloudfront
+        - elasticloadbalancing
+        - apigateway
+        
+      security:
+        - iam
+        - kms
+        - secretsmanager
+        - guardduty
+        - shield
+        
+      monitoring:
+        - cloudwatch
+        - cloudtrail
+        - xray
+        - cloudwatchlogs
+    
+    # Analysis configuration
+    analysis:
+      # Skip services with no resources
+      skip_empty: true
+      
+      # Parallel analysis workers
+      workers: 4
+      
+      # Cache analysis results
+      cache_enabled: true
+      cache_ttl: 24h
+
+# Example configuration for other providers
+# Uncomment and modify as needed
+
+# azure:
+#   discovery_mode: manual
+#   services:
+#     include:
+#       - compute
+#       - storage
+#       - networking
+#       - identity
+#   analysis:
+#     skip_empty: true
+#     workers: 4
+
+# gcp:
+#   discovery_mode: auto
+#   services:
+#     exclude:
+#       - gameservices
+#   analysis:
+#     skip_empty: true
+#     workers: 4
+
+# kubernetes:
+#   discovery_mode: manual
+#   services:
+#     include:
+#       - core
+#       - apps
+#       - batch
+#       - networking
+#   analysis:
+#     skip_empty: false
+#     workers: 2

@@ -660,16 +660,6 @@ func (p *AzureProvider) DescribeResource(ctx context.Context, req *pb.DescribeRe
 	}, nil
 }
 
-// GenerateServiceScanners generates service-specific scanners (placeholder for future implementation)
-func (p *AzureProvider) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
-	// This would generate service-specific scanners similar to AWS
-	// For now, return empty response as Azure uses dynamic scanning
-	return &pb.GenerateScannersResponse{
-		Scanners:       []*pb.GeneratedScanner{},
-		GeneratedCount: 0,
-	}, nil
-}
-
 // Helper methods
 
 func (p *AzureProvider) normalizeServiceName(namespace string) string {
@@ -909,5 +899,121 @@ func (p *AzureProvider) GenerateFromAnalysis(ctx context.Context, req *pb.Genera
 	// Simple implementation for now
 	return &pb.GenerateResponse{
 		Success: true,
+	}, nil
+}
+
+// ScanService performs scanning for a specific Azure service
+func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	log.Printf("ScanService called for Azure service: %s", req.Service)
+
+	// Apply rate limiting
+	if err := p.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit exceeded: %w", err)
+	}
+
+	// For now, convert to BatchScanRequest and use existing logic
+	batchReq := &pb.BatchScanRequest{
+		Services: []string{req.Service},
+		Region:   req.Region,
+		Filters:  req.Filters,
+		IncludeRelationships: req.IncludeRelationships,
+	}
+
+	batchResponse, err := p.BatchScan(ctx, batchReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan Azure service %s: %w", req.Service, err)
+	}
+
+	return &pb.ScanServiceResponse{
+		Service:   req.Service,
+		Resources: batchResponse.Resources,
+		Stats:     batchResponse.Stats,
+		Errors:    batchResponse.Errors,
+	}, nil
+}
+
+// GetServiceInfo returns information about a specific Azure service
+func (p *AzureProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	log.Printf("GetServiceInfo called for Azure service: %s", req.Service)
+
+	// Use discovery to get service information
+	discoverReq := &pb.DiscoverServicesRequest{
+		IncludeServices: []string{req.Service},
+	}
+	
+	services, err := p.DiscoverServices(ctx, discoverReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover Azure services: %w", err)
+	}
+
+	// Find the requested service
+	for _, service := range services.Services {
+		if service.Name == req.Service {
+			var resourceTypes []string
+			for _, rt := range service.ResourceTypes {
+				resourceTypes = append(resourceTypes, rt.Name)
+			}
+			
+			return &pb.ServiceInfoResponse{
+				ServiceName: service.Name,
+				Version:     "v1", // Default version
+				SupportedResources: resourceTypes,
+				RequiredPermissions: service.RequiredPermissions,
+				Capabilities: map[string]string{
+					"provider":    "azure",
+					"retrieved_at": time.Now().Format(time.RFC3339),
+				},
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Azure service %s not found", req.Service)
+}
+
+// StreamScanService streams resources as they are discovered for a specific Azure service
+func (p *AzureProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
+	if !p.initialized {
+		return fmt.Errorf("provider not initialized")
+	}
+
+	ctx := stream.Context()
+	log.Printf("StreamScanService called for Azure service: %s", req.Service)
+
+	// Apply rate limiting
+	if err := p.rateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limit exceeded: %w", err)
+	}
+
+	// Use ScanService to get resources, then stream them
+	scanResponse, err := p.ScanService(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to scan Azure service %s: %w", req.Service, err)
+	}
+
+	// Stream each resource
+	for _, resource := range scanResponse.Resources {
+		if err := stream.Send(resource); err != nil {
+			return fmt.Errorf("failed to send resource: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// GenerateServiceScanners generates service-specific scanners for Azure
+func (p *AzureProvider) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
+	// This would generate service-specific scanners similar to AWS
+	// For now, return empty response
+	return &pb.GenerateScannersResponse{
+		Scanners:       []*pb.GeneratedScanner{},
+		GeneratedCount: 0,
 	}, nil
 }

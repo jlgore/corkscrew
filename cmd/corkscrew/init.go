@@ -777,7 +777,9 @@ func generateKubernetesScannersForServices(services []string, pluginDir string) 
 func generateAnalysisFilesForProvider(provider string, services []string, pluginDir string) error {
 	switch provider {
 	case "aws":
-		return generateAWSAnalysisFiles(services, pluginDir)
+		// AWS now uses integrated runtime analysis generation in UnifiedScanner
+		// Skip static analysis file generation
+		return nil
 	case "azure":
 		// Azure might use a different approach
 		return nil
@@ -789,67 +791,6 @@ func generateAnalysisFilesForProvider(provider string, services []string, plugin
 	}
 }
 
-func generateAWSAnalysisFiles(services []string, pluginDir string) error {
-	// Check if analysis generator exists
-	analyzerPath := filepath.Join(pluginDir, "cmd", "generate-analysis", "main.go")
-	if _, err := os.Stat(analyzerPath); os.IsNotExist(err) {
-		return fmt.Errorf("analysis generator not found at %s", analyzerPath)
-	}
-	
-	// Create generated directory
-	generatedDir := filepath.Join(pluginDir, "generated")
-	if err := os.MkdirAll(generatedDir, 0755); err != nil {
-		return fmt.Errorf("failed to create generated directory: %w", err)
-	}
-	
-	// Run the analysis generator
-	cmd := exec.Command("go", "run", analyzerPath, generatedDir)
-	cmd.Dir = pluginDir
-	cmd.Env = append(os.Environ(), 
-		fmt.Sprintf("AWS_SERVICES=%s", strings.Join(services, ",")),
-	)
-	
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("analysis generation failed: %w\nOutput: %s", err, output)
-	}
-	
-	// Copy analysis files to runtime location
-	homeDir, _ := os.UserHomeDir()
-	runtimeGenDir := filepath.Join(homeDir, ".corkscrew", "plugins", 
-		fmt.Sprintf("%s-provider", "aws"), "generated")
-	
-	if err := os.MkdirAll(runtimeGenDir, 0755); err != nil {
-		return fmt.Errorf("failed to create runtime generated directory: %w", err)
-	}
-	
-	// Copy all *_final.json files
-	return copyAnalysisFiles(generatedDir, runtimeGenDir)
-}
-
-// copyAnalysisFiles copies analysis files from source to destination
-func copyAnalysisFiles(srcDir, destDir string) error {
-	files, err := filepath.Glob(filepath.Join(srcDir, "*_final.json"))
-	if err != nil {
-		return fmt.Errorf("failed to find analysis files: %w", err)
-	}
-	
-	for _, file := range files {
-		basename := filepath.Base(file)
-		destFile := filepath.Join(destDir, basename)
-		
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return fmt.Errorf("failed to read analysis file %s: %w", file, err)
-		}
-		
-		if err := os.WriteFile(destFile, data, 0644); err != nil {
-			return fmt.Errorf("failed to copy analysis file to %s: %w", destFile, err)
-		}
-	}
-	
-	return nil
-}
 
 func buildPluginsFromConfig(config *InitConfig, corkscrewConfig *CorkscrewConfig) error {
 	for provider, cfg := range corkscrewConfig.Providers {
@@ -879,10 +820,15 @@ func buildPluginsFromConfig(config *InitConfig, corkscrewConfig *CorkscrewConfig
 }
 
 func buildPlugin(provider, pluginDir string) error {
-	// Use the existing autoBuildPlugin function logic
-	if err := autoBuildPlugin(provider, false); err != nil {
-		return err
+	// Build the plugin using make
+	cmd := exec.Command("make", fmt.Sprintf("plugin-%s", provider))
+	cmd.Dir = "." // Run from current directory
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to build %s plugin: %v\nOutput: %s", provider, err, string(output))
 	}
+	
 	return nil
 }
 

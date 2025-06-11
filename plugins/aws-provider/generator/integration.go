@@ -11,7 +11,7 @@ import (
 
 // RegistryIntegration provides integration between generators and the service registry
 type RegistryIntegration struct {
-	registry    registry.DynamicServiceRegistry
+	registry    *registry.UnifiedServiceRegistry
 	outputDir   string
 	generators  map[string]Generator
 }
@@ -23,7 +23,7 @@ type Generator interface {
 }
 
 // NewRegistryIntegration creates a new registry integration
-func NewRegistryIntegration(reg registry.DynamicServiceRegistry, outputDir string) *RegistryIntegration {
+func NewRegistryIntegration(reg *registry.UnifiedServiceRegistry, outputDir string) *RegistryIntegration {
 	return &RegistryIntegration{
 		registry:   reg,
 		outputDir:  outputDir,
@@ -84,17 +84,7 @@ type clientFactoryGeneratorWrapper struct {
 
 func (w *clientFactoryGeneratorWrapper) Generate() error {
 	// Generate main factory
-	if err := w.generator.GenerateClientFactory(); err != nil {
-		return err
-	}
-	
-	// Generate dynamic wrapper
-	if err := w.generator.GenerateDynamicWrapper(); err != nil {
-		return err
-	}
-	
-	// Generate reflection fallback
-	return w.generator.GenerateReflectionFallback()
+	return w.generator.GenerateClientFactory()
 }
 
 func (w *clientFactoryGeneratorWrapper) GetName() string {
@@ -114,7 +104,7 @@ func (w *buildTagGeneratorWrapper) GetName() string {
 }
 
 type registryLoaderGeneratorWrapper struct {
-	registry  registry.DynamicServiceRegistry
+	registry  *registry.UnifiedServiceRegistry
 	outputDir string
 }
 
@@ -127,7 +117,7 @@ func (w *registryLoaderGeneratorWrapper) GetName() string {
 }
 
 // generateRegistryLoader generates code to load the registry at startup
-func generateRegistryLoader(reg registry.DynamicServiceRegistry, outputDir string) error {
+func generateRegistryLoader(reg *registry.UnifiedServiceRegistry, outputDir string) error {
 	code := registryLoaderTemplate
 
 	outputPath := filepath.Join(outputDir, "registry_loader.go")
@@ -136,7 +126,7 @@ func generateRegistryLoader(reg registry.DynamicServiceRegistry, outputDir strin
 
 // RegistrySync provides functionality to sync registry with various sources
 type RegistrySync struct {
-	registry registry.DynamicServiceRegistry
+	registry *registry.UnifiedServiceRegistry
 	sources  []DiscoverySource
 }
 
@@ -147,7 +137,7 @@ type DiscoverySource interface {
 }
 
 // NewRegistrySync creates a new registry synchronizer
-func NewRegistrySync(reg registry.DynamicServiceRegistry) *RegistrySync {
+func NewRegistrySync(reg *registry.UnifiedServiceRegistry) *RegistrySync {
 	return &RegistrySync{
 		registry: reg,
 		sources:  make([]DiscoverySource, 0),
@@ -194,7 +184,7 @@ import (
 )
 
 // LoadServiceRegistry loads the service registry from various sources
-func LoadServiceRegistry() (registry.DynamicServiceRegistry, error) {
+func LoadServiceRegistry() (*registry.UnifiedServiceRegistry, error) {
 	// Determine registry file path
 	registryPath := getRegistryPath()
 
@@ -210,8 +200,11 @@ func LoadServiceRegistry() (registry.DynamicServiceRegistry, error) {
 		EnableMetrics:       true,
 	}
 
-	// Create registry
-	reg := registry.NewServiceRegistry(config)
+	// Create AWS config 
+	awsConfig := aws.Config{} // This should be properly configured
+	
+	// Create unified registry
+	reg := registry.NewUnifiedServiceRegistry(awsConfig, config)
 
 	// Load from file if exists
 	if _, err := os.Stat(registryPath); err == nil {
@@ -240,7 +233,7 @@ func getRegistryPath() string {
 }
 
 // InitializeRegistry initializes the registry with discovery sources
-func InitializeRegistry(reg registry.DynamicServiceRegistry) error {
+func InitializeRegistry(reg *registry.UnifiedServiceRegistry) error {
 	// This would be called during plugin initialization
 	// to set up discovery sources and perform initial sync
 	return nil

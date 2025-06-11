@@ -147,7 +147,8 @@ message ResourceRef {
   string type = 3;
   string service = 4;
   string region = 5;
-  map<string, string> basic_attributes = 6;
+  string account_id = 6;
+  map<string, string> basic_attributes = 7;
 }
 
 message DescribeResourceRequest {

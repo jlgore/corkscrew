@@ -94,6 +94,10 @@ export PATH="$HOME/.corkscrew/bin:$PATH"
 ### Basic Usage
 
 ```bash
+# Initialize corkscrew and create configuration
+./corkscrew init
+./corkscrew config init
+
 # Show provider information
 ./corkscrew info
 
@@ -106,10 +110,35 @@ export PATH="$HOME/.corkscrew/bin:$PATH"
 # Scan multiple services
 ./corkscrew scan --services s3,ec2 --verbose
 
+# Scan all configured services
+./corkscrew scan --verbose
+
 # Scan with specific region
 export AWS_REGION=us-east-1
 ./corkscrew scan --services iam --verbose
 ```
+
+### Configuration
+
+Corkscrew now supports flexible service configuration. You can specify which services to analyze via:
+
+- Configuration file (`corkscrew.yaml`)
+- Environment variables (`CORKSCREW_AWS_SERVICES`)
+- Command-line arguments
+
+```bash
+# View current configuration
+./corkscrew config show
+
+# Validate configuration
+./corkscrew config validate
+
+# Use environment variable to override services
+export CORKSCREW_AWS_SERVICES="s3,ec2,lambda,rds"
+./corkscrew scan
+```
+
+See [Configuration Guide](docs/CONFIGURATION_GUIDE.md) for detailed information.
 
 ### Plugin-Specific Usage
 

@@ -95,7 +95,7 @@ func (c *UnifiedDatabaseConfig) createAWSTable() error {
 CREATE TABLE IF NOT EXISTS aws_resources (
     -- Primary identifiers
     id VARCHAR PRIMARY KEY,                    -- AWS Resource ID/ARN
-    arn VARCHAR UNIQUE,                        -- AWS ARN (unique identifier)
+    arn VARCHAR,                               -- AWS ARN (unique identifier)
     name VARCHAR NOT NULL,                     -- Resource name
     type VARCHAR NOT NULL,                     -- Resource type (e.g., AWS::S3::Bucket)
     

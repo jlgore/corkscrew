@@ -13,15 +13,17 @@ import (
 
 // ResourceExplorer provides high-performance resource discovery using AWS Resource Explorer
 type ResourceExplorer struct {
-	client  *resourceexplorer2.Client
-	viewArn string
+	client    *resourceexplorer2.Client
+	viewArn   string
+	accountID string
 }
 
 // NewResourceExplorer creates a new Resource Explorer client
-func NewResourceExplorer(cfg aws.Config, viewArn string) *ResourceExplorer {
+func NewResourceExplorer(cfg aws.Config, viewArn, accountID string) *ResourceExplorer {
 	return &ResourceExplorer{
-		client:  resourceexplorer2.NewFromConfig(cfg),
-		viewArn: viewArn,
+		client:    resourceexplorer2.NewFromConfig(cfg),
+		viewArn:   viewArn,
+		accountID: accountID,
 	}
 }
 
@@ -107,6 +109,7 @@ func (re *ResourceExplorer) convertResults(resources []types.Resource) []*pb.Res
 
 	for _, resource := range resources {
 		resourceRef := &pb.ResourceRef{
+			AccountId:       re.accountID,
 			BasicAttributes: make(map[string]string),
 		}
 

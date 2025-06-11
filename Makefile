@@ -34,6 +34,30 @@ deps:
 	@go mod tidy
 	@echo "✅ Dependencies installed"
 
+# =============================================================================
+# CONFIGURATION MANAGEMENT
+# =============================================================================
+
+.PHONY: config-init
+config-init:
+	@echo "🔧 Initializing corkscrew configuration..."
+	@./build/bin/corkscrew config init
+
+.PHONY: config-validate
+config-validate:
+	@echo "🔍 Validating configuration..."
+	@./build/bin/corkscrew config validate
+
+.PHONY: config-show
+config-show:
+	@echo "📋 Current configuration:"
+	@./build/bin/corkscrew config show
+
+.PHONY: config-services
+config-services:
+	@echo "📦 Configured AWS services:"
+	@./build/bin/corkscrew config show | grep -A 100 "Resolved AWS Services:"
+
 .PHONY: clean
 clean:
 	@echo "🧹 Cleaning build artifacts..."
@@ -68,7 +92,7 @@ build-plugins: build-aws-plugin build-azure-plugin build-gcp-plugin build-kubern
 build-aws-plugin: create-dirs
 	@echo "🔨 Building AWS plugin..."
 	@if [ -d "plugins/aws-provider" ]; then \
-		cd plugins/aws-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/aws-provider .; \
+		cd plugins/aws-provider && go mod tidy && go build -tags="aws_services" -o ../../$(LOCAL_BIN_DIR)/aws-provider .; \
 		echo "✅ AWS plugin built: $(LOCAL_BIN_DIR)/aws-provider"; \
 	else \
 		echo "⚠️  AWS plugin directory not found, skipping..."; \
@@ -311,6 +335,12 @@ help:
 	@echo ""
 	@echo "🛠️ Development:"
 	@echo "  make dev                    - Setup dev environment"
+	@echo ""
+	@echo "⚙️  Configuration:"
+	@echo "  make config-init            - Create default config file"
+	@echo "  make config-show            - Show current configuration"
+	@echo "  make config-validate        - Validate configuration"
+	@echo "  make config-services        - List configured services"
 	@echo "  make check                  - Code quality checks"
 	@echo "  make fmt                    - Format code"
 	@echo "  make lint                   - Lint code"

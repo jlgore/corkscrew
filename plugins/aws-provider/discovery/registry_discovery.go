@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,17 +20,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// OperationType represents the type of AWS API operation
-type OperationType int
-
-const (
-	ListOperation OperationType = iota
-	DescribeOperation
-	GetOperation
-	CreateOperation
-	UpdateOperation
-	DeleteOperation
-)
 
 // RegistryServiceMetadata holds metadata about a discovered AWS service for registry
 type RegistryServiceMetadata struct {
@@ -50,7 +40,7 @@ type RegistryDiscovery struct {
 	knownServices map[string]*RegistryServiceMetadata
 	
 	// Registry integration
-	registry      registry.DynamicServiceRegistry
+	registry      *registry.UnifiedServiceRegistry
 	registryMutex sync.RWMutex
 	
 	// Discovery caching
@@ -88,7 +78,7 @@ func NewRegistryDiscoveryWithCacheConfig(cfg aws.Config, cacheConfig CacheConfig
 }
 
 // WithRegistry adds a registry to the discovery instance
-func (d *RegistryDiscovery) WithRegistry(reg registry.DynamicServiceRegistry) *RegistryDiscovery {
+func (d *RegistryDiscovery) WithRegistry(reg *registry.UnifiedServiceRegistry) *RegistryDiscovery {
 	d.registryMutex.Lock()
 	defer d.registryMutex.Unlock()
 	d.registry = reg
@@ -173,6 +163,13 @@ func (d *RegistryDiscovery) DiscoverAndRegister(ctx context.Context) error {
 	successCount := 0
 
 	for _, service := range services {
+		// Check if service is allowed by registry filter
+		if d.registry != nil {
+			if !d.registry.IsServiceAllowed(service.Name) {
+				continue // Skip services not in filter
+			}
+		}
+
 		metadata := d.extractCompleteMetadata(service)
 		if err := d.registry.RegisterService(metadata); err != nil {
 			registrationErrors = append(registrationErrors, fmt.Errorf("failed to register %s: %w", service.Name, err))
@@ -777,8 +774,33 @@ func (d *RegistryDiscovery) getRegistryPath() string {
 }
 
 func (d *RegistryDiscovery) regenerateClientFactory() error {
+	// Create and populate registry from services.json if not configured
 	if d.registry == nil {
-		return fmt.Errorf("registry not configured")
+		log.Printf("Creating unified registry from services.json")
+		
+		// Create a basic AWS config
+		awsConfig := aws.Config{}
+		registryConfig := registry.RegistryConfig{
+			EnableCache: true,
+			PersistencePath: "./generated/unified-registry.json",
+		}
+		
+		unifiedRegistry := registry.NewUnifiedServiceRegistry(awsConfig, registryConfig)
+		
+		// Load services from generated/services.json using JSON adapter
+		servicesPath := filepath.Join("./generated", "services.json")
+		jsonAdapter := registry.NewJSONServiceRegistry()
+		if err := jsonAdapter.LoadFromServicesJSON(servicesPath); err != nil {
+			log.Printf("Warning: Failed to load services.json: %v", err)
+		} else {
+			// Migrate services from JSON adapter to unified registry
+			for _, service := range jsonAdapter.ListServiceDefinitions() {
+				unifiedRegistry.RegisterService(service)
+			}
+		}
+		
+		d.registry = unifiedRegistry
+		log.Printf("Created unified registry with %d services", len(unifiedRegistry.ListServices()))
 	}
 
 	// Create output directory if it doesn't exist
@@ -795,11 +817,6 @@ func (d *RegistryDiscovery) regenerateClientFactory() error {
 
 	if err := gen.GenerateClientFactory(); err != nil {
 		return fmt.Errorf("failed to generate client factory: %w", err)
-	}
-
-	// Also generate dynamic wrapper
-	if err := gen.GenerateDynamicWrapper(); err != nil {
-		return fmt.Errorf("failed to generate dynamic wrapper: %w", err)
 	}
 
 	return nil

@@ -64,7 +64,7 @@ func (p *DynamicAzureProvider) InitializeDynamicScanners() error {
 }
 
 // ScanWithDynamicScanners uses dynamic scanners if available, falls back to base implementation
-func (p *DynamicAzureProvider) ScanWithDynamicScanners(ctx context.Context, config *pb.ScanRequest) ([]*pb.Resource, error) {
+func (p *DynamicAzureProvider) ScanWithDynamicScanners(ctx context.Context, config *pb.ScanServiceRequest) ([]*pb.Resource, error) {
 	if p.dynamicLoader == nil {
 		// Fall back to base implementation - convert to BatchScanRequest
 		batchReq := &pb.BatchScanRequest{
@@ -147,14 +147,13 @@ func (p *DynamicAzureProvider) scanServiceWithDynamicLoader(ctx context.Context,
 }
 
 // scanServiceWithBase falls back to the base implementation for a specific service
-func (p *DynamicAzureProvider) scanServiceWithBase(ctx context.Context, service string, config *pb.ScanRequest) ([]*pb.Resource, error) {
+func (p *DynamicAzureProvider) scanServiceWithBase(ctx context.Context, service string, config *pb.ScanServiceRequest) ([]*pb.Resource, error) {
 	// Create a config for just this service
-	serviceConfig := &pb.ScanRequest{
+	serviceConfig := &pb.ScanServiceRequest{
 		Region:        config.Region,
-		Options:       config.Options,
-		ResourceTypes: []string{service}, // Convert service to resource type
-		NextToken:     config.NextToken,
-		MaxResults:    config.MaxResults,
+		Service:       service,
+		ResourceTypes: config.ResourceTypes,
+		Filters:       config.Filters,
 	}
 
 	batchReq := &pb.BatchScanRequest{
@@ -169,7 +168,7 @@ func (p *DynamicAzureProvider) scanServiceWithBase(ctx context.Context, service 
 }
 
 // extractCredentials extracts Azure credentials and subscription ID from the scan config
-func (p *DynamicAzureProvider) extractCredentials(ctx context.Context, config *pb.ScanRequest) (azcore.TokenCredential, string, error) {
+func (p *DynamicAzureProvider) extractCredentials(ctx context.Context, config *pb.ScanServiceRequest) (azcore.TokenCredential, string, error) {
 	// For now, create new credentials using the same method as the base provider
 	// This could be optimized to reuse the provider's credentials in the future
 	
@@ -268,10 +267,10 @@ func ExampleDynamicProviderUsage() {
 	}()
 
 	// Create a scan configuration
-	config := &pb.ScanRequest{
+	config := &pb.ScanServiceRequest{
 		Region:        "eastus",
 		ResourceTypes: []string{"Microsoft.Compute/virtualMachines", "Microsoft.Storage/storageAccounts", "Microsoft.Network/virtualNetworks"},
-		Options:       map[string]string{},
+		Filters:       map[string]string{},
 	}
 
 	// Perform the scan

@@ -10,13 +10,13 @@ import (
 
 // DynamicMetadataProvider replaces hardcoded metadata functions with registry-based lookups
 type DynamicMetadataProvider struct {
-	registry registry.DynamicServiceRegistry
+	registry *registry.UnifiedServiceRegistry
 	cache    sync.Map // Cache for frequently accessed metadata
 	mu       sync.RWMutex
 }
 
 // NewDynamicMetadataProvider creates a new metadata provider
-func NewDynamicMetadataProvider(serviceRegistry registry.DynamicServiceRegistry) *DynamicMetadataProvider {
+func NewDynamicMetadataProvider(serviceRegistry *registry.UnifiedServiceRegistry) *DynamicMetadataProvider {
 	return &DynamicMetadataProvider{
 		registry: serviceRegistry,
 	}

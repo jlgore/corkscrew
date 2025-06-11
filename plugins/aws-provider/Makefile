@@ -83,6 +83,18 @@ generate-scanners: analyze $(SCANNER_DIR)
 	@echo "⚠️  Use CloudProvider.ScanService() instead of generated scanner plugins"
 	@echo "✅ Skipping scanner generation (deprecated)"
 
+# Generate client factory code
+generate-client-factory: analyze $(GENERATED_DIR)
+	@echo "Generating client factory code..."
+	@if [ -f .force-regenerate ] || [ ! -f ./client_registry_generated.go ]; then \
+		go run ./cmd/client-factory-generator \
+			-services $(GENERATED_DIR)/services.json \
+			-output ./client_registry_generated.go \
+			-verbose; \
+	else \
+		echo "Using cached client factory"; \
+	fi
+
 # Generate schema definitions
 generate-schemas: analyze $(SCHEMA_DIR)
 	@echo "Generating schema definitions..."
@@ -95,9 +107,9 @@ generate-schemas: analyze $(SCHEMA_DIR)
 		echo "Using cached schema definitions"; \
 	fi
 
-# Generate Go code (schemas only - scanners deprecated)
-generate-go: generate-schemas
-	@echo "Generating Go integration code (schemas only)..."
+# Generate Go code (client factory + schemas)
+generate-go: generate-client-factory generate-schemas
+	@echo "Generating Go integration code..."
 	@go generate ./...
 
 # Main generate target

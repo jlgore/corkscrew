@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/discovery"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
+	"golang.org/x/time/rate"
 )
 
 // PipelineConfig contains configuration for the runtime pipeline
@@ -18,8 +20,7 @@ type PipelineConfig struct {
 	// Scanner configuration
 	MaxConcurrency      int
 	ScanTimeout         time.Duration
-	UseResourceExplorer bool
-	FallbackToScanners  bool
+	UseResourceExplorer bool  // Try Resource Explorer first, fallback to UnifiedScanner
 	
 	// DuckDB configuration (disabled - handled by main CLI)
 	// EnableDuckDB     bool
@@ -43,8 +44,7 @@ func DefaultPipelineConfig() *PipelineConfig {
 	return &PipelineConfig{
 		MaxConcurrency:      10,
 		ScanTimeout:         5 * time.Minute,
-		UseResourceExplorer: true,
-		FallbackToScanners:  true,
+		UseResourceExplorer: true,  // Try Resource Explorer first when available
 		// EnableDuckDB:        true,  // Disabled - handled by main CLI
 		BatchSize:           1000,
 		FlushInterval:       30 * time.Second,
@@ -80,6 +80,11 @@ type RuntimePipeline struct {
 
 // NewRuntimePipeline creates a new runtime pipeline
 func NewRuntimePipeline(cfg aws.Config, config *PipelineConfig) (*RuntimePipeline, error) {
+	return NewRuntimePipelineWithClientFactory(cfg, config, nil)
+}
+
+// NewRuntimePipelineWithClientFactory creates a new runtime pipeline with a provided client factory
+func NewRuntimePipelineWithClientFactory(cfg aws.Config, config *PipelineConfig, clientFactory interface{}) (*RuntimePipeline, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	pipeline := &RuntimePipeline{
@@ -116,7 +121,46 @@ func NewRuntimePipeline(cfg aws.Config, config *PipelineConfig) (*RuntimePipelin
 	}
 	log.Printf("DEBUG: LoadAll() completed successfully")
 	
+	// Initialize optimized unified scanner
+	log.Printf("DEBUG: Initializing OptimizedUnifiedScanner")
+	if err := pipeline.initializeOptimizedScanner(cfg, clientFactory); err != nil {
+		log.Printf("WARN: Failed to initialize optimized scanner, falling back to basic scanner: %v", err)
+	}
+	
 	return pipeline, nil
+}
+
+// initializeOptimizedScanner sets up the optimized unified scanner
+func (p *RuntimePipeline) initializeOptimizedScanner(cfg aws.Config, providedClientFactory interface{}) error {
+	var scannerClientFactory scanner.ClientFactory
+	
+	// Use provided client factory if available, otherwise create a basic one
+	if providedClientFactory != nil {
+		log.Printf("DEBUG: Using provided client factory for OptimizedUnifiedScanner")
+		
+		// Try to use the provided factory directly if it implements scanner.ClientFactory
+		if scf, ok := providedClientFactory.(scanner.ClientFactory); ok {
+			scannerClientFactory = scf
+			log.Printf("DEBUG: Provided client factory implements scanner.ClientFactory directly")
+		} else {
+			// Wrap the provided client factory
+			scannerClientFactory = NewClientFactoryWrapper(providedClientFactory)
+			log.Printf("DEBUG: Wrapped provided client factory")
+		}
+	} else {
+		// Create a basic dynamic client factory as fallback
+		scannerClientFactory = NewDynamicClientFactory(cfg)
+		log.Printf("DEBUG: Created fallback dynamic client factory for OptimizedUnifiedScanner")
+	}
+	
+	// Create optimized scanner adapter
+	optimizedScanner := NewOptimizedScannerAdapter(scannerClientFactory)
+	
+	// Set the unified scanner in the registry
+	p.registry.SetUnifiedScanner(optimizedScanner)
+	
+	log.Printf("DEBUG: OptimizedUnifiedScanner initialized successfully with adapter")
+	return nil
 }
 
 
@@ -184,11 +228,10 @@ func (p *RuntimePipeline) Stop() error {
 
 // ScanService scans a specific service
 func (p *RuntimePipeline) ScanService(ctx context.Context, serviceName string, cfg aws.Config, region string) (*ScanResult, error) {
-	startTime := time.Now()
 	result := &ScanResult{
 		Service:   serviceName,
 		Region:    region,
-		StartTime: startTime,
+		StartTime: time.Now(),
 		Resources: []*pb.Resource{},
 	}
 	
@@ -198,34 +241,46 @@ func (p *RuntimePipeline) ScanService(ctx context.Context, serviceName string, c
 		if err == nil && len(resources) > 0 {
 			result.Resources = resources
 			result.Method = "ResourceExplorer"
-		} else if p.config.FallbackToScanners {
-			// Fallback to registry (which uses UnifiedScanner)
-			resources, err = p.registry.ScanService(ctx, serviceName, cfg, region)
+			result.ResourceCount = len(resources)
+			log.Printf("Resource Explorer found %d resources for %s in region %s", len(resources), serviceName, region)
+		} else {
+			// Always fallback to UnifiedScanner (no legacy scanner option)
+			log.Printf("Resource Explorer unavailable or returned no results, using UnifiedScanner")
+			resources, err = p.registry.ScanServiceUnified(ctx, serviceName, cfg, region)
 			if err != nil {
 				result.Error = err
+				log.Printf("Unified scan failed for %s in region %s: %v", serviceName, region, err)
 			} else {
 				result.Resources = resources
 				result.Method = "UnifiedScanner"
+				result.ResourceCount = len(resources)
+				log.Printf("UnifiedScanner found %d resources for %s in region %s", len(resources), serviceName, region)
 			}
 		}
 	} else {
-		// Use registry directly (which uses UnifiedScanner)
-		resources, err := p.registry.ScanService(ctx, serviceName, cfg, region)
+		// Use UnifiedScanner directly
+		resources, err := p.registry.ScanServiceUnified(ctx, serviceName, cfg, region)
 		if err != nil {
 			result.Error = err
+			log.Printf("Unified scan failed for %s in region %s: %v", serviceName, region, err)
 		} else {
 			result.Resources = resources
 			result.Method = "UnifiedScanner"
+			result.ResourceCount = len(resources)
+			log.Printf("UnifiedScanner found %d resources for %s in region %s", len(resources), serviceName, region)
 		}
 	}
 	
-	// No circular enrichment - resources are already enriched by registry
-	
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
-	result.ResourceCount = len(result.Resources)
 	
-	// Stream resources if enabled
+	// Performance metrics
+	if result.ResourceCount > 0 {
+		avgEnrichmentTime := result.Duration / time.Duration(result.ResourceCount)
+		log.Printf("Performance: %s scan completed in %v (%v per resource)", serviceName, result.Duration, avgEnrichmentTime)
+	}
+	
+	// Stream resources for processing
 	if p.config.StreamingEnabled && len(result.Resources) > 0 {
 		for _, resource := range result.Resources {
 			select {
@@ -239,6 +294,7 @@ func (p *RuntimePipeline) ScanService(ctx context.Context, serviceName string, c
 	// Store result
 	p.mu.Lock()
 	p.scanResults[serviceName] = result
+	p.lastScan = time.Now()
 	p.mu.Unlock()
 	
 	return result, result.Error
@@ -467,11 +523,22 @@ func (p *RuntimePipeline) periodicScanner() {
 					continue
 				}
 				
-				// Register any new services
+				// Log discovered services - UnifiedScanner handles all services dynamically
+				log.Printf("Service discovery found %d services", len(services))
+				
+				// Ensure rate limiters exist for new services
 				for _, service := range services {
-					if _, exists := p.registry.Get(service); !exists {
-						log.Printf("Discovered new service: %s", service)
-						// Would dynamically load scanner for new service
+					if _, exists := p.registry.GetMetadata(service); !exists {
+						log.Printf("Discovered new service: %s, registering rate limiter", service)
+						// Register default rate limiter for new service
+						metadata := &ScannerMetadata{
+							ServiceName:          service,
+							RateLimit:           rate.Limit(10), // Default rate limit
+							BurstLimit:          20,
+							SupportsPagination:   true,
+							SupportsParallelScan: true,
+						}
+						p.registry.RegisterServiceMetadata(service, metadata)
 					}
 				}
 			}

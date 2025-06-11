@@ -1,0 +1,37 @@
+version: "1.0"
+providers:
+  aws:
+    discovery_mode: manual
+    services:
+      include:
+        - ec2
+        - s3
+        - iam
+        - lambda
+        - rds
+        - dynamodb
+        - sqs
+        - sns
+        - ecs
+        - eks
+        - cloudformation
+        - cloudwatch
+        - route53
+        - elasticloadbalancing
+        - autoscaling
+        - kms
+        - secretsmanager
+        - ssm
+        - athena
+        - glue
+        - kinesis
+        - elasticache
+        - apigateway
+        - cloudtrail
+        - eventbridge
+      exclude: []
+    analysis:
+      skip_empty: true
+      workers: 8
+      cache_enabled: true
+      cache_ttl: 12h

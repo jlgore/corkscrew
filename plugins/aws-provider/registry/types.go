@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"os"
 	"reflect"
 	"time"
 
@@ -230,4 +231,33 @@ type RegistryConfig struct {
 	
 	// Custom configuration
 	CustomConfig map[string]interface{} `json:"customConfig,omitempty"`
+}
+
+// cacheEntry represents a cached service definition entry
+type cacheEntry struct {
+	service    *ServiceDefinition
+	expiry     time.Time
+	accessTime time.Time
+	hitCount   int
+}
+
+// auditEntry represents an audit log entry
+type auditEntry struct {
+	Timestamp   time.Time              `json:"timestamp"`
+	Action      string                 `json:"action"`      // "register", "update", "delete"
+	ServiceName string                 `json:"serviceName"`
+	Details     map[string]interface{} `json:"details"`
+}
+
+// DynamicServiceRegistry interface for compatibility with old code
+type DynamicServiceRegistry interface {
+	ListServiceDefinitions() []ServiceDefinition
+	GetService(name string) (*ServiceDefinition, bool)
+	RegisterService(def ServiceDefinition) error
+}
+
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

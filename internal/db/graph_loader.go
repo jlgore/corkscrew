@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/google/uuid"
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -157,10 +159,11 @@ func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resour
 	}
 	defer tx.Rollback()
 
-	// Prepare statements
+	// Prepare statements for unified schema
+	log.Printf("🔍 Preparing resource INSERT statement...")
 	resourceStmt, err := tx.Prepare(`
-		INSERT OR REPLACE INTO aws_resources 
-		(id, type, service, arn, name, region, account_id, parent_id, raw_data, attributes, tags, created_at, modified_at)
+		INSERT OR IGNORE INTO aws_resources 
+		(id, arn, name, type, service, region, account_id, parent_id, tags, attributes, raw_data, created_at, modified_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
@@ -169,10 +172,10 @@ func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resour
 	defer resourceStmt.Close()
 
 	relationshipStmt, err := tx.Prepare(`
-		INSERT INTO aws_relationships 
-		(from_id, to_id, relationship_type, properties)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(from_id, to_id, relationship_type) DO UPDATE SET
+		INSERT INTO cloud_relationships 
+		(from_id, to_id, relationship_type, provider, properties)
+		VALUES (?, ?, ?, 'aws', ?)
+		ON CONFLICT(from_id, to_id, relationship_type, provider) DO UPDATE SET
 			properties=excluded.properties
 	`)
 	if err != nil {
@@ -182,6 +185,14 @@ func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resour
 
 	// Load resources
 	for _, resource := range resources {
+		// For S3 resources, if ID is already an ARN, don't duplicate in ARN field
+		arn := resource.Arn
+		if resource.Id == resource.Arn && strings.HasPrefix(resource.Id, "arn:") {
+			arn = "" // Use empty string to avoid duplication
+		}
+		
+		log.Printf("🔍 DB INSERT: ID=%s, ARN=%s (orig=%s), Name=%s, Service=%s, Type=%s, AccountID=%s", 
+			resource.Id, arn, resource.Arn, resource.Name, resource.Service, resource.Type, resource.AccountId)
 		tagsJSON, _ := json.Marshal(resource.Tags)
 
 		var createdAt, modifiedAt interface{}
@@ -202,19 +213,19 @@ func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resour
 		}
 
 		_, err = resourceStmt.Exec(
-			resource.Id,
-			resource.Type,
-			resource.Service,
-			resource.Arn,
-			resource.Name,
-			resource.Region,
-			resource.AccountId,
-			resource.ParentId,
-			rawDataStr,
-			attributesStr,
-			string(tagsJSON),
-			createdAt,
-			modifiedAt,
+			resource.Id,        // id
+			arn,                // arn (deduplicated)
+			resource.Name,      // name
+			resource.Type,      // type
+			resource.Service,   // service
+			resource.Region,    // region
+			resource.AccountId, // account_id
+			resource.ParentId,  // parent_id
+			string(tagsJSON),   // tags
+			attributesStr,      // properties (using attributes as properties)
+			rawDataStr,         // raw_data
+			createdAt,          // created_time
+			modifiedAt,         // changed_time
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert resource %s: %w", resource.Id, err)
@@ -243,13 +254,26 @@ func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resour
 
 func (gl *GraphLoader) LoadScanMetadata(ctx context.Context, service, region string, stats *pb.ScanStats, metadata map[string]string) error {
 	metadataJSON, _ := json.Marshal(metadata)
+	servicesJSON, _ := json.Marshal([]string{service})
+	regionsJSON, _ := json.Marshal([]string{region})
 
 	id := uuid.New().String()
+	provider := metadata["provider"]
+	if provider == "" {
+		provider = "aws"
+	}
 
 	_, err := gl.db.ExecContext(ctx, `
-		INSERT INTO scan_metadata (id, service, region, scan_time, total_resources, failed_resources, duration_ms, metadata)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
-	`, id, service, region, stats.TotalResources, stats.FailedResources, stats.DurationMs, string(metadataJSON))
+		INSERT INTO scan_metadata (
+			id, provider, scan_type, services, regions, 
+			total_resources, failed_resources, 
+			scan_start_time, scan_end_time, duration_ms, 
+			metadata
+		)
+		VALUES (?, ?, 'service', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
+	`, id, provider, string(servicesJSON), string(regionsJSON), 
+	   stats.TotalResources, stats.FailedResources,
+	   stats.DurationMs, string(metadataJSON))
 
 	return err
 }

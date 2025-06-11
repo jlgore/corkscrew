@@ -34,17 +34,6 @@ type ServiceDiscovery struct {
 	maxRetries      int
 }
 
-// ServiceMetadata contains metadata about an AWS service
-type ServiceMetadata struct {
-	Name           string    `json:"name"`
-	PackagePath    string    `json:"package_path"`
-	Version        string    `json:"version"`
-	LastUpdated    time.Time `json:"last_updated"`
-	Operations     []string  `json:"operations"`
-	Resources      []string  `json:"resources"`
-	OperationCount int       `json:"operation_count"`
-	ResourceCount  int       `json:"resource_count"`
-}
 
 // GitHubTreeResponse represents GitHub API tree response
 type GitHubTreeResponse struct {
@@ -122,8 +111,12 @@ func (sd *ServiceDiscovery) DiscoverAWSServices(ctx context.Context, forceRefres
 	for _, service := range services {
 		metadata := &ServiceMetadata{
 			Name:        service,
-			PackagePath: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", service),
-			LastUpdated: time.Now(),
+			DisplayName: service, // Will be updated by enrichServiceMetadata
+			PackageName: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", service),
+			ClientType:  fmt.Sprintf("%sClient", strings.Title(service)),
+			Operations:  make(map[string]OperationType),
+			Paginated:   make(map[string]bool),
+			DiscoveredAt: time.Now(),
 		}
 		
 		// Add lightweight operation analysis
@@ -223,14 +216,20 @@ func (sd *ServiceDiscovery) UpdateServiceMetadata(serviceName string, operations
 	if !exists {
 		metadata = &ServiceMetadata{
 			Name:        serviceName,
-			PackagePath: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", serviceName),
+			PackageName: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", serviceName),
+			Operations:  make(map[string]OperationType),
+			Paginated:   make(map[string]bool),
+			DiscoveredAt: time.Now(),
 		}
 		sd.cache[serviceName] = metadata
 	}
 
-	metadata.Operations = operations
-	metadata.Resources = resources
-	metadata.LastUpdated = time.Now()
+	// Convert operations slice to map
+	for _, op := range operations {
+		metadata.Operations[op] = sd.classifyOperationType(op)
+	}
+	metadata.ResourceTypes = resources
+	metadata.DiscoveredAt = time.Now()
 
 	return nil
 }
@@ -312,6 +311,30 @@ func (sd *ServiceDiscovery) GetPopularServices() []string {
 	return available
 }
 
+// classifyOperationType determines the operation type from the operation name
+func (sd *ServiceDiscovery) classifyOperationType(operationName string) OperationType {
+	switch {
+	case strings.HasPrefix(operationName, "List"):
+		return ListOperation
+	case strings.HasPrefix(operationName, "Describe"):
+		return DescribeOperation
+	case strings.HasPrefix(operationName, "Get"):
+		return GetOperation
+	case strings.HasPrefix(operationName, "Create"):
+		return CreateOperation
+	case strings.HasPrefix(operationName, "Update"), strings.HasPrefix(operationName, "Modify"), strings.HasPrefix(operationName, "Put"):
+		return UpdateOperation
+	case strings.HasPrefix(operationName, "Delete"), strings.HasPrefix(operationName, "Terminate"):
+		return DeleteOperation
+	case strings.HasPrefix(operationName, "Tag"):
+		return TagOperation
+	case strings.HasPrefix(operationName, "Untag"):
+		return UntagOperation
+	default:
+		return UnknownOperation
+	}
+}
+
 // enrichServiceMetadata adds lightweight operation analysis to service metadata
 func (sd *ServiceDiscovery) enrichServiceMetadata(metadata *ServiceMetadata) {
 	// Try to fetch and analyze actual service code
@@ -321,32 +344,31 @@ func (sd *ServiceDiscovery) enrichServiceMetadata(metadata *ServiceMetadata) {
 		// Analyze actual code to extract operations and resources
 		operations, resources := sd.analyzeServiceCode(serviceCode)
 		if len(operations) > 0 {
-			metadata.Operations = operations
-			metadata.OperationCount = len(operations)
+			// Convert operations slice to map with operation types
+			for _, op := range operations {
+				metadata.Operations[op] = sd.classifyOperationType(op)
+			}
 		}
 		if len(resources) > 0 {
-			metadata.Resources = resources
-			metadata.ResourceCount = len(resources)
-		}
-		// Update version from actual code
-		if serviceCode.Version != "" {
-			metadata.Version = serviceCode.Version
+			metadata.ResourceTypes = resources
 		}
 	} else {
 		// Fallback to estimates for known services
 		knownServices := sd.analyzer.GetKnownServices()
 		if _, isKnown := knownServices[metadata.Name]; isKnown {
 			// For known services, provide estimated counts based on service type
-			metadata.Operations = sd.getEstimatedOperations(metadata.Name)
-			metadata.OperationCount = len(metadata.Operations)
-			metadata.Resources = sd.getEstimatedResources(metadata.Name)
-			metadata.ResourceCount = len(metadata.Resources)
+			estimatedOps := sd.getEstimatedOperations(metadata.Name)
+			for _, op := range estimatedOps {
+				metadata.Operations[op] = sd.classifyOperationType(op)
+			}
+			metadata.ResourceTypes = sd.getEstimatedResources(metadata.Name)
 		} else {
 			// For unknown services, provide conservative estimates
-			metadata.Operations = []string{"List*", "Describe*", "Get*"}
-			metadata.OperationCount = 15 // Conservative estimate
-			metadata.Resources = []string{strings.Title(metadata.Name) + "Resource"}
-			metadata.ResourceCount = 1
+			estimatedOps := []string{"List*", "Describe*", "Get*"}
+			for _, op := range estimatedOps {
+				metadata.Operations[op] = sd.classifyOperationType(op)
+			}
+			metadata.ResourceTypes = []string{strings.Title(metadata.Name) + "Resource"}
 		}
 	}
 }
@@ -872,8 +894,10 @@ func (sd *ServiceDiscovery) AnalyzeService(ctx context.Context, serviceName stri
 	if !exists {
 		metadata = &ServiceMetadata{
 			Name:        serviceName,
-			PackagePath: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", serviceName),
-			LastUpdated: time.Now(),
+			PackageName: fmt.Sprintf("github.com/aws/aws-sdk-go-v2/service/%s", serviceName),
+			Operations:  make(map[string]OperationType),
+			Paginated:   make(map[string]bool),
+			DiscoveredAt: time.Now(),
 		}
 	}
 
@@ -887,12 +911,12 @@ func (sd *ServiceDiscovery) AnalyzeService(ctx context.Context, serviceName stri
 	operations, resources := sd.analyzeServiceCode(serviceCode)
 	
 	// Update metadata
-	metadata.Operations = operations
-	metadata.OperationCount = len(operations)
-	metadata.Resources = resources
-	metadata.ResourceCount = len(resources)
-	metadata.Version = serviceCode.Version
-	metadata.LastUpdated = time.Now()
+	// Convert operations slice to map
+	for _, op := range operations {
+		metadata.Operations[op] = sd.classifyOperationType(op)
+	}
+	metadata.ResourceTypes = resources
+	metadata.DiscoveredAt = time.Now()
 
 	// Update cache
 	sd.mu.Lock()

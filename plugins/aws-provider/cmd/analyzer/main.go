@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	
+	"github.com/jlgore/corkscrew/internal/config"
 )
 
 // ServiceInfo represents discovered AWS service information
@@ -55,21 +57,42 @@ type AnalysisResult struct {
 }
 
 var (
-	outputPath = flag.String("output", "generated/services.json", "Output path for analysis results")
-	sdkPath    = flag.String("sdk-path", "", "Path to AWS SDK")
-	verbose    = flag.Bool("verbose", false, "Enable verbose logging")
-	services   = flag.String("services", "", "Comma-separated list of services to analyze (empty for all)")
+	outputPath   = flag.String("output", "generated/services.json", "Output path for analysis results")
+	sdkPath      = flag.String("sdk-path", "", "Path to AWS SDK")
+	verbose      = flag.Bool("verbose", false, "Enable verbose logging")
+	services     = flag.String("services", "", "Comma-separated list of services (overrides config)")
+	configFile   = flag.String("config", "", "Path to configuration file")
+	serviceGroup = flag.String("service-group", "", "Use services from named group")
+	listServices = flag.Bool("list-services", false, "List configured services and exit")
 )
 
 func main() {
 	flag.Parse()
-
-	// Get list of services to analyze
-	serviceFilter := make(map[string]bool)
-	if *services != "" {
-		for _, svc := range strings.Split(*services, ",") {
-			serviceFilter[strings.TrimSpace(svc)] = true
+	
+	// Load configuration
+	serviceConfig, err := loadConfiguration()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+	
+	// Get services to analyze
+	servicesToAnalyze, err := getServicesToAnalyze(serviceConfig)
+	if err != nil {
+		log.Fatalf("Failed to determine services: %v", err)
+	}
+	
+	// Handle list-services flag
+	if *listServices {
+		fmt.Println("Services to analyze:")
+		for _, svc := range servicesToAnalyze {
+			fmt.Printf("  - %s\n", svc)
 		}
+		fmt.Printf("\nTotal: %d services\n", len(servicesToAnalyze))
+		return
+	}
+	
+	if *verbose {
+		log.Printf("Analyzing %d services: %v", len(servicesToAnalyze), servicesToAnalyze)
 	}
 
 	result := &AnalysisResult{
@@ -78,22 +101,15 @@ func main() {
 		SDKVersion: "v2-latest",
 		Services:   []ServiceInfo{},
 	}
-
-	// For AWS SDK v2, services are in separate modules
-	// We'll analyze a predefined list of common services
-	commonServices := []string{
-		"ec2", "s3", "lambda", "rds", "dynamodb", "iam",
-		"sqs", "sns", "ecs", "eks", "cloudformation",
-		"cloudwatch", "route53", "elasticloadbalancing",
-		"autoscaling", "kms", "secretsmanager", "ssm",
+	
+	// Analyze services
+	analysisConfig := serviceConfig.Providers["aws"].Analysis
+	if analysisConfig.Workers > 1 {
+		// TODO: Implement parallel analysis
+		log.Printf("Parallel analysis with %d workers not yet implemented, using sequential", analysisConfig.Workers)
 	}
 
-	for _, serviceName := range commonServices {
-		// Skip if filtering is enabled and service not in filter
-		if len(serviceFilter) > 0 && !serviceFilter[serviceName] {
-			continue
-		}
-
+	for _, serviceName := range servicesToAnalyze {
 		if *verbose {
 			log.Printf("Analyzing service: %s", serviceName)
 		}
@@ -114,6 +130,16 @@ func main() {
 		}
 
 		if serviceInfo != nil {
+			// Skip empty services if configured
+			if analysisConfig.SkipEmpty && 
+			   len(serviceInfo.Operations) == 0 && 
+			   len(serviceInfo.ResourceTypes) == 0 {
+				if *verbose {
+					log.Printf("Skipping empty service: %s", serviceName)
+				}
+				continue
+			}
+			
 			result.Services = append(result.Services, *serviceInfo)
 			result.TotalOps += len(serviceInfo.Operations)
 			result.TotalResources += len(serviceInfo.ResourceTypes)
@@ -127,6 +153,34 @@ func main() {
 
 	fmt.Printf("Analysis complete. Found %d services with %d operations and %d resource types\n",
 		len(result.Services), result.TotalOps, result.TotalResources)
+}
+
+func loadConfiguration() (*config.ServiceConfig, error) {
+	// Set config file path if provided
+	if *configFile != "" {
+		os.Setenv("CORKSCREW_CONFIG_FILE", *configFile)
+	}
+	
+	return config.LoadServiceConfig()
+}
+
+func getServicesToAnalyze(cfg *config.ServiceConfig) ([]string, error) {
+	// Command-line override takes precedence
+	if *services != "" {
+		serviceList := strings.Split(*services, ",")
+		for i, svc := range serviceList {
+			serviceList[i] = strings.TrimSpace(svc)
+		}
+		return serviceList, nil
+	}
+	
+	// Service group specified
+	if *serviceGroup != "" {
+		return cfg.GetServiceGroup("aws", *serviceGroup)
+	}
+	
+	// Use configuration
+	return cfg.GetServicesForProvider("aws")
 }
 
 func findServiceModulePath(serviceName string) string {
