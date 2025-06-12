@@ -902,39 +902,6 @@ func (p *AzureProvider) GenerateFromAnalysis(ctx context.Context, req *pb.Genera
 	}, nil
 }
 
-// ScanService performs scanning for a specific Azure service
-func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
-	if !p.initialized {
-		return nil, fmt.Errorf("provider not initialized")
-	}
-
-	log.Printf("ScanService called for Azure service: %s", req.Service)
-
-	// Apply rate limiting
-	if err := p.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limit exceeded: %w", err)
-	}
-
-	// For now, convert to BatchScanRequest and use existing logic
-	batchReq := &pb.BatchScanRequest{
-		Services: []string{req.Service},
-		Region:   req.Region,
-		Filters:  req.Filters,
-		IncludeRelationships: req.IncludeRelationships,
-	}
-
-	batchResponse, err := p.BatchScan(ctx, batchReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan Azure service %s: %w", req.Service, err)
-	}
-
-	return &pb.ScanServiceResponse{
-		Service:   req.Service,
-		Resources: batchResponse.Resources,
-		Stats:     batchResponse.Stats,
-		Errors:    batchResponse.Errors,
-	}, nil
-}
 
 // GetServiceInfo returns information about a specific Azure service
 func (p *AzureProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
@@ -942,40 +909,171 @@ func (p *AzureProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceIn
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
-	log.Printf("GetServiceInfo called for Azure service: %s", req.Service)
+	log.Printf("GetServiceInfo called for service: %s", req.Service)
 
-	// Use discovery to get service information
-	discoverReq := &pb.DiscoverServicesRequest{
-		IncludeServices: []string{req.Service},
+	// Service mapping for Azure
+	serviceMapping := map[string][]string{
+		"storage":           {"StorageAccount", "BlobContainer", "FileShare", "Queue", "Table"},
+		"compute":           {"VirtualMachine", "Disk", "VirtualMachineScaleSet", "AvailabilitySet"},
+		"network":           {"VirtualNetwork", "NetworkInterface", "PublicIPAddress", "NetworkSecurityGroup", "LoadBalancer"},
+		"keyvault":          {"Vault", "Secret", "Key", "Certificate"},
+		"sql":               {"Server", "Database", "ElasticPool", "ManagedInstance"},
+		"cosmosdb":          {"DatabaseAccount", "SqlDatabase", "MongoDatabase", "CassandraKeyspace"},
+		"appservice":        {"Site", "ServerFarm", "Certificate", "Domain"},
+		"functions":         {"Site"},
+		"aks":               {"ManagedCluster", "AgentPool"},
+		"containerregistry": {"Registry"},
+		"monitor":           {"Component", "Workspace", "ActionGroup", "MetricAlert"},
+		"eventhub":          {"Namespace", "EventHub", "ConsumerGroup"},
+		"managedidentity":   {"UserAssignedIdentity"},
 	}
+
+	// Check if service exists in our mapping
+	supportedResources, exists := serviceMapping[strings.ToLower(req.Service)]
+	if !exists {
+		return nil, fmt.Errorf("service %s not found", req.Service)
+	}
+
+	// Get provider namespace for the service
+	providerNamespace := fmt.Sprintf("Microsoft.%s", strings.Title(strings.ToLower(req.Service)))
 	
-	services, err := p.DiscoverServices(ctx, discoverReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to discover Azure services: %w", err)
+	return &pb.ServiceInfoResponse{
+		ServiceName:         req.Service,
+		Version:            "2021-04-01", // Default Azure API version
+		SupportedResources: supportedResources,
+		RequiredPermissions: []string{
+			"Microsoft.Resources/subscriptions/resourceGroups/read",
+			fmt.Sprintf("%s/*/read", providerNamespace),
+			fmt.Sprintf("%s/*/list", providerNamespace),
+		},
+		Capabilities: map[string]string{
+			"provider":      "azure",
+			"subscription":  p.subscriptionID,
+			"retrieved_at":  time.Now().Format(time.RFC3339),
+			"scan_method":   p.getScanMethod(),
+		},
+	}, nil
+}
+
+// ScanService performs scanning for a specific Azure service
+func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
 	}
 
-	// Find the requested service
-	for _, service := range services.Services {
-		if service.Name == req.Service {
-			var resourceTypes []string
-			for _, rt := range service.ResourceTypes {
-				resourceTypes = append(resourceTypes, rt.Name)
+	// Apply rate limiting
+	if err := p.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit exceeded: %w", err)
+	}
+
+	log.Printf("ScanService called for service: %s", req.Service)
+
+	startTime := time.Now()
+	var resources []*pb.Resource
+	var err error
+
+	// Use Resource Graph or ARM API
+	if p.resourceGraph != nil {
+		// Use Resource Graph for efficient scanning
+		serviceMapping := map[string][]string{
+			"storage":           {"microsoft.storage/storageaccounts"},
+			"compute":           {"microsoft.compute/virtualmachines", "microsoft.compute/disks", "microsoft.compute/virtualmachinescalesets"},
+			"network":           {"microsoft.network/virtualnetworks", "microsoft.network/networkinterfaces", "microsoft.network/publicipaddresses"},
+			"keyvault":          {"microsoft.keyvault/vaults"},
+			"sql":               {"microsoft.sql/servers", "microsoft.sql/servers/databases"},
+			"cosmosdb":          {"microsoft.documentdb/databaseaccounts"},
+			"appservice":        {"microsoft.web/sites", "microsoft.web/serverfarms"},
+			"functions":         {"microsoft.web/sites"},
+			"aks":               {"microsoft.containerservice/managedclusters"},
+			"containerregistry": {"microsoft.containerregistry/registries"},
+			"monitor":           {"microsoft.insights/components", "microsoft.operationalinsights/workspaces"},
+			"eventhub":          {"microsoft.eventhub/namespaces"},
+			"managedidentity":   {"microsoft.managedidentity/userassignedidentities"},
+		}
+
+		resourceTypes := []string{}
+		if types, ok := serviceMapping[strings.ToLower(req.Service)]; ok {
+			resourceTypes = types
+		} else {
+			// Generic pattern
+			resourceTypes = []string{fmt.Sprintf("microsoft.%s/*", strings.ToLower(req.Service))}
+		}
+
+		filters := map[string]interface{}{
+			"type": resourceTypes,
+		}
+
+		resourceRefs, err := p.resourceGraph.QueryResourcesWithFilter(ctx, filters)
+		if err != nil {
+			return nil, fmt.Errorf("resource graph query failed: %w", err)
+		}
+
+		// Convert ResourceRef to Resource
+		for _, ref := range resourceRefs {
+			resource := &pb.Resource{
+				Provider:     "azure",
+				Service:      ref.Service,
+				Type:         ref.Type,
+				Id:           ref.Id,
+				Name:         ref.Name,
+				Region:       ref.Region,
+				Tags:         make(map[string]string),
+				DiscoveredAt: timestamppb.Now(),
 			}
-			
-			return &pb.ServiceInfoResponse{
-				ServiceName: service.Name,
-				Version:     "v1", // Default version
-				SupportedResources: resourceTypes,
-				RequiredPermissions: service.RequiredPermissions,
-				Capabilities: map[string]string{
-					"provider":    "azure",
-					"retrieved_at": time.Now().Format(time.RFC3339),
-				},
-			}, nil
+
+			// Extract metadata
+			if ref.BasicAttributes != nil {
+				if rg, ok := ref.BasicAttributes["resource_group"]; ok {
+					resource.ParentId = rg
+				}
+				if subID, ok := ref.BasicAttributes["subscription_id"]; ok {
+					resource.AccountId = subID
+				}
+
+				// Extract tags
+				for k, v := range ref.BasicAttributes {
+					if strings.HasPrefix(k, "tag_") {
+						tagName := strings.TrimPrefix(k, "tag_")
+						resource.Tags[tagName] = v
+					}
+				}
+			}
+
+			// If relationships are requested, enrich the resource
+			if req.IncludeRelationships {
+				// Extract relationships from resource properties
+				// This is simplified - real implementation would parse resource properties
+				resource.Relationships = []*pb.Relationship{}
+			}
+
+			resources = append(resources, resource)
+		}
+	} else {
+		// Fall back to ARM API scanning
+		resources, err = p.scanner.ScanServiceForResources(ctx, req.Service, map[string]string{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan service %s: %w", req.Service, err)
 		}
 	}
 
-	return nil, fmt.Errorf("Azure service %s not found", req.Service)
+	// Calculate stats
+	resourceCounts := make(map[string]int32)
+	for _, r := range resources {
+		resourceCounts[r.Type]++
+	}
+
+	return &pb.ScanServiceResponse{
+		Service:   req.Service,
+		Resources: resources,
+		Stats: &pb.ScanStats{
+			TotalResources: int32(len(resources)),
+			DurationMs:     time.Since(startTime).Milliseconds(),
+			ResourceCounts: resourceCounts,
+			ServiceCounts: map[string]int32{
+				req.Service: 1,
+			},
+		},
+	}, nil
 }
 
 // StreamScanService streams resources as they are discovered for a specific Azure service

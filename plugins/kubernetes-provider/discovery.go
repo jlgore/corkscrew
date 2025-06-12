@@ -191,6 +191,11 @@ func (d *APIDiscovery) DiscoverResourcesByGroup(ctx context.Context, groupName s
 	return groupResources, nil
 }
 
+// DiscoverResourcesForAPIGroup is an alias for DiscoverResourcesByGroup to match the expected interface
+func (d *APIDiscovery) DiscoverResourcesForAPIGroup(ctx context.Context, apiGroup string) ([]*ResourceDefinition, error) {
+	return d.DiscoverResourcesByGroup(ctx, apiGroup)
+}
+
 // DiscoverNamespacedResources returns only namespaced resources
 func (d *APIDiscovery) DiscoverNamespacedResources(ctx context.Context) ([]*ResourceDefinition, error) {
 	allResources, err := d.DiscoverAllResources(ctx)

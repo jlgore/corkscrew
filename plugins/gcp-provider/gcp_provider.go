@@ -935,3 +935,258 @@ type serviceResult struct {
 	resources []*pb.Resource
 	err       error
 }
+
+// GetServiceInfo returns information about a specific GCP service
+func (p *GCPProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	log.Printf("GetServiceInfo called for service: %s", req.Service)
+
+	// Use discovery to get service information
+	services, err := p.discovery.DiscoverServices(ctx, p.projectIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover services: %w", err)
+	}
+
+	// Find the requested service
+	for _, service := range services {
+		if service.Name == req.Service {
+			// Extract supported resources from asset types
+			assetTypes := p.mapServiceToAssetTypes(req.Service)
+			supportedResources := make([]string, 0, len(assetTypes))
+			for _, assetType := range assetTypes {
+				// Extract resource type from asset type (e.g., "compute.googleapis.com/Instance" -> "Instance")
+				parts := strings.Split(assetType, "/")
+				if len(parts) > 1 {
+					supportedResources = append(supportedResources, parts[1])
+				}
+			}
+
+			return &pb.ServiceInfoResponse{
+				ServiceName: service.Name,
+				Version:     "v1", // Default version
+				SupportedResources: supportedResources,
+				RequiredPermissions: service.RequiredPermissions,
+				Capabilities: map[string]string{
+					"provider":     "gcp",
+					"projects":     strings.Join(p.projectIDs, ","),
+					"retrieved_at": time.Now().Format(time.RFC3339),
+					"scan_method":  p.getScanMethod(),
+				},
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("service %s not found", req.Service)
+}
+
+// ScanService performs scanning for a specific GCP service
+func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
+
+	// Apply rate limiting
+	if err := p.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit exceeded: %w", err)
+	}
+
+	log.Printf("ScanService called for service: %s", req.Service)
+
+	startTime := time.Now()
+
+	// Map service to asset types
+	assetTypes := p.mapServiceToAssetTypes(req.Service)
+	if len(assetTypes) == 0 {
+		return nil, fmt.Errorf("no asset types found for service: %s", req.Service)
+	}
+
+	// Use Asset Inventory or scanner to get resources
+	var resources []*pb.Resource
+
+	if p.assetInventory != nil {
+		// Use Asset Inventory for efficient scanning
+		resourceRefs, scanErr := p.assetInventory.QueryAssetsByType(ctx, assetTypes)
+		if scanErr != nil {
+			log.Printf("Failed to query assets: %v", scanErr)
+		} else {
+			// Convert ResourceRefs to Resources
+			for _, ref := range resourceRefs {
+				resource := &pb.Resource{
+					Provider:     "gcp",
+					Service:      ref.Service,
+					Type:         ref.Type,
+					Id:           ref.Id,
+					Name:         ref.Name,
+					Region:       ref.Region,
+					Tags:         ref.BasicAttributes,
+					DiscoveredAt: timestamppb.Now(),
+				}
+				resources = append(resources, resource)
+			}
+		}
+	} else {
+		// Fall back to scanner
+		resourceRefs, err := p.scanner.ScanService(ctx, req.Service)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan service %s: %w", req.Service, err)
+		}
+		// Convert ResourceRefs to Resources
+		for _, ref := range resourceRefs {
+			resource := &pb.Resource{
+				Provider:     "gcp",
+				Service:      ref.Service,
+				Type:         ref.Type,
+				Id:           ref.Id,
+				Name:         ref.Name,
+				Region:       ref.Region,
+				Tags:         ref.BasicAttributes,
+				DiscoveredAt: timestamppb.Now(),
+			}
+			resources = append(resources, resource)
+		}
+	}
+
+	// If relationships are requested, enrich resources
+	if req.IncludeRelationships && p.relationships != nil {
+		// Convert resources to ResourceRefs for relationship extraction
+		var resourceRefs []*pb.ResourceRef
+		for _, res := range resources {
+			ref := &pb.ResourceRef{
+				Id:              res.Id,
+				Name:            res.Name,
+				Type:            res.Type,
+				Service:         res.Service,
+				Region:          res.Region,
+				BasicAttributes: res.Tags,
+			}
+			resourceRefs = append(resourceRefs, ref)
+		}
+		
+		// Extract all relationships
+		allRelationships := p.relationships.ExtractRelationships(resourceRefs)
+		
+		// Map relationships back to resources
+		relationshipMap := make(map[string][]*pb.Relationship)
+		for _, rel := range allRelationships {
+			if sourceID, ok := rel.Properties["source_id"]; ok {
+				relationshipMap[sourceID] = append(relationshipMap[sourceID], rel)
+			}
+		}
+		
+		// Assign relationships to resources
+		for _, resource := range resources {
+			if rels, ok := relationshipMap[resource.Id]; ok {
+				resource.Relationships = rels
+			}
+		}
+	}
+
+	return &pb.ScanServiceResponse{
+		Service:   req.Service,
+		Resources: resources,
+		Stats: &pb.ScanStats{
+			TotalResources: int32(len(resources)),
+			DurationMs:     time.Since(startTime).Milliseconds(),
+			ResourceCounts: map[string]int32{
+				req.Service: int32(len(resources)),
+			},
+			ServiceCounts: map[string]int32{
+				req.Service: 1,
+			},
+		},
+	}, nil
+}
+
+// StreamScanService streams resources as they are discovered for a specific GCP service
+func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
+	if !p.initialized {
+		return fmt.Errorf("provider not initialized")
+	}
+
+	ctx := stream.Context()
+	log.Printf("StreamScanService called for service: %s", req.Service)
+
+	// Apply rate limiting
+	if err := p.rateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limit exceeded: %w", err)
+	}
+
+	// Map service to asset types
+	assetTypes := p.mapServiceToAssetTypes(req.Service)
+	if len(assetTypes) == 0 {
+		return fmt.Errorf("no asset types found for service: %s", req.Service)
+	}
+
+	// Stream resources as they're discovered
+	for _, project := range p.projectIDs {
+		if p.assetInventory != nil {
+			// Stream using Asset Inventory
+			resourceRefs, err := p.assetInventory.QueryAssetsByType(ctx, assetTypes)
+			if err != nil {
+				log.Printf("Failed to query assets for project %s: %v", project, err)
+				continue
+			}
+
+			// Convert and stream each resource
+			for _, ref := range resourceRefs {
+				resource := &pb.Resource{
+					Provider:     "gcp",
+					Service:      ref.Service,
+					Type:         ref.Type,
+					Id:           ref.Id,
+					Name:         ref.Name,
+					Region:       ref.Region,
+					Tags:         ref.BasicAttributes,
+					DiscoveredAt: timestamppb.Now(),
+				}
+
+				// Enrich with relationships if requested
+				if req.IncludeRelationships && p.relationships != nil {
+					// Need to get relationships for this resource
+					allRels := p.relationships.ExtractRelationships([]*pb.ResourceRef{ref})
+					resource.Relationships = allRels
+				}
+
+				// Send the resource
+				if err := stream.Send(resource); err != nil {
+					return fmt.Errorf("failed to send resource: %w", err)
+				}
+			}
+		} else {
+			// Use scanner for streaming
+			resourceRefs, err := p.scanner.ScanService(ctx, req.Service)
+			if err != nil {
+				return fmt.Errorf("scanner failed: %w", err)
+			}
+			
+			// Stream each resource
+			for _, ref := range resourceRefs {
+				resource := &pb.Resource{
+					Provider:     "gcp",
+					Service:      ref.Service,
+					Type:         ref.Type,
+					Id:           ref.Id,
+					Name:         ref.Name,
+					Region:       ref.Region,
+					Tags:         ref.BasicAttributes,
+					DiscoveredAt: timestamppb.Now(),
+				}
+				
+				// Enrich with relationships if requested
+				if req.IncludeRelationships && p.relationships != nil {
+					allRels := p.relationships.ExtractRelationships([]*pb.ResourceRef{ref})
+					resource.Relationships = allRels
+				}
+
+				if err := stream.Send(resource); err != nil {
+					return fmt.Errorf("failed to send resource: %w", err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
