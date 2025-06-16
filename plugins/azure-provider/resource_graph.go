@@ -15,6 +15,33 @@ import (
 	pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
+// ResourceSchema represents the discovered schema for a resource type
+type ResourceSchema struct {
+	ResourceType string                 `json:"resource_type"`
+	Properties   map[string]PropertyDef `json:"properties"`
+	CommonTags   []string               `json:"common_tags"`
+	Locations    []string               `json:"locations"`
+	SampleCount  int                    `json:"sample_count"`
+}
+
+// PropertyDef defines a property in the resource schema
+type PropertyDef struct {
+	Name     string        `json:"name"`
+	Type     string        `json:"type"` // string, number, boolean, object, array
+	Required bool          `json:"required"`
+	Examples []string      `json:"examples"`
+	Nested   []PropertyDef `json:"nested,omitempty"`
+}
+
+// RelationshipPattern represents a discovered relationship pattern
+type RelationshipPattern struct {
+	SourceType        string   `json:"source_type"`
+	TargetType        string   `json:"target_type"`
+	RelationshipCount int      `json:"relationship_count"`
+	SampleReferences  []string `json:"sample_references"`
+	RelationshipType  string   `json:"relationship_type"` // DEPENDS_ON, CONTAINS, REFERENCES
+}
+
 // ResourceGraphClient provides efficient resource querying using Azure Resource Graph
 type ResourceGraphClient struct {
 	client         *armresourcegraph.Client
@@ -43,11 +70,84 @@ func NewResourceGraphClient(credential azcore.TokenCredential, subscriptions []s
 func (c *ResourceGraphClient) QueryAllResources(ctx context.Context) ([]*pb.ResourceRef, error) {
 	query := `
 	Resources
-	| project id, name, type, location, resourceGroup, subscriptionId, tags, properties
+	| project id, name, type, location, resourceGroup, subscriptionId, tags, properties, kind, sku, plan, identity, zones, extendedLocation, managedBy, createdTime, changedTime
 	| order by type asc, name asc
 	`
 
 	return c.executeQuery(ctx, query)
+}
+
+// DiscoverAllResourceTypes discovers all available resource types dynamically
+func (c *ResourceGraphClient) DiscoverAllResourceTypes(ctx context.Context) ([]*pb.ServiceInfo, error) {
+	// Query to discover all resource types with their schemas
+	query := `
+	Resources
+	| summarize
+		ResourceCount = count(),
+		SampleProperties = any(properties),
+		Locations = make_set(location),
+		ResourceGroups = make_set(resourceGroup)
+		by type
+	| extend
+		Provider = split(type, '/')[0],
+		Service = split(type, '/')[1],
+		ResourceType = split(type, '/')[2]
+	| where isnotempty(Service) and isnotempty(ResourceType)
+	| project
+		type,
+		Provider,
+		Service,
+		ResourceType,
+		ResourceCount,
+		SampleProperties,
+		Locations,
+		ResourceGroups
+	| order by Provider asc, Service asc, ResourceType asc
+	`
+
+	return c.executeDiscoveryQuery(ctx, query)
+}
+
+// DiscoverResourceSchema discovers the schema for a specific resource type
+func (c *ResourceGraphClient) DiscoverResourceSchema(ctx context.Context, resourceType string) (*ResourceSchema, error) {
+	// Query to get sample resources and extract schema
+	query := fmt.Sprintf(`
+	Resources
+	| where type == '%s'
+	| project properties, tags, id, name, location, resourceGroup
+	| limit 10
+	`, resourceType)
+
+	resources, err := c.executeQuery(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Analyze the sample resources to extract schema
+	return c.extractSchemaFromSamples(resourceType, resources)
+}
+
+// DiscoverResourceRelationshipTypes discovers relationship patterns
+func (c *ResourceGraphClient) DiscoverResourceRelationshipTypes(ctx context.Context) ([]*RelationshipPattern, error) {
+	// Query to discover common relationship patterns
+	query := `
+	Resources
+	| extend
+		ReferencedResources = extract_all(@'\/subscriptions\/[^\/]+\/resourceGroups\/[^\/]+\/providers\/[^\/]+\/[^\/]+\/[^\/\s"]+', properties)
+	| where array_length(ReferencedResources) > 0
+	| project type, ReferencedResources
+	| mv-expand ReferencedResource = ReferencedResources
+	| extend ReferencedType = extract(@'\/providers\/([^\/]+\/[^\/]+)', 1, tostring(ReferencedResource))
+	| where isnotempty(ReferencedType)
+	| summarize
+		RelationshipCount = count(),
+		SampleReferences = make_set(ReferencedResource, 5)
+		by SourceType = type, TargetType = ReferencedType
+	| where RelationshipCount >= 2
+	| order by RelationshipCount desc
+	`
+
+	return c.executeRelationshipDiscoveryQuery(ctx, query)
 }
 
 // QueryResourcesByType queries resources of specific types
@@ -84,7 +184,7 @@ func (c *ResourceGraphClient) QueryResourcesWithFilter(ctx context.Context, filt
 
 	// Cache results
 	c.queryCache.Set(cacheKey, resources)
-	
+
 	return resources, nil
 }
 
@@ -263,6 +363,11 @@ func (c *ResourceGraphClient) parseQueryResults(result *armresourcegraph.QueryRe
 			continue
 		}
 
+		// Debug log the first resource to see what fields are available
+		if len(resources) == 0 {
+			fmt.Printf("DEBUG: Resource Graph returned fields: %v\n", resourceMap)
+		}
+
 		resource := c.parseResourceMap(resourceMap)
 		if resource != nil {
 			resources = append(resources, resource)
@@ -312,6 +417,32 @@ func (c *ResourceGraphClient) parseResourceMap(resourceMap map[string]interface{
 	if properties, ok := resourceMap["properties"].(map[string]interface{}); ok {
 		if propsJSON, err := json.Marshal(properties); err == nil {
 			resource.BasicAttributes["properties"] = string(propsJSON)
+		}
+	}
+
+	// Store the entire resource data as raw_data for complete information
+	if rawDataJSON, err := json.Marshal(resourceMap); err == nil {
+		resource.BasicAttributes["raw_data"] = string(rawDataJSON)
+	}
+
+	// Extract additional fields
+	if kind, ok := resourceMap["kind"].(string); ok {
+		resource.BasicAttributes["kind"] = kind
+	}
+	if managedBy, ok := resourceMap["managedBy"].(string); ok {
+		resource.BasicAttributes["managed_by"] = managedBy
+	}
+	if createdTime, ok := resourceMap["createdTime"].(string); ok {
+		resource.BasicAttributes["created_time"] = createdTime
+	}
+	if changedTime, ok := resourceMap["changedTime"].(string); ok {
+		resource.BasicAttributes["changed_time"] = changedTime
+	}
+
+	// Extract SKU information
+	if sku, ok := resourceMap["sku"].(map[string]interface{}); ok {
+		if skuJSON, err := json.Marshal(sku); err == nil {
+			resource.BasicAttributes["sku"] = string(skuJSON)
 		}
 	}
 
@@ -414,8 +545,8 @@ func (o *QueryOptimizer) BuildQuery(filters map[string]interface{}) string {
 		query += "\n| where " + strings.Join(whereConditions, " and ")
 	}
 
-	// Default projection
-	query += "\n| project id, name, type, location, resourceGroup, subscriptionId, tags, properties"
+	// Default projection with all available fields
+	query += "\n| project id, name, type, location, resourceGroup, subscriptionId, tags, properties, kind, sku, plan, identity, zones, extendedLocation, managedBy, createdTime, changedTime"
 
 	return query
 }
@@ -595,4 +726,311 @@ func hashString(s string) uint32 {
 		h = h*31 + uint32(c)
 	}
 	return h
+}
+
+// executeDiscoveryQuery executes a discovery query and converts results to ServiceInfo
+func (c *ResourceGraphClient) executeDiscoveryQuery(ctx context.Context, query string) ([]*pb.ServiceInfo, error) {
+	subscriptions := make([]*string, len(c.subscriptions))
+	for i, sub := range c.subscriptions {
+		subscriptions[i] = to.Ptr(sub)
+	}
+
+	request := armresourcegraph.QueryRequest{
+		Query:         to.Ptr(query),
+		Subscriptions: subscriptions,
+		Options: &armresourcegraph.QueryRequestOptions{
+			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
+		},
+	}
+
+	result, err := c.client.Resources(ctx, request, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute discovery query: %w", err)
+	}
+
+	return c.parseDiscoveryResults(&result.QueryResponse)
+}
+
+// parseDiscoveryResults converts Resource Graph results to ServiceInfo
+func (c *ResourceGraphClient) parseDiscoveryResults(response *armresourcegraph.QueryResponse) ([]*pb.ServiceInfo, error) {
+	if response.Data == nil {
+		return nil, fmt.Errorf("no data in response")
+	}
+
+	data, ok := response.Data.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected data format")
+	}
+
+	serviceMap := make(map[string]*pb.ServiceInfo)
+
+	for _, item := range data {
+		row, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		provider := getString(row, "Provider")
+		service := getString(row, "Service")
+		resourceType := getString(row, "ResourceType")
+		fullType := getString(row, "type")
+
+		if provider == "" || service == "" || resourceType == "" {
+			continue
+		}
+
+		// Normalize service name (Microsoft.Compute -> compute)
+		serviceName := strings.ToLower(strings.TrimPrefix(service, "Microsoft."))
+		serviceKey := fmt.Sprintf("%s.%s", provider, serviceName)
+
+		// Get or create service info
+		serviceInfo, exists := serviceMap[serviceKey]
+		if !exists {
+			serviceInfo = &pb.ServiceInfo{
+				Name:          serviceName,
+				DisplayName:   service,
+				PackageName:   fmt.Sprintf("github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/%s", serviceName),
+				ClientType:    fmt.Sprintf("%sClient", strings.Title(serviceName)),
+				ResourceTypes: []*pb.ResourceType{},
+			}
+			serviceMap[serviceKey] = serviceInfo
+		}
+
+		// Add resource type
+		resourceTypeInfo := &pb.ResourceType{
+			Name:              resourceType,
+			TypeName:          fullType,
+			ListOperation:     "List",
+			DescribeOperation: "Get",
+			GetOperation:      "Get",
+			IdField:           "id",
+			NameField:         "name",
+			SupportsTags:      true,
+			Paginated:         true,
+		}
+
+		serviceInfo.ResourceTypes = append(serviceInfo.ResourceTypes, resourceTypeInfo)
+	}
+
+	// Convert map to slice
+	services := make([]*pb.ServiceInfo, 0, len(serviceMap))
+	for _, service := range serviceMap {
+		services = append(services, service)
+	}
+
+	return services, nil
+}
+
+// Helper functions for parsing Resource Graph results
+func getString(row map[string]interface{}, key string) string {
+	if val, ok := row[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func getInt32(row map[string]interface{}, key string) int32 {
+	if val, ok := row[key]; ok {
+		switch v := val.(type) {
+		case int:
+			return int32(v)
+		case int32:
+			return v
+		case int64:
+			return int32(v)
+		case float64:
+			return int32(v)
+		}
+	}
+	return 0
+}
+
+// extractSchemaFromSamples analyzes sample resources to extract schema
+func (c *ResourceGraphClient) extractSchemaFromSamples(resourceType string, samples []*pb.ResourceRef) (*ResourceSchema, error) {
+	schema := &ResourceSchema{
+		ResourceType: resourceType,
+		Properties:   make(map[string]PropertyDef),
+		CommonTags:   []string{},
+		Locations:    []string{},
+		SampleCount:  len(samples),
+	}
+
+	locationSet := make(map[string]bool)
+	tagSet := make(map[string]bool)
+	propertyTypes := make(map[string]map[string]bool)
+
+	for _, sample := range samples {
+		// Collect locations
+		if sample.Region != "" {
+			locationSet[sample.Region] = true
+		}
+
+		// Collect tags
+		for key := range sample.BasicAttributes {
+			if strings.HasPrefix(key, "tag_") {
+				tagName := strings.TrimPrefix(key, "tag_")
+				tagSet[tagName] = true
+			}
+		}
+
+		// Analyze properties
+		if propsJSON, ok := sample.BasicAttributes["properties"]; ok {
+			var properties map[string]interface{}
+			if err := json.Unmarshal([]byte(propsJSON), &properties); err == nil {
+				c.analyzeProperties(properties, "", propertyTypes)
+			}
+		}
+	}
+
+	// Convert sets to slices
+	for location := range locationSet {
+		schema.Locations = append(schema.Locations, location)
+	}
+	for tag := range tagSet {
+		schema.CommonTags = append(schema.CommonTags, tag)
+	}
+
+	// Convert property analysis to schema
+	for propName, types := range propertyTypes {
+		propDef := PropertyDef{
+			Name:     propName,
+			Type:     c.inferPropertyType(types),
+			Required: len(types) == len(samples), // Required if present in all samples
+			Examples: []string{},
+		}
+		schema.Properties[propName] = propDef
+	}
+
+	return schema, nil
+}
+
+// analyzeProperties recursively analyzes properties to determine types
+func (c *ResourceGraphClient) analyzeProperties(properties map[string]interface{}, prefix string, propertyTypes map[string]map[string]bool) {
+	for key, value := range properties {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+
+		if propertyTypes[fullKey] == nil {
+			propertyTypes[fullKey] = make(map[string]bool)
+		}
+
+		switch v := value.(type) {
+		case string:
+			propertyTypes[fullKey]["string"] = true
+		case int, int32, int64:
+			propertyTypes[fullKey]["integer"] = true
+		case float32, float64:
+			propertyTypes[fullKey]["number"] = true
+		case bool:
+			propertyTypes[fullKey]["boolean"] = true
+		case map[string]interface{}:
+			propertyTypes[fullKey]["object"] = true
+			// Recursively analyze nested objects
+			c.analyzeProperties(v, fullKey, propertyTypes)
+		case []interface{}:
+			propertyTypes[fullKey]["array"] = true
+		default:
+			propertyTypes[fullKey]["unknown"] = true
+		}
+	}
+}
+
+// inferPropertyType infers the most appropriate type from observed types
+func (c *ResourceGraphClient) inferPropertyType(types map[string]bool) string {
+	if len(types) == 1 {
+		for t := range types {
+			return t
+		}
+	}
+
+	// Priority order for mixed types
+	if types["object"] {
+		return "object"
+	}
+	if types["array"] {
+		return "array"
+	}
+	if types["string"] {
+		return "string"
+	}
+	if types["number"] {
+		return "number"
+	}
+	if types["integer"] {
+		return "integer"
+	}
+	if types["boolean"] {
+		return "boolean"
+	}
+
+	return "unknown"
+}
+
+// executeRelationshipDiscoveryQuery executes relationship discovery queries
+func (c *ResourceGraphClient) executeRelationshipDiscoveryQuery(ctx context.Context, query string) ([]*RelationshipPattern, error) {
+	subscriptions := make([]*string, len(c.subscriptions))
+	for i, sub := range c.subscriptions {
+		subscriptions[i] = to.Ptr(sub)
+	}
+
+	request := armresourcegraph.QueryRequest{
+		Query:         to.Ptr(query),
+		Subscriptions: subscriptions,
+		Options: &armresourcegraph.QueryRequestOptions{
+			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
+		},
+	}
+
+	result, err := c.client.Resources(ctx, request, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute relationship discovery query: %w", err)
+	}
+
+	return c.parseRelationshipResults(&result.QueryResponse)
+}
+
+// parseRelationshipResults parses relationship discovery results
+func (c *ResourceGraphClient) parseRelationshipResults(response *armresourcegraph.QueryResponse) ([]*RelationshipPattern, error) {
+	if response.Data == nil {
+		return nil, fmt.Errorf("no data in response")
+	}
+
+	data, ok := response.Data.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected data format")
+	}
+
+	patterns := make([]*RelationshipPattern, 0, len(data))
+
+	for _, item := range data {
+		row, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		pattern := &RelationshipPattern{
+			SourceType:        getString(row, "SourceType"),
+			TargetType:        getString(row, "TargetType"),
+			RelationshipCount: int(getInt32(row, "RelationshipCount")),
+			SampleReferences:  []string{},
+			RelationshipType:  "REFERENCES", // Default type
+		}
+
+		// Parse sample references if available
+		if samples, ok := row["SampleReferences"].([]interface{}); ok {
+			for _, sample := range samples {
+				if sampleStr, ok := sample.(string); ok {
+					pattern.SampleReferences = append(pattern.SampleReferences, sampleStr)
+				}
+			}
+		}
+
+		patterns = append(patterns, pattern)
+	}
+
+	return patterns, nil
 }

@@ -235,23 +235,4 @@ func extractServiceFromResourceType(resourceType string) string {
 	return "Unknown"
 }
 
-// RefreshClient removes a client from cache to force recreation
-func (f *AzureClientFactory) RefreshClient(resourceType string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	delete(f.clientCache, resourceType)
-}
 
-// GetClientInfo returns information about a specific client
-func (f *AzureClientFactory) GetClientInfo(resourceType string) map[string]interface{} {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	info := make(map[string]interface{})
-	info["resource_type"] = resourceType
-	info["subscription_id"] = f.subscriptionID
-	info["is_cached"] = f.clientCache[resourceType] != nil
-	info["is_supported"] = f.IsResourceTypeSupported(resourceType)
-
-	return info
-}

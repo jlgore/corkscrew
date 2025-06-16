@@ -122,40 +122,48 @@ func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, serv
 		return nil, err
 	}
 
-	// Convert ResourceRef to Resource
+	// Convert ResourceRef to Resource with full details
 	resources := make([]*pb.Resource, 0, len(resourceRefs))
 	for _, ref := range resourceRefs {
-		resource := &pb.Resource{
-			Provider:     "azure",
-			Service:      ref.Service,
-			Type:         ref.Type,
-			Id:           ref.Id,
-			Name:         ref.Name,
-			Region:       ref.Region,
-			Tags:         make(map[string]string),
-			DiscoveredAt: timestamppb.Now(),
-		}
-
-		// Extract metadata
-		if ref.BasicAttributes != nil {
-			if rg, ok := ref.BasicAttributes["resource_group"]; ok {
-				resource.ParentId = rg
-			}
-			if subID, ok := ref.BasicAttributes["subscription_id"]; ok {
-				resource.AccountId = subID
+		// Try to get full resource details
+		resource, err := s.DescribeResource(ctx, ref)
+		if err != nil {
+			// If describe fails, fall back to basic conversion
+			log.Printf("Failed to describe resource %s, using basic data: %v", ref.Id, err)
+			resource = &pb.Resource{
+				Provider:     "azure",
+				Service:      ref.Service,
+				Type:         ref.Type,
+				Id:           ref.Id,
+				Name:         ref.Name,
+				Region:       ref.Region,
+				Tags:         make(map[string]string),
+				DiscoveredAt: timestamppb.Now(),
 			}
 
-			// Extract tags
-			for k, v := range ref.BasicAttributes {
-				if strings.HasPrefix(k, "tag_") {
-					tagName := strings.TrimPrefix(k, "tag_")
-					resource.Tags[tagName] = v
+			// Extract metadata from BasicAttributes
+			if ref.BasicAttributes != nil {
+				if rg, ok := ref.BasicAttributes["resource_group"]; ok {
+					resource.ParentId = rg
 				}
-			}
+				if subID, ok := ref.BasicAttributes["subscription_id"]; ok {
+					resource.AccountId = subID
+				}
 
-			// Store properties as raw data
-			if props, ok := ref.BasicAttributes["properties"]; ok {
-				resource.RawData = props
+				// Extract tags
+				for k, v := range ref.BasicAttributes {
+					if strings.HasPrefix(k, "tag_") {
+						tagName := strings.TrimPrefix(k, "tag_")
+						resource.Tags[tagName] = v
+					}
+				}
+
+				// Store raw data - prefer full raw_data over just properties
+				if rawData, ok := ref.BasicAttributes["raw_data"]; ok {
+					resource.RawData = rawData
+				} else if props, ok := ref.BasicAttributes["properties"]; ok {
+					resource.RawData = props
+				}
 			}
 		}
 		
@@ -171,17 +179,60 @@ func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, serv
 	return resources, nil
 }
 
+// getAPIVersionForResourceType returns the appropriate API version for a resource type
+func (s *AzureResourceScanner) getAPIVersionForResourceType(resourceType string) string {
+	// Map of resource types to their recommended API versions
+	apiVersionMap := map[string]string{
+		"Microsoft.Storage/storageAccounts":           "2023-01-01",
+		"Microsoft.Compute/virtualMachines":           "2023-03-01",
+		"Microsoft.Network/virtualNetworks":           "2023-05-01",
+		"Microsoft.KeyVault/vaults":                   "2023-02-01",
+		"Microsoft.EventHub/namespaces":               "2021-11-01",
+		"Microsoft.Web/sites":                         "2022-09-01",
+		"Microsoft.ContainerService/managedClusters":  "2023-05-01",
+		"Microsoft.Sql/servers":                       "2022-05-01-preview",
+		"Microsoft.DocumentDB/databaseAccounts":       "2023-04-15",
+	}
+	
+	// Check for exact match
+	if version, ok := apiVersionMap[resourceType]; ok {
+		return version
+	}
+	
+	// Check for partial match (e.g., Microsoft.Storage/* resources)
+	parts := strings.Split(resourceType, "/")
+	if len(parts) >= 2 {
+		provider := parts[0] + "/" + parts[1]
+		for key, version := range apiVersionMap {
+			if strings.HasPrefix(key, provider) {
+				return version
+			}
+		}
+	}
+	
+	// Default fallback
+	return "2023-01-01"
+}
+
 // DescribeResource provides detailed information about a specific resource
 func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef *pb.ResourceRef) (*pb.Resource, error) {
 	if resourceRef == nil || resourceRef.Id == "" {
 		return nil, fmt.Errorf("resource reference is required")
 	}
 
+	log.Printf("DEBUG: DescribeResource called for %s (type: %s)", resourceRef.Id, resourceRef.Type)
+	
+	// Determine the appropriate API version
+	apiVersion := s.getAPIVersionForResourceType(resourceRef.Type)
+	log.Printf("DEBUG: Using API version %s for resource type %s", apiVersion, resourceRef.Type)
+
 	// Get resource details using ARM API
-	result, err := s.resourcesClient.GetByID(ctx, resourceRef.Id, "2021-04-01", nil)
+	result, err := s.resourcesClient.GetByID(ctx, resourceRef.Id, apiVersion, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get resource %s: %w", resourceRef.Id, err)
+		return nil, fmt.Errorf("failed to get resource %s with API version %s: %w", resourceRef.Id, apiVersion, err)
 	}
+	
+	log.Printf("DEBUG: ARM API returned data for %s", resourceRef.Id)
 
 	resource := &pb.Resource{
 		Provider:     "azure",
@@ -226,11 +277,58 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 		}
 	}
 
-	// Store properties as raw data
-	if result.Properties != nil {
-		if propsJSON, err := json.Marshal(result.Properties); err == nil {
-			resource.RawData = string(propsJSON)
+	// Build complete resource structure with all fields
+	fullResource := map[string]interface{}{
+		"id":         resource.Id,
+		"name":       resource.Name,
+		"type":       resource.Type,
+		"location":   resource.Region,
+		"tags":       resource.Tags,
+		"properties": result.Properties,
+	}
+	
+	// Add SKU if present
+	if result.SKU != nil {
+		skuData := map[string]interface{}{}
+		if result.SKU.Name != nil {
+			skuData["name"] = *result.SKU.Name
 		}
+		if result.SKU.Tier != nil {
+			skuData["tier"] = *result.SKU.Tier
+		}
+		if result.SKU.Size != nil {
+			skuData["size"] = *result.SKU.Size
+		}
+		if result.SKU.Family != nil {
+			skuData["family"] = *result.SKU.Family
+		}
+		if result.SKU.Capacity != nil {
+			skuData["capacity"] = *result.SKU.Capacity
+		}
+		fullResource["sku"] = skuData
+	}
+	
+	// Add other fields if present
+	if result.Kind != nil {
+		fullResource["kind"] = *result.Kind
+	}
+	// Note: Etag is not available in the current SDK version
+	if result.Plan != nil {
+		fullResource["plan"] = result.Plan
+	}
+	if result.Identity != nil {
+		fullResource["identity"] = result.Identity
+	}
+	if result.ManagedBy != nil {
+		fullResource["managedBy"] = *result.ManagedBy
+	}
+	
+	// Store the complete resource data as raw data
+	if fullData, err := json.Marshal(fullResource); err == nil {
+		resource.RawData = string(fullData)
+		log.Printf("DEBUG: Stored complete resource data for %s, length: %d", resource.Name, len(resource.RawData))
+	} else {
+		log.Printf("DEBUG: Failed to marshal resource data for %s: %v", resource.Name, err)
 	}
 
 	return resource, nil
@@ -356,43 +454,6 @@ func (s *AzureResourceScanner) extractResourceGroupFromID(resourceID string) str
 	return ""
 }
 
-// ScanResourceGroup scans all resources in a specific resource group
-func (s *AzureResourceScanner) ScanResourceGroup(ctx context.Context, resourceGroup string) ([]*pb.ResourceRef, error) {
-	filter := fmt.Sprintf("resourceGroup eq '%s'", resourceGroup)
-	return s.scanWithFilter(ctx, filter)
-}
-
-// ScanByResourceType scans resources of a specific type
-func (s *AzureResourceScanner) ScanByResourceType(ctx context.Context, resourceType string) ([]*pb.ResourceRef, error) {
-	filter := fmt.Sprintf("resourceType eq '%s'", resourceType)
-	return s.scanWithFilter(ctx, filter)
-}
-
-// ScanByLocation scans resources in a specific location
-func (s *AzureResourceScanner) ScanByLocation(ctx context.Context, location string) ([]*pb.ResourceRef, error) {
-	filter := fmt.Sprintf("location eq '%s'", location)
-	return s.scanWithFilter(ctx, filter)
-}
-
-// ScanByTags scans resources with specific tags
-func (s *AzureResourceScanner) ScanByTags(ctx context.Context, tags map[string]string) ([]*pb.ResourceRef, error) {
-	// ARM API has limited tag filtering capabilities
-	// This would need to be enhanced with post-filtering
-	resources, err := s.scanWithFilter(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter by tags
-	var filtered []*pb.ResourceRef
-	for _, resource := range resources {
-		if s.matchesTags(resource, tags) {
-			filtered = append(filtered, resource)
-		}
-	}
-
-	return filtered, nil
-}
 
 // matchesTags checks if a resource matches the specified tags
 func (s *AzureResourceScanner) matchesTags(resource *pb.ResourceRef, tags map[string]string) bool {
@@ -410,30 +471,6 @@ func (s *AzureResourceScanner) matchesTags(resource *pb.ResourceRef, tags map[st
 	return true
 }
 
-// GetResourceCount returns the count of resources for a service
-func (s *AzureResourceScanner) GetResourceCount(ctx context.Context, service string) (int, error) {
-	resources, err := s.ScanService(ctx, service, nil)
-	if err != nil {
-		return 0, err
-	}
-	return len(resources), nil
-}
-
-// GetResourcesByProvider returns resources grouped by provider
-func (s *AzureResourceScanner) GetResourcesByProvider(ctx context.Context) (map[string][]*pb.ResourceRef, error) {
-	allResources, err := s.ScanAllResources(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	grouped := make(map[string][]*pb.ResourceRef)
-	for _, resource := range allResources {
-		provider := s.extractProviderFromType(resource.Type)
-		grouped[provider] = append(grouped[provider], resource)
-	}
-
-	return grouped, nil
-}
 
 // extractProviderFromType extracts provider namespace from resource type
 func (s *AzureResourceScanner) extractProviderFromType(resourceType string) string {
@@ -445,73 +482,6 @@ func (s *AzureResourceScanner) extractProviderFromType(resourceType string) stri
 	return "unknown"
 }
 
-// ValidateResourceAccess checks if the scanner can access a specific resource
-func (s *AzureResourceScanner) ValidateResourceAccess(ctx context.Context, resourceID string) error {
-	_, err := s.resourcesClient.GetByID(ctx, resourceID, "2021-04-01", nil)
-	if err != nil {
-		return fmt.Errorf("cannot access resource %s: %w", resourceID, err)
-	}
-	return nil
-}
-
-// GetResourceMetrics would integrate with Azure Monitor to get resource metrics
-func (s *AzureResourceScanner) GetResourceMetrics(ctx context.Context, resourceID string) (map[string]interface{}, error) {
-	// This would integrate with Azure Monitor APIs
-	// For now, return placeholder
-	return map[string]interface{}{
-		"resource_id": resourceID,
-		"metrics":     "not_implemented",
-	}, nil
-}
-
-// GetResourceDependencies analyzes resource dependencies
-func (s *AzureResourceScanner) GetResourceDependencies(ctx context.Context, resourceID string) ([]*pb.ResourceRef, error) {
-	// This would analyze ARM template dependencies or use Resource Graph
-	// For now, return empty list
-	return []*pb.ResourceRef{}, nil
-}
-
-// BatchGetResources gets multiple resources by their IDs
-func (s *AzureResourceScanner) BatchGetResources(ctx context.Context, resourceIDs []string) ([]*pb.Resource, error) {
-	resources := make([]*pb.Resource, 0, len(resourceIDs))
-
-	// Process in parallel with limited concurrency
-	semaphore := make(chan struct{}, 10) // Limit to 10 concurrent requests
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var errors []error
-
-	for _, resourceID := range resourceIDs {
-		wg.Add(1)
-		go func(id string) {
-			defer wg.Done()
-			semaphore <- struct{}{}        // Acquire
-			defer func() { <-semaphore }() // Release
-
-			resourceRef := &pb.ResourceRef{Id: id}
-			resource, err := s.DescribeResource(ctx, resourceRef)
-			if err != nil {
-				mu.Lock()
-				errors = append(errors, fmt.Errorf("failed to get resource %s: %w", id, err))
-				mu.Unlock()
-				return
-			}
-
-			mu.Lock()
-			resources = append(resources, resource)
-			mu.Unlock()
-		}(resourceID)
-	}
-
-	wg.Wait()
-
-	if len(errors) > 0 {
-		// Return partial results with error information
-		log.Printf("Batch get completed with %d errors out of %d resources", len(errors), len(resourceIDs))
-	}
-
-	return resources, nil
-}
 
 // extractRelationshipsFromResource extracts relationships from an Azure resource
 func (s *AzureResourceScanner) extractRelationshipsFromResource(resource *pb.Resource, ref *pb.ResourceRef) []*pb.Relationship {

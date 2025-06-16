@@ -16,6 +16,7 @@ providers:
       - rds
       - dynamodb
       - kms
+      - sts
 
   azure:
     enabled: true
