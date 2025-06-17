@@ -1031,10 +1031,9 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 				targetID := fmt.Sprintf("default/%s/%s/%s", namespace, ownerKind, ownerName)
 				
 				relationships = append(relationships, &pb.Relationship{
-					Type:       "OWNED_BY",
-					SourceId:   resource.Id,
-					TargetId:   targetID,
-					Properties: map[string]string{
+					RelationshipType: "OWNED_BY",
+					TargetId:         targetID,
+					Properties:       map[string]string{
 						"owner_kind": ownerKind,
 						"owner_name": ownerName,
 						"owner_uid":  ownerUID,
@@ -1052,8 +1051,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			// Find services that might select this pod
 			labelStr := p.labelsToString(labels)
 			relationships = append(relationships, &pb.Relationship{
-				Type:     "SELECTED_BY",
-				SourceId: resource.Id,
+				RelationshipType: "SELECTED_BY",
 				// TargetId would be filled by matching service selectors
 				Properties: map[string]string{
 					"pod_labels": labelStr,
@@ -1069,8 +1067,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			if selector, ok := spec["selector"].(map[string]interface{}); ok {
 				selectorStr := p.labelsToString(selector)
 				relationships = append(relationships, &pb.Relationship{
-					Type:       "SELECTS",
-					SourceId:   resource.Id,
+					RelationshipType: "SELECTS",
 					Properties: map[string]string{
 						"selector":  selectorStr,
 						"namespace": namespace,
@@ -1092,8 +1089,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 							if cmName, ok := cm["name"].(string); ok {
 								targetID := fmt.Sprintf("default/%s/ConfigMap/%s", namespace, cmName)
 								relationships = append(relationships, &pb.Relationship{
-									Type:     "MOUNTS",
-									SourceId: resource.Id,
+									RelationshipType: "MOUNTS",
 									TargetId: targetID,
 									Properties: map[string]string{
 										"volume_name": volume["name"].(string),
@@ -1107,8 +1103,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 							if secretName, ok := secret["secretName"].(string); ok {
 								targetID := fmt.Sprintf("default/%s/Secret/%s", namespace, secretName)
 								relationships = append(relationships, &pb.Relationship{
-									Type:     "MOUNTS",
-									SourceId: resource.Id,
+									RelationshipType: "MOUNTS",
 									TargetId: targetID,
 									Properties: map[string]string{
 										"volume_name": volume["name"].(string),
@@ -1122,8 +1117,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 							if pvcName, ok := pvc["claimName"].(string); ok {
 								targetID := fmt.Sprintf("default/%s/PersistentVolumeClaim/%s", namespace, pvcName)
 								relationships = append(relationships, &pb.Relationship{
-									Type:     "MOUNTS",
-									SourceId: resource.Id,
+									RelationshipType: "MOUNTS",
 									TargetId: targetID,
 									Properties: map[string]string{
 										"volume_name": volume["name"].(string),
@@ -1154,9 +1148,8 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 												if serviceName, ok := service["name"].(string); ok {
 													targetID := fmt.Sprintf("default/%s/Service/%s", namespace, serviceName)
 													relationships = append(relationships, &pb.Relationship{
-														Type:     "ROUTES_TO",
-														SourceId: resource.Id,
-														TargetId: targetID,
+														RelationshipType: "ROUTES_TO",
+																		TargetId: targetID,
 														Properties: map[string]string{
 															"path": p["path"].(string),
 															"host": r["host"].(string),
@@ -1183,9 +1176,8 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 				if matchLabels, ok := podSelector["matchLabels"].(map[string]interface{}); ok {
 					selectorStr := p.labelsToString(matchLabels)
 					relationships = append(relationships, &pb.Relationship{
-						Type:       "APPLIES_TO",
-						SourceId:   resource.Id,
-						Properties: map[string]string{
+						RelationshipType: "APPLIES_TO",
+							Properties: map[string]string{
 							"pod_selector": selectorStr,
 							"namespace":    namespace,
 						},

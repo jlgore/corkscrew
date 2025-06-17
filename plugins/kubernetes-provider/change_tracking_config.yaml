@@ -1,0 +1,105 @@
+# Kubernetes Provider Change Tracking Configuration
+
+change_tracking:
+  enabled: true
+  
+  # Kubernetes-specific settings
+  clusters:
+    - name: "production"
+      kubeconfig: "/path/to/prod-kubeconfig"
+    - name: "staging"
+      kubeconfig: "/path/to/staging-kubeconfig"
+  
+  # Namespace settings
+  watch_namespaces:
+    - "default"
+    - "kube-system"
+    - "production"
+    - "staging"
+  
+  # Resource types to monitor
+  resource_types:
+    - "pods"
+    - "services"
+    - "deployments"
+    - "statefulsets"
+    - "configmaps"
+    - "secrets"
+    - "persistentvolumeclaims"
+    - "ingresses"
+  
+  # Query settings
+  query_interval: "30s"  # More frequent for K8s
+  change_retention: "2160h"  # 90 days
+  
+  # Kubernetes Watch API settings
+  watch_api:
+    enabled: true
+    timeout: "10m"
+    buffer_size: 1000
+    retry_interval: "5s"
+  
+  # Audit log settings
+  audit_logs:
+    enabled: false  # Requires cluster configuration
+    log_path: "/var/log/audit.log"
+    webhook_url: "https://your-audit-webhook.com"
+  
+  # Helm integration
+  helm:
+    enabled: true
+    track_releases: true
+    namespaces: ["default", "production"]
+  
+  # Storage configuration
+  storage:
+    type: "duckdb"
+    path: "./k8s_changes.db"
+    
+  # Alerting configuration
+  alerting:
+    enabled: true
+    severity_threshold: "MEDIUM"
+    channels:
+      - type: "webhook"
+        url: "https://your-webhook-url.com/k8s-alerts"
+      - type: "slack"
+        webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+        channel: "#k8s-alerts"
+  
+  # Analytics configuration
+  analytics:
+    enabled: true
+    aggregation_interval: "10m"  # More frequent for K8s
+    retention_period: "7d"
+    prometheus_integration: true
+
+  # Drift detection configuration
+  drift_detection:
+    enabled: true
+    check_interval: "30m"  # More frequent for K8s
+    baseline_retention: "30d"
+    
+  # Resource filtering
+  resource_filters:
+    exclude_system_resources: true
+    exclude_namespaces:
+      - "kube-node-lease"
+      - "kube-public"
+    include_custom_resources: true
+    
+  # Performance settings
+  performance:
+    max_concurrent_streams: 20
+    batch_size: 200
+    cache_ttl: "2m"
+    informer_resync_period: "10m"
+    
+  # Security settings
+  security:
+    track_rbac_changes: true
+    track_pod_security_context: true
+    track_network_policies: true
+    sensitive_fields:
+      - "spec.containers[*].env"
+      - "data"  # For secrets and configmaps
