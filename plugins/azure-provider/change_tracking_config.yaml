@@ -1,0 +1,73 @@
+# Azure Provider Change Tracking Configuration
+
+change_tracking:
+  enabled: true
+  
+  # Azure-specific settings
+  subscription_ids: 
+    - "subscription-1"
+    - "subscription-2"
+  tenant_id: "your-tenant-id"
+  
+  # Query settings
+  query_interval: "5m"
+  change_retention: "8760h"  # 1 year
+  
+  # Azure Resource Graph settings
+  resource_graph:
+    enabled: true
+    query_timeout: "30s"
+    max_results: 1000
+  
+  # Azure Event Grid settings (real-time)
+  event_grid:
+    enabled: true
+    endpoint: "https://your-event-grid-endpoint.azure.com"
+    subscription_name: "change-tracking-subscription"
+  
+  # Azure Activity Log settings
+  activity_log:
+    enabled: true
+    retention_days: 90
+  
+  # Storage configuration
+  storage:
+    type: "duckdb"
+    path: "./azure_changes.db"
+    
+  # Alerting configuration
+  alerting:
+    enabled: true
+    severity_threshold: "MEDIUM"
+    channels:
+      - type: "webhook"
+        url: "https://your-webhook-url.com/alerts"
+      - type: "email"
+        recipients: ["admin@company.com"]
+  
+  # Analytics configuration
+  analytics:
+    enabled: true
+    aggregation_interval: "1h"
+    retention_period: "30d"
+
+  # Drift detection configuration
+  drift_detection:
+    enabled: true
+    check_interval: "1h"
+    baseline_retention: "90d"
+    
+  # Resource filtering
+  resource_filters:
+    include_types:
+      - "Microsoft.Compute/*"
+      - "Microsoft.Storage/*"
+      - "Microsoft.Network/*"
+      - "Microsoft.KeyVault/*"
+    exclude_namespaces: []
+    
+  # Performance settings
+  performance:
+    max_concurrent_streams: 10
+    batch_size: 100
+    cache_ttl: "5m"

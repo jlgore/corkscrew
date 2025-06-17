@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -181,8 +180,8 @@ func (d *EntraIDAppDeployer) getRootManagementGroup(ctx context.Context) (*strin
 		}
 		
 		for _, mg := range page.Value {
-			if mg.Properties != nil && mg.Properties.Details != nil && mg.Properties.Details.Parent == nil {
-				// This is the root management group (has no parent)
+			if mg.Properties != nil {
+				// Use the first management group found as root
 				if mg.Name != nil {
 					return mg.Name, nil
 				}

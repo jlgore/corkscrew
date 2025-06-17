@@ -12,7 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
-func main() {
+func deployMain() {
 	var (
 		appName        = flag.String("app-name", "Corkscrew-Scanner", "Name of the enterprise application")
 		description    = flag.String("description", "Corkscrew cloud resource scanner and analyzer", "Description of the app")
