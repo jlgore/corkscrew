@@ -28,7 +28,7 @@ CGO_ENABLED ?= 0
 LDFLAGS := -ldflags "-s -w"
 
 # Targets
-.PHONY: all build clean generate analyze update-sdk check-sdk-version
+.PHONY: all build clean generate analyze update-sdk check-sdk-version test-change-tracking demo-change-tracking benchmark-change-tracking
 
 # Default target
 all: check-sdk-version generate build
@@ -212,6 +212,26 @@ benchmark:
 	@echo "Running benchmarks..."
 	go test -bench=. -benchmem ./...
 
+# Change tracking targets
+test-change-tracking:
+	@echo "🔍 Testing change tracking functionality..."
+	go test -v -run="TestChangeTracking.*|Test.*ChangeTracker.*" ./...
+
+demo-change-tracking:
+	@echo "🎯 Demonstrating change tracking features..."
+	@echo "Run with: make demo-change-tracking ACCOUNT_ID=123456789012 REGION=us-east-1"
+	@if [ -z "$(ACCOUNT_ID)" ] || [ -z "$(REGION)" ]; then \
+		echo "❌ Error: ACCOUNT_ID and REGION are required"; \
+		echo "Example: make demo-change-tracking ACCOUNT_ID=123456789012 REGION=us-east-1"; \
+		exit 1; \
+	fi
+	@echo "Querying AWS Config and CloudTrail for account $(ACCOUNT_ID) in region $(REGION)..."
+	@go run . -demo-change-tracking -account-id=$(ACCOUNT_ID) -region=$(REGION)
+
+benchmark-change-tracking:
+	@echo "⚡ Benchmarking change tracking performance..."
+	go test -bench=BenchmarkChangeEvent.* -benchmem ./...
+
 # Docker support
 .PHONY: docker-build docker-test
 
@@ -249,5 +269,10 @@ help:
 	@echo "Debug targets:"
 	@echo "  debug-vars       - Show build configuration"
 	@echo "  list-services    - List discovered AWS services"
+	@echo ""
+	@echo "Change tracking targets:"
+	@echo "  test-change-tracking     - Test change tracking functionality"
+	@echo "  demo-change-tracking     - Demo change tracking features (requires ACCOUNT_ID and REGION)"
+	@echo "  benchmark-change-tracking - Benchmark change tracking performance"
 	@echo ""
 	@echo "For more information, see README.md"

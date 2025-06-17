@@ -12,7 +12,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.28.0
 	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.53.1
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.60.1
+	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.45.1
+	github.com/aws/aws-sdk-go-v2/service/configservice v1.52.0
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.224.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.57.3
@@ -37,6 +39,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/jlgore/corkscrew v0.0.0
+	github.com/marcboeker/go-duckdb v1.8.5
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.14.0
 	golang.org/x/time v0.5.0
@@ -46,6 +49,7 @@ require (
 replace github.com/jlgore/corkscrew => ../..
 
 require (
+	github.com/apache/arrow-go/v18 v18.3.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
@@ -62,22 +66,32 @@ require (
 	github.com/aws/smithy-go v1.22.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.15.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/flatbuffers v25.2.10+incompatible // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
 	github.com/oklog/run v1.1.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/zeebo/xxh3 v1.0.2 // indirect
+	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 // indirect
+	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/tools v0.33.0 // indirect
+	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/grpc v1.72.1 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -407,6 +407,74 @@ func (d *RuntimeServiceDiscovery) GetDiscoveryStats() *DiscoveryStats {
 	return d.stats
 }
 
+// GetServiceAnalysis retrieves service analysis for a given service name
+func (d *RuntimeServiceDiscovery) GetServiceAnalysis(serviceName string) (*ServiceAnalysis, error) {
+	// Check cache first
+	if cached := d.getCachedService(serviceName); cached != nil {
+		return d.convertMetadataToAnalysis(cached), nil
+	}
+	
+	// Get client for the service to analyze it
+	client := d.clientFactory.GetClient(serviceName)
+	if client == nil {
+		return nil, fmt.Errorf("failed to get client for service %s", serviceName)
+	}
+	
+	// Analyze the service via reflection
+	metadata, err := d.analyzeServiceViaReflection(client, serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze service %s: %w", serviceName, err)
+	}
+	
+	// Cache the metadata
+	d.cacheService(serviceName, metadata)
+	
+	// Convert to ServiceAnalysis format
+	return d.convertMetadataToAnalysis(metadata), nil
+}
+
+// convertMetadataToAnalysis converts ServiceMetadata to ServiceAnalysis
+func (d *RuntimeServiceDiscovery) convertMetadataToAnalysis(metadata *ServiceMetadata) *ServiceAnalysis {
+	analysis := &ServiceAnalysis{
+		ServiceName:  metadata.Name,
+		Operations:   make([]OperationAnalysis, 0, len(metadata.Operations)),
+		LastAnalyzed: time.Now(),
+	}
+	
+	// Convert operations from map to slice
+	for opName, opType := range metadata.Operations {
+		opAnalysis := OperationAnalysis{
+			Name:         opName,
+			Type:         d.operationTypeToString(opType),
+			ResourceType: d.extractResourceType(opName),
+			IsPaginated:  metadata.Paginated[opName],
+		}
+		analysis.Operations = append(analysis.Operations, opAnalysis)
+	}
+	
+	return analysis
+}
+
+// operationTypeToString converts OperationType to string
+func (d *RuntimeServiceDiscovery) operationTypeToString(opType OperationType) string {
+	switch opType {
+	case ListOperation:
+		return "List"
+	case DescribeOperation:
+		return "Describe"
+	case GetOperation:
+		return "Get"
+	case CreateOperation:
+		return "Create"
+	case UpdateOperation:
+		return "Update"
+	case DeleteOperation:
+		return "Delete"
+	default:
+		return "Unknown"
+	}
+}
+
 // Utility methods
 
 func (d *RuntimeServiceDiscovery) shouldSkipService(serviceName string) bool {

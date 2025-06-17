@@ -9,11 +9,18 @@ import (
 	"text/tabwriter"
 
 	"github.com/jlgore/corkscrew/plugins/aws-provider/generator"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/discovery"
 )
 
 // AWSParameterCLI provides CLI commands for parameter intelligence
 type AWSParameterCLI struct {
-	enhancer *AWSPluginParameterEnhancer
+	enhancer  *AWSPluginParameterEnhancer
+	discovery DiscoveryInterface
+}
+
+// DiscoveryInterface defines the interface for service discovery
+type DiscoveryInterface interface {
+	GetServiceAnalysis(serviceName string) (*discovery.ServiceAnalysis, error)
 }
 
 // NewAWSParameterCLI creates a new parameter CLI
@@ -21,6 +28,11 @@ func NewAWSParameterCLI() *AWSParameterCLI {
 	return &AWSParameterCLI{
 		enhancer: NewAWSPluginParameterEnhancer(),
 	}
+}
+
+// SetDiscovery sets the discovery interface for the CLI
+func (cli *AWSParameterCLI) SetDiscovery(discovery DiscoveryInterface) {
+	cli.discovery = discovery
 }
 
 // AWSParameterAnalyzeCommand represents the analyze command arguments
@@ -223,11 +235,37 @@ func (cli *AWSParameterCLI) ExecuteAWSParameterPlan(cmd AWSParameterPlanCommand)
 	}
 }
 
-// getAWSOperationsForService gets operations for a service (placeholder)
+// getAWSOperationsForService gets operations for a service using the discovery system
 func (cli *AWSParameterCLI) getAWSOperationsForService(serviceName string) ([]generator.AWSOperation, error) {
-	// This would integrate with the existing discovery system
-	// For now, return a placeholder
-	return []generator.AWSOperation{}, fmt.Errorf("service discovery integration needed")
+	// Use the discovery system to get service analysis
+	if cli.discovery == nil {
+		return []generator.AWSOperation{}, fmt.Errorf("discovery system not initialized")
+	}
+	
+	// Get service analysis from discovery
+	analysis, err := cli.discovery.GetServiceAnalysis(serviceName)
+	if err != nil {
+		return []generator.AWSOperation{}, fmt.Errorf("failed to get service analysis for %s: %w", serviceName, err)
+	}
+	
+	// Convert discovery operations to generator operations
+	var operations []generator.AWSOperation
+	for _, op := range analysis.Operations {
+		awsOp := generator.AWSOperation{
+			Name:         op.Name,
+			Method:       op.Name,
+			InputType:    op.InputType,
+			OutputType:   op.OutputType,
+			IsList:       strings.Contains(strings.ToLower(op.Name), "list"),
+			IsDescribe:   strings.Contains(strings.ToLower(op.Name), "describe"),
+			IsGet:        strings.Contains(strings.ToLower(op.Name), "get"),
+			ResourceType: op.ResourceType,
+			Paginated:    op.IsPaginated,
+		}
+		operations = append(operations, awsOp)
+	}
+	
+	return operations, nil
 }
 
 // loadAWSParametersFromFile loads parameters from a JSON file
@@ -362,7 +400,8 @@ func (cli *AWSParameterCLI) outputAWSPlanTable(plan *AWSExecutionPlan) error {
 
 // AWSParameterExecutor provides execution capabilities with parameter intelligence
 type AWSParameterExecutor struct {
-	enhancer *AWSPluginParameterEnhancer
+	enhancer  *AWSPluginParameterEnhancer
+	discovery DiscoveryInterface
 }
 
 // NewAWSParameterExecutor creates a new parameter executor
@@ -370,6 +409,11 @@ func NewAWSParameterExecutor() *AWSParameterExecutor {
 	return &AWSParameterExecutor{
 		enhancer: NewAWSPluginParameterEnhancer(),
 	}
+}
+
+// SetDiscovery sets the discovery interface for the executor
+func (e *AWSParameterExecutor) SetDiscovery(discovery DiscoveryInterface) {
+	e.discovery = discovery
 }
 
 // ExecuteAWSOperationWithIntelligence executes an operation with parameter intelligence
@@ -442,15 +486,43 @@ func (e *AWSParameterExecutor) ExecuteAWSOperationWithIntelligence(ctx context.C
 	return executor.ExecuteAWSOperation(ctx, operationName, finalParams)
 }
 
-// getOperationsForService gets operations for a service (placeholder)
+// getOperationsForService gets operations for a service using the discovery system
 func (e *AWSParameterExecutor) getOperationsForService(serviceName string) ([]generator.AWSOperation, error) {
-	// This would integrate with the existing discovery system
-	return []generator.AWSOperation{}, fmt.Errorf("service discovery integration needed")
+	// Use the discovery system to get service analysis
+	if e.discovery == nil {
+		return []generator.AWSOperation{}, fmt.Errorf("discovery system not initialized")
+	}
+	
+	// Get service analysis from discovery
+	analysis, err := e.discovery.GetServiceAnalysis(serviceName)
+	if err != nil {
+		return []generator.AWSOperation{}, fmt.Errorf("failed to get service analysis for %s: %w", serviceName, err)
+	}
+	
+	// Convert discovery operations to generator operations
+	var operations []generator.AWSOperation
+	for _, op := range analysis.Operations {
+		awsOp := generator.AWSOperation{
+			Name:         op.Name,
+			Method:       op.Name,
+			InputType:    op.InputType,
+			OutputType:   op.OutputType,
+			IsList:       strings.Contains(strings.ToLower(op.Name), "list"),
+			IsDescribe:   strings.Contains(strings.ToLower(op.Name), "describe"),
+			IsGet:        strings.Contains(strings.ToLower(op.Name), "get"),
+			ResourceType: op.ResourceType,
+			Paginated:    op.IsPaginated,
+		}
+		operations = append(operations, awsOp)
+	}
+	
+	return operations, nil
 }
 
 // AWSParameterMiddleware provides middleware for parameter enhancement
 type AWSParameterMiddleware struct {
-	enhancer *AWSPluginParameterEnhancer
+	enhancer  *AWSPluginParameterEnhancer
+	discovery DiscoveryInterface
 }
 
 // NewAWSParameterMiddleware creates new parameter middleware
@@ -458,6 +530,11 @@ func NewAWSParameterMiddleware() *AWSParameterMiddleware {
 	return &AWSParameterMiddleware{
 		enhancer: NewAWSPluginParameterEnhancer(),
 	}
+}
+
+// SetDiscovery sets the discovery interface for the middleware
+func (m *AWSParameterMiddleware) SetDiscovery(discovery DiscoveryInterface) {
+	m.discovery = discovery
 }
 
 // EnhanceAWSOperationExecution enhances operation execution with parameter intelligence
@@ -520,10 +597,37 @@ func (m *AWSParameterMiddleware) EnhanceAWSOperationExecution(next AWSOperationH
 	}
 }
 
-// getOperationsForService gets operations for a service (placeholder)
+// getOperationsForService gets operations for a service using the discovery system
 func (m *AWSParameterMiddleware) getOperationsForService(serviceName string) ([]generator.AWSOperation, error) {
-	// This would integrate with the existing discovery system
-	return []generator.AWSOperation{}, fmt.Errorf("service discovery integration needed")
+	// Use the discovery system to get service analysis
+	if m.discovery == nil {
+		return []generator.AWSOperation{}, fmt.Errorf("discovery system not initialized")
+	}
+	
+	// Get service analysis from discovery
+	analysis, err := m.discovery.GetServiceAnalysis(serviceName)
+	if err != nil {
+		return []generator.AWSOperation{}, fmt.Errorf("failed to get service analysis for %s: %w", serviceName, err)
+	}
+	
+	// Convert discovery operations to generator operations
+	var operations []generator.AWSOperation
+	for _, op := range analysis.Operations {
+		awsOp := generator.AWSOperation{
+			Name:         op.Name,
+			Method:       op.Name,
+			InputType:    op.InputType,
+			OutputType:   op.OutputType,
+			IsList:       strings.Contains(strings.ToLower(op.Name), "list"),
+			IsDescribe:   strings.Contains(strings.ToLower(op.Name), "describe"),
+			IsGet:        strings.Contains(strings.ToLower(op.Name), "get"),
+			ResourceType: op.ResourceType,
+			Paginated:    op.IsPaginated,
+		}
+		operations = append(operations, awsOp)
+	}
+	
+	return operations, nil
 }
 
 // AWSOperationHandler represents a handler for AWS operations

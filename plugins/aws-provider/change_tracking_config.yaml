@@ -1,0 +1,89 @@
+# AWS Provider Change Tracking Configuration
+
+change_tracking:
+  enabled: true
+  
+  # AWS-specific settings
+  account_ids:
+    - "123456789012"
+    - "123456789013"
+  regions:
+    - "us-east-1"
+    - "us-west-2"
+    - "eu-west-1"
+  
+  # Query settings
+  query_interval: "5m"
+  change_retention: "8760h"  # 1 year
+  
+  # AWS Config settings
+  config_service:
+    enabled: true
+    delivery_channel: "default"
+    configuration_recorder: "default"
+    include_global_resources: true
+  
+  # AWS CloudTrail settings
+  cloudtrail:
+    enabled: true
+    trail_name: "change-tracking-trail"
+    s3_bucket: "your-cloudtrail-bucket"
+    include_management_events: true
+    include_data_events: false
+  
+  # AWS EventBridge settings (real-time)
+  eventbridge:
+    enabled: true
+    rule_name: "change-tracking-rule"
+    target_function: "change-processor"
+  
+  # Storage configuration
+  storage:
+    type: "duckdb"
+    path: "./aws_changes.db"
+    
+  # Alerting configuration
+  alerting:
+    enabled: true
+    severity_threshold: "MEDIUM"
+    sns_topic_arn: "arn:aws:sns:us-east-1:123456789012:change-alerts"
+    channels:
+      - type: "sns"
+        topic_arn: "arn:aws:sns:us-east-1:123456789012:change-alerts"
+      - type: "webhook"
+        url: "https://your-webhook-url.com/alerts"
+  
+  # Analytics configuration
+  analytics:
+    enabled: true
+    aggregation_interval: "1h"
+    retention_period: "30d"
+    cloudwatch_namespace: "ChangeTracking"
+
+  # Drift detection configuration
+  drift_detection:
+    enabled: true
+    check_interval: "1h"
+    baseline_retention: "90d"
+    
+  # Resource filtering
+  resource_filters:
+    include_types:
+      - "AWS::EC2::Instance"
+      - "AWS::S3::Bucket"
+      - "AWS::RDS::DBInstance"
+      - "AWS::IAM::Role"
+      - "AWS::Lambda::Function"
+    exclude_regions: []
+    
+  # Performance settings
+  performance:
+    max_concurrent_streams: 50
+    batch_size: 500
+    cache_ttl: "5m"
+    
+  # Cost optimization
+  cost_optimization:
+    enabled: true
+    reserved_capacity: false
+    spot_instances: true

@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/discovery"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/parameter"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/client"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/registry"
@@ -22,12 +23,50 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// UnifiedRegistryAdapter adapts the UnifiedServiceRegistry to the scanner.ServiceRegistry interface
+type UnifiedRegistryAdapter struct {
+	registry *registry.UnifiedServiceRegistry
+}
 
+// GetService retrieves a service definition by name
+func (u *UnifiedRegistryAdapter) GetService(name string) (*scanner.ScannerServiceDefinition, bool) {
+	if u.registry == nil {
+		return nil, false
+	}
+	
+	service, exists := u.registry.GetService(name)
+	if !exists {
+		return nil, false
+	}
+	
+	// Convert to scanner format
+	scannerDef := &scanner.ScannerServiceDefinition{
+		Name:          service.Name,
+		ResourceTypes: make([]scanner.ResourceTypeDefinition, 0, len(service.ResourceTypes)),
+	}
+	
+	// Convert resource types
+	for _, rt := range service.ResourceTypes {
+		scannerRT := scanner.ResourceTypeDefinition{
+			Name:         rt.Name,
+			ResourceType: rt.ResourceType,
+			IDField:      rt.IDField,
+			ARNPattern:   rt.ARNPattern,
+		}
+		scannerDef.ResourceTypes = append(scannerDef.ResourceTypes, scannerRT)
+	}
+	
+	return scannerDef, true
+}
 
-
-
-
-
+// ListServices returns all available service names
+func (u *UnifiedRegistryAdapter) ListServices() []string {
+	if u.registry == nil {
+		return []string{}
+	}
+	
+	return u.registry.ListServices()
+}
 
 // ScannerProvider implements the UnifiedScannerProvider interface
 // by delegating to the UnifiedScanner's methods
@@ -121,6 +160,13 @@ type AWSProvider struct {
 	// Runtime pipeline for advanced scanning
 	pipeline *runtime.RuntimePipeline
 
+	// Change tracking and database auto-save
+	changeStorage *DuckDBChangeStorage
+	
+	// Parameter intelligence components
+	parameterCLI  *parameter.AWSParameterCLI
+	parameterExec *parameter.AWSParameterExecutor
+
 	// Caching
 	serviceCache  *Cache
 	resourceCache *Cache
@@ -128,6 +174,9 @@ type AWSProvider struct {
 	// Performance components
 	rateLimiter    *rate.Limiter
 	maxConcurrency int
+	
+	// Progress tracking
+	currentProgressTracker *ScanProgressTracker
 }
 
 // NewAWSProvider creates a new AWS provider instance
@@ -160,6 +209,20 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 	// Initialize core components
 	p.clientFactory = client.NewClientFactory(cfg)
+	
+	// Initialize change storage for database auto-save
+	changeStorage, err := NewDuckDBChangeStorage("aws_scans.db")
+	if err != nil {
+		log.Printf("Warning: Failed to initialize change storage: %v", err)
+		// Continue without auto-save functionality
+	} else {
+		p.changeStorage = changeStorage
+		log.Printf("Database auto-save initialized: aws_scans.db")
+	}
+	
+	// Initialize parameter intelligence components
+	p.parameterCLI = parameter.NewAWSParameterCLI()
+	p.parameterExec = parameter.NewAWSParameterExecutor()
 	
 	// Note: Generated client factory will be initialized after unified registry is created
 	
@@ -201,6 +264,16 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.discovery.SetAnalysisGenerator(analysisGenerator)
 	p.discovery.EnableAnalysisGeneration(true)
 	log.Printf("Analysis generator initialized and enabled")
+	
+	// Wire parameter components with discovery
+	if p.parameterCLI != nil {
+		p.parameterCLI.SetDiscovery(p.discovery)
+		log.Printf("Parameter CLI connected to discovery system")
+	}
+	if p.parameterExec != nil {
+		p.parameterExec.SetDiscovery(p.discovery)
+		log.Printf("Parameter executor connected to discovery system")
+	}
 	
 	// Skip service discovery during initialization - will be done on-demand during scanning
 	log.Printf("Initialization complete - service discovery will be performed on-demand during scanning")
@@ -504,6 +577,15 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
+	// Generate scan metadata for auto-save tracking
+	scanStartTime := time.Now()
+	scanID := fmt.Sprintf("scan_%d", scanStartTime.Unix())
+	
+	// Initialize progress tracking
+	p.currentProgressTracker = NewScanProgressTracker(scanID, req.Services)
+	
+	log.Printf("Starting batch scan %s with auto-save and progress tracking for %d services", scanID, len(req.Services))
+
 	// Configure registry to only load requested services
 	if p.unifiedRegistry != nil {
 		p.unifiedRegistry.SetServiceFilter(req.Services)
@@ -561,8 +643,13 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 			return nil, fmt.Errorf("pipeline scan failed: %w", err)
 		}
 		
+		// Auto-save scan results to database
+		if p.changeStorage != nil && len(result.Resources) > 0 {
+			go p.autoSaveScanResults(scanID, scanStartTime, result.Resources, req.Services)
+		}
+		
 		// Convert pipeline result to response
-		return &pb.BatchScanResponse{
+		response := &pb.BatchScanResponse{
 			Resources: result.Resources,
 			Stats: &pb.ScanStats{
 				TotalResources: int32(result.TotalResources),
@@ -571,12 +658,24 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 				ResourceCounts: convertResourceCounts(result.Resources),
 			},
 			Errors: convertErrors(result.Errors),
-		}, nil
+		}
+		
+		// Add scan metadata to response
+		if response.Stats != nil {
+			if response.Stats.ServiceCounts == nil {
+				response.Stats.ServiceCounts = make(map[string]int32)
+			}
+			response.Stats.ServiceCounts["scan_id"] = 0 // Store scan ID in metadata
+		}
+		
+		log.Printf("Pipeline scan %s completed: %d resources found", scanID, len(result.Resources))
+		
+		return response, nil
 	}
 	
 	// Fallback to direct scanning if pipeline not available
 	log.Printf("Pipeline not available, using direct scanning")
-	return p.directBatchScan(ctx, req)
+	return p.directBatchScan(ctx, req, scanID, scanStartTime)
 }
 
 // convertServiceStats converts pipeline service stats to protobuf format
@@ -607,7 +706,7 @@ func convertErrors(errors map[string]error) []string {
 }
 
 // directBatchScan provides fallback scanning when pipeline is not available
-func (p *AWSProvider) directBatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
+func (p *AWSProvider) directBatchScan(ctx context.Context, req *pb.BatchScanRequest, scanID string, scanStartTime time.Time) (*pb.BatchScanResponse, error) {
 	startTime := time.Now()
 	var allResources []*pb.Resource
 	var errors []string
@@ -656,6 +755,11 @@ func (p *AWSProvider) directBatchScan(ctx context.Context, req *pb.BatchScanRequ
 	for _, resource := range allResources {
 		stats.ResourceCounts[resource.Type]++
 		stats.ServiceCounts[resource.Service]++
+	}
+
+	// Auto-save scan results to database
+	if p.changeStorage != nil && len(allResources) > 0 {
+		go p.autoSaveScanResults(scanID, scanStartTime, allResources, req.Services)
 	}
 
 	return &pb.BatchScanResponse{
@@ -927,70 +1031,328 @@ func (p *AWSProvider) getScanMethod() string {
 }
 
 func (p *AWSProvider) batchScanConcurrent(ctx context.Context, services []string) ([]*pb.Resource, []string) {
+	if len(services) == 0 {
+		return []*pb.Resource{}, []string{}
+	}
+	
+	log.Printf("Starting concurrent batch scan of %d services with max concurrency %d", len(services), p.maxConcurrency)
+	
+	// Create channels for work distribution and results
+	serviceChan := make(chan string, len(services))
+	resultChan := make(chan *ServiceScanResult, len(services))
+	
+	// Create context with timeout for scanning operations
+	scanCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	
+	// Start worker goroutines
+	var wg sync.WaitGroup
+	for i := 0; i < p.maxConcurrency; i++ {
+		wg.Add(1)
+		go p.serviceScanWorker(scanCtx, &wg, serviceChan, resultChan)
+	}
+	
+	// Send services to workers
+	for _, service := range services {
+		serviceChan <- service
+	}
+	close(serviceChan)
+	
+	// Collect results in a separate goroutine
+	allResults := make([]*ServiceScanResult, 0, len(services))
+	resultWg := sync.WaitGroup{}
+	resultWg.Add(1)
+	go func() {
+		defer resultWg.Done()
+		for i := 0; i < len(services); i++ {
+			result := <-resultChan
+			allResults = append(allResults, result)
+		}
+		close(resultChan)
+	}()
+	
+	// Wait for all workers to complete
+	wg.Wait()
+	
+	// Wait for result collection to complete
+	resultWg.Wait()
+	
+	// Aggregate results
 	var allResources []*pb.Resource
 	var errors []string
 	
-	// This is a placeholder for concurrent scanning implementation
-	// For now, scan services sequentially
-	for _, service := range services {
-		serviceRefs, err := p.scanner.ScanService(ctx, service)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("Service %s: %v", service, err))
+	for _, result := range allResults {
+		if result.Error != nil {
+			errors = append(errors, fmt.Sprintf("Service %s: %v", result.ServiceName, result.Error))
 			continue
 		}
-
+		
 		// Convert ResourceRef to Resource
-		for _, ref := range serviceRefs {
-			log.Printf("🔍 TRACE ARN: Converting ResourceRef - Service=%s, Type=%s, OriginalId=%s, Name=%s", 
-				ref.Service, ref.Type, ref.Id, ref.Name)
-			
-			// For S3 buckets, use the name as the ID if ID is empty
-			resourceId := ref.Id
-			if ref.Service == "s3" && ref.Type == "Bucket" && resourceId == "" && ref.Name != "" {
-				resourceId = fmt.Sprintf("arn:aws:s3:::%s", ref.Name)
-				log.Printf("🔍 TRACE ARN: S3 bucket ID generated: %s", resourceId)
-			}
-			
-			// Ensure ARN is set - use ID if it's already an ARN
-			resourceArn := resourceId
-			if resourceArn == "" && ref.Name != "" {
-				// Generate a basic ARN if we don't have one
-				resourceArn = fmt.Sprintf("arn:aws:%s:%s::%s/%s", ref.Service, ref.Region, ref.Type, ref.Name)
-				log.Printf("🔍 TRACE ARN: Basic ARN generated: %s", resourceArn)
-			}
-			
-			log.Printf("🔍 TRACE ARN: Final values - resourceId=%s, resourceArn=%s", resourceId, resourceArn)
-			
-			resource := &pb.Resource{
-				Provider:     "aws",
-				Service:      ref.Service,
-				Type:         ref.Type,
-				Id:           resourceId,
-				Arn:          resourceArn,
-				Name:         ref.Name,
-				Region:       ref.Region,
-				Tags:         make(map[string]string),
-				DiscoveredAt: timestamppb.Now(),
-			}
-			
-			log.Printf("🔍 TRACE ARN: Created pb.Resource - Id=%s, Arn=%s, Name=%s", 
-				resource.Id, resource.Arn, resource.Name)
-
-			// Extract tags from basic attributes
-			if ref.BasicAttributes != nil {
-				for k, v := range ref.BasicAttributes {
-					if strings.HasPrefix(k, "tag_") {
-						tagName := strings.TrimPrefix(k, "tag_")
-						resource.Tags[tagName] = v
-					}
-				}
-			}
-
+		for _, ref := range result.Resources {
+			resource := p.convertResourceRefToResource(ref)
 			allResources = append(allResources, resource)
 		}
 	}
-
+	
+	log.Printf("Concurrent batch scan completed: %d resources from %d services, %d errors", 
+		len(allResources), len(services), len(errors))
+	
 	return allResources, errors
+}
+
+// ServiceScanResult represents the result of scanning a single service
+type ServiceScanResult struct {
+	ServiceName string
+	Resources   []*pb.ResourceRef
+	Error       error
+	Duration    time.Duration
+}
+
+// serviceScanWorker is a worker that scans services from the work channel
+func (p *AWSProvider) serviceScanWorker(ctx context.Context, wg *sync.WaitGroup, serviceChan <-chan string, resultChan chan<- *ServiceScanResult) {
+	defer wg.Done()
+	
+	for service := range serviceChan {
+		startTime := time.Now()
+		
+		// Update progress tracking - mark service as started
+		if p.currentProgressTracker != nil {
+			p.currentProgressTracker.StartService(service)
+		}
+		
+		// Apply rate limiting
+		if err := p.rateLimiter.Wait(ctx); err != nil {
+			// Mark service as failed in progress tracker
+			if p.currentProgressTracker != nil {
+				p.currentProgressTracker.CompleteService(service, 0, err)
+			}
+			
+			resultChan <- &ServiceScanResult{
+				ServiceName: service,
+				Error:       fmt.Errorf("rate limiting error: %w", err),
+				Duration:    time.Since(startTime),
+			}
+			continue
+		}
+		
+		log.Printf("Worker scanning service: %s", service)
+		
+		// Scan the service
+		serviceRefs, err := p.scanner.ScanService(ctx, service)
+		
+		result := &ServiceScanResult{
+			ServiceName: service,
+			Resources:   serviceRefs,
+			Error:       err,
+			Duration:    time.Since(startTime),
+		}
+		
+		// Update progress tracking - mark service as completed
+		if p.currentProgressTracker != nil {
+			resourceCount := 0
+			if serviceRefs != nil {
+				resourceCount = len(serviceRefs)
+			}
+			p.currentProgressTracker.CompleteService(service, resourceCount, err)
+		}
+		
+		if err != nil {
+			log.Printf("Worker error scanning service %s: %v", service, err)
+		} else {
+			log.Printf("Worker completed service %s: %d resources in %v", service, len(serviceRefs), result.Duration)
+		}
+		
+		// Log progress update
+		if p.currentProgressTracker != nil {
+			progress := p.currentProgressTracker.GetProgressReport()
+			log.Printf("Scan progress: %.1f%% complete (%d/%d services), %d resources found", 
+				progress.PercentComplete, progress.CompletedServices, progress.TotalServices, progress.ResourcesFound)
+		}
+		
+		resultChan <- result
+	}
+}
+
+// convertResourceRefToResource converts a ResourceRef to a Resource with proper ARN handling
+func (p *AWSProvider) convertResourceRefToResource(ref *pb.ResourceRef) *pb.Resource {
+	log.Printf("🔍 TRACE ARN: Converting ResourceRef - Service=%s, Type=%s, OriginalId=%s, Name=%s", 
+		ref.Service, ref.Type, ref.Id, ref.Name)
+	
+	// For S3 buckets, use the name as the ID if ID is empty
+	resourceId := ref.Id
+	if ref.Service == "s3" && ref.Type == "Bucket" && resourceId == "" && ref.Name != "" {
+		resourceId = fmt.Sprintf("arn:aws:s3:::%s", ref.Name)
+		log.Printf("🔍 TRACE ARN: S3 bucket ID generated: %s", resourceId)
+	}
+	
+	// Ensure ARN is set - use ID if it's already an ARN
+	resourceArn := resourceId
+	if resourceArn == "" && ref.Name != "" {
+		// Generate a basic ARN if we don't have one
+		resourceArn = fmt.Sprintf("arn:aws:%s:%s::%s/%s", ref.Service, ref.Region, ref.Type, ref.Name)
+		log.Printf("🔍 TRACE ARN: Basic ARN generated: %s", resourceArn)
+	}
+	
+	log.Printf("🔍 TRACE ARN: Final values - resourceId=%s, resourceArn=%s", resourceId, resourceArn)
+	
+	resource := &pb.Resource{
+		Provider:     "aws",
+		Service:      ref.Service,
+		Type:         ref.Type,
+		Id:           resourceId,
+		Arn:          resourceArn,
+		Name:         ref.Name,
+		Region:       ref.Region,
+		Tags:         make(map[string]string),
+		DiscoveredAt: timestamppb.Now(),
+	}
+	
+	log.Printf("🔍 TRACE ARN: Created pb.Resource - Id=%s, Arn=%s, Name=%s", 
+		resource.Id, resource.Arn, resource.Name)
+
+	// Extract tags from basic attributes
+	if ref.BasicAttributes != nil {
+		for k, v := range ref.BasicAttributes {
+			if strings.HasPrefix(k, "tag_") {
+				tagName := strings.TrimPrefix(k, "tag_")
+				resource.Tags[tagName] = v
+			}
+		}
+	}
+	
+	return resource
+}
+
+// ProgressReport represents scan progress information
+type ProgressReport struct {
+	ScanID           string                 `json:"scan_id"`
+	StartTime        time.Time              `json:"start_time"`
+	CurrentTime      time.Time              `json:"current_time"`
+	ElapsedSeconds   float64                `json:"elapsed_seconds"`
+	TotalServices    int                    `json:"total_services"`
+	CompletedServices int                   `json:"completed_services"`
+	CurrentService   string                 `json:"current_service"`
+	ResourcesFound   int                    `json:"resources_found"`
+	ServicesProgress map[string]ServiceProgress `json:"services_progress"`
+	EstimatedTimeRemaining float64         `json:"estimated_time_remaining_seconds"`
+	PercentComplete  float64                `json:"percent_complete"`
+}
+
+// ServiceProgress tracks progress for individual services
+type ServiceProgress struct {
+	ServiceName      string    `json:"service_name"`
+	Status          string    `json:"status"` // pending, running, completed, failed
+	StartTime       time.Time `json:"start_time,omitempty"`
+	EndTime         time.Time `json:"end_time,omitempty"`
+	ResourceCount   int       `json:"resource_count"`
+	Error           string    `json:"error,omitempty"`
+}
+
+// ScanProgressTracker tracks scan progress across multiple services
+type ScanProgressTracker struct {
+	mu              sync.RWMutex
+	scanID          string
+	startTime       time.Time
+	totalServices   int
+	servicesProgress map[string]*ServiceProgress
+	resourcesFound  int
+}
+
+// NewScanProgressTracker creates a new progress tracker
+func NewScanProgressTracker(scanID string, services []string) *ScanProgressTracker {
+	tracker := &ScanProgressTracker{
+		scanID:          scanID,
+		startTime:       time.Now(),
+		totalServices:   len(services),
+		servicesProgress: make(map[string]*ServiceProgress),
+	}
+	
+	// Initialize all services as pending
+	for _, service := range services {
+		tracker.servicesProgress[service] = &ServiceProgress{
+			ServiceName: service,
+			Status:      "pending",
+		}
+	}
+	
+	return tracker
+}
+
+// StartService marks a service as running
+func (t *ScanProgressTracker) StartService(serviceName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	if progress, exists := t.servicesProgress[serviceName]; exists {
+		progress.Status = "running"
+		progress.StartTime = time.Now()
+	}
+}
+
+// CompleteService marks a service as completed
+func (t *ScanProgressTracker) CompleteService(serviceName string, resourceCount int, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	if progress, exists := t.servicesProgress[serviceName]; exists {
+		if err != nil {
+			progress.Status = "failed"
+			progress.Error = err.Error()
+		} else {
+			progress.Status = "completed"
+		}
+		progress.EndTime = time.Now()
+		progress.ResourceCount = resourceCount
+		t.resourcesFound += resourceCount
+	}
+}
+
+// GetProgressReport generates a current progress report
+func (t *ScanProgressTracker) GetProgressReport() *ProgressReport {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	
+	currentTime := time.Now()
+	elapsed := currentTime.Sub(t.startTime).Seconds()
+	
+	// Count completed services
+	completed := 0
+	var currentService string
+	for _, progress := range t.servicesProgress {
+		if progress.Status == "completed" || progress.Status == "failed" {
+			completed++
+		} else if progress.Status == "running" {
+			currentService = progress.ServiceName
+		}
+	}
+	
+	// Calculate percent complete and estimated time remaining
+	percentComplete := float64(completed) / float64(t.totalServices) * 100
+	var estimatedTimeRemaining float64
+	if completed > 0 && completed < t.totalServices {
+		avgTimePerService := elapsed / float64(completed)
+		estimatedTimeRemaining = avgTimePerService * float64(t.totalServices-completed)
+	}
+	
+	// Create a copy of services progress for the report
+	servicesProgressCopy := make(map[string]ServiceProgress)
+	for name, progress := range t.servicesProgress {
+		servicesProgressCopy[name] = *progress
+	}
+	
+	return &ProgressReport{
+		ScanID:                t.scanID,
+		StartTime:             t.startTime,
+		CurrentTime:           currentTime,
+		ElapsedSeconds:        elapsed,
+		TotalServices:         t.totalServices,
+		CompletedServices:     completed,
+		CurrentService:        currentService,
+		ResourcesFound:        t.resourcesFound,
+		ServicesProgress:      servicesProgressCopy,
+		EstimatedTimeRemaining: estimatedTimeRemaining,
+		PercentComplete:       percentComplete,
+	}
 }
 
 // createAnalysisGenerator creates and configures the analysis generator
@@ -1047,15 +1409,30 @@ func (p *AWSProvider) configureScanner(services []*pb.ServiceInfo) error {
 
 // configureUnifiedScannerServices configures the scanner with available services
 func (p *AWSProvider) configureUnifiedScannerServices(serviceNames []string) error {
-	// This is a placeholder for scanner configuration
-	// In a full implementation, this would configure the UnifiedScanner
-	// with the list of available services and their capabilities
+	log.Printf("Configuring UnifiedScanner with %d services", len(serviceNames))
 	
-	log.Printf("Setting available services in UnifiedScanner: %d services", len(serviceNames))
+	// Configure the unified registry with discovered services
+	if p.unifiedRegistry != nil {
+		p.unifiedRegistry.SetServiceFilter(serviceNames)
+		log.Printf("Unified registry configured with service filter: %v", serviceNames)
+		
+		// Set the service registry on the scanner for dynamic service discovery
+		p.scanner.SetServiceRegistry(&UnifiedRegistryAdapter{registry: p.unifiedRegistry})
+		log.Printf("Scanner configured with unified registry adapter")
+	}
 	
-	// For now, just log the services that would be configured
-	for _, serviceName := range serviceNames {
-		log.Printf("  - Configured service: %s", serviceName)
+	// Register discovered services with the discovery system for future lookups
+	if p.discovery != nil {
+		for _, serviceName := range serviceNames {
+			log.Printf("  - Configured service: %s", serviceName)
+			
+			// Pre-warm the discovery cache with service analysis if possible
+			go func(svc string) {
+				if _, err := p.discovery.GetServiceAnalysis(svc); err != nil {
+					log.Printf("Warning: Could not pre-warm analysis for service %s: %v", svc, err)
+				}
+			}(serviceName)
+		}
 	}
 	
 	return nil
@@ -1084,10 +1461,110 @@ func (p *AWSProvider) Cleanup() error {
 		p.explorer = nil
 	}
 	
+	// Close change storage database
+	if p.changeStorage != nil {
+		if err := p.changeStorage.Close(); err != nil {
+			log.Printf("Error closing change storage: %v", err)
+		} else {
+			log.Printf("Change storage closed successfully")
+		}
+		p.changeStorage = nil
+	}
+	
 	p.initialized = false
 	log.Printf("AWS provider cleanup completed")
 	
 	return nil
+}
+
+// autoSaveScanResults saves scan results to the database asynchronously
+func (p *AWSProvider) autoSaveScanResults(scanID string, startTime time.Time, resources []*pb.Resource, services []string) {
+	if p.changeStorage == nil {
+		return
+	}
+	
+	log.Printf("Auto-saving scan results for scan %s: %d resources from %d services", 
+		scanID, len(resources), len(services))
+	
+	// Create change events for each resource discovered
+	var changeEvents []*ChangeEvent
+	
+	for _, resource := range resources {
+		changeEvent := &ChangeEvent{
+			ID:           fmt.Sprintf("%s_%s", scanID, resource.Id),
+			Provider:     "aws",
+			ResourceID:   resource.Id,
+			ResourceName: resource.Name,
+			ResourceType: resource.Type,
+			Service:      resource.Service,
+			Region:       resource.Region,
+			ChangeType:   ChangeTypeCreate, // New discovery
+			Severity:     SeverityLow,
+			Timestamp:    startTime,
+			DetectedAt:   time.Now(),
+			CurrentState: &ResourceState{
+				ResourceID: resource.Id,
+				Timestamp:  time.Now(),
+				Properties: map[string]interface{}{
+					"arn":           resource.Arn,
+					"resource_type": resource.Type,
+					"region":        resource.Region,
+					"discovered_at": resource.DiscoveredAt.AsTime(),
+				},
+				Tags: resource.Tags,
+			},
+			ChangeMetadata: map[string]interface{}{
+				"scan_id":         scanID,
+				"scan_services":   services,
+				"scan_timestamp":  startTime,
+				"provider_version": "3.0.0",
+			},
+		}
+		changeEvents = append(changeEvents, changeEvent)
+	}
+	
+	// Store all change events in batch
+	if err := p.changeStorage.StoreChanges(changeEvents); err != nil {
+		log.Printf("Failed to auto-save scan results: %v", err)
+	} else {
+		log.Printf("Successfully auto-saved %d resource discoveries for scan %s", 
+			len(changeEvents), scanID)
+	}
+	
+	// Store scan metadata as baseline for future drift detection
+	// Convert resources to the expected map format
+	resourceMap := make(map[string]*ResourceState)
+	for _, resource := range resources {
+		resourceMap[resource.Id] = &ResourceState{
+			ResourceID: resource.Id,
+			Timestamp:  time.Now(),
+			Properties: map[string]interface{}{
+				"arn":           resource.Arn,
+				"resource_type": resource.Type,
+				"region":        resource.Region,
+				"service":       resource.Service,
+			},
+			Tags: resource.Tags,
+		}
+	}
+	
+	baseline := &DriftBaseline{
+		ID:          scanID,
+		Name:        fmt.Sprintf("Auto-saved scan %s", scanID),
+		Description: fmt.Sprintf("Baseline from batch scan of services: %v", services),
+		Provider:    "aws",
+		CreatedAt:   startTime,
+		UpdatedAt:   time.Now(),
+		Resources:   resourceMap,
+		Version:     "3.0.0",
+		Active:      true,
+	}
+	
+	if err := p.changeStorage.StoreBaseline(baseline); err != nil {
+		log.Printf("Failed to store scan baseline: %v", err)
+	} else {
+		log.Printf("Stored scan baseline %s for future drift detection", scanID)
+	}
 }
 
 // AnalyzeDiscoveredData analyzes raw discovery data and returns structured analysis
@@ -1348,5 +1825,17 @@ func NewClientFactory(cfg aws.Config) *ClientFactory {
 
 func NewUnifiedScanner(clientFactory *ClientFactory) *UnifiedScanner {
 	return scanner.NewUnifiedScanner(clientFactory)
+}
+
+// GetScanProgress returns the current scan progress if a scan is running
+func (p *AWSProvider) GetScanProgress() *ProgressReport {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	
+	if p.currentProgressTracker == nil {
+		return nil
+	}
+	
+	return p.currentProgressTracker.GetProgressReport()
 }
 
