@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package corkscrew.api;
+option go_package = "github.com/jlgore/corkscrew/internal/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// The main Corkscrew API service
+service CorkscrewAPI {
+  // Provider management
+  rpc ListProviders(APIListProvidersRequest) returns (APIListProvidersResponse);
+  rpc GetProviderInfo(APIGetProviderInfoRequest) returns (APIProviderInfoResponse);
+  
+  // Health and status
+  rpc HealthCheck(APIHealthCheckRequest) returns (APIHealthCheckResponse);
+  rpc GetStatus(APIGetStatusRequest) returns (APIGetStatusResponse);
+  
+  // Query operations
+  rpc ExecuteQuery(APIExecuteQueryRequest) returns (APIExecuteQueryResponse);
+  
+  // IDMS Discovery
+  rpc DiscoverIDMSServices(APIDiscoverIDMSRequest) returns (APIDiscoverIDMSResponse);
+}
+
+// Provider management messages
+message APIListProvidersRequest {
+  bool include_status = 1;
+}
+
+message APIListProvidersResponse {
+  repeated APIProviderInfo providers = 1;
+}
+
+message APIProviderInfo {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  repeated string supported_services = 4;
+  map<string, string> capabilities = 5;
+  APIProviderStatus status = 6;
+}
+
+message APIProviderStatus {
+  bool available = 1;
+  bool initialized = 2;
+  string error = 3;
+  google.protobuf.Timestamp last_check = 4;
+}
+
+message APIGetProviderInfoRequest {
+  string provider = 1;
+}
+
+message APIProviderInfoResponse {
+  APIProviderInfo provider_info = 1;
+  string error = 2;
+}
+
+// Query operation messages
+message APIExecuteQueryRequest {
+  string query = 1;
+  string output_format = 2; // "table", "json", "csv"
+  map<string, string> parameters = 3;
+  int32 limit = 4;
+}
+
+message APIExecuteQueryResponse {
+  repeated APIQueryResult rows = 1;
+  repeated string columns = 2;
+  int32 row_count = 3;
+  string error = 4;
+  int64 execution_time_ms = 5;
+}
+
+message APIQueryResult {
+  map<string, string> values = 1;
+}
+
+// Health and status messages
+message APIHealthCheckRequest {}
+
+message APIHealthCheckResponse {
+  APIHealthStatus status = 1;
+  string version = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  map<string, string> details = 4;
+}
+
+enum APIHealthStatus {
+  UNKNOWN = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  DEGRADED = 3;
+}
+
+message APIGetStatusRequest {
+  bool include_providers = 1;
+  bool include_database = 2;
+}
+
+message APIGetStatusResponse {
+  APIHealthStatus overall_status = 1;
+  repeated APIProviderStatus provider_status = 2;
+  APIDatabaseStatus database_status = 3;
+  APISystemStats system_stats = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message APIDatabaseStatus {
+  bool available = 1;
+  string path = 2;
+  int64 size_bytes = 3;
+  int32 table_count = 4;
+  int64 total_resources = 5;
+  google.protobuf.Timestamp last_scan = 6;
+  string error = 7;
+}
+
+message APISystemStats {
+  int64 uptime_seconds = 1;
+  int64 memory_usage_bytes = 2;
+  int32 active_connections = 3;
+  int64 total_requests = 4;
+  int64 total_errors = 5;
+}
+
+// IDMS Discovery messages
+message APIDiscoverIDMSRequest {
+  bool force_refresh = 1;
+}
+
+message APIDiscoverIDMSResponse {
+  bool success = 1;
+  repeated APIIDMSService services = 2;
+  int32 total_found = 3;
+  int64 duration_ms = 4;
+  repeated string errors = 5;
+  google.protobuf.Timestamp discovered_at = 6;
+  string error = 7;
+}
+
+message APIIDMSService {
+  string provider = 1;
+  string service_type = 2;
+  string name = 3;
+  string region = 4;
+  string endpoint = 5;
+  string status = 6;
+  map<string, string> metadata = 7;
+  google.protobuf.Timestamp discovered_at = 8;
+}

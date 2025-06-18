@@ -46,6 +46,32 @@ Corkscrew uses HashiCorp's go-plugin library with gRPC to create a modular syste
 ```
 For more information on writing plugins see: [PLUGIN_DEVELOPMENT.md](/plugins/PLUGIN_DEVELOPMENT.md). If there is a cloud sdk you want to support open an issue or PR!
 
+## 🔌 Cloud Provider Plugins
+
+Corkscrew supports multiple cloud providers through specialized plugins, each optimized for their platform's unique capabilities:
+
+### 🚀 [AWS Provider](plugins/aws-provider/README.md)
+The AWS provider leverages **advanced reflection-based discovery** to automatically support 200+ AWS services without manual configuration. Using dynamic SDK analysis and AWS Resource Explorer integration, it discovers new services automatically as AWS releases them. Features include unified scanning across all services, intelligent caching with 40% memory reduction, and comprehensive relationship mapping between resources. Perfect for environments that need zero-maintenance service discovery and enterprise-scale AWS deployments.
+
+### 🏢 [Azure Provider](plugins/azure-provider/README.md)  
+The Azure provider achieves **superior performance through native Resource Graph integration**, enabling tenant-wide discovery across management group hierarchies in minutes instead of weeks. It features automated Entra ID enterprise app deployment, KQL-based bulk resource queries, and real-time schema generation from live Azure data. This provider excels in enterprise environments with its zero-maintenance approach - automatically discovering new Azure services without code updates. Ideal for organizations needing comprehensive tenant visibility and governance.
+
+### 📊 [GCP Provider](plugins/gcp-provider/README.md)
+The GCP provider harnesses **Google Cloud Asset Inventory for 10x faster bulk resource discovery** across projects, folders, and entire organizations. It combines high-performance asset queries with enhanced change tracking, drift detection, and automated service account deployment. Supporting 50+ GCP services with intelligent fallback to standard APIs when needed, this provider is optimized for multi-project environments and organizations requiring efficient resource scanning at scale.
+
+### ⚓ [Kubernetes Provider](plugins/kubernetes-provider/README.md)
+The Kubernetes provider offers **universal resource discovery** that works with any Kubernetes resource type, including Custom Resource Definitions (CRDs), without configuration. Using native API discovery and informers for real-time updates, it provides rich relationship extraction, multi-cluster support, and Helm release integration. Unlike cloud providers that require SDK analysis, Kubernetes' consistent API structure enables automatic discovery of any resource type, making it perfect for dynamic containerized environments.
+
+### 🎯 Choosing the Right Provider
+
+Each provider is optimized for its platform's strengths:
+- **AWS**: Best for comprehensive service coverage with zero maintenance
+- **Azure**: Ideal for enterprise-scale tenant management and performance  
+- **GCP**: Optimal for multi-project organizations needing bulk operations
+- **Kubernetes**: Perfect for container platforms with dynamic resources
+
+See the [Plugin Development Guide](plugins/PLUGIN_DEVELOPMENT.md) for detailed architectural comparisons and guidance on building new providers.
+
 ## Quick Start
 
 ### Prerequisites

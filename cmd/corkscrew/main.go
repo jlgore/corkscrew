@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -22,10 +21,11 @@ import (
 	// "github.com/jlgore/corkscrew/diagrams/pkg/ui"
 	"github.com/jlgore/corkscrew/internal/client"
 	"github.com/jlgore/corkscrew/internal/config"
-	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/server"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"github.com/jlgore/corkscrew/pkg/query/compliance"
+	"github.com/jlgore/corkscrew/pkg/smartscan"
 	"gopkg.in/yaml.v3"
 )
 
@@ -110,6 +110,8 @@ func main() {
 		runConfig(os.Args[2:])
 	case "plugin":
 		runPlugin(os.Args[2:])
+	case "serve":
+		runServe(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("Corkscrew %s (commit: %s, built: %s)\n", version, commit, date)
 		return
@@ -128,10 +130,15 @@ func printUsage() {
 	fmt.Println("Multi-Cloud Plugin Architecture")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  # AWS Examples")
-	fmt.Println("  corkscrew scan --provider aws --services s3,ec2 --region us-east-1")
+	fmt.Println("  # Multi-Region Scanning")
+	fmt.Println("  corkscrew scan --provider aws --region us-east-1,us-west-2,eu-west-1")
+	fmt.Println("  corkscrew scan --provider aws --region all")
+	fmt.Println("  corkscrew scan --provider aws --services s3,ec2 --region us-east-1,us-west-2")
+	fmt.Println("  corkscrew scan --provider azure --region eastus,westus2 --concurrency 5")
+	fmt.Println("  corkscrew scan --provider aws --show-empty --output json")
+	fmt.Println()
+	fmt.Println("  # Other Commands")
 	fmt.Println("  corkscrew discover --provider aws")
-	fmt.Println("  corkscrew orchestrator-discover --provider aws --generate --verbose")
 	fmt.Println("  corkscrew list --provider aws --services s3 --region us-east-1")
 	fmt.Println("  corkscrew describe --provider aws --resource-id bucket-name --service s3")
 	fmt.Println("  corkscrew info --provider aws")
@@ -180,6 +187,7 @@ func printUsage() {
 	fmt.Println("  query               - Execute SQL queries against resource database")
 	fmt.Println("  diagram             - Interactive resource diagram viewer")
 	fmt.Println("  plugin              - Plugin management (list, build, status)")
+	fmt.Println("  serve               - Start gRPC API server")
 	fmt.Println("  version             - Show version information")
 	fmt.Println()
 	fmt.Println("Supported Providers:")
@@ -190,12 +198,14 @@ func printUsage() {
 func runScan(args []string) {
 	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 
-	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure)")
-	servicesStr := fs.String("services", "", "Comma-separated list of services")
-	regionsStr := fs.String("region", "", "Region to scan (default: all)")
-	_ = fs.Bool("verbose", false, "Enable verbose logging")
-	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
+	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
+	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
+	regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
+	showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
+	configPath := fs.String("config", "", "Path to configuration file")
+	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
+	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -219,199 +229,23 @@ func runScan(args []string) {
 		}
 	}
 
-	fmt.Printf("🔍 Starting scan for provider: %s\n", *providerName)
-	if len(services) > 0 {
-		fmt.Printf("   Services: %s\n", strings.Join(services, ", "))
-	} else {
-		fmt.Println("   Services: all")
-	}
-	if len(regions) > 0 {
-		fmt.Printf("   Regions: %s\n", strings.Join(regions, ", "))
-	} else {
-		fmt.Println("   Regions: all")
-	}
-
-	// Initialize plugin client
-	pc, err := client.NewPluginClient(*providerName)
-	if err != nil {
-		log.Fatalf("Failed to initialize plugin client: %v", err)
-	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
+	// Run enhanced multi-region scan
+	options := smartscan.EnhancedScanOptions{
+		Provider:       *providerName,
+		Regions:        regions,
+		Services:       services,
+		OutputFormat:   *outputFormat,
+		SaveToFile:     *saveToFile,
+		ShowEmpty:      *showEmpty,
+		ConfigPath:     *configPath,
+		MaxConcurrency: *concurrency,
 	}
 
-	// Initialize the provider
-	initReq := &pb.InitializeRequest{
-		Config: map[string]string{
-			"region": func() string {
-				if len(regions) > 0 {
-					return regions[0]
-				}
-				return ""
-			}(),
-		},
-	}
-	_, err = provider.Initialize(context.Background(), initReq)
-	if err != nil {
-		log.Fatalf("Failed to initialize provider: %v", err)
-	}
-
-	// Create scan request
-	req := &pb.BatchScanRequest{
-		Services: services,
-		Region:   "",
-	}
-	if len(regions) > 0 {
-		req.Region = regions[0] // BatchScan takes a single region
-	}
-
-	// Execute scan
-	resp, err := provider.BatchScan(context.Background(), req)
-	if err != nil {
+	if err := smartscan.RunEnhancedScan(context.Background(), options); err != nil {
 		log.Fatalf("Scan failed: %v", err)
 	}
-
-	// Handle results based on output format
-	switch *outputFormat {
-	case "json":
-		data, _ := json.MarshalIndent(resp, "", "  ")
-		fmt.Println(string(data))
-	case "csv":
-		printCSVResults(resp)
-	default:
-		printScanResults(resp)
-	}
-
-	// Save to database
-	fmt.Printf("📊 Response contains %d resources\n", len(resp.Resources))
-	if resp.Resources != nil && len(resp.Resources) > 0 {
-		// Debug: print sample resource
-		if len(resp.Resources) > 0 {
-			res := resp.Resources[0]
-			fmt.Printf("🔍 Sample resource: ID=%s, ARN=%s, Name=%s\n", res.Id, res.Arn, res.Name)
-		}
-		// Initialize database if needed
-		dbConfig, err := db.InitializeUnifiedDatabase()
-		if err != nil {
-			log.Printf("⚠️  Failed to initialize database: %v", err)
-		} else {
-			// Create graph loader
-			loader, err := db.NewGraphLoader(dbConfig.DatabasePath)
-			if err != nil {
-				log.Printf("❌ Failed to create graph loader: %v", err)
-			} else {
-				defer loader.Close()
-
-				// Save resources to database
-				err = loader.LoadResources(context.Background(), resp.Resources)
-				if err != nil {
-					log.Printf("❌ Failed to save resources to database: %v", err)
-				} else {
-					fmt.Printf("💾 Saved %d resources to database\n", len(resp.Resources))
-				}
-
-				// Save scan metadata
-				if resp.Stats != nil {
-					metadata := map[string]string{
-						"provider": *providerName,
-						"services": strings.Join(services, ","),
-						"regions":  strings.Join(regions, ","),
-					}
-					err = loader.LoadScanMetadata(context.Background(), 
-						strings.Join(services, ","), 
-						strings.Join(regions, ","), 
-						resp.Stats, 
-						metadata)
-					if err != nil {
-						log.Printf("⚠️  Failed to save scan metadata: %v", err)
-					}
-				}
-			}
-		}
-	}
-
-	// Save to file if requested
-	if *saveToFile {
-		filename := fmt.Sprintf("scan-results-%s-%s.json", *providerName, time.Now().Format("20060102-150405"))
-		data, _ := json.MarshalIndent(resp, "", "  ")
-		if err := os.WriteFile(filename, data, 0644); err != nil {
-			log.Printf("Failed to save results: %v", err)
-		} else {
-			fmt.Printf("\n📁 Results saved to: %s\n", filename)
-		}
-	}
 }
 
-func printScanResults(resp *pb.BatchScanResponse) {
-	fmt.Printf("\n✅ Scan completed successfully!\n")
-	fmt.Printf("📊 Summary:\n")
-	if resp.Stats != nil {
-		fmt.Printf("   Total resources: %d\n", resp.Stats.TotalResources)
-		fmt.Printf("   Services scanned: %d\n", len(resp.Stats.ServiceCounts))
-		if resp.Stats.DurationMs > 0 {
-			fmt.Printf("   Duration: %s\n", time.Duration(resp.Stats.DurationMs)*time.Millisecond)
-		}
-	}
-
-	if resp.Stats != nil && len(resp.Stats.ServiceCounts) > 0 {
-		fmt.Printf("\n📋 Service breakdown:\n")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "Service\tResource Count\tResource Types")
-		fmt.Fprintln(w, "-------\t--------------\t--------------")
-		
-		// Sort services by resource count (descending)
-		type serviceStat struct {
-			name  string
-			count int32
-		}
-		var stats []serviceStat
-		for name, count := range resp.Stats.ServiceCounts {
-			stats = append(stats, serviceStat{name: name, count: count})
-		}
-		sort.Slice(stats, func(i, j int) bool {
-			return stats[i].count > stats[j].count
-		})
-		
-		for _, stat := range stats {
-			if stat.count > 0 {
-				fmt.Fprintf(w, "%s\t%d\t%s\n", 
-					stat.name, 
-					stat.count,
-					"N/A") // Resource types not available in stats
-			}
-		}
-		w.Flush()
-	}
-
-	if len(resp.Errors) > 0 {
-		fmt.Printf("\n⚠️  Warnings/Errors:\n")
-		for _, err := range resp.Errors {
-			fmt.Printf("   - %s\n", err)
-		}
-	}
-}
-
-func printCSVResults(resp *pb.BatchScanResponse) {
-	w := csv.NewWriter(os.Stdout)
-	defer w.Flush()
-
-	// Write header
-	w.Write([]string{"Service", "ResourceCount", "ResourceTypes"})
-
-	// Write data
-	if resp.Stats != nil {
-		for service, count := range resp.Stats.ServiceCounts {
-			w.Write([]string{
-				service,
-				fmt.Sprintf("%d", count),
-				"N/A", // Resource types not available in stats
-			})
-		}
-	}
-}
 
 func runDiscover(args []string) {
 	fs := flag.NewFlagSet("discover", flag.ExitOnError)
@@ -1935,5 +1769,30 @@ func runConfigValidate() {
 		fmt.Printf("    - Skip empty: %v\n", pconfig.Analysis.SkipEmpty)
 		fmt.Printf("    - Workers: %d\n", pconfig.Analysis.Workers)
 		fmt.Printf("    - Cache: %v (TTL: %s)\n", pconfig.Analysis.CacheEnabled, pconfig.Analysis.CacheTTL)
+	}
+}
+
+// runServe starts the gRPC API server
+func runServe(args []string) {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	
+	port := fs.Int("port", 9090, "Port to listen on")
+	host := fs.String("host", "localhost", "Host to bind to")
+	
+	if err := fs.Parse(args); err != nil {
+		log.Fatal(err)
+	}
+	
+	fmt.Printf("🚀 Starting Corkscrew gRPC API server...\n")
+	fmt.Printf("📍 Listening on %s:%d\n", *host, *port)
+	fmt.Printf("\n💡 Example commands to test the API:\n")
+	fmt.Printf("  grpcurl -plaintext %s:%d list\n", *host, *port)
+	fmt.Printf("  grpcurl -plaintext %s:%d corkscrew.api.CorkscrewAPI.HealthCheck\n", *host, *port)
+	fmt.Printf("  grpcurl -plaintext %s:%d corkscrew.api.CorkscrewAPI.ListProviders\n", *host, *port)
+	fmt.Printf("\n📖 For more gRPC client examples, visit the documentation\n")
+	fmt.Printf("⏹️  Press Ctrl+C to stop the server\n\n")
+	
+	if err := server.StartAPIServer(*port); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }

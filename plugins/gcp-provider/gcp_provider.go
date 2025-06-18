@@ -29,12 +29,16 @@ type GCPProvider struct {
 	scope      string // "projects", "folders", or "organizations"
 	
 	// Core components
-	assetInventory *AssetInventoryClient
-	discovery      *ServiceDiscovery
-	scanner        *ResourceScanner
-	schemaGen      *GCPSchemaGenerator
-	clientFactory  *ClientFactory
-	relationships  *RelationshipExtractor
+	assetInventory  *AssetInventoryClient
+	discovery       *ServiceDiscovery
+	scanner         *ResourceScanner
+	enhancedScanner *EnhancedResourceScanner
+	schemaGen       *GCPSchemaGenerator
+	clientFactory   *ClientFactory
+	relationships   *RelationshipExtractor
+	
+	// Service Account Management (Phase 3) - TODO: implement
+	// serviceAccountIntegration *ServiceAccountIntegration
 	
 	// Caching
 	cache *MultiLevelCache
@@ -83,6 +87,19 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.scanner = NewResourceScanner(p.clientFactory)
 	p.schemaGen = NewSchemaGenerator()
 	p.relationships = NewRelationshipExtractor()
+	
+	// Initialize enhanced scanner for comprehensive results
+	p.enhancedScanner = NewEnhancedResourceScanner(p.clientFactory)
+	if p.enhancedScanner != nil {
+		log.Printf("✅ Enhanced resource scanner initialized with functional scanners")
+	}
+	
+	// Initialize Service Account Integration (Phase 3) - TODO: Implement
+	// if saIntegration, err := NewServiceAccountIntegration(p); err != nil {
+	//	log.Printf("⚠️  Service Account Integration not available: %v", err)
+	// } else {
+	//	p.serviceAccountIntegration = saIntegration
+	// }
 	
 	// Initialize Cloud Asset Inventory
 	var assetInventoryEnabled bool
@@ -450,8 +467,18 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		ServiceCounts:  make(map[string]int32),
 	}
 	
-	// Use concurrent scanning for multiple services
-	if len(req.Services) > 1 {
+	// Use enhanced scanner for comprehensive results if available
+	if p.enhancedScanner != nil && (len(req.Services) == 0 || len(req.Services) > 3) {
+		log.Printf("🚀 Using enhanced scanner for comprehensive batch scan")
+		resources, err := p.enhancedScanner.ScanAllServicesEnhanced(ctx)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("Enhanced scan error: %v", err))
+		} else {
+			allResources = resources
+			log.Printf("✅ Enhanced scan completed: %d resources found", len(resources))
+		}
+	} else if len(req.Services) > 1 {
+		// Use concurrent scanning for multiple services
 		resources, errs := p.batchScanConcurrent(ctx, req.Services)
 		allResources = resources
 		errors = errs
@@ -465,6 +492,29 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 			for _, ref := range serviceRefs {
 				resource := p.convertRefToResource(ref)
 				allResources = append(allResources, resource)
+			}
+		}
+	} else {
+		// No services specified, use enhanced scanner if available
+		if p.enhancedScanner != nil {
+			log.Printf("🚀 Using enhanced scanner for full scan")
+			resources, err := p.enhancedScanner.ScanAllServicesEnhanced(ctx)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Enhanced scan error: %v", err))
+			} else {
+				allResources = resources
+				log.Printf("✅ Enhanced full scan completed: %d resources found", len(resources))
+			}
+		} else {
+			// Fall back to standard scanner
+			serviceRefs, err := p.scanner.ScanAllServices(ctx)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Standard scan error: %v", err))
+			} else {
+				for _, ref := range serviceRefs {
+					resource := p.convertRefToResource(ref)
+					allResources = append(allResources, resource)
+				}
 			}
 		}
 	}
@@ -930,11 +980,7 @@ func (p *GCPProvider) attachRelationshipsToResources(resources []*pb.Resource, r
 	}
 }
 
-type serviceResult struct {
-	service   string
-	resources []*pb.Resource
-	err       error
-}
+// Note: serviceResult is defined in enhanced_scanners.go
 
 // GetServiceInfo returns information about a specific GCP service
 func (p *GCPProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
@@ -1190,3 +1236,85 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 
 	return nil
 }
+
+// Service Account Management Methods (Phase 3) - TODO: implement when protobuf types are added
+
+// SetupServiceAccount provides automated service account setup
+// func (p *GCPProvider) SetupServiceAccount(ctx context.Context, req *pb.AutoSetupRequest) (*pb.AutoSetupResponse, error) {
+//	if !p.initialized {
+//		return nil, fmt.Errorf("provider not initialized")
+//	}
+//	
+//	if p.serviceAccountIntegration == nil {
+//		return &pb.AutoSetupResponse{
+//			Success: false,
+//			Error:   "Service account integration not available",
+//		}, nil
+//	}
+//	
+//	return p.serviceAccountIntegration.AutoSetupServiceAccount(ctx, req)
+// }
+
+// ValidateServiceAccount validates service account configuration
+// func (p *GCPProvider) ValidateServiceAccount(ctx context.Context, req *pb.ValidateSetupRequest) (*pb.ValidateSetupResponse, error) {
+//	if !p.initialized {
+//		return nil, fmt.Errorf("provider not initialized")
+//	}
+//	
+//	if p.serviceAccountIntegration == nil {
+//		return &pb.ValidateSetupResponse{
+//			Valid: false,
+//			Error: "Service account integration not available",
+//		}, nil
+//	}
+//	
+//	return p.serviceAccountIntegration.ValidateServiceAccountSetup(ctx, req)
+// }
+
+// GenerateServiceAccountScripts generates deployment and validation scripts
+// func (p *GCPProvider) GenerateServiceAccountScripts(ctx context.Context, req *pb.GenerateScriptRequest) (*pb.GenerateScriptResponse, error) {
+//	if !p.initialized {
+//		return nil, fmt.Errorf("provider not initialized")
+//	}
+//	
+//	if p.serviceAccountIntegration == nil {
+//		return &pb.GenerateScriptResponse{
+//			Success: false,
+//			Error:   "Service account integration not available",
+//		}, nil
+//	}
+//	
+//	return p.serviceAccountIntegration.GenerateServiceAccountScript(ctx, req)
+// }
+
+// GetServiceAccountRecommendations provides setup recommendations
+// func (p *GCPProvider) GetServiceAccountRecommendations(ctx context.Context, req *pb.RecommendationsRequest) (*pb.RecommendationsResponse, error) {
+//	if !p.initialized {
+//		return nil, fmt.Errorf("provider not initialized")
+//	}
+//	
+//	if p.serviceAccountIntegration == nil {
+//		return &pb.RecommendationsResponse{
+//			Success: false,
+//			Error:   "Service account integration not available",
+//		}, nil
+//	}
+//	
+//	return p.serviceAccountIntegration.GetServiceAccountRecommendations(ctx, req)
+// }
+
+// GetServiceAccountStatus returns current service account status
+// func (p *GCPProvider) GetServiceAccountStatus(ctx context.Context) (*pb.ServiceAccountStatus, error) {
+//	if !p.initialized {
+//		return nil, fmt.Errorf("provider not initialized")
+//	}
+//	
+//	if p.serviceAccountIntegration == nil {
+//		return &pb.ServiceAccountStatus{
+//			Configured: false,
+//			Error:      "Service account integration not available",
+//		}, nil
+//	}
+//	
+//	return p.serviceAccountIntegration.GetServiceAccountStatus(ctx)
+// }

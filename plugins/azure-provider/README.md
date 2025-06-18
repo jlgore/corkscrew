@@ -6,10 +6,11 @@ The Azure provider is a **first-class, enterprise-ready** cloud provider plugin 
 
 ### **Enterprise-Grade Capabilities**
 - **🏢 Management Group Scoping**: Tenant-wide resource discovery from root management group down
-- **🔐 Entra ID Enterprise App**: Automated deployment with proper RBAC permissions
+- **🔐 Entra ID Enterprise App**: Automated deployment with proper RBAC permissions  
 - **📊 Resource Graph Integration**: Superior auto-discovery without SDK analysis
 - **🔄 Dynamic Schema Generation**: Real-time schema creation from live Azure resources
 - **⚡ Performance Optimized**: KQL-based queries for efficient bulk operations
+- **🔍 Zero Maintenance**: No hardcoded services - automatically discovers new Azure resources
 
 ### **Auto-Discovery Excellence**
 - **Zero Configuration**: Automatically discovers all Azure services and resource types
