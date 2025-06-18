@@ -7,7 +7,10 @@ version: "2.0"
 providers:
   aws:
     enabled: true
-    default_region: "us-east-1"
+    regions:
+      - "us-east-1"
+      - "us-west-2"
+      # Use "all" to scan all available regions: ["all"]
     services:
       - s3
       - ec2
@@ -20,7 +23,10 @@ providers:
 
   azure:
     enabled: true
-    default_region: "eastus"
+    regions:
+      - "eastus"
+      - "westus2"
+      # Use "all" to scan all available locations: ["all"]
     services:
       - storage
       - compute
@@ -29,7 +35,10 @@ providers:
 
   gcp:
     enabled: false
-    default_region: "us-central1-a"
+    regions:
+      - "us-central1-a"
+      - "us-west1-a"
+      # Use "all" to scan all available zones: ["all"]
     services:
       - storage
       - compute
@@ -74,3 +83,5 @@ output:
   default_format: "table"  # table, json, csv
   colors: true
   progress_bars: true
+  hide_empty_regions: true    # Don't show regions with 0 resources
+  hide_empty_services: true   # Don't show services with 0 resources

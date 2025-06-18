@@ -1,6 +1,12 @@
 # Corkscrew Plugin Development Guide
 
-This guide explains how to develop cloud provider plugins for Corkscrew, enabling support for AWS, Azure, Google Cloud Platform (GCP), Kubernetes, and other cloud providers.
+This guide explains how to develop cloud provider plugins for Corkscrew, enabling support for AWS, Azure, Google Cloud Platform (GCP), Kubernetes, and other cloud providers. 
+
+**See the comprehensive provider-specific documentation:**
+- 🚀 [AWS Provider](aws-provider/README.md) - Advanced dynamic discovery with 200+ services
+- 🏢 [Azure Provider](azure-provider/README.md) - Enterprise-grade Resource Graph integration  
+- 📊 [GCP Provider](gcp-provider/README.md) - Cloud Asset Inventory powered scanning
+- ⚓ [Kubernetes Provider](kubernetes-provider/README.md) - Universal K8s resource discovery
 
 ## Table of Contents
 
@@ -137,41 +143,158 @@ If you build a plugin for a new cloud provider or have improvements to the curre
 
 ### AWS Provider Structure
 
-The AWS provider (`plugins/aws-provider/`) demonstrates a full-featured implementation:
+The AWS provider (`plugins/aws-provider/`) demonstrates **advanced dynamic discovery**:
 
 ```
 aws-provider/
-├── main.go                     # Entry point with test flags
-├── aws_provider.go             # Main provider with Resource Explorer support
-├── discovery.go                # Service discovery using AWS SDK
-├── scanner.go                  # Resource scanning with rate limiting
-├── schema_generator.go         # SQL schema generation
-├── client_factory.go           # AWS client management
-├── relationships.go            # Cross-service relationships
-├── resource_explorer.go        # AWS Resource Explorer integration
-├── aws_dynamic_provider.go     # Dynamic scanner generation
-├── go.mod                      # Dependencies (AWS SDK v2)
-└── test_*.go                   # Various test files
+├── main.go                     # Entry point with comprehensive testing
+├── aws_provider.go             # Unified provider with reflection-based discovery
+├── discovery/                  # Advanced service discovery system
+│   ├── aws_service_loader.go   # Dynamic SDK analysis
+│   ├── runtime_discovery.go    # Reflection-based discovery
+│   └── resource_graph.go       # Relationship mapping
+├── runtime/                    # Performance-optimized scanning
+│   ├── optimized_scanner_adapter.go # Unified scanner integration
+│   └── scanner_registry.go     # Dynamic service registry
+├── generated/                  # Auto-generated components
+│   ├── client_factory.go       # SDK client management
+│   └── scanner_registry.go     # Service definitions
+├── tests/                      # Comprehensive test suite
+└── docs/                       # Extensive architecture documentation
 ```
+
+**Key Features:**
+- ✅ **200+ AWS services** supported automatically
+- ✅ **Zero maintenance** - new services discovered automatically  
+- ✅ **40% memory reduction** through optimization
+- ✅ **Reflection-based** operation classification
 
 ### Azure Provider Structure
 
-The Azure provider (`plugins/azure-provider/`) shows another approach:
+The Azure provider (`plugins/azure-provider/`) showcases **enterprise-grade capabilities**:
 
 ```
 azure-provider/
-├── main.go                     # Simple entry point
-├── azure_provider.go           # Main provider with Resource Graph
-├── discovery.go                # Service discovery via ARM
-├── scanner.go                  # Resource scanning with Resource Graph
-├── schema_generator.go         # Table schema generation
-├── client_factory.go           # Azure client management
-├── database_integration.go     # Database operations
-├── resource_graph.go           # Azure Resource Graph queries
-├── db_schema.go               # Database schema definitions
-├── go.mod                     # Dependencies (Azure SDK)
-└── test-azure-provider.sh      # Test script
+├── main.go                     # Enterprise app deployment entry point
+├── azure_provider.go           # Resource Graph powered provider
+├── management_group_client.go  # Tenant-wide hierarchy management
+├── resource_graph.go           # KQL-based resource discovery
+├── entraid_app_deployer.go     # Automated enterprise app deployment
+├── deploy-corkscrew-enterprise-app.sh # One-click deployment
+├── database_integration.go     # Advanced database integration
+└── cmd/
+    └── analyze-azure-sdk/      # SDK analysis tools
 ```
+
+**Key Features:**
+- ✅ **Management Group scoping** - tenant-wide discovery
+- ✅ **Resource Graph integration** - superior performance
+- ✅ **Automated enterprise app** deployment
+- ✅ **Zero hardcoding** - KQL-based discovery
+
+### GCP Provider Structure  
+
+The GCP provider (`plugins/gcp-provider/`) features **Asset Inventory integration**:
+
+```
+gcp-provider/
+├── main.go                     # High-performance entry point
+├── gcp_provider.go             # Asset Inventory powered provider
+├── asset_inventory.go          # Bulk resource discovery
+├── enhanced_change_tracker.go  # Advanced change detection
+├── service_account_integration.go # Automated IAM setup
+├── cmd/
+│   └── deploy-service-account/ # Service account automation
+└── enhanced_scanners.go        # Performance-optimized scanners
+```
+
+**Key Features:**
+- ✅ **Cloud Asset Inventory** - 10x faster bulk discovery
+- ✅ **Organization-wide** scanning
+- ✅ **Enhanced change tracking** - drift detection
+- ✅ **Service account automation**
+
+### Kubernetes Provider Structure
+
+The Kubernetes provider (`plugins/kubernetes-provider/`) demonstrates **universal resource support**:
+
+```
+kubernetes-provider/
+├── main.go                     # Multi-cluster entry point
+├── kubernetes_provider.go      # Universal K8s resource provider
+├── discovery.go                # Runtime API discovery
+├── informer_cache.go           # Real-time updates via informers
+├── helm_discovery.go           # Helm release integration
+└── relationships.go            # Rich relationship extraction
+```
+
+**Key Features:**
+- ✅ **Universal resource support** - any CRD works automatically
+- ✅ **Real-time updates** - native watch capabilities
+- ✅ **Multi-cluster** support
+- ✅ **Helm integration**
+
+## Provider Comparison & Approaches
+
+### Discovery Methods Comparison
+
+| Provider | Primary Discovery | Fallback Method | Key Advantage |
+|----------|------------------|-----------------|---------------|
+| **AWS** | SDK Reflection + Resource Explorer | Standard AWS APIs | **200+ services automatically** |
+| **Azure** | Resource Graph KQL Queries | ARM API calls | **Zero maintenance required** |  
+| **GCP** | Cloud Asset Inventory | Standard GCP APIs | **10x faster bulk discovery** |
+| **Kubernetes** | API Server Discovery | Direct API calls | **Universal resource support** |
+
+### Architecture Patterns
+
+#### **AWS: Reflection-Based Dynamic Discovery**
+```go
+// Automatic service discovery through SDK analysis
+func (d *ServiceDiscovery) DiscoverServices() {
+    // Reflect on AWS SDK to find all services
+    services := d.analyzeSDKPackages()
+    
+    // Classify operations automatically  
+    for service := range services {
+        operations := d.classifyOperations(service)
+        d.registry.RegisterService(service, operations)
+    }
+}
+```
+
+#### **Azure: Resource Graph Native Integration**
+```kql
+// KQL-based resource discovery
+Resources
+| where type startswith "microsoft."
+| summarize count() by type, location
+| order by count_ desc
+```
+
+#### **GCP: Asset Inventory Bulk Operations**
+```go
+// Bulk resource discovery across organization
+assets, err := assetClient.SearchAllResources(ctx, &assetpb.SearchAllResourcesRequest{
+    Scope: "organizations/" + orgID,
+    Query: "state:ACTIVE",
+})
+```
+
+#### **Kubernetes: Runtime API Discovery**
+```go
+// Universal resource discovery via API server
+resources, err := discoveryClient.ServerResourcesForGroupVersion(gv.String())
+// Works with any CRD automatically
+```
+
+### Performance Characteristics
+
+| Provider | Scan Speed | Memory Usage | Maintenance | Scalability |
+|----------|------------|--------------|-------------|-------------|
+| **AWS** | Fast (optimized) | Low (40% reduction) | Zero | High |
+| **Azure** | Fastest (KQL) | Very Low | Zero | Very High |
+| **GCP** | Very Fast (bulk) | Low | Minimal | High |  
+| **Kubernetes** | Fast (native) | Low | Zero | High |
 
 ## Step-by-Step Implementation
 
@@ -793,4 +916,82 @@ func (p *YourProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) 
 }
 ```
 
-This guide provides a comprehensive foundation for developing cloud provider plugins for Corkscrew based on the real implementations in the codebase. The AWS and Azure providers serve as excellent references for production-ready plugin development patterns. 
+## 🎓 Choosing the Right Pattern for Your Provider
+
+### Use **AWS-Style Reflection** When:
+- Your cloud provider has a comprehensive SDK with consistent patterns
+- You want automatic discovery of new services without code changes
+- Performance optimization through unified scanning is important
+- Your provider has 50+ services that would be tedious to hardcode
+
+### Use **Azure-Style Native Queries** When:
+- Your cloud provider offers a unified query interface (like Resource Graph)
+- You need enterprise-scale performance across large tenants/organizations
+- Zero maintenance is critical - you never want to update service lists
+- Your provider's native query language is powerful (like KQL)
+
+### Use **GCP-Style Asset Inventory** When:
+- Your cloud provider offers bulk resource discovery APIs
+- You need to scan across many projects/accounts efficiently
+- Change tracking and drift detection are important
+- Performance at scale is a primary concern
+
+### Use **Kubernetes-Style API Discovery** When:
+- Your platform has a unified, consistent API structure
+- Resources are defined dynamically (like CRDs)
+- Real-time updates are important
+- You want universal support for any resource type
+
+## 🏆 Best Practices Summary
+
+### Architecture
+- ✅ **Follow established patterns** from existing providers
+- ✅ **Implement comprehensive caching** for performance
+- ✅ **Use concurrent operations** where appropriate
+- ✅ **Plan for rate limiting** and API quotas
+
+### Development
+- ✅ **Study existing providers** before starting
+- ✅ **Add comprehensive tests** including integration tests
+- ✅ **Document your approach** thoroughly
+- ✅ **Follow the plugin interface** exactly
+
+### Performance
+- ✅ **Leverage cloud-native APIs** when available (Asset Inventory, Resource Graph)
+- ✅ **Implement intelligent caching** with appropriate TTLs
+- ✅ **Use bulk operations** over individual API calls
+- ✅ **Support streaming** for large datasets
+
+### Maintenance
+- ✅ **Prefer dynamic discovery** over hardcoded lists
+- ✅ **Design for extensibility** - new services should work automatically
+- ✅ **Plan for schema evolution** in your database integration
+- ✅ **Monitor and optimize** resource usage
+
+---
+
+## 📚 Additional Resources
+
+### Provider-Specific Documentation
+- [AWS Provider Architecture](aws-provider/ARCHITECTURE.md) - Deep technical implementation
+- [AWS Auto Discovery](aws-provider/AUTO_DISCOVERY.md) - Dynamic service discovery
+- [Azure Resource Graph Integration](azure-provider/README.md#resource-graph-auto-discovery) - KQL-based discovery
+- [GCP Asset Inventory Guide](gcp-provider/AUTO_DISCOVERY.md) - Bulk resource scanning
+- [Kubernetes API Discovery](kubernetes-provider/README.md#architecture) - Universal resource support
+
+### Technical References
+- [Plugin Interface Definition](../internal/shared/plugin.go) - Core interface all providers implement
+- [Protocol Buffer Definitions](../proto/scanner.proto) - gRPC service definitions
+- [Provider Registry](../internal/provider/cloud_provider.go) - Provider management system
+
+---
+
+This guide provides a comprehensive foundation for developing cloud provider plugins for Corkscrew based on the real implementations in the codebase. Each provider demonstrates different architectural approaches optimized for their respective cloud platforms.
+
+**For new provider development, we recommend:**
+1. **Start with the AWS pattern** for maximum flexibility and automatic service discovery
+2. **Study the Azure pattern** if your provider has a unified query interface  
+3. **Consider the GCP pattern** if bulk operations are available
+4. **Use the Kubernetes pattern** for platforms with dynamic resource definitions
+
+The plugin architecture is designed to be extensible while maintaining consistency across different cloud providers. 
