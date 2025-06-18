@@ -12,7 +12,7 @@ import (
 
 	"github.com/jlgore/corkscrew/internal/client"
 	pb "github.com/jlgore/corkscrew/internal/proto"
-	"github.com/jlgore/corkscrew/pkg/discovery"
+	idmsdiscovery "github.com/jlgore/corkscrew/pkg/idmsdiscovery"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -28,7 +28,7 @@ type APIServer struct {
 	errorCount     int64
 	dbPath         string
 	queryEngine    query.QueryEngine
-	idmsDiscovery  *discovery.IDMSDiscovery
+	idmsDiscovery  *idmsdiscovery.IDMSDiscovery
 }
 
 func NewAPIServer() *APIServer {
@@ -43,7 +43,7 @@ func NewAPIServer() *APIServer {
 	}
 	
 	// Initialize IDMS discovery
-	idmsDiscovery := discovery.NewIDMSDiscovery()
+	idmsDiscovery := idmsdiscovery.NewIDMSDiscovery()
 	
 	return &APIServer{
 		startTime:     time.Now(),

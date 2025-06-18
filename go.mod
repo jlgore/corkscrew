@@ -15,7 +15,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.71.2
 	github.com/aws/aws-sdk-go-v2/service/rds v1.96.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
-	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/jlgore/corkscrew/plugins/aws-provider v0.0.0-20250601151552-9ed81d618fc7
@@ -42,6 +41,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.25.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19 // indirect
 	github.com/aws/smithy-go v1.22.3 // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
