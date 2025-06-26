@@ -1,0 +1,13 @@
+{
+  "test_id": "simple-1750340401",
+  "start_time": "2025-06-19T08:40:01.283515649-05:00",
+  "end_time": "2025-06-19T08:40:19.153317002-05:00",
+  "duration": 17869801354,
+  "deployment_success": false,
+  "scan_success": false,
+  "validation_success": false,
+  "resource_counts": null,
+  "relationship_counts": null,
+  "outputs": null,
+  "error": "Deployment failed: deployment failed: failed to run update: exit status 255\ncode: 255\nstdout: Updating (test-simple-1750340401)\n\nView Live: https://app.pulumi.com/jlgore/corkscrew-test-simple/test-simple-1750340401/updates/1\n\n\n +  pulumi:pulumi:Stack corkscrew-test-simple-test-simple-1750340401 creating (0s) \n@ Updating....\n    pulumi:providers:aws default_6_54_2  error: pulumi:providers:aws resource 'default_6_54_2' has a problem: Invalid credentials configured.\n +  pulumi:pulumi:Stack corkscrew-test-simple-test-simple-1750340401 created \n    pulumi:providers:aws default_6_54_2 **failed** 1 error\nDiagnostics:\n  pulumi:providers:aws (default_6_54_2):\n    error: pulumi:providers:aws resource 'default_6_54_2' has a problem: Invalid credentials configured.\n    Please see https://www.pulumi.com/registry/packages/aws/installation-configuration/ for more information about providing credentials.\n    NEW: You can use Pulumi ESC to set up dynamic credentials with AWS OIDC to ensure the correct and valid credentials are used.\n    Learn more: https://www.pulumi.com/registry/packages/aws/installation-configuration/#dynamically-generate-credentials-via-pulumi-esc\n\n    [Pulumi Copilot] Would you like help with these diagnostics?\n    https://app.pulumi.com/jlgore/corkscrew-test-simple/test-simple-1750340401/updates/1?explainFailure\n\nResources:\n    + 1 created\n\nDuration: 2s\n\n\nstderr: \n"
+}

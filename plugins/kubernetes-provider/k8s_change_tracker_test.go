@@ -10,7 +10,6 @@ import (
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -219,14 +218,14 @@ func TestCreateK8sBaseline(t *testing.T) {
 		{
 			Id:       "default/pod/test-pod",
 			Type:     "Pod",
-			Location: "default",
+			Region:   "default",
 			Service:  "core",
 			Tags:     map[string]string{"app": "test"},
 		},
 		{
 			Id:       "default/service/test-service",
 			Type:     "Service",
-			Location: "default",
+			Region:   "default",
 			Service:  "core",
 			Tags:     map[string]string{"app": "test"},
 		},

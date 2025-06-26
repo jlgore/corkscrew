@@ -1,11 +1,28 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/jlgore/corkscrew/pkg/models"
 )
+
+// CrossCloudCorrelation represents a correlation between resources (local type to avoid circular import)
+type CrossCloudCorrelation struct {
+	ID               string                 `json:"id"`
+	Type             string                 `json:"type"`
+	Source           *models.Resource       `json:"source"`
+	Target           *models.Resource       `json:"target"`
+	ConfidenceScore  float64                `json:"confidence_score"`
+	Description      string                 `json:"description"`
+	Properties       map[string]interface{} `json:"properties,omitempty"`
+	SourceProvider   string                 `json:"source_provider"`
+	TargetProvider   string                 `json:"target_provider"`
+	DiscoveredAt     string                 `json:"discovered_at"`
+}
 
 // UnifiedDatabaseConfig holds configuration for the unified cloud database
 type UnifiedDatabaseConfig struct {
@@ -14,7 +31,22 @@ type UnifiedDatabaseConfig struct {
 }
 
 // GetUnifiedDatabasePath returns the standardized path for the unified cloud database
-func GetUnifiedDatabasePath() (string, error) {
+// If customPath is provided, it will be used instead of the default location
+func GetUnifiedDatabasePath(customPath ...string) (string, error) {
+	// Use custom path if provided
+	if len(customPath) > 0 && customPath[0] != "" {
+		dbPath := customPath[0]
+		
+		// Create directory if it doesn't exist
+		dbDir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create database directory %s: %w", dbDir, err)
+		}
+		
+		return dbPath, nil
+	}
+	
+	// Default behavior
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
@@ -30,8 +62,9 @@ func GetUnifiedDatabasePath() (string, error) {
 }
 
 // InitializeUnifiedDatabase creates and initializes the unified cloud database
-func InitializeUnifiedDatabase() (*UnifiedDatabaseConfig, error) {
-	dbPath, err := GetUnifiedDatabasePath()
+// If customPath is provided, it will be used instead of the default location
+func InitializeUnifiedDatabase(customPath ...string) (*UnifiedDatabaseConfig, error) {
+	dbPath, err := GetUnifiedDatabasePath(customPath...)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +117,16 @@ func (c *UnifiedDatabaseConfig) createUnifiedTables() error {
 	// Create API action metadata table
 	if err := c.createAPIActionMetadataTable(); err != nil {
 		return fmt.Errorf("failed to create API action metadata table: %w", err)
+	}
+	
+	// Create cross-cloud specific tables
+	if err := c.createCrossCloudTables(); err != nil {
+		return fmt.Errorf("failed to create cross-cloud tables: %w", err)
+	}
+	
+	// Create security tables for Phase 3
+	if err := c.createSecurityTables(); err != nil {
+		return fmt.Errorf("failed to create security tables: %w", err)
 	}
 	
 	return nil
@@ -484,4 +527,356 @@ GROUP BY provider;`
 	}
 
 	return nil
+}
+
+// createCrossCloudTables creates tables for cross-cloud correlation and analysis
+func (c *UnifiedDatabaseConfig) createCrossCloudTables() error {
+	// Create IP address correlation table
+	if err := c.createIPAddressTable(); err != nil {
+		return fmt.Errorf("failed to create IP address table: %w", err)
+	}
+	
+	// Create DNS correlation table
+	if err := c.createDNSTable(); err != nil {
+		return fmt.Errorf("failed to create DNS table: %w", err)
+	}
+	
+	// Create cross-cloud correlation table
+	if err := c.createCrossCloudCorrelationTable(); err != nil {
+		return fmt.Errorf("failed to create cross-cloud correlation table: %w", err)
+	}
+	
+	// Create network topology table
+	if err := c.createNetworkTopologyTable(); err != nil {
+		return fmt.Errorf("failed to create network topology table: %w", err)
+	}
+	
+	return nil
+}
+
+// createIPAddressTable creates a table for IP address correlation across clouds
+func (c *UnifiedDatabaseConfig) createIPAddressTable() error {
+	ipAddressSQL := `
+CREATE TABLE IF NOT EXISTS cross_cloud_ip_addresses (
+    -- Primary identifiers
+    id VARCHAR PRIMARY KEY,                    -- Unique IP address record ID
+    ip_address VARCHAR NOT NULL,               -- The IP address
+    
+    -- IP address metadata
+    ip_version VARCHAR NOT NULL,               -- ipv4 or ipv6
+    ip_type VARCHAR NOT NULL,                  -- public, private, elastic, reserved
+    ip_scope VARCHAR,                          -- global, regional, local
+    
+    -- Resource association
+    resource_id VARCHAR NOT NULL,              -- Associated resource ID
+    resource_type VARCHAR NOT NULL,            -- Resource type
+    resource_name VARCHAR,                     -- Resource name
+    provider VARCHAR NOT NULL,                 -- Cloud provider
+    region VARCHAR NOT NULL,                   -- Region
+    account_id VARCHAR,                        -- Account/subscription ID
+    
+    -- Network context
+    vpc_id VARCHAR,                            -- VPC/VNet ID
+    subnet_id VARCHAR,                         -- Subnet ID
+    network_interface_id VARCHAR,              -- Network interface ID
+    
+    -- Additional metadata
+    allocation_id VARCHAR,                     -- Allocation ID (for elastic IPs)
+    domain VARCHAR,                            -- Domain (vpc, standard, etc.)
+    tags JSON,                                 -- Tags
+    metadata JSON,                             -- Additional metadata
+    
+    -- Timestamps
+    created_at TIMESTAMP,                      -- When IP was allocated
+    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`
+
+	if _, err := c.DB.Exec(ipAddressSQL); err != nil {
+		return err
+	}
+	
+	// Create indexes
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_ip_address ON cross_cloud_ip_addresses(ip_address)",
+		"CREATE INDEX IF NOT EXISTS idx_ip_resource_id ON cross_cloud_ip_addresses(resource_id)",
+		"CREATE INDEX IF NOT EXISTS idx_ip_provider ON cross_cloud_ip_addresses(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_ip_region ON cross_cloud_ip_addresses(region)",
+		"CREATE INDEX IF NOT EXISTS idx_ip_type ON cross_cloud_ip_addresses(ip_type)",
+		"CREATE INDEX IF NOT EXISTS idx_ip_vpc ON cross_cloud_ip_addresses(vpc_id)",
+	}
+	
+	for _, idx := range indexes {
+		if _, err := c.DB.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// createDNSTable creates a table for DNS correlation across clouds
+func (c *UnifiedDatabaseConfig) createDNSTable() error {
+	dnsSQL := `
+CREATE TABLE IF NOT EXISTS cross_cloud_dns_records (
+    -- Primary identifiers
+    id VARCHAR PRIMARY KEY,                    -- Unique DNS record ID
+    dns_name VARCHAR NOT NULL,                 -- DNS name
+    
+    -- DNS record details
+    record_type VARCHAR NOT NULL,              -- A, AAAA, CNAME, MX, etc.
+    record_values JSON NOT NULL,               -- Array of record values
+    ttl INTEGER,                               -- Time to live
+    
+    -- Resource association
+    resource_id VARCHAR,                       -- Associated resource ID (if any)
+    resource_type VARCHAR,                     -- Resource type
+    resource_name VARCHAR,                     -- Resource name
+    provider VARCHAR NOT NULL,                 -- Cloud provider
+    region VARCHAR,                            -- Region (if applicable)
+    account_id VARCHAR,                        -- Account/subscription ID
+    
+    -- DNS service metadata
+    dns_service VARCHAR,                       -- DNS service (Route53, Azure DNS, etc.)
+    zone_id VARCHAR,                           -- DNS zone ID
+    zone_name VARCHAR,                         -- DNS zone name
+    
+    -- Health check and routing
+    health_check_id VARCHAR,                   -- Health check ID (if any)
+    routing_policy VARCHAR,                    -- Routing policy type
+    routing_policy_config JSON,                -- Routing policy configuration
+    
+    -- Additional metadata
+    tags JSON,                                 -- Tags
+    metadata JSON,                             -- Additional metadata
+    
+    -- Timestamps
+    created_at TIMESTAMP,                      -- When DNS record was created
+    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`
+
+	if _, err := c.DB.Exec(dnsSQL); err != nil {
+		return err
+	}
+	
+	// Create indexes
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_dns_name ON cross_cloud_dns_records(dns_name)",
+		"CREATE INDEX IF NOT EXISTS idx_dns_type ON cross_cloud_dns_records(record_type)",
+		"CREATE INDEX IF NOT EXISTS idx_dns_resource_id ON cross_cloud_dns_records(resource_id)",
+		"CREATE INDEX IF NOT EXISTS idx_dns_provider ON cross_cloud_dns_records(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_dns_zone ON cross_cloud_dns_records(zone_id)",
+		"CREATE INDEX IF NOT EXISTS idx_dns_service ON cross_cloud_dns_records(dns_service)",
+	}
+	
+	for _, idx := range indexes {
+		if _, err := c.DB.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// createCrossCloudCorrelationTable creates a table for tracking cross-cloud relationships
+func (c *UnifiedDatabaseConfig) createCrossCloudCorrelationTable() error {
+	correlationSQL := `
+CREATE TABLE IF NOT EXISTS cross_cloud_correlations (
+    -- Primary identifiers
+    id VARCHAR PRIMARY KEY,                    -- Unique correlation ID
+    
+    -- Source resource
+    source_resource_id VARCHAR NOT NULL,       -- Source resource ID
+    source_provider VARCHAR NOT NULL,          -- Source provider
+    source_region VARCHAR,                     -- Source region
+    source_account_id VARCHAR,                 -- Source account
+    source_resource_type VARCHAR,              -- Source resource type
+    
+    -- Target resource
+    target_resource_id VARCHAR NOT NULL,       -- Target resource ID
+    target_provider VARCHAR NOT NULL,          -- Target provider
+    target_region VARCHAR,                     -- Target region
+    target_account_id VARCHAR,                 -- Target account
+    target_resource_type VARCHAR,              -- Target resource type
+    
+    -- Correlation details
+    correlation_type VARCHAR NOT NULL,         -- Type of correlation
+    correlation_subtype VARCHAR,               -- Subtype of correlation
+    correlation_method VARCHAR NOT NULL,       -- How correlation was discovered
+    confidence_score DOUBLE NOT NULL,          -- Confidence in correlation (0-1)
+    
+    -- Correlation evidence
+    evidence JSON,                             -- Evidence supporting correlation
+    matching_attributes JSON,                  -- Attributes that match
+    
+    -- Metadata
+    description VARCHAR,                       -- Human-readable description
+    tags JSON,                                 -- Tags
+    metadata JSON,                             -- Additional metadata
+    
+    -- Status
+    status VARCHAR DEFAULT 'active',           -- active, inactive, pending_verification
+    verified BOOLEAN DEFAULT FALSE,            -- Whether correlation is verified
+    verification_method VARCHAR,               -- How it was verified
+    
+    -- Timestamps
+    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_verified_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`
+
+	if _, err := c.DB.Exec(correlationSQL); err != nil {
+		return err
+	}
+	
+	// Create indexes
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_cc_source_resource ON cross_cloud_correlations(source_resource_id)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_target_resource ON cross_cloud_correlations(target_resource_id)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_source_provider ON cross_cloud_correlations(source_provider)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_target_provider ON cross_cloud_correlations(target_provider)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_correlation_type ON cross_cloud_correlations(correlation_type)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_confidence ON cross_cloud_correlations(confidence_score)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_status ON cross_cloud_correlations(status)",
+		"CREATE INDEX IF NOT EXISTS idx_cc_providers ON cross_cloud_correlations(source_provider, target_provider)",
+	}
+	
+	for _, idx := range indexes {
+		if _, err := c.DB.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// createNetworkTopologyTable creates a table for network topology mapping
+func (c *UnifiedDatabaseConfig) createNetworkTopologyTable() error {
+	topologySQL := `
+CREATE TABLE IF NOT EXISTS cross_cloud_network_topology (
+    -- Primary identifiers
+    id VARCHAR PRIMARY KEY,                    -- Unique topology record ID
+    
+    -- Network connection details
+    connection_type VARCHAR NOT NULL,          -- vpn, peering, direct_connect, etc.
+    connection_id VARCHAR NOT NULL,            -- Connection resource ID
+    connection_name VARCHAR,                   -- Connection name
+    
+    -- Source network
+    source_network_id VARCHAR NOT NULL,       -- Source network ID (VPC/VNet)
+    source_network_name VARCHAR,              -- Source network name
+    source_provider VARCHAR NOT NULL,         -- Source provider
+    source_region VARCHAR NOT NULL,           -- Source region
+    source_account_id VARCHAR,                -- Source account
+    source_cidr_blocks JSON,                  -- Source CIDR blocks
+    
+    -- Target network
+    target_network_id VARCHAR NOT NULL,       -- Target network ID
+    target_network_name VARCHAR,              -- Target network name
+    target_provider VARCHAR NOT NULL,         -- Target provider
+    target_region VARCHAR NOT NULL,           -- Target region
+    target_account_id VARCHAR,                -- Target account
+    target_cidr_blocks JSON,                  -- Target CIDR blocks
+    
+    -- Connection properties
+    status VARCHAR NOT NULL,                   -- Connection status
+    bandwidth VARCHAR,                         -- Bandwidth
+    encryption BOOLEAN,                        -- Is encrypted
+    redundancy VARCHAR,                        -- Redundancy level
+    
+    -- Routing information
+    routing_tables JSON,                       -- Associated routing tables
+    route_propagation BOOLEAN,                 -- Route propagation enabled
+    
+    -- Gateway information
+    source_gateway_id VARCHAR,                 -- Source gateway ID
+    target_gateway_id VARCHAR,                 -- Target gateway ID
+    
+    -- Additional metadata
+    tags JSON,                                 -- Tags
+    metadata JSON,                             -- Additional metadata
+    
+    -- Timestamps
+    created_at TIMESTAMP,                      -- When connection was created
+    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`
+
+	if _, err := c.DB.Exec(topologySQL); err != nil {
+		return err
+	}
+	
+	// Create indexes
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_topo_connection_type ON cross_cloud_network_topology(connection_type)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_connection_id ON cross_cloud_network_topology(connection_id)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_source_network ON cross_cloud_network_topology(source_network_id)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_target_network ON cross_cloud_network_topology(target_network_id)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_source_provider ON cross_cloud_network_topology(source_provider)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_target_provider ON cross_cloud_network_topology(target_provider)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_status ON cross_cloud_network_topology(status)",
+		"CREATE INDEX IF NOT EXISTS idx_topo_providers ON cross_cloud_network_topology(source_provider, target_provider)",
+	}
+	
+	for _, idx := range indexes {
+		if _, err := c.DB.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// QueryContext executes a query that returns rows, typically a SELECT
+func (c *UnifiedDatabaseConfig) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return c.DB.QueryContext(ctx, query, args...)
+}
+
+// BeginTx starts a transaction
+func (c *UnifiedDatabaseConfig) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return c.DB.BeginTx(ctx, opts)
+}
+
+// StoreResources stores resource data (placeholder implementation)
+func (c *UnifiedDatabaseConfig) StoreResources(resources []*models.Resource) error {
+	// TODO: Implement proper storage
+	return nil
+}
+
+// StoreIPAddresses stores IP address data (placeholder implementation)
+func (c *UnifiedDatabaseConfig) StoreIPAddresses(addresses []*models.IPAddress) error {
+	// TODO: Implement proper storage
+	return nil
+}
+
+// StoreDNSRecords stores DNS record data (placeholder implementation)
+func (c *UnifiedDatabaseConfig) StoreDNSRecords(records []*models.DNSRecord) error {
+	// TODO: Implement proper storage
+	return nil
+}
+
+// StoreCorrelations stores correlation data (placeholder implementation)
+func (c *UnifiedDatabaseConfig) StoreCorrelations(correlations interface{}) error {
+	// TODO: Implement proper storage
+	return nil
+}
+
+// GetResourcesByProvider retrieves resources by provider (placeholder implementation)
+func (c *UnifiedDatabaseConfig) GetResourcesByProvider(provider string) ([]*models.Resource, error) {
+	// TODO: Implement proper retrieval
+	return []*models.Resource{}, nil
+}
+
+// GetIPAddressesByProvider retrieves IP addresses by provider (placeholder implementation)
+func (c *UnifiedDatabaseConfig) GetIPAddressesByProvider(provider string) ([]*models.IPAddress, error) {
+	// TODO: Implement proper retrieval
+	return []*models.IPAddress{}, nil
+}
+
+// GetDNSRecordsByProvider retrieves DNS records by provider (placeholder implementation)
+func (c *UnifiedDatabaseConfig) GetDNSRecordsByProvider(provider string) ([]*models.DNSRecord, error) {
+	// TODO: Implement proper retrieval
+	return []*models.DNSRecord{}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,6 +13,7 @@ type SmartScanConfiguration struct {
 	Version   string                        `yaml:"version"`
 	Providers map[string]ProviderConfig     `yaml:"providers"`
 	Output    OutputConfig                  `yaml:"output"`
+	Database  DatabaseConfig                `yaml:"database"`
 }
 
 type ProviderConfig struct {
@@ -26,6 +28,10 @@ type OutputConfig struct {
 	ProgressBars      bool   `yaml:"progress_bars"`
 	HideEmptyRegions  bool   `yaml:"hide_empty_regions"`
 	HideEmptyServices bool   `yaml:"hide_empty_services"`
+}
+
+type DatabaseConfig struct {
+	Path string `yaml:"path"`
 }
 
 func LoadSmartScanConfig(configPath string) (*SmartScanConfiguration, error) {
@@ -142,6 +148,7 @@ func (c *SmartScanConfiguration) GetSmartScanConfig(provider string) *SmartScanC
 		HideEmptyRegions:  c.ShouldHideEmptyRegions(),
 		HideEmptyServices: c.ShouldHideEmptyServices(),
 		MaxConcurrency:    3, // Could be made configurable
+		RegionTimeout:     5 * time.Minute, // Set proper timeout for region scanning
 		PreferredRegions:  c.getPreferredRegions(provider, regions),
 	}
 }

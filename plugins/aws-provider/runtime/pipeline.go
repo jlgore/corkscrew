@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -412,6 +413,13 @@ func (p *RuntimePipeline) convertResourceExplorerItem(item interface{}) *pb.Reso
 
 // resourceProcessor processes resources in the background
 func (p *RuntimePipeline) resourceProcessor() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("CRITICAL: resourceProcessor panic recovered: %v", r)
+			log.Printf("DEBUG: Stack trace: %s", debug.Stack())
+		}
+	}()
+	
 	log.Printf("DEBUG: resourceProcessor started")
 	batch := make([]*pb.Resource, 0, p.config.BatchSize)
 	ticker := time.NewTicker(p.config.FlushInterval)

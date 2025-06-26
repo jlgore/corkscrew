@@ -2,7 +2,7 @@ package config
 
 import (
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,10 +95,12 @@ func TestServiceGroups(t *testing.T) {
 	cfg := getDefaultConfig()
 	
 	// Add test groups
-	cfg.Providers["aws"].ServiceGroups = map[string][]string{
+	awsProv := cfg.Providers["aws"]
+	awsProv.ServiceGroups = map[string][]string{
 		"test": {"s3", "ec2", "lambda"},
 		"data": {"rds", "dynamodb", "athena"},
 	}
+	cfg.Providers["aws"] = awsProv
 	
 	tests := []struct {
 		name      string
@@ -374,21 +376,4 @@ func TestCacheTTLParsing(t *testing.T) {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 
 		(len(s) > 0 && len(substr) > 0 && strings.Contains(s, substr)))
-}
-
-// Import strings for the helper
-var strings = struct {
-	Contains func(string, string) bool
-}{
-	Contains: func(s, substr string) bool {
-		if len(substr) > len(s) {
-			return false
-		}
-		for i := 0; i <= len(s)-len(substr); i++ {
-			if s[i:i+len(substr)] == substr {
-				return true
-			}
-		}
-		return false
-	},
 }

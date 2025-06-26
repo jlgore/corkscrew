@@ -7,8 +7,10 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -97,13 +99,17 @@ func (s *UnifiedScanner) initializeAccountID(ctx context.Context) {
 
 // ScanService scans all resources for a specific service
 func (s *UnifiedScanner) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
+	// Create a timeout context for AWS scanning (30 seconds per service)
+	scanCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	
 	// Try Resource Explorer first if available
 	s.mu.RLock()
 	explorer := s.explorer
 	s.mu.RUnlock()
 
 	if explorer != nil {
-		resources, err := explorer.QueryByService(ctx, serviceName)
+		resources, err := explorer.QueryByService(scanCtx, serviceName)
 		if err == nil && len(resources) > 0 {
 			log.Printf("Resource Explorer found %d resources for service %s", len(resources), serviceName)
 			return resources, nil
@@ -111,8 +117,8 @@ func (s *UnifiedScanner) ScanService(ctx context.Context, serviceName string) ([
 		log.Printf("Resource Explorer query failed or returned no results for %s, falling back to SDK", serviceName)
 	}
 
-	// Fall back to SDK scanning
-	return s.scanViaSDK(ctx, serviceName)
+	// Fall back to SDK scanning with timeout
+	return s.scanViaSDK(scanCtx, serviceName)
 }
 
 // ScanAllServices scans all available services
@@ -149,6 +155,13 @@ func (s *UnifiedScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceRef
 
 // scanViaSDK scans a service using the AWS SDK with reflection
 func (s *UnifiedScanner) scanViaSDK(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("CRITICAL: scanViaSDK panic for service %s: %v", serviceName, r)
+			log.Printf("DEBUG: Stack trace: %s", debug.Stack())
+		}
+	}()
+	
 	client := s.clientFactory.GetClient(serviceName)
 	if client == nil {
 		return nil, fmt.Errorf("no client available for service: %s", serviceName)
@@ -241,11 +254,27 @@ func (s *UnifiedScanner) isListOperation(methodName string) bool {
 
 // invokeListOperation dynamically invokes a list operation
 func (s *UnifiedScanner) invokeListOperation(ctx context.Context, client interface{}, opName, serviceName string) ([]*pb.ResourceRef, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("CRITICAL: invokeListOperation panic for %s.%s: %v", serviceName, opName, r)
+			log.Printf("DEBUG: Stack trace: %s", debug.Stack())
+		}
+	}()
+	
+	if client == nil {
+		return nil, fmt.Errorf("client is nil for service %s", serviceName)
+	}
+	
 	clientValue := reflect.ValueOf(client)
+	if !clientValue.IsValid() {
+		return nil, fmt.Errorf("client value is invalid for service %s", serviceName)
+	}
+	
+	log.Printf("DEBUG: Looking for method %s on client type %v", opName, clientValue.Type())
 	method := clientValue.MethodByName(opName)
 
 	if !method.IsValid() {
-		return nil, fmt.Errorf("method %s not found on client", opName)
+		return nil, fmt.Errorf("method %s not found on client for service %s", opName, serviceName)
 	}
 
 	// Create input struct
@@ -259,12 +288,41 @@ func (s *UnifiedScanner) invokeListOperation(ctx context.Context, client interfa
 		inputType = inputType.Elem()
 	}
 
+	log.Printf("DEBUG: Creating input struct of type %v for method %s", inputType, opName)
 	input := reflect.New(inputType)
+	
+	if !input.IsValid() || input.IsNil() {
+		return nil, fmt.Errorf("failed to create input struct for method %s", opName)
+	}
 
 	// Initialize common pagination fields if they exist
-	s.initializePaginationFields(input.Elem())
+	log.Printf("DEBUG: Initializing pagination fields for method %s", opName)
+	inputElem := input.Elem()
+	if !inputElem.IsValid() {
+		return nil, fmt.Errorf("input element is invalid for method %s", opName)
+	}
+	
+	// Safely initialize pagination fields
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("WARNING: Pagination field initialization failed for %s.%s: %v", serviceName, opName, r)
+			}
+		}()
+		s.initializePaginationFields(inputElem)
+	}()
 
-	// Call the method
+	// Validate inputs before calling the method
+	if ctx == nil {
+		return nil, fmt.Errorf("context is nil for method %s", opName)
+	}
+	if !input.IsValid() {
+		return nil, fmt.Errorf("input is invalid for method %s", opName)
+	}
+	
+	log.Printf("DEBUG: Calling method %s.%s with input type %v", serviceName, opName, input.Type())
+	
+	// Call the method with proper error handling
 	results := method.Call([]reflect.Value{
 		reflect.ValueOf(ctx),
 		input,
@@ -795,6 +853,7 @@ func (s *UnifiedScanner) generateARN(service, resourceType, resourceId, region s
 
 // DescribeResource provides detailed information about a specific resource
 func (s *UnifiedScanner) DescribeResource(ctx context.Context, resourceRef *pb.ResourceRef) (*pb.Resource, error) {
+	
 	log.Printf("DEBUG: UnifiedScanner.DescribeResource called for %s:%s in region %s", resourceRef.Service, resourceRef.Id, resourceRef.Region)
 	
 	// Create base resource with basic information
@@ -824,7 +883,12 @@ func (s *UnifiedScanner) DescribeResource(ctx context.Context, resourceRef *pb.R
 
 	// Collect detailed configuration based on service and resource type
 	log.Printf("DEBUG: About to call collectDetailedConfiguration for %s:%s", resourceRef.Service, resourceRef.Id)
-	rawData, attributes, err := s.collectDetailedConfiguration(ctx, resourceRef)
+	
+	// Create a very short timeout context for configuration collection (2 seconds max per resource)
+	descCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	
+	rawData, attributes, err := s.collectDetailedConfiguration(descCtx, resourceRef)
 	if err != nil {
 		log.Printf("DEBUG: Failed to collect detailed configuration for %s %s: %v", resourceRef.Service, resourceRef.Id, err)
 		// Continue with basic resource information even if detailed config fails
@@ -864,8 +928,10 @@ func (s *UnifiedScanner) collectDetailedConfiguration(ctx context.Context, resou
 	
 	log.Printf("Debug: Successfully loaded analysis data for %s", resourceRef.Service)
 	
-	// Use reflection-based configuration collection
-	return s.collectConfigurationFromAnalysis(ctx, resourceRef, analysisData)
+	// Use reflection-based configuration collection with timeout context
+	configCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return s.collectConfigurationFromAnalysis(configCtx, resourceRef, analysisData)
 }
 
 // loadServiceAnalysis loads the JSON analysis data for a service
@@ -963,16 +1029,23 @@ func (s *UnifiedScanner) collectConfigurationFromAnalysis(ctx context.Context, r
 			continue
 		}
 		
-		// Skip list operations
-		if isList, ok := op["is_list"].(bool); ok && isList {
-			log.Printf("DEBUG: Operation %d: skipping list operation", i)
-			continue
-		}
-		
-		// This is a configuration operation
+		// Get operation name first
 		operationName, ok := op["name"].(string)
 		if !ok {
 			log.Printf("DEBUG: Operation %d: no name found", i)
+			continue
+		}
+		
+		// CRITICAL FIX: Only process Get/Describe operations for configuration data
+		// Skip ALL other operations including Create, Delete, Modify, etc.
+		if !strings.HasPrefix(operationName, "Get") && !strings.HasPrefix(operationName, "Describe") {
+			log.Printf("DEBUG: Operation %d: skipping non-configuration operation: %s", i, operationName)
+			continue
+		}
+		
+		// Skip list operations (we only want detailed configuration operations)
+		if isList, ok := op["is_list"].(bool); ok && isList {
+			log.Printf("DEBUG: Operation %d: skipping list operation: %s", i, operationName)
 			continue
 		}
 		

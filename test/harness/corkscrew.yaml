@@ -1,0 +1,13 @@
+# Corkscrew Configuration File
+version: "2.0"
+
+# Provider configuration
+providers:
+  aws:
+    enabled: true
+    regions:
+      - "us-east-1"
+    services:
+      - s3
+      - ec2
+      - iam

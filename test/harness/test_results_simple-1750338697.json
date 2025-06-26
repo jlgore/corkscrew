@@ -1,0 +1,63 @@
+{
+  "test_id": "simple-1750338697",
+  "start_time": "2025-06-19T08:11:37.657317-05:00",
+  "end_time": "2025-06-19T08:18:21.799793652-05:00",
+  "duration": 418789568770,
+  "deployment_success": true,
+  "scan_success": true,
+  "validation_success": false,
+  "resource_counts": null,
+  "relationship_counts": null,
+  "outputs": {
+    "_projectName": "corkscrew-test-simple",
+    "_stackName": "test-simple-1750338697",
+    "bucketArn": "arn:aws:s3:::corkscrew-test-simple-175033869720250619131147978200000001",
+    "bucketName": "corkscrew-test-simple-175033869720250619131147978200000001",
+    "ec2RoleArn": "arn:aws:iam::132851953547:role/corkscrew-test-ec2-role-simple-1750338697",
+    "expectedRelationships": [
+      {
+        "from_type": "ec2_instance",
+        "to_type": "security_group",
+        "type": "uses"
+      },
+      {
+        "from_type": "ec2_instance",
+        "to_type": "subnet",
+        "type": "placed_in"
+      },
+      {
+        "from_type": "security_group",
+        "to_type": "vpc",
+        "type": "belongs_to"
+      },
+      {
+        "from_type": "subnet",
+        "to_type": "vpc",
+        "type": "belongs_to"
+      },
+      {
+        "from_type": "ec2_instance",
+        "to_type": "iam_role",
+        "type": "assumes"
+      }
+    ],
+    "expectedResourceCounts": {
+      "ec2_instance": 1,
+      "iam_role": 1,
+      "instance_profile": 1,
+      "s3_bucket": 1,
+      "security_group": 1,
+      "subnet": 1,
+      "vpc": 1
+    },
+    "instanceArn": "arn:aws:ec2:us-east-1:132851953547:instance/i-01b35011ed24c94f2",
+    "instanceId": "i-01b35011ed24c94f2",
+    "instanceProfileArn": "arn:aws:iam::132851953547:instance-profile/corkscrew-test-profile-simple-1750338697",
+    "securityGroupId": "sg-0e7c4806aedfe4412",
+    "subnetId": "subnet-0f7b926e477f49d29",
+    "testId": "simple-1750338697",
+    "vpcCidr": "10.0.0.0/16",
+    "vpcId": "vpc-08f60bfda94043d29"
+  },
+  "error": "Validation failed: resource type s3_buckets not found in database"
+}

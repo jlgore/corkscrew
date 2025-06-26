@@ -14,7 +14,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.0
-	github.com/fsnotify/fsnotify v1.9.0
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/jlgore/corkscrew v0.0.0
 	github.com/marcboeker/go-duckdb v1.8.5

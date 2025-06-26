@@ -1,0 +1,530 @@
+name: Provider Integration Tests
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/aws-provider/**'
+      - 'plugins/azure-provider/**'
+      - 'plugins/gcp-provider/**'
+      - 'plugins/kubernetes-provider/**'
+      - 'internal/proto/**'
+      - 'pkg/smartscan/**'
+      - 'cmd/corkscrew/**'
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: 'Provider to test (aws, azure, gcp, kubernetes, all)'
+        required: false
+        default: 'all'
+      scenario:
+        description: 'Scenario to test (simple, complex, security, all)'
+        required: false
+        default: 'simple'
+      keep_on_fail:
+        description: 'Keep resources on failure for debugging'
+        required: false
+        default: 'false'
+
+env:
+  GO_VERSION: '1.21'
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  AWS_REGION: 'us-east-1'
+  AZURE_REGION: 'eastus'
+  GCP_REGION: 'us-central1'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      providers: ${{ steps.detect.outputs.providers }}
+      scenarios: ${{ steps.detect.outputs.scenarios }}
+      test_matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Detect changed providers
+        id: detect
+        run: |
+          # Handle manual trigger
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.provider }}" = "all" ]; then
+              PROVIDERS="aws,azure,gcp,kubernetes"
+            else
+              PROVIDERS="${{ github.event.inputs.provider }}"
+            fi
+            
+            if [ "${{ github.event.inputs.scenario }}" = "all" ]; then
+              SCENARIOS="simple,complex"
+            else
+              SCENARIOS="${{ github.event.inputs.scenario }}"
+            fi
+          else
+            # Auto-detect based on file changes
+            PROVIDERS=""
+            if git diff --name-only origin/main..HEAD | grep -q "plugins/aws-provider\|pkg/smartscan\|cmd/corkscrew"; then
+              PROVIDERS="${PROVIDERS}aws,"
+            fi
+            if git diff --name-only origin/main..HEAD | grep -q "plugins/azure-provider"; then
+              PROVIDERS="${PROVIDERS}azure,"
+            fi
+            if git diff --name-only origin/main..HEAD | grep -q "plugins/gcp-provider"; then
+              PROVIDERS="${PROVIDERS}gcp,"
+            fi
+            if git diff --name-only origin/main..HEAD | grep -q "plugins/kubernetes-provider"; then
+              PROVIDERS="${PROVIDERS}kubernetes,"
+            fi
+            PROVIDERS=${PROVIDERS%,}
+            SCENARIOS="simple,complex"
+          fi
+          
+          echo "providers=${PROVIDERS}" >> $GITHUB_OUTPUT
+          echo "scenarios=${SCENARIOS}" >> $GITHUB_OUTPUT
+          echo "Detected providers: ${PROVIDERS}"
+          echo "Testing scenarios: ${SCENARIOS}"
+      
+      - name: Generate test matrix
+        id: matrix
+        run: |
+          # Create test matrix from providers and scenarios
+          MATRIX_JSON='{"include":[]}'
+          
+          if [ -n "${{ steps.detect.outputs.providers }}" ]; then
+            IFS=',' read -ra PROVIDER_ARRAY <<< "${{ steps.detect.outputs.providers }}"
+            IFS=',' read -ra SCENARIO_ARRAY <<< "${{ steps.detect.outputs.scenarios }}"
+            
+            for provider in "${PROVIDER_ARRAY[@]}"; do
+              for scenario in "${SCENARIO_ARRAY[@]}"; do
+                # Determine region based on provider
+                case $provider in
+                  aws) region="us-east-1" ;;
+                  azure) region="eastus" ;;
+                  gcp) region="us-central1" ;;
+                  kubernetes) region="us-east-1" ;;  # K8s tests use AWS for node infrastructure
+                  *) region="us-east-1" ;;
+                esac
+                
+                MATRIX_JSON=$(echo $MATRIX_JSON | jq --arg provider "$provider" --arg scenario "$scenario" --arg region "$region" '.include += [{"provider": $provider, "scenario": $scenario, "region": $region}]')
+              done
+            done
+          fi
+          
+          echo "matrix=${MATRIX_JSON}" >> $GITHUB_OUTPUT
+          echo "Generated matrix: ${MATRIX_JSON}"
+
+  test-provider:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.providers != ''
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.test_matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    env:
+      TEST_ID: "gh-${{ github.run_number }}-${{ matrix.provider }}-${{ matrix.scenario }}"
+      KEEP_ON_FAIL: ${{ github.event.inputs.keep_on_fail || 'false' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      
+      - name: Install Pulumi
+        uses: pulumi/setup-pulumi@v2
+        with:
+          pulumi-version: 'latest'
+      
+      - name: Configure AWS credentials
+        if: matrix.provider == 'aws' || matrix.provider == 'kubernetes'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TEST_ROLE_ARN }}
+          aws-region: ${{ matrix.region }}
+          role-session-name: "corkscrew-test-${{ env.TEST_ID }}"
+      
+      - name: Configure Azure credentials
+        if: matrix.provider == 'azure'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Configure GCP credentials
+        if: matrix.provider == 'gcp'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd test/harness && go mod download
+      
+      - name: Build Corkscrew and plugins
+        run: |
+          echo "Building main corkscrew binary..."
+          make build
+          
+          echo "Building ${{ matrix.provider }} provider plugin..."
+          case "${{ matrix.provider }}" in
+            aws)
+              make build-aws-plugin
+              ;;
+            azure)
+              make build-azure-plugin
+              ;;
+            gcp)
+              make build-gcp-plugin
+              ;;
+            kubernetes)
+              make build-kubernetes-plugin
+              ;;
+          esac
+          
+          # Verify binaries exist
+          ls -la ./corkscrew
+          ls -la ./plugins/
+      
+      - name: Pre-flight cost estimation
+        if: matrix.provider == 'aws'
+        run: |
+          echo "🧮 Estimated costs for ${{ matrix.scenario }} scenario:"
+          case "${{ matrix.scenario }}" in
+            simple)
+              echo "- S3 bucket: ~$0.001/day"
+              echo "- Total: <$0.01"
+              ;;
+            complex)
+              echo "- S3 bucket: ~$0.001/day"
+              echo "- EC2 t2.micro: ~$0.10/day"
+              echo "- Lambda function: ~$0.001"
+              echo "- Total: ~$0.11/day"
+              ;;
+          esac
+          echo "⏱️ Expected test duration: 3-5 minutes"
+      
+      - name: Run integration test
+        id: test
+        working-directory: test/harness
+        env:
+          CGO_ENABLED: 1
+        run: |
+          echo "🚀 Starting integration test..."
+          echo "Provider: ${{ matrix.provider }}"
+          echo "Scenario: ${{ matrix.scenario }}"
+          echo "Region: ${{ matrix.region }}"
+          echo "Test ID: ${{ env.TEST_ID }}"
+          
+          # Ensure test harness has the right binary paths
+          export CORKSCREW_PATH="../../corkscrew"
+          
+          # Run the test with detailed output
+          go test -v \
+            -timeout=12m \
+            -provider="${{ matrix.provider }}" \
+            -scenario="${{ matrix.scenario }}" \
+            -region="${{ matrix.region }}" \
+            -testid="${{ env.TEST_ID }}" \
+            -keepOnFail="${{ env.KEEP_ON_FAIL }}" \
+            ./... 2>&1 | tee test_output.log
+          
+          # Capture exit code
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=${TEST_EXIT_CODE}" >> $GITHUB_OUTPUT
+          
+          # Generate summary
+          if [ $TEST_EXIT_CODE -eq 0 ]; then
+            echo "status=✅ PASSED" >> $GITHUB_OUTPUT
+          else
+            echo "status=❌ FAILED" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Generate test report
+        if: always()
+        working-directory: test/harness
+        run: |
+          # Create report directory
+          mkdir -p results
+          
+          # Look for the most recent test result file
+          RESULT_FILE=$(find . -name "test_results_*.json" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+          
+          if [ -n "$RESULT_FILE" ] && [ -f "$RESULT_FILE" ]; then
+            echo "Found test results: $RESULT_FILE"
+            cp "$RESULT_FILE" "results/test_result_${{ matrix.provider }}_${{ matrix.scenario }}.json"
+            
+            # Generate markdown summary
+            cat > "results/summary_${{ matrix.provider }}_${{ matrix.scenario }}.md" << 'EOF'
+          # Integration Test Results
+          
+          **Provider:** ${{ matrix.provider }}  
+          **Scenario:** ${{ matrix.scenario }}  
+          **Region:** ${{ matrix.region }}  
+          **Test ID:** ${{ env.TEST_ID }}  
+          **Status:** ${{ steps.test.outputs.status }}  
+          
+          ## Test Metrics
+          
+          EOF
+            
+            # Extract metrics from JSON if available
+            if command -v jq >/dev/null 2>&1; then
+              echo "Extracting metrics with jq..."
+              jq -r '
+                "**Duration:** " + (.duration // "N/A") + "  ",
+                "**Resources Deployed:** " + (.metrics.resources_deployed // 0 | tostring) + "  ",
+                "**Resources Scanned:** " + (.metrics.resources_scanned // 0 | tostring) + "  ",
+                "**Resources Verified:** " + (.metrics.resources_verified // 0 | tostring) + "  ",
+                "**Database Size:** " + ((.metrics.database_size // 0) / 1024 | floor | tostring) + " KB  ",
+                "",
+                "## Verification Results",
+                "",
+                if .verification_result then
+                  "**Success Rate:** " + ((.verification_result.total_found // 0) / (.verification_result.total_expected // 1) * 100 | floor | tostring) + "%  " +
+                  "**Missing Resources:** " + (.verification_result.total_missing // 0 | tostring) + "  " +
+                  "**Attribute Checks:** " + (.verification_result.attribute_checks // [] | length | tostring) + "  "
+                else
+                  "No verification results available"
+                end
+              ' "$RESULT_FILE" >> "results/summary_${{ matrix.provider }}_${{ matrix.scenario }}.md"
+            fi
+          else
+            echo "No test results file found"
+            echo "Available files:"
+            find . -name "*.json" -type f | head -10
+          fi
+          
+          # Always create a basic summary
+          cat > "results/basic_summary.md" << EOF
+          # Test Summary
+          
+          **Provider:** ${{ matrix.provider }}  
+          **Scenario:** ${{ matrix.scenario }}  
+          **Status:** ${{ steps.test.outputs.status }}  
+          **Exit Code:** ${{ steps.test.outputs.exit_code }}  
+          
+          EOF
+      
+      - name: Check for resource leaks
+        if: always() && (matrix.provider == 'aws')
+        run: |
+          echo "🔍 Checking for resource leaks with TestHarness tag..."
+          
+          # Check for S3 buckets
+          aws s3api list-buckets --query 'Buckets[?contains(Name, `corkscrew`)]' --output table || true
+          
+          # Check for EC2 instances
+          aws ec2 describe-instances \
+            --filters "Name=tag:TestHarness,Values=true" "Name=instance-state-name,Values=running,pending" \
+            --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,Tags[?Key==`TestID`].Value|[0]]' \
+            --output table || true
+          
+          echo "Note: Any resources shown above should be cleaned up automatically. If they persist, they may need manual cleanup."
+      
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.provider }}-${{ matrix.scenario }}
+          path: |
+            test/harness/results/
+            test/harness/test_output.log
+            test/harness/*.db
+            test/harness/*.log
+          retention-days: 7
+      
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            let comment = `## 🧪 Integration Test Results - ${{ matrix.provider }}/${{ matrix.scenario }}\n\n`;
+            comment += `**Status**: ${{ steps.test.outputs.status }}\n`;
+            comment += `**Region**: ${{ matrix.region }}\n`;
+            comment += `**Test ID**: ${{ env.TEST_ID }}\n\n`;
+            
+            // Try to read the detailed summary
+            const summaryPath = 'test/harness/results/summary_${{ matrix.provider }}_${{ matrix.scenario }}.md';
+            const basicSummaryPath = 'test/harness/results/basic_summary.md';
+            
+            let summaryContent = '';
+            try {
+              if (fs.existsSync(summaryPath)) {
+                summaryContent = fs.readFileSync(summaryPath, 'utf8');
+              } else if (fs.existsSync(basicSummaryPath)) {
+                summaryContent = fs.readFileSync(basicSummaryPath, 'utf8');
+              }
+            } catch (error) {
+              console.log('Could not read summary file:', error.message);
+            }
+            
+            if (summaryContent) {
+              comment += summaryContent;
+            } else {
+              comment += `Exit Code: ${{ steps.test.outputs.exit_code }}\n`;
+            }
+            
+            comment += `\n---\n`;
+            comment += `*Test completed at ${new Date().toISOString()}*\n`;
+            
+            // Post comment
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+  # Aggregate results job
+  test-summary:
+    needs: [detect-changes, test-provider]
+    if: always() && needs.detect-changes.outputs.providers != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      
+      - name: Generate aggregate report
+        id: aggregate
+        run: |
+          echo "📊 Generating aggregate test report..."
+          
+          TOTAL_TESTS=0
+          PASSED_TESTS=0
+          FAILED_TESTS=0
+          
+          # Create summary table
+          echo "| Provider | Scenario | Status | Duration | Resources | Success Rate |" > summary_table.md
+          echo "|----------|----------|--------|----------|-----------|--------------|" >> summary_table.md
+          
+          # Process each artifact directory
+          for artifact_dir in artifacts/test-results-*; do
+            if [ -d "$artifact_dir" ]; then
+              provider_scenario=$(basename "$artifact_dir" | sed 's/test-results-//')
+              echo "Processing: $provider_scenario"
+              
+              TOTAL_TESTS=$((TOTAL_TESTS + 1))
+              
+              # Look for result files
+              if ls "$artifact_dir"/*.json >/dev/null 2>&1; then
+                # TODO: Parse JSON results and add to table
+                echo "| $provider_scenario | - | ✅ | - | - | - |" >> summary_table.md
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "| $provider_scenario | - | ❌ | - | - | - |" >> summary_table.md
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+            fi
+          done
+          
+          echo "total_tests=${TOTAL_TESTS}" >> $GITHUB_OUTPUT
+          echo "passed_tests=${PASSED_TESTS}" >> $GITHUB_OUTPUT
+          echo "failed_tests=${FAILED_TESTS}" >> $GITHUB_OUTPUT
+      
+      - name: Post aggregate comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = `## 📋 Integration Test Summary\n\n`;
+            comment += `**Total Tests**: ${{ steps.aggregate.outputs.total_tests }}\n`;
+            comment += `**Passed**: ${{ steps.aggregate.outputs.passed_tests }} ✅\n`;
+            comment += `**Failed**: ${{ steps.aggregate.outputs.failed_tests }} ❌\n\n`;
+            
+            // Add table if it exists
+            try {
+              const table = fs.readFileSync('summary_table.md', 'utf8');
+              comment += table;
+            } catch (error) {
+              comment += `*Could not generate detailed table*\n`;
+            }
+            
+            comment += `\n---\n`;
+            comment += `*Aggregate report generated at ${new Date().toISOString()}*\n`;
+            
+            // Look for existing summary comment and update it
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number
+            });
+            
+            const existingSummary = comments.find(c => 
+              c.user.login === 'github-actions[bot]' && 
+              c.body.includes('📋 Integration Test Summary')
+            );
+            
+            if (existingSummary) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existingSummary.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+  # Cleanup job - runs regardless of test outcomes
+  cleanup:
+    needs: [detect-changes, test-provider]
+    if: always() && needs.detect-changes.outputs.providers != ''
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials for cleanup
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TEST_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: "corkscrew-cleanup-${{ github.run_number }}"
+      
+      - name: Emergency cleanup
+        run: |
+          echo "🧹 Running emergency cleanup for test resources..."
+          
+          # Clean up S3 buckets created by tests
+          echo "Checking for test S3 buckets..."
+          aws s3api list-buckets --query 'Buckets[?contains(Name, `corkscrew-gh-`)].[Name]' --output text | while read bucket; do
+            if [ -n "$bucket" ]; then
+              echo "Found test bucket: $bucket"
+              # Check if bucket is empty, then delete
+              aws s3 rm s3://$bucket --recursive 2>/dev/null || true
+              aws s3api delete-bucket --bucket $bucket 2>/dev/null || true
+              echo "Attempted cleanup of bucket: $bucket"
+            fi
+          done
+          
+          # Clean up EC2 instances with TestHarness tag
+          echo "Checking for test EC2 instances..."
+          aws ec2 describe-instances \
+            --filters "Name=tag:TestHarness,Values=true" "Name=tag:TestID,Values=gh-${{ github.run_number }}-*" \
+            --query 'Reservations[*].Instances[*].InstanceId' --output text | while read instance; do
+            if [ -n "$instance" ]; then
+              echo "Found test instance: $instance"
+              aws ec2 terminate-instances --instance-ids $instance 2>/dev/null || true
+            fi
+          done
+          
+          echo "Cleanup scan complete."

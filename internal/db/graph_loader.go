@@ -46,6 +46,14 @@ func dbInit(db *sql.DB) error {
 	if _, err := db.Exec(`LOAD json;`); err != nil {
 		return fmt.Errorf("failed to load json extension: %w", err)
 	}
+	
+	// Install and load the DuckPGQ extension for graph queries
+	if _, err := db.Exec(`INSTALL duckpgq;`); err != nil {
+		fmt.Printf("Warning: INSTALL duckpgq: %v\n", err)
+	}
+	if _, err := db.Exec(`LOAD duckpgq;`); err != nil {
+		fmt.Printf("Warning: LOAD duckpgq: %v\n", err)
+	}
 	// Optionally set autoinstall/autoload for future extensions
 	if _, err := db.Exec(`SET autoinstall_known_extensions=1;`); err != nil {
 		fmt.Printf("Warning: SET autoinstall_known_extensions: %v\n", err)

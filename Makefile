@@ -75,7 +75,7 @@ clean-install:
 # =============================================================================
 
 .PHONY: build
-build: build-cli build-plugins
+build: build-cli build-plugins generate-registry
 	@echo "🔨 Build complete!"
 
 .PHONY: build-cli
@@ -127,6 +127,17 @@ build-kubernetes-plugin: create-dirs
 	else \
 		echo "⚠️  Kubernetes plugin directory not found, skipping..."; \
 	fi
+
+# =============================================================================
+# PLUGIN REGISTRY GENERATION
+# =============================================================================
+
+.PHONY: generate-registry
+generate-registry:
+	@echo "📝 Generating plugin registry..."
+	@VERSION=$$(git describe --tags --always 2>/dev/null || echo "dev"); \
+	REPO=$${GITHUB_REPOSITORY:-"jlgore/corkscrew"}; \
+	./scripts/generate-plugin-registry.sh "$$VERSION" "$$REPO" "plugins/registry.json"
 
 # =============================================================================
 # PROTOBUF GENERATION

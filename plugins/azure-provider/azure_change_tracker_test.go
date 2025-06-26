@@ -72,7 +72,6 @@ func (m *MockChangeStorage) DeleteBaseline(baselineID string) error {
 
 // Test Azure change tracker creation
 func TestNewAzureChangeTracker(t *testing.T) {
-	ctx := context.Background()
 	config := &AzureChangeTrackerConfig{
 		SubscriptionIDs: []string{"test-subscription"},
 		TenantID:       "test-tenant",
@@ -225,14 +224,14 @@ func TestCreateBaseline(t *testing.T) {
 		{
 			Id:       "test-vm-1",
 			Type:     "Microsoft.Compute/virtualMachines",
-			Location: "eastus",
+			Region:   "eastus",
 			Service:  "Compute",
 			Tags:     map[string]string{"env": "test"},
 		},
 		{
 			Id:       "test-storage-1", 
 			Type:     "Microsoft.Storage/storageAccounts",
-			Location: "eastus",
+			Region:   "eastus",
 			Service:  "Storage",
 			Tags:     map[string]string{"env": "test"},
 		},

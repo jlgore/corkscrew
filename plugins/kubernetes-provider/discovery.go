@@ -115,11 +115,8 @@ func (d *APIDiscovery) discoverCoreResources(ctx context.Context) ([]*ResourceDe
 				CRD:        false,
 			}
 
-			// Try to get OpenAPI schema
-			if d.discoveryClient.OpenAPISchema != nil {
-				// This would require OpenAPI v3 client
-				// For now, we'll leave schema as nil
-			}
+			// OpenAPI schema support would be added here in the future
+			// d.discoveryClient.OpenAPISchema() provides schema information
 
 			resources = append(resources, resource)
 		}

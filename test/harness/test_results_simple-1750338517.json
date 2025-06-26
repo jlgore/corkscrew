@@ -1,0 +1,63 @@
+{
+  "test_id": "simple-1750338517",
+  "start_time": "2025-06-19T08:08:37.092063057-05:00",
+  "end_time": "2025-06-19T08:10:55.438743757-05:00",
+  "duration": 142364968911,
+  "deployment_success": true,
+  "scan_success": false,
+  "validation_success": false,
+  "resource_counts": null,
+  "relationship_counts": null,
+  "outputs": {
+    "_projectName": "corkscrew-test-simple",
+    "_stackName": "test-simple-1750338517",
+    "bucketArn": "arn:aws:s3:::corkscrew-test-simple-175033851720250619130847016400000001",
+    "bucketName": "corkscrew-test-simple-175033851720250619130847016400000001",
+    "ec2RoleArn": "arn:aws:iam::132851953547:role/corkscrew-test-ec2-role-simple-1750338517",
+    "expectedRelationships": [
+      {
+        "from_type": "ec2_instance",
+        "to_type": "security_group",
+        "type": "uses"
+      },
+      {
+        "from_type": "ec2_instance",
+        "to_type": "subnet",
+        "type": "placed_in"
+      },
+      {
+        "from_type": "security_group",
+        "to_type": "vpc",
+        "type": "belongs_to"
+      },
+      {
+        "from_type": "subnet",
+        "to_type": "vpc",
+        "type": "belongs_to"
+      },
+      {
+        "from_type": "ec2_instance",
+        "to_type": "iam_role",
+        "type": "assumes"
+      }
+    ],
+    "expectedResourceCounts": {
+      "ec2_instance": 1,
+      "iam_role": 1,
+      "instance_profile": 1,
+      "s3_bucket": 1,
+      "security_group": 1,
+      "subnet": 1,
+      "vpc": 1
+    },
+    "instanceArn": "arn:aws:ec2:us-east-1:132851953547:instance/i-082d2777994f2a30f",
+    "instanceId": "i-082d2777994f2a30f",
+    "instanceProfileArn": "arn:aws:iam::132851953547:instance-profile/corkscrew-test-profile-simple-1750338517",
+    "securityGroupId": "sg-03d9287b13d2cb04a",
+    "subnetId": "subnet-056510b0e5e4728b8",
+    "testId": "simple-1750338517",
+    "vpcCidr": "10.0.0.0/16",
+    "vpcId": "vpc-0d3e773d60ba836db"
+  },
+  "error": "Scan failed: scan failed: exit status 2, output: flag provided but not defined: -debug\nUsage of scan:\n  -concurrency int\n    \tNumber of regions to scan concurrently (default 3)\n  -config string\n    \tPath to configuration file\n  -database string\n    \tPath to DuckDB database file (default: ~/.corkscrew/db/corkscrew.duckdb)\n  -output string\n    \tOutput format (table, json, csv) (default \"table\")\n  -provider string\n    \tCloud provider (aws, azure, gcp, kubernetes) (default \"aws\")\n  -region string\n    \tComma-separated regions or 'all' (default: from config)\n  -save\n    \tSave results to timestamped JSON file\n  -services string\n    \tComma-separated list of services (default: from config)\n  -show-empty\n    \tShow empty regions and services\n"
+}

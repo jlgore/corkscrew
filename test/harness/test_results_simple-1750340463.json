@@ -1,0 +1,63 @@
+{
+  "test_id": "simple-1750340463",
+  "start_time": "2025-06-19T08:41:03.330702169-05:00",
+  "end_time": "2025-06-19T08:48:15.731731074-05:00",
+  "duration": 451843730508,
+  "deployment_success": true,
+  "scan_success": true,
+  "validation_success": false,
+  "resource_counts": null,
+  "relationship_counts": null,
+  "outputs": {
+    "_projectName": "corkscrew-test-simple",
+    "_stackName": "test-simple-1750340463",
+    "bucketArn": "arn:aws:s3:::corkscrew-test-simple-175034046320250619134114667700000001",
+    "bucketName": "corkscrew-test-simple-175034046320250619134114667700000001",
+    "ec2RoleArn": "arn:aws:iam::132851953547:role/corkscrew-test-ec2-role-simple-1750340463",
+    "expectedRelationships": [
+      {
+        "from_type": "ec2_instance",
+        "to_type": "security_group",
+        "type": "uses"
+      },
+      {
+        "from_type": "ec2_instance",
+        "to_type": "subnet",
+        "type": "placed_in"
+      },
+      {
+        "from_type": "security_group",
+        "to_type": "vpc",
+        "type": "belongs_to"
+      },
+      {
+        "from_type": "subnet",
+        "to_type": "vpc",
+        "type": "belongs_to"
+      },
+      {
+        "from_type": "ec2_instance",
+        "to_type": "iam_role",
+        "type": "assumes"
+      }
+    ],
+    "expectedResourceCounts": {
+      "ec2_instance": 1,
+      "iam_role": 1,
+      "instance_profile": 1,
+      "s3_bucket": 1,
+      "security_group": 1,
+      "subnet": 1,
+      "vpc": 1
+    },
+    "instanceArn": "arn:aws:ec2:us-east-1:132851953547:instance/i-0991bc6135620fa26",
+    "instanceId": "i-0991bc6135620fa26",
+    "instanceProfileArn": "arn:aws:iam::132851953547:instance-profile/corkscrew-test-profile-simple-1750340463",
+    "securityGroupId": "sg-0eae06263694d1a2b",
+    "subnetId": "subnet-0816e6690e1be581a",
+    "testId": "simple-1750340463",
+    "vpcCidr": "10.0.0.0/16",
+    "vpcId": "vpc-0e0defdbad0bff9fd"
+  },
+  "error": "Validation failed: no resources found in database - scan may have failed or resources were already cleaned up"
+}

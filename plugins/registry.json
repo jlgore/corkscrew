@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "generated_at": "2025-06-26T15:19:03Z",
+  "generated_for_version": "v0.1.2-14-gacbe8a5",
+  "plugins": {
+    "aws": {
+      "name": "aws-provider",
+      "description": "Amazon Web Services provider",
+      "version": "1.0.0",
+      "source": "plugins/aws-provider",
+      "binary": "aws-provider",
+      "releases": {
+        "darwin-arm64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/aws-provider-darwin-arm64",
+        "linux-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/aws-provider-linux-amd64",
+        "windows-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/aws-provider-windows-amd64.exe"
+      },
+      "capabilities": ["relationships"],
+      "status": "stable"
+    }
+,
+    "azure": {
+      "name": "azure-provider",
+      "description": "Microsoft Azure provider",
+      "version": "1.0.0",
+      "source": "plugins/azure-provider",
+      "binary": "azure-provider",
+      "releases": {
+        "darwin-arm64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/azure-provider-darwin-arm64",
+        "linux-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/azure-provider-linux-amd64",
+        "windows-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/azure-provider-windows-amd64.exe"
+      },
+      "capabilities": ["discover","scan"],
+      "status": "stable"
+    }
+,
+    "gcp": {
+      "name": "gcp-provider",
+      "description": "Google Cloud Platform provider",
+      "version": "1.0.0",
+      "source": "plugins/gcp-provider",
+      "binary": "gcp-provider",
+      "releases": {
+        "darwin-arm64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/gcp-provider-darwin-arm64",
+        "linux-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/gcp-provider-linux-amd64",
+        "windows-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/gcp-provider-windows-amd64.exe"
+      },
+      "capabilities": ["discover","scan","relationships"],
+      "status": "beta"
+    }
+,
+    "kubernetes": {
+      "name": "kubernetes-provider",
+      "description": "Kubernetes provider",
+      "version": "1.0.0",
+      "source": "plugins/kubernetes-provider",
+      "binary": "kubernetes-provider",
+      "releases": {
+        "darwin-arm64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/kubernetes-provider-darwin-arm64",
+        "linux-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/kubernetes-provider-linux-amd64",
+        "windows-amd64": "https://github.com/jlgore/corkscrew/releases/download/v0.1.2-14-gacbe8a5/kubernetes-provider-windows-amd64.exe"
+      },
+      "capabilities": ["discover","scan","relationships"],
+      "status": "beta"
+    }
+
+  }
+}

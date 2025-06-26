@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jlgore/corkscrew/internal/client"
+	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
@@ -24,6 +25,7 @@ type EnhancedScanOptions struct {
 	ShowEmpty      bool
 	ConfigPath     string
 	MaxConcurrency int
+	DatabasePath   string
 }
 
 func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
@@ -128,6 +130,25 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 
 	// Apply service filtering
 	scanner.FilterEmptyServices(results)
+
+	// Store results to database if database path is specified
+	if options.DatabasePath != "" {
+		if err := storeResultsToDatabase(results, options.DatabasePath); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
+		} else {
+			fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
+		}
+	} else {
+		// Try to store to config database or default location
+		dbPath := getDefaultDatabasePath(config)
+		if dbPath != "" {
+			if err := storeResultsToDatabase(results, dbPath); err != nil {
+				fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
+			} else {
+				fmt.Printf("💾 Results stored to database: %s\n", dbPath)
+			}
+		}
+	}
 
 	// Print results based on output format
 	switch options.OutputFormat {
@@ -323,4 +344,78 @@ func SaveResultsToFile(results *AggregatedResults, filename string) error {
 func GenerateTimestampedFilename(provider string) string {
 	timestamp := time.Now().Format("20060102-150405")
 	return fmt.Sprintf("enhanced-scan-%s-%s.json", provider, timestamp)
+}
+
+// storeResultsToDatabase stores scan results to the unified database
+func storeResultsToDatabase(results *AggregatedResults, dbPath string) error {
+	// Initialize the unified database with custom path
+	dbConfig, err := db.InitializeUnifiedDatabase(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+	defer dbConfig.DB.Close()
+
+	// Store each resource to the aws_resources table
+	for _, resource := range results.AllResources {
+		if err := storeResourceToDatabase(dbConfig, resource); err != nil {
+			return fmt.Errorf("failed to store resource %s: %w", resource.Id, err)
+		}
+	}
+
+	return nil
+}
+
+// storeResourceToDatabase stores a single resource to the database
+func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Resource) error {
+	// Convert tags map to JSON
+	tagsJSON := "{}"
+	if len(resource.Tags) > 0 {
+		tagsBytes, err := json.Marshal(resource.Tags)
+		if err != nil {
+			fmt.Printf("Warning: Failed to marshal tags for resource %s: %v\n", resource.Id, err)
+		} else {
+			tagsJSON = string(tagsBytes)
+		}
+	}
+
+	// Insert or update the resource
+	query := `
+		INSERT OR REPLACE INTO aws_resources (
+			id, arn, name, type, service, region, account_id,
+			tags, attributes, raw_data, state, 
+			created_at, modified_at, scanned_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`
+
+	_, err := dbConfig.DB.Exec(query,
+		resource.Id,
+		resource.Arn,
+		resource.Name,
+		resource.Type,
+		resource.Service,
+		resource.Region,
+		resource.AccountId,
+		tagsJSON,
+		resource.Attributes,
+		resource.RawData,
+		"active", // default state
+		resource.DiscoveredAt.AsTime(),
+		resource.DiscoveredAt.AsTime(),
+	)
+
+	return err
+}
+
+// getDefaultDatabasePath gets database path from config or returns default
+func getDefaultDatabasePath(config *SmartScanConfiguration) string {
+	if config.Database.Path != "" {
+		return config.Database.Path
+	}
+	
+	// Try to get default path
+	if defaultPath, err := db.GetUnifiedDatabasePath(); err == nil {
+		return defaultPath
+	}
+	
+	return ""
 }

@@ -1,0 +1,10 @@
+# Act configuration for local GitHub Actions testing
+
+# Use a smaller Ubuntu image for faster testing
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Set default artifact server for uploads
+--artifact-server-path /tmp/artifacts
+
+# Use bind mount for better performance
+--use-gitignore=false

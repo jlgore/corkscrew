@@ -146,7 +146,7 @@ func runInit(args []string) {
 	config := &InitConfig{
 		CorkscrewDir:  filepath.Join(usr.HomeDir, ".corkscrew"),
 		ProtocVersion: "25.3",
-		DuckDBVersion: "1.2.2", // Locked to tested version with duckpgq support
+		DuckDBVersion: "1.30.1", // Updated to v1.30.1 with enhanced duckpgq support
 	}
 	config.BinDir = filepath.Join(config.CorkscrewDir, "bin")
 	config.PluginDir = filepath.Join(config.CorkscrewDir, "plugins")
@@ -170,9 +170,9 @@ func runInit(args []string) {
 	}
 	if dryRun {
 		if upgrade {
-			fmt.Println("  ✓ DRY RUN: Would force upgrade protoc v25.3 and duckdb v1.2.2")
+			fmt.Println("  ✓ DRY RUN: Would force upgrade protoc v25.3 and duckdb v1.30.1")
 		} else {
-			fmt.Println("  ✓ DRY RUN: Would download protoc v25.3 and duckdb v1.2.2")
+			fmt.Println("  ✓ DRY RUN: Would download protoc v25.3 and duckdb v1.30.1")
 		}
 	} else {
 		if err := downloadDependencies(config, upgrade); err != nil {
@@ -584,7 +584,7 @@ func getDefaultConfig() *CorkscrewConfig {
 		},
 		Dependencies: DependenciesConfig{
 			Protoc: DependencyConfig{Version: "25.3", AutoDownload: true},
-			DuckDB: DependencyConfig{Version: "1.2.2", AutoDownload: true},
+			DuckDB: DependencyConfig{Version: "1.30.1", AutoDownload: true},
 		},
 	}
 }
@@ -857,7 +857,7 @@ func printInitUsage() {
 	fmt.Println()
 	fmt.Println("What it does:")
 	fmt.Println("  1. Creates ~/.corkscrew directory structure")
-	fmt.Println("  2. Downloads protoc v25.3 and duckdb v1.2.2")
+	fmt.Println("  2. Downloads protoc v25.3 and duckdb v1.30.1")
 	fmt.Println("  3. Reads configuration from ./corkscrew.yaml")
 	fmt.Println("  4. Generates scanner code for enabled providers")
 	fmt.Println("  5. Generates analysis files for enhanced discovery")
