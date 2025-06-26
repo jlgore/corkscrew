@@ -1,18 +1,28 @@
 module github.com/jlgore/corkscrew/test/harness
 
-go 1.22
+go 1.23.0
 
 toolchain go1.24.3
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.5
 	github.com/aws/aws-sdk-go-v2/config v1.28.6
+	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.46.3
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.45.3
+	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.51.2
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.225.2
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.45.5
+	github.com/aws/aws-sdk-go-v2/service/iam v1.42.2
 	github.com/aws/aws-sdk-go-v2/service/rds v1.97.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.27.2
 	github.com/marcboeker/go-duckdb v1.8.0
 	github.com/pulumi/pulumi-aws/sdk/v6 v6.54.2
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v2 v2.90.0
+	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v2 v2.90.0
+	github.com/pulumi/pulumi-azure-native-sdk/network/v2 v2.90.0
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v2 v2.90.0
+	github.com/pulumi/pulumi-azure-native-sdk/storage/v2 v2.90.0
+	github.com/pulumi/pulumi-gcp/sdk/v7 v7.38.0
 	github.com/pulumi/pulumi/sdk/v3 v3.158.0
 	github.com/stretchr/testify v1.10.0
 )
@@ -69,6 +79,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl/v2 v2.17.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/iwdgo/sigintwindows v0.2.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
@@ -95,14 +106,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.9.1 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/authorization/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/network/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/storage/v2 v2.90.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native/sdk v1.93.0 // indirect
-	github.com/pulumi/pulumi-gcp/sdk/v7 v7.38.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
@@ -118,7 +122,7 @@ require (
 	github.com/zclconf/go-cty v1.13.2 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/mod v0.19.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
