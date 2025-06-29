@@ -1,0 +1,198 @@
+name: Release All Plugins
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Version suffix for plugins (e.g., .1, .2, etc.)'
+        required: false
+        default: '.1'
+      main_version:
+        description: 'Main release version to base plugins on (e.g., v1.0.0)'
+        required: true
+      create_releases:
+        description: 'Create actual releases (not just builds)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  release:
+    types: [published]
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      aws_version: ${{ steps.versions.outputs.aws_version }}
+      azure_version: ${{ steps.versions.outputs.azure_version }}
+      gcp_version: ${{ steps.versions.outputs.gcp_version }}
+      kubernetes_version: ${{ steps.versions.outputs.kubernetes_version }}
+      create_releases: ${{ steps.versions.outputs.create_releases }}
+    steps:
+      - name: Determine plugin versions
+        id: versions
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Auto-triggered by main release
+            MAIN_VERSION="${{ github.event.release.tag_name }}"
+            VERSION_SUFFIX=".1"
+            CREATE_RELEASES="true"
+          else
+            # Manual workflow dispatch
+            MAIN_VERSION="${{ github.event.inputs.main_version }}"
+            VERSION_SUFFIX="${{ github.event.inputs.version_suffix }}"
+            CREATE_RELEASES="${{ github.event.inputs.create_releases }}"
+          fi
+          
+          # Generate plugin-specific version tags
+          AWS_VERSION="${MAIN_VERSION}-aws${VERSION_SUFFIX}"
+          AZURE_VERSION="${MAIN_VERSION}-azure${VERSION_SUFFIX}"
+          GCP_VERSION="${MAIN_VERSION}-gcp${VERSION_SUFFIX}"
+          K8S_VERSION="${MAIN_VERSION}-k8s${VERSION_SUFFIX}"
+          
+          echo "aws_version=${AWS_VERSION}" >> $GITHUB_OUTPUT
+          echo "azure_version=${AZURE_VERSION}" >> $GITHUB_OUTPUT
+          echo "gcp_version=${GCP_VERSION}" >> $GITHUB_OUTPUT
+          echo "kubernetes_version=${K8S_VERSION}" >> $GITHUB_OUTPUT
+          echo "create_releases=${CREATE_RELEASES}" >> $GITHUB_OUTPUT
+          
+          echo "🏷️ Plugin versions:"
+          echo "  AWS: ${AWS_VERSION}"
+          echo "  Azure: ${AZURE_VERSION}"
+          echo "  GCP: ${GCP_VERSION}"
+          echo "  Kubernetes: ${K8S_VERSION}"
+          echo "  Create releases: ${CREATE_RELEASES}"
+
+  build-aws:
+    needs: prepare
+    uses: ./.github/workflows/build-aws-provider.yml
+    with:
+      version: ${{ needs.prepare.outputs.aws_version }}
+      create_release: ${{ needs.prepare.outputs.create_releases }}
+    secrets: inherit
+
+  build-azure:
+    needs: prepare
+    uses: ./.github/workflows/build-azure-provider.yml
+    with:
+      version: ${{ needs.prepare.outputs.azure_version }}
+      create_release: ${{ needs.prepare.outputs.create_releases }}
+    secrets: inherit
+
+  build-gcp:
+    needs: prepare
+    uses: ./.github/workflows/build-gcp-provider.yml
+    with:
+      version: ${{ needs.prepare.outputs.gcp_version }}
+      create_release: ${{ needs.prepare.outputs.create_releases }}
+    secrets: inherit
+
+  build-kubernetes:
+    needs: prepare
+    uses: ./.github/workflows/build-kubernetes-provider.yml
+    with:
+      version: ${{ needs.prepare.outputs.kubernetes_version }}
+      create_release: ${{ needs.prepare.outputs.create_releases }}
+    secrets: inherit
+
+  update-registry:
+    needs: [prepare, build-aws, build-azure, build-gcp, build-kubernetes]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: needs.prepare.outputs.create_releases == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update plugin registry
+        run: |
+          # Update the plugin registry with new release URLs
+          VERSION_AWS="${{ needs.prepare.outputs.aws_version }}"
+          VERSION_AZURE="${{ needs.prepare.outputs.azure_version }}"
+          VERSION_GCP="${{ needs.prepare.outputs.gcp_version }}"
+          VERSION_K8S="${{ needs.prepare.outputs.kubernetes_version }}"
+          REPO="${{ github.repository }}"
+          
+          echo "🔄 Updating plugin registry with new release versions..."
+          
+          # Generate updated registry
+          ./scripts/generate-plugin-registry.sh "latest" "$REPO" "plugins/registry.json"
+          
+          # Replace version references with actual release versions
+          sed -i "s|/releases/download/[^/]*/aws-provider-|/releases/download/${VERSION_AWS}/aws-provider-|g" plugins/registry.json
+          sed -i "s|/releases/download/[^/]*/azure-provider-|/releases/download/${VERSION_AZURE}/azure-provider-|g" plugins/registry.json
+          sed -i "s|/releases/download/[^/]*/gcp-provider-|/releases/download/${VERSION_GCP}/gcp-provider-|g" plugins/registry.json
+          sed -i "s|/releases/download/[^/]*/kubernetes-provider-|/releases/download/${VERSION_K8S}/kubernetes-provider-|g" plugins/registry.json
+          
+          echo "✅ Updated plugin registry"
+          cat plugins/registry.json
+
+      - name: Commit updated registry
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add plugins/registry.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update plugin registry with release versions
+            
+            - AWS Provider: ${{ needs.prepare.outputs.aws_version }}
+            - Azure Provider: ${{ needs.prepare.outputs.azure_version }}
+            - GCP Provider: ${{ needs.prepare.outputs.gcp_version }}
+            - Kubernetes Provider: ${{ needs.prepare.outputs.kubernetes_version }}
+            
+            🤖 Generated with [Claude Code](https://claude.ai/code)
+            
+            Co-Authored-By: Claude <noreply@anthropic.com>"
+            git push
+          fi
+
+  summary:
+    needs: [prepare, build-aws, build-azure, build-gcp, build-kubernetes, update-registry]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## 🚀 Plugin Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Provider | Version | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| AWS | ${{ needs.prepare.outputs.aws_version }} | ${{ needs.build-aws.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Azure | ${{ needs.prepare.outputs.azure_version }} | ${{ needs.build-azure.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GCP | ${{ needs.prepare.outputs.gcp_version }} | ${{ needs.build-gcp.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kubernetes | ${{ needs.prepare.outputs.kubernetes_version }} | ${{ needs.build-kubernetes.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.prepare.outputs.create_releases }}" = "true" ]; then
+            echo "### 📦 Release Assets" >> $GITHUB_STEP_SUMMARY
+            echo "Plugin binaries have been released and are available for download." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Installation:**" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "# Download plugins with corkscrew CLI" >> $GITHUB_STEP_SUMMARY
+            echo "corkscrew plugin install aws" >> $GITHUB_STEP_SUMMARY
+            echo "corkscrew plugin install azure" >> $GITHUB_STEP_SUMMARY
+            echo "corkscrew plugin install gcp" >> $GITHUB_STEP_SUMMARY
+            echo "corkscrew plugin install kubernetes" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### 🔨 Build Only" >> $GITHUB_STEP_SUMMARY
+            echo "Plugins were built but not released. Artifacts are available for download." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check overall success
+        run: |
+          if [ "${{ needs.build-aws.result }}" != "success" ] || \
+             [ "${{ needs.build-azure.result }}" != "success" ] || \
+             [ "${{ needs.build-gcp.result }}" != "success" ] || \
+             [ "${{ needs.build-kubernetes.result }}" != "success" ]; then
+            echo "❌ One or more plugin builds failed"
+            exit 1
+          else
+            echo "✅ All plugin builds completed successfully"
+          fi

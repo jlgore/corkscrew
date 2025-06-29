@@ -156,6 +156,9 @@ examples-archive/
 plugins/*/main
 plugins/*/scanner
 plugins/*/provider
+plugins/*/cmd/*/*
+!plugins/*/cmd/*/*.go
+cmd/generator/main
 
 # But allow source directories and code files
 !plugins/*/

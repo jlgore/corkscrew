@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/pkg/models"
 	_ "github.com/marcboeker/go-duckdb"
 )
 
@@ -646,4 +647,356 @@ func (gl *GraphLoader) Query(ctx context.Context, query string, args ...interfac
 
 func (gl *GraphLoader) Close() error {
 	return gl.db.Close()
+}
+
+// CrossCloud DatabaseInterface Implementation
+// These methods implement the interface required by CrossCloudOrchestrator
+
+// StoreResources stores cross-cloud resources
+func (gl *GraphLoader) StoreResources(resources []*models.Resource) error {
+	if len(resources) == 0 {
+		return nil
+	}
+
+	// Create crosscloud_resources table if it doesn't exist
+	createTableSQL := `
+		CREATE TABLE IF NOT EXISTS crosscloud_resources (
+			id VARCHAR PRIMARY KEY,
+			name VARCHAR,
+			type VARCHAR,
+			service VARCHAR,
+			provider VARCHAR,
+			region VARCHAR,
+			arn VARCHAR,
+			status VARCHAR,
+			created_at TIMESTAMP,
+			modified_at TIMESTAMP,
+			scanned_at TIMESTAMP,
+			tags JSON,
+			attributes JSON,
+			metadata JSON,
+			raw_data JSON,
+			cross_cloud_id VARCHAR
+		)`
+	if _, err := gl.db.Exec(createTableSQL); err != nil {
+		return fmt.Errorf("failed to create crosscloud_resources table: %w", err)
+	}
+
+	// Insert resources
+	insertSQL := `
+		INSERT OR REPLACE INTO crosscloud_resources 
+		(id, name, type, service, provider, region, arn, status, created_at, modified_at, scanned_at, tags, attributes, metadata, raw_data, cross_cloud_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	stmt, err := gl.db.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, resource := range resources {
+		tags, _ := json.Marshal(resource.Tags)
+		attributes, _ := json.Marshal(resource.Attributes)
+		metadata, _ := json.Marshal(resource.Metadata)
+		rawData, _ := json.Marshal(resource.RawData)
+
+		_, err := stmt.Exec(
+			resource.ID, resource.Name, resource.Type, resource.Service,
+			resource.Provider, resource.Region, resource.ARN, resource.Status,
+			resource.CreatedAt, resource.ModifiedAt, resource.ScannedAt,
+			string(tags), string(attributes), string(metadata), string(rawData),
+			resource.CrossCloudID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert resource %s: %w", resource.ID, err)
+		}
+	}
+
+	return nil
+}
+
+// StoreIPAddresses stores IP addresses
+func (gl *GraphLoader) StoreIPAddresses(addresses []*models.IPAddress) error {
+	if len(addresses) == 0 {
+		return nil
+	}
+
+	createTableSQL := `
+		CREATE TABLE IF NOT EXISTS crosscloud_ip_addresses (
+			address VARCHAR,
+			type VARCHAR,
+			version VARCHAR,
+			provider VARCHAR,
+			region VARCHAR,
+			resource_id VARCHAR,
+			scope VARCHAR,
+			PRIMARY KEY (address, provider, resource_id)
+		)`
+	if _, err := gl.db.Exec(createTableSQL); err != nil {
+		return fmt.Errorf("failed to create crosscloud_ip_addresses table: %w", err)
+	}
+
+	insertSQL := `
+		INSERT OR REPLACE INTO crosscloud_ip_addresses 
+		(address, type, version, provider, region, resource_id, scope)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	stmt, err := gl.db.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, addr := range addresses {
+		_, err := stmt.Exec(addr.Address, addr.Type, addr.Version, addr.Provider, addr.Region, addr.ResourceID, addr.Scope)
+		if err != nil {
+			return fmt.Errorf("failed to insert IP address %s: %w", addr.Address, err)
+		}
+	}
+
+	return nil
+}
+
+// StoreDNSRecords stores DNS records
+func (gl *GraphLoader) StoreDNSRecords(records []*models.DNSRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	createTableSQL := `
+		CREATE TABLE IF NOT EXISTS crosscloud_dns_records (
+			name VARCHAR,
+			type VARCHAR,
+			values JSON,
+			ttl INTEGER,
+			provider VARCHAR,
+			zone VARCHAR,
+			resource_id VARCHAR,
+			PRIMARY KEY (name, type, provider, resource_id)
+		)`
+	if _, err := gl.db.Exec(createTableSQL); err != nil {
+		return fmt.Errorf("failed to create crosscloud_dns_records table: %w", err)
+	}
+
+	insertSQL := `
+		INSERT OR REPLACE INTO crosscloud_dns_records 
+		(name, type, values, ttl, provider, zone, resource_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	stmt, err := gl.db.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, record := range records {
+		values, _ := json.Marshal(record.Values)
+		_, err := stmt.Exec(record.Name, record.Type, string(values), record.TTL, record.Provider, record.Zone, record.ResourceID)
+		if err != nil {
+			return fmt.Errorf("failed to insert DNS record %s: %w", record.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// StoreCorrelations stores cross-cloud correlations
+func (gl *GraphLoader) StoreCorrelations(correlations interface{}) error {
+	// Handle different correlation types
+	switch corrs := correlations.(type) {
+	case []*models.ResourceCorrelation:
+		return gl.storeResourceCorrelations(corrs)
+	default:
+		// Try to handle CrossCloudCorrelation from crosscloud package
+		return gl.storeGenericCorrelations(correlations)
+	}
+}
+
+func (gl *GraphLoader) storeResourceCorrelations(correlations []*models.ResourceCorrelation) error {
+	if len(correlations) == 0 {
+		return nil
+	}
+
+	createTableSQL := `
+		CREATE TABLE IF NOT EXISTS crosscloud_correlations (
+			id VARCHAR PRIMARY KEY,
+			source_id VARCHAR,
+			target_id VARCHAR,
+			type VARCHAR,
+			relation_type VARCHAR,
+			strength DOUBLE,
+			confidence DOUBLE,
+			description VARCHAR,
+			metadata JSON,
+			discovered_at TIMESTAMP
+		)`
+	if _, err := gl.db.Exec(createTableSQL); err != nil {
+		return fmt.Errorf("failed to create crosscloud_correlations table: %w", err)
+	}
+
+	insertSQL := `
+		INSERT OR REPLACE INTO crosscloud_correlations 
+		(id, source_id, target_id, type, relation_type, strength, confidence, description, metadata, discovered_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	stmt, err := gl.db.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, corr := range correlations {
+		metadata, _ := json.Marshal(corr.Metadata)
+		_, err := stmt.Exec(
+			corr.ID, corr.SourceID, corr.TargetID, corr.Type, corr.RelationType,
+			corr.Strength, corr.Confidence, corr.Description, string(metadata), corr.DiscoveredAt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert correlation %s: %w", corr.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (gl *GraphLoader) storeGenericCorrelations(correlations interface{}) error {
+	// Store as JSON for other correlation types
+	correlationsJSON, err := json.Marshal(correlations)
+	if err != nil {
+		return fmt.Errorf("failed to marshal correlations: %w", err)
+	}
+
+	createTableSQL := `
+		CREATE TABLE IF NOT EXISTS crosscloud_generic_correlations (
+			id VARCHAR PRIMARY KEY,
+			correlation_data JSON,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`
+	if _, err := gl.db.Exec(createTableSQL); err != nil {
+		return fmt.Errorf("failed to create crosscloud_generic_correlations table: %w", err)
+	}
+
+	id := uuid.New().String()
+	insertSQL := `INSERT INTO crosscloud_generic_correlations (id, correlation_data) VALUES (?, ?)`
+	_, err = gl.db.Exec(insertSQL, id, string(correlationsJSON))
+	if err != nil {
+		return fmt.Errorf("failed to store correlations: %w", err)
+	}
+
+	return nil
+}
+
+// GetResourcesByProvider retrieves resources for a specific provider
+func (gl *GraphLoader) GetResourcesByProvider(provider string) ([]*models.Resource, error) {
+	query := `
+		SELECT id, name, type, service, provider, region, arn, status, 
+		       created_at, modified_at, scanned_at, tags, attributes, metadata, raw_data, cross_cloud_id
+		FROM crosscloud_resources 
+		WHERE provider = ?`
+
+	rows, err := gl.db.Query(query, provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query resources: %w", err)
+	}
+	defer rows.Close()
+
+	var resources []*models.Resource
+	for rows.Next() {
+		resource := &models.Resource{}
+		var tags, attributes, metadata, rawData sql.NullString
+
+		err := rows.Scan(
+			&resource.ID, &resource.Name, &resource.Type, &resource.Service,
+			&resource.Provider, &resource.Region, &resource.ARN, &resource.Status,
+			&resource.CreatedAt, &resource.ModifiedAt, &resource.ScannedAt,
+			&tags, &attributes, &metadata, &rawData, &resource.CrossCloudID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan resource: %w", err)
+		}
+
+		// Unmarshal JSON fields
+		if tags.Valid {
+			json.Unmarshal([]byte(tags.String), &resource.Tags)
+		}
+		if attributes.Valid {
+			json.Unmarshal([]byte(attributes.String), &resource.Attributes)
+		}
+		if metadata.Valid {
+			json.Unmarshal([]byte(metadata.String), &resource.Metadata)
+		}
+		if rawData.Valid {
+			json.Unmarshal([]byte(rawData.String), &resource.RawData)
+		}
+
+		resources = append(resources, resource)
+	}
+
+	return resources, rows.Err()
+}
+
+// GetIPAddressesByProvider retrieves IP addresses for a specific provider
+func (gl *GraphLoader) GetIPAddressesByProvider(provider string) ([]*models.IPAddress, error) {
+	query := `
+		SELECT address, type, version, provider, region, resource_id, scope
+		FROM crosscloud_ip_addresses 
+		WHERE provider = ?`
+
+	rows, err := gl.db.Query(query, provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query IP addresses: %w", err)
+	}
+	defer rows.Close()
+
+	var addresses []*models.IPAddress
+	for rows.Next() {
+		addr := &models.IPAddress{}
+		err := rows.Scan(&addr.Address, &addr.Type, &addr.Version, &addr.Provider, &addr.Region, &addr.ResourceID, &addr.Scope)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan IP address: %w", err)
+		}
+		addresses = append(addresses, addr)
+	}
+
+	return addresses, rows.Err()
+}
+
+// GetDNSRecordsByProvider retrieves DNS records for a specific provider
+func (gl *GraphLoader) GetDNSRecordsByProvider(provider string) ([]*models.DNSRecord, error) {
+	query := `
+		SELECT name, type, values, ttl, provider, zone, resource_id
+		FROM crosscloud_dns_records 
+		WHERE provider = ?`
+
+	rows, err := gl.db.Query(query, provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query DNS records: %w", err)
+	}
+	defer rows.Close()
+
+	var records []*models.DNSRecord
+	for rows.Next() {
+		record := &models.DNSRecord{}
+		var valuesJSON string
+		err := rows.Scan(&record.Name, &record.Type, &valuesJSON, &record.TTL, &record.Provider, &record.Zone, &record.ResourceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan DNS record: %w", err)
+		}
+
+		// Unmarshal values
+		json.Unmarshal([]byte(valuesJSON), &record.Values)
+		records = append(records, record)
+	}
+
+	return records, rows.Err()
+}
+
+// QueryContext executes a query and returns raw SQL rows (required by CrossCloud interface)
+func (gl *GraphLoader) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return gl.db.QueryContext(ctx, query, args...)
+}
+
+// BeginTx begins a transaction (required by CrossCloud interface)
+func (gl *GraphLoader) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return gl.db.BeginTx(ctx, opts)
 }

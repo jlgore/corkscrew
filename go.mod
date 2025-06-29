@@ -30,6 +30,7 @@ require (
 
 require (
 	github.com/apache/arrow-go/v18 v18.3.0 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30 // indirect
@@ -71,6 +72,7 @@ require (
 	github.com/oklog/run v1.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 // indirect
 	golang.org/x/mod v0.24.0 // indirect

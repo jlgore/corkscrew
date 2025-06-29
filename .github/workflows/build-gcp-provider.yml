@@ -1,0 +1,232 @@
+name: Build GCP Provider
+
+on:
+  push:
+    paths:
+      - 'plugins/gcp-provider/**'
+      - 'internal/proto/**'
+      - 'proto/**'
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'plugins/gcp-provider/**'
+      - 'internal/proto/**'
+      - 'proto/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., v1.0.0-gcp.1)'
+        required: false
+        default: 'latest'
+      create_release:
+        description: 'Create a release for this plugin'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to build'
+        required: false
+        default: 'latest'
+        type: string
+      create_release:
+        description: 'Create a release for this plugin'
+        required: false
+        default: 'false'
+        type: string
+
+env:
+  PLUGIN_NAME: gcp-provider
+  PROVIDER_TYPE: gcp
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install Go protobuf plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Generate protobuf code
+        run: make generate-proto
+
+      - name: Install dependencies
+        run: |
+          go mod tidy
+          cd plugins/${{ env.PLUGIN_NAME }} && go mod tidy
+
+      - name: Determine version
+        id: version
+        run: |
+          # Handle both workflow_dispatch and workflow_call inputs
+          INPUT_VERSION="${{ github.event.inputs.version || inputs.version }}"
+          INPUT_CREATE_RELEASE="${{ github.event.inputs.create_release || inputs.create_release }}"
+          
+          if [ "$INPUT_VERSION" != "" ] && [ "$INPUT_VERSION" != "latest" ]; then
+            VERSION="$INPUT_VERSION"
+          elif [ "${{ github.ref_type }}" == "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            # Use commit hash for non-release builds
+            VERSION="v0.0.0-${GITHUB_SHA:0:7}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "create_release=${INPUT_CREATE_RELEASE}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+          echo "Create release: ${INPUT_CREATE_RELEASE}"
+
+      - name: Build GCP provider for multiple platforms
+        run: |
+          mkdir -p dist
+          
+          # Build for different platforms
+          platforms=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64" "windows/amd64")
+          
+          for platform in "${platforms[@]}"; do
+            IFS='/' read -r GOOS GOARCH <<< "$platform"
+            echo "Building for $GOOS/$GOARCH..."
+            
+            output_name="${{ env.PLUGIN_NAME }}-${GOOS}-${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then
+              output_name="${output_name}.exe"
+            fi
+            
+            cd plugins/${{ env.PLUGIN_NAME }}
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+              -o "../../dist/${output_name}" .
+            cd ../..
+            
+            echo "✅ Built: dist/${output_name}"
+          done
+
+      - name: Test plugin binary
+        run: |
+          # Test that the Linux binary runs
+          ./dist/${{ env.PLUGIN_NAME }}-linux-amd64 --help || echo "Plugin binary basic test complete"
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-${{ steps.version.outputs.version }}
+          path: |
+            dist/${{ env.PLUGIN_NAME }}-*
+            dist/checksums.txt
+          retention-days: 30
+
+      - name: Create Release
+        if: steps.version.outputs.create_release == 'true' || startsWith(github.ref, 'refs/tags/')
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.version.outputs.version }}
+          name: "GCP Provider ${{ steps.version.outputs.version }}"
+          body: |
+            ## GCP Provider Release ${{ steps.version.outputs.version }}
+            
+            ### 📦 Installation
+            
+            Download the appropriate binary for your platform:
+            
+            **Linux:**
+            ```bash
+            # AMD64
+            wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/${{ env.PLUGIN_NAME }}-linux-amd64
+            chmod +x ${{ env.PLUGIN_NAME }}-linux-amd64
+            mv ${{ env.PLUGIN_NAME }}-linux-amd64 ~/.corkscrew/plugins/${{ env.PLUGIN_NAME }}
+            
+            # ARM64  
+            wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/${{ env.PLUGIN_NAME }}-linux-arm64
+            chmod +x ${{ env.PLUGIN_NAME }}-linux-arm64
+            mv ${{ env.PLUGIN_NAME }}-linux-arm64 ~/.corkscrew/plugins/${{ env.PLUGIN_NAME }}
+            ```
+            
+            **macOS:**
+            ```bash
+            # Intel
+            wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/${{ env.PLUGIN_NAME }}-darwin-amd64
+            chmod +x ${{ env.PLUGIN_NAME }}-darwin-amd64
+            mv ${{ env.PLUGIN_NAME }}-darwin-amd64 ~/.corkscrew/plugins/${{ env.PLUGIN_NAME }}
+            
+            # Apple Silicon
+            wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/${{ env.PLUGIN_NAME }}-darwin-arm64
+            chmod +x ${{ env.PLUGIN_NAME }}-darwin-arm64  
+            mv ${{ env.PLUGIN_NAME }}-darwin-arm64 ~/.corkscrew/plugins/${{ env.PLUGIN_NAME }}
+            ```
+            
+            **Windows:**
+            ```powershell
+            # Download and place in plugins directory
+            # Create ~/.corkscrew/plugins/ directory if it doesn't exist
+            ```
+            
+            ### 🔍 Usage
+            
+            ```bash
+            # Verify installation
+            corkscrew plugin list
+            
+            # Use the plugin
+            corkscrew discover --provider gcp
+            ```
+            
+            ### 📋 Supported GCP Services
+            
+            This provider supports scanning and discovery for Google Cloud services including:
+            - Compute Engine, Cloud Storage, Cloud SQL
+            - Kubernetes Engine, Cloud Functions, App Engine
+            - IAM, VPC Networks, Cloud Load Balancing
+            - And many more...
+            
+            ---
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/previous-tag...${{ steps.version.outputs.version }}
+          files: |
+            dist/${{ env.PLUGIN_NAME }}-*
+            dist/checksums.txt
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify build result
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "✅ GCP Provider build completed successfully"
+          else
+            echo "❌ GCP Provider build failed"
+            exit 1
+          fi

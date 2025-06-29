@@ -2,7 +2,7 @@
 # Streamlined Makefile focusing on actual usage patterns
 
 # Variables
-GO_VERSION := 1.21
+GO_VERSION := 1.24
 CORKSCREW_DIR := $(HOME)/.corkscrew
 PLUGIN_DIR := $(CORKSCREW_DIR)/plugins
 BIN_DIR := $(CORKSCREW_DIR)/bin
@@ -75,7 +75,7 @@ clean-install:
 # =============================================================================
 
 .PHONY: build
-build: build-cli build-plugins generate-registry
+build: generate-proto build-cli build-plugins generate-registry
 	@echo "🔨 Build complete!"
 
 .PHONY: build-cli
@@ -147,6 +147,7 @@ generate-registry:
 generate-proto:
 	@echo "🔄 Generating protobuf code..."
 	@if [ -d "proto" ]; then \
+		export PATH="$$PATH:$$HOME/go/bin"; \
 		protoc --go_out=. --go_opt=paths=source_relative \
 		       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		       proto/*.proto; \

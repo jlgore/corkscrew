@@ -205,12 +205,28 @@ func (p parameterFlags) Set(value string) error {
 }
 
 func main() {
+	// Check for global --tui flag first
+	if len(os.Args) >= 2 && (os.Args[1] == "--tui" || os.Args[1] == "-t") {
+		// Launch TUI mode directly
+		if err := runTUIMode(os.Args[2:]); err != nil {
+			fmt.Printf("Failed to start TUI: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
 	}
 
 	command := os.Args[1]
+
+	// Check if TUI mode is requested for specific commands
+	if handleTUIRequest(command, os.Args[2:]) {
+		return
+	}
+
 	switch command {
 	case "init":
 		runInit(os.Args[2:])
@@ -264,6 +280,12 @@ func printUsage() {
 	fmt.Println("Multi-Cloud Plugin Architecture")
 	fmt.Println()
 	fmt.Println("Usage:")
+	fmt.Println("  # Interactive TUI Mode")
+	fmt.Println("  corkscrew --tui                        # Launch main TUI interface")
+	fmt.Println("  corkscrew scan --tui                   # Launch scan configuration TUI")
+	fmt.Println("  corkscrew query --tui                  # Launch query builder TUI")
+	fmt.Println("  corkscrew config --tui                 # Launch configuration wizard TUI")
+	fmt.Println()
 	fmt.Println("  # Multi-Region Scanning")
 	fmt.Println("  corkscrew scan --provider aws --region us-east-1,us-west-2,eu-west-1")
 	fmt.Println("  corkscrew scan --provider aws --region all")

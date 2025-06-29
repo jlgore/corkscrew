@@ -146,7 +146,7 @@ func runInit(args []string) {
 	config := &InitConfig{
 		CorkscrewDir:  filepath.Join(usr.HomeDir, ".corkscrew"),
 		ProtocVersion: "25.3",
-		DuckDBVersion: "1.30.1", // Updated to v1.30.1 with enhanced duckpgq support
+		DuckDBVersion: "1.3.0", // Updated to v1.3.0 with enhanced duckpgq support
 	}
 	config.BinDir = filepath.Join(config.CorkscrewDir, "bin")
 	config.PluginDir = filepath.Join(config.CorkscrewDir, "plugins")
@@ -170,9 +170,9 @@ func runInit(args []string) {
 	}
 	if dryRun {
 		if upgrade {
-			fmt.Println("  ✓ DRY RUN: Would force upgrade protoc v25.3 and duckdb v1.30.1")
+			fmt.Println("  ✓ DRY RUN: Would force upgrade protoc v25.3 and duckdb v1.3.0")
 		} else {
-			fmt.Println("  ✓ DRY RUN: Would download protoc v25.3 and duckdb v1.30.1")
+			fmt.Println("  ✓ DRY RUN: Would download protoc v25.3 and duckdb v1.3.0")
 		}
 	} else {
 		if err := downloadDependencies(config, upgrade); err != nil {
@@ -584,7 +584,7 @@ func getDefaultConfig() *CorkscrewConfig {
 		},
 		Dependencies: DependenciesConfig{
 			Protoc: DependencyConfig{Version: "25.3", AutoDownload: true},
-			DuckDB: DependencyConfig{Version: "1.30.1", AutoDownload: true},
+			DuckDB: DependencyConfig{Version: "1.3.0", AutoDownload: true},
 		},
 	}
 }
@@ -685,11 +685,11 @@ func generateAWSScannersForServices(services []string, pluginDir string) error {
 }
 
 func generateAzureScannersForServices(services []string, pluginDir string) error {
-	// Azure uses scanner generator
-	generatorMainGo := filepath.Join("cmd", "scanner-generator", "main.go")
-	generatorFullPath := filepath.Join(pluginDir, generatorMainGo)
-	if _, err := os.Stat(generatorFullPath); os.IsNotExist(err) {
-		return fmt.Errorf("Azure scanner generator not found at %s", generatorFullPath)
+	// Azure uses analyzer + scanner generator pattern (like AWS)
+	analyzerMainGo := filepath.Join("cmd", "analyze-azure-sdk", "main.go")
+	analyzerFullPath := filepath.Join(pluginDir, analyzerMainGo)
+	if _, err := os.Stat(analyzerFullPath); os.IsNotExist(err) {
+		return fmt.Errorf("Azure analyzer not found at %s", analyzerFullPath)
 	}
 	
 	// Create generated directory if it doesn't exist
@@ -698,16 +698,35 @@ func generateAzureScannersForServices(services []string, pluginDir string) error
 		return fmt.Errorf("failed to create generated directory: %w", err)
 	}
 	
-	for _, service := range services {
-		cmd := exec.Command("go", "run", generatorMainGo, 
-			"-service", service,
-			"-output", "./generated")
-		cmd.Dir = pluginDir
-		
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("Azure generator failed for service %s: %w, output: %s", service, err, output)
-		}
+	// First, run analyzer to generate service catalog
+	catalogPath := "generated/azure-service-catalog.json"
+	cmd := exec.Command("go", "run", analyzerMainGo, 
+		"-output", catalogPath,
+		"-services", strings.Join(services, ","),
+		"-update") // Auto-download Azure SDK if needed
+	cmd.Dir = pluginDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Azure analyzer failed: %w, output: %s", err, output)
+	}
+	
+	// Then run scanner generator with the catalog
+	generatorMainGo := filepath.Join("cmd", "scanner-generator", "main.go")
+	generatorFullPath := filepath.Join(pluginDir, generatorMainGo)
+	if _, err := os.Stat(generatorFullPath); os.IsNotExist(err) {
+		return fmt.Errorf("Azure scanner generator not found at %s", generatorFullPath)
+	}
+	
+	cmd = exec.Command("go", "run", generatorMainGo, 
+		"-catalog", catalogPath,
+		"-services", strings.Join(services, ","),
+		"-output", "./generated")
+	cmd.Dir = pluginDir
+	
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Azure scanner generator failed: %w, output: %s", err, output)
 	}
 	
 	return nil
@@ -727,16 +746,15 @@ func generateGCPScannersForServices(services []string, pluginDir string) error {
 		return fmt.Errorf("failed to create generated directory: %w", err)
 	}
 	
-	for _, service := range services {
-		cmd := exec.Command("go", "run", generatorMainGo,
-			"-service", service,
-			"-output", "./generated")
-		cmd.Dir = pluginDir
-		
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("GCP generator failed for service %s: %w, output: %s", service, err, output)
-		}
+	// GCP generator - check if it expects comma-separated services
+	cmd := exec.Command("go", "run", generatorMainGo,
+		"-services", strings.Join(services, ","),
+		"-output", "./generated")
+	cmd.Dir = pluginDir
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("GCP generator failed: %w, output: %s", err, output)
 	}
 	
 	return nil
@@ -820,8 +838,9 @@ func buildPluginsFromConfig(config *InitConfig, corkscrewConfig *CorkscrewConfig
 }
 
 func buildPlugin(provider, pluginDir string) error {
-	// Build the plugin using make
-	cmd := exec.Command("make", fmt.Sprintf("plugin-%s", provider))
+	// Build the plugin using make with correct target name
+	target := fmt.Sprintf("build-%s-plugin", provider)
+	cmd := exec.Command("make", target)
 	cmd.Dir = "." // Run from current directory
 	
 	output, err := cmd.CombinedOutput()
@@ -857,7 +876,7 @@ func printInitUsage() {
 	fmt.Println()
 	fmt.Println("What it does:")
 	fmt.Println("  1. Creates ~/.corkscrew directory structure")
-	fmt.Println("  2. Downloads protoc v25.3 and duckdb v1.30.1")
+	fmt.Println("  2. Downloads protoc v25.3 and duckdb v1.3.0")
 	fmt.Println("  3. Reads configuration from ./corkscrew.yaml")
 	fmt.Println("  4. Generates scanner code for enabled providers")
 	fmt.Println("  5. Generates analysis files for enhanced discovery")
