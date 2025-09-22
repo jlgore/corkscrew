@@ -94,15 +94,20 @@ func InitializeUnifiedDatabase(customPath ...string) (*UnifiedDatabaseConfig, er
 
 // createUnifiedTables creates all the tables for different cloud providers
 func (c *UnifiedDatabaseConfig) createUnifiedTables() error {
-	// Create AWS tables
-	if err := c.createAWSTable(); err != nil {
-		return fmt.Errorf("failed to create AWS tables: %w", err)
-	}
-	
-	// Create Azure tables
-	if err := c.createAzureTables(); err != nil {
-		return fmt.Errorf("failed to create Azure tables: %w", err)
-	}
+    // Create AWS tables
+    if err := c.createAWSTable(); err != nil {
+        return fmt.Errorf("failed to create AWS tables: %w", err)
+    }
+
+    // Create Azure tables
+    if err := c.createAzureTables(); err != nil {
+        return fmt.Errorf("failed to create Azure tables: %w", err)
+    }
+
+    // Create Kubernetes tables
+    if err := c.createKubernetesTables(); err != nil {
+        return fmt.Errorf("failed to create Kubernetes tables: %w", err)
+    }
 	
 	// Create unified relationships table
 	if err := c.createUnifiedRelationshipsTable(); err != nil {
@@ -129,7 +134,59 @@ func (c *UnifiedDatabaseConfig) createUnifiedTables() error {
 		return fmt.Errorf("failed to create security tables: %w", err)
 	}
 	
-	return nil
+    return nil
+}
+
+// createKubernetesTables creates the Kubernetes resources table
+func (c *UnifiedDatabaseConfig) createKubernetesTables() error {
+    k8sTableSQL := `
+CREATE TABLE IF NOT EXISTS kubernetes_resources (
+    -- Primary identifiers
+    id VARCHAR PRIMARY KEY,                    -- Resource ID (e.g., cluster/namespace/Kind/name)
+    arn VARCHAR,                               -- Not used for Kubernetes (reserved for compatibility)
+    name VARCHAR NOT NULL,                     -- Resource name
+    type VARCHAR NOT NULL,                     -- Resource kind (e.g., Pod, Deployment)
+
+    -- Kubernetes-specific identifiers
+    service VARCHAR,                           -- API group/version (e.g., v1, apps)
+    region VARCHAR,                            -- Namespace
+    account_id VARCHAR,                        -- Not used for Kubernetes (reserved for compatibility)
+    parent_id VARCHAR,                         -- Parent resource ID (if any)
+
+    -- Metadata
+    tags JSON,                                 -- Labels/annotations and basic attributes
+    attributes JSON,                           -- Additional attributes
+    raw_data JSON,                             -- Raw Kubernetes resource JSON
+
+    -- State information
+    state VARCHAR,
+
+    -- Timestamps
+    created_at TIMESTAMP,
+    modified_at TIMESTAMP,
+    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`
+
+    if _, err := c.DB.Exec(k8sTableSQL); err != nil {
+        return err
+    }
+
+    // Indexes
+    indexes := []string{
+        "CREATE INDEX IF NOT EXISTS idx_k8s_type ON kubernetes_resources(type)",
+        "CREATE INDEX IF NOT EXISTS idx_k8s_service ON kubernetes_resources(service)",
+        "CREATE INDEX IF NOT EXISTS idx_k8s_region ON kubernetes_resources(region)",
+        "CREATE INDEX IF NOT EXISTS idx_k8s_parent_id ON kubernetes_resources(parent_id)",
+        "CREATE INDEX IF NOT EXISTS idx_k8s_scanned_at ON kubernetes_resources(scanned_at)",
+    }
+
+    for _, idx := range indexes {
+        if _, err := c.DB.Exec(idx); err != nil {
+            return fmt.Errorf("failed to create index: %w", err)
+        }
+    }
+
+    return nil
 }
 
 // createAWSTable creates the AWS resources table

@@ -1,31 +1,39 @@
 package smartscan
 
 import (
-	"context"
-	"encoding/csv"
-	"encoding/json"
-	"fmt"
-	"os"
-	"sort"
-	"strings"
-	"text/tabwriter"
-	"time"
+    "context"
+    "encoding/csv"
+    "encoding/json"
+    "fmt"
+    "os"
+    "sort"
+    "strings"
+    "text/tabwriter"
+    "time"
 
-	"github.com/jlgore/corkscrew/internal/client"
-	"github.com/jlgore/corkscrew/internal/db"
-	pb "github.com/jlgore/corkscrew/internal/proto"
+    "github.com/jlgore/corkscrew/internal/client"
+    "github.com/jlgore/corkscrew/internal/db"
+    pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
 type EnhancedScanOptions struct {
-	Provider       string
-	Regions        []string
-	Services       []string
-	OutputFormat   string
-	SaveToFile     bool
-	ShowEmpty      bool
-	ConfigPath     string
-	MaxConcurrency int
-	DatabasePath   string
+    Provider       string
+    Regions        []string
+    Services       []string
+    OutputFormat   string
+    SaveToFile     bool
+    ShowEmpty      bool
+    ConfigPath     string
+    MaxConcurrency int
+    DatabasePath   string
+    DBProviderTableOverride string
+    // Filters and provider-specific init options
+    Namespace      string
+    LabelSelector  string
+    FieldSelector  string
+    KubeconfigPath string
+    KubeContext    string
+    IncludeRelationships bool
 }
 
 func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
@@ -75,16 +83,22 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 	}
 
 	// Initialize provider
-	initReq := &pb.InitializeRequest{
-		Config: map[string]string{
-			"region": func() string {
-				if len(regions) > 0 && regions[0] != "all" {
-					return regions[0]
-				}
-				return ""
-			}(),
-		},
-	}
+    // Build provider initialization config
+    initCfg := map[string]string{
+        "region": func() string {
+            if len(regions) > 0 && regions[0] != "all" {
+                return regions[0]
+            }
+            return ""
+        }(),
+    }
+    if options.KubeconfigPath != "" {
+        initCfg["kubeconfig_path"] = options.KubeconfigPath
+    }
+    if options.KubeContext != "" {
+        initCfg["contexts"] = options.KubeContext
+    }
+    initReq := &pb.InitializeRequest{ Config: initCfg }
 	_, err = provider.Initialize(ctx, initReq)
 	if err != nil {
 		return fmt.Errorf("failed to initialize provider: %w", err)
@@ -103,7 +117,14 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 	}
 
 	// Create multi-region scanner
-	scanner := NewMultiRegionScanner(provider, options.Provider, smartConfig)
+    // Pass include-relationships and filters via config and scanner
+    smartConfig.IncludeRelationships = options.IncludeRelationships
+    scanner := NewMultiRegionScanner(provider, options.Provider, smartConfig)
+    scanner.SetFilters(map[string]string{
+        "namespace":      options.Namespace,
+        "label_selector": options.LabelSelector,
+        "field_selector": options.FieldSelector,
+    })
 
 	// Print scan information
 	fmt.Printf("🔍 Enhanced scan starting:\n")
@@ -132,23 +153,23 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 	scanner.FilterEmptyServices(results)
 
 	// Store results to database if database path is specified
-	if options.DatabasePath != "" {
-		if err := storeResultsToDatabase(results, options.DatabasePath); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
-		} else {
-			fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
-		}
-	} else {
-		// Try to store to config database or default location
-		dbPath := getDefaultDatabasePath(config)
-		if dbPath != "" {
-			if err := storeResultsToDatabase(results, dbPath); err != nil {
-				fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
-			} else {
-				fmt.Printf("💾 Results stored to database: %s\n", dbPath)
-			}
-		}
-	}
+    if options.DatabasePath != "" {
+        if err := storeResultsToDatabase(results, options.DatabasePath, options.DBProviderTableOverride); err != nil {
+            fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
+        } else {
+            fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
+        }
+    } else {
+        // Try to store to config database or default location
+        dbPath := getDefaultDatabasePath(config)
+        if dbPath != "" {
+            if err := storeResultsToDatabase(results, dbPath, options.DBProviderTableOverride); err != nil {
+                fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
+            } else {
+                fmt.Printf("💾 Results stored to database: %s\n", dbPath)
+            }
+        }
+    }
 
 	// Print results based on output format
 	switch options.OutputFormat {
@@ -347,63 +368,228 @@ func GenerateTimestampedFilename(provider string) string {
 }
 
 // storeResultsToDatabase stores scan results to the unified database
-func storeResultsToDatabase(results *AggregatedResults, dbPath string) error {
-	// Initialize the unified database with custom path
-	dbConfig, err := db.InitializeUnifiedDatabase(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
-	}
-	defer dbConfig.DB.Close()
+func storeResultsToDatabase(results *AggregatedResults, dbPath string, overrideTable string) error {
+    // Initialize the unified database with custom path
+    dbConfig, err := db.InitializeUnifiedDatabase(dbPath)
+    if err != nil {
+        return fmt.Errorf("failed to initialize database: %w", err)
+    }
+    defer dbConfig.DB.Close()
 
-	// Store each resource to the aws_resources table
-	for _, resource := range results.AllResources {
-		if err := storeResourceToDatabase(dbConfig, resource); err != nil {
-			return fmt.Errorf("failed to store resource %s: %w", resource.Id, err)
-		}
-	}
+    // De-duplicate by (table,id) to avoid duplicate inserts
+    seen := make(map[string]struct{})
+    for _, resource := range results.AllResources {
+        // Compute target table for dedupe key
+        table := tableOverrideFromResource(resource)
+        if strings.TrimSpace(overrideTable) != "" {
+            table = strings.TrimSpace(overrideTable)
+        }
+        if table == "" {
+            table = tableForProvider(resource.Provider)
+        }
+        if table == "" {
+            table = "aws_resources"
+        }
+        key := table + "|" + resource.Id
+        if _, ok := seen[key]; ok {
+            continue
+        }
+        seen[key] = struct{}{}
 
-	return nil
+        if err := storeResourceToDatabase(dbConfig, resource, overrideTable); err != nil {
+            return fmt.Errorf("failed to store resource %s: %w", resource.Id, err)
+        }
+        if len(resource.Relationships) > 0 {
+            if err := storeRelationshipsToDatabase(dbConfig, resource); err != nil {
+                return fmt.Errorf("failed to store relationships for %s: %w", resource.Id, err)
+            }
+        }
+    }
+
+    return nil
 }
 
 // storeResourceToDatabase stores a single resource to the database
-func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Resource) error {
-	// Convert tags map to JSON
-	tagsJSON := "{}"
-	if len(resource.Tags) > 0 {
-		tagsBytes, err := json.Marshal(resource.Tags)
-		if err != nil {
-			fmt.Printf("Warning: Failed to marshal tags for resource %s: %v\n", resource.Id, err)
-		} else {
-			tagsJSON = string(tagsBytes)
-		}
-	}
+func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Resource, overrideTable string) error {
+    // Determine target table (CLI override > attributes override > provider default)
+    table := strings.TrimSpace(overrideTable)
+    if table == "" {
+        table = tableOverrideFromResource(resource)
+    }
+    if table == "" {
+        table = tableForProvider(resource.Provider)
+    }
+    if table == "" {
+        table = "aws_resources"
+    }
 
-	// Insert or update the resource
-	query := `
-		INSERT OR REPLACE INTO aws_resources (
-			id, arn, name, type, service, region, account_id,
-			tags, attributes, raw_data, state, 
-			created_at, modified_at, scanned_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`
+    // Convert tags map to JSON string (nullable)
+    tagsJSON := ""
+    if len(resource.Tags) > 0 {
+        if b, err := json.Marshal(resource.Tags); err == nil {
+            tagsJSON = string(b)
+        }
+    }
+    // Prepare JSON parameters (use NULL when empty to avoid conversion errors)
+    var tagsParam interface{}
+    var attrsParam interface{}
+    var rawParam interface{}
+    if strings.TrimSpace(tagsJSON) != "" {
+        tagsParam = tagsJSON
+    } else {
+        tagsParam = nil
+    }
+    if strings.TrimSpace(resource.Attributes) != "" {
+        attrsParam = resource.Attributes
+    } else {
+        attrsParam = nil
+    }
+    if strings.TrimSpace(resource.RawData) != "" {
+        rawParam = resource.RawData
+    } else {
+        rawParam = nil
+    }
 
-	_, err := dbConfig.DB.Exec(query,
-		resource.Id,
-		resource.Arn,
-		resource.Name,
-		resource.Type,
-		resource.Service,
-		resource.Region,
-		resource.AccountId,
-		tagsJSON,
-		resource.Attributes,
-		resource.RawData,
-		"active", // default state
-		resource.DiscoveredAt.AsTime(),
-		resource.DiscoveredAt.AsTime(),
-	)
+    // Upsert via DELETE + INSERT
+    tx, txErr := dbConfig.DB.Begin()
+    if txErr != nil {
+        return fmt.Errorf("begin tx: %w", txErr)
+    }
+    if _, delErr := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), resource.Id); delErr != nil {
+        _ = tx.Rollback()
+        return fmt.Errorf("delete existing: %w", delErr)
+    }
+    insertStmt := fmt.Sprintf(`
+        INSERT OR REPLACE INTO %s (
+            id, arn, name, type, service, region, account_id,
+            tags, attributes, raw_data, state,
+            created_at, modified_at, scanned_at
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?,
+            try_cast(? AS JSON), try_cast(? AS JSON), try_cast(? AS JSON), ?,
+            ?, ?, CURRENT_TIMESTAMP
+        )
+    `, table)
+    if _, insErr := tx.Exec(insertStmt,
+        resource.Id,
+        resource.Arn,
+        resource.Name,
+        resource.Type,
+        resource.Service,
+        resource.Region,
+        resource.AccountId,
+        tagsParam,
+        attrsParam,
+        rawParam,
+        "active",
+        resource.DiscoveredAt.AsTime(),
+        resource.DiscoveredAt.AsTime(),
+    ); insErr != nil {
+        _ = tx.Rollback()
+        return fmt.Errorf("insert: %w", insErr)
+    }
+    if commitErr := tx.Commit(); commitErr != nil {
+        return fmt.Errorf("commit: %w", commitErr)
+    }
+    return nil
+}
 
-	return err
+func tableForProvider(provider string) string {
+    switch strings.ToLower(provider) {
+    case "aws":
+        return "aws_resources"
+    case "azure":
+        return "azure_resources"
+    case "kubernetes":
+        return "kubernetes_resources"
+    case "gcp":
+        return "gcp_resources"
+    default:
+        return ""
+    }
+}
+
+// storeRelationshipsToDatabase persists resource relationships into cloud_relationships
+func storeRelationshipsToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Resource) error {
+    if len(resource.Relationships) == 0 {
+        return nil
+    }
+    tx, err := dbConfig.DB.Begin()
+    if err != nil {
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    // De-duplicate relationships per resource to avoid PK conflicts
+    seen := make(map[string]struct{})
+    for _, rel := range resource.Relationships {
+        if rel == nil || rel.TargetId == "" || rel.RelationshipType == "" {
+            continue
+        }
+        key := resource.Id + "|" + rel.TargetId + "|" + rel.RelationshipType
+        if _, ok := seen[key]; ok {
+            continue
+        }
+        seen[key] = struct{}{}
+        // Infer target type from target ID if possible: cluster/namespace/Kind/name
+        toType := ""
+        parts := strings.Split(rel.TargetId, "/")
+        if len(parts) >= 3 {
+            toType = parts[2]
+        }
+        if _, insErr := tx.Exec(
+            `INSERT OR REPLACE INTO cloud_relationships (
+                from_id, to_id, relationship_type, provider,
+                relationship_subtype, properties,
+                from_resource_type, to_resource_type, direction
+            ) VALUES (
+                ?, ?, ?, ?, ?, try_cast(? AS JSON), ?, ?, ?
+            )`,
+            resource.Id, rel.TargetId, rel.RelationshipType, strings.ToLower(resource.Provider),
+            "", jsonOrNull(rel.Properties), resource.Type, toType, "outbound",
+        ); insErr != nil {
+            _ = tx.Rollback()
+            return fmt.Errorf("insert rel: %w", insErr)
+        }
+    }
+    if err := tx.Commit(); err != nil {
+        return fmt.Errorf("commit rels: %w", err)
+    }
+    return nil
+}
+
+func jsonOrNull(m map[string]string) interface{} {
+    if len(m) == 0 {
+        return nil
+    }
+    b, err := json.Marshal(m)
+    if err != nil {
+        return nil
+    }
+    return string(b)
+}
+
+func coalesceStr(v string, d string) string {
+    if strings.TrimSpace(v) == "" {
+        return d
+    }
+    return v
+}
+
+// tableOverrideFromResource allows a provider to choose a custom table name by
+// embedding a special key in the Attributes JSON: {"_table": "my_table"}
+func tableOverrideFromResource(resource *pb.Resource) string {
+    if strings.TrimSpace(resource.Attributes) == "" {
+        return ""
+    }
+    var m map[string]interface{}
+    if err := json.Unmarshal([]byte(resource.Attributes), &m); err != nil {
+        return ""
+    }
+    if v, ok := m["_table"]; ok {
+        if s, ok2 := v.(string); ok2 && s != "" {
+            return s
+        }
+    }
+    return ""
 }
 
 // getDefaultDatabasePath gets database path from config or returns default

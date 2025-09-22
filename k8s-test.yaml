@@ -1,0 +1,15 @@
+version: "2.0"
+providers:
+  kubernetes:
+    enabled: true
+    regions:
+      - "default"
+    services:
+      - pods
+      - deployments
+output:
+  default_format: "table"
+  hide_empty_regions: true
+  hide_empty_services: true
+database:
+  path: "~/.corkscrew/db/corkscrew.duckdb"

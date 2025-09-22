@@ -12,17 +12,19 @@ import (
 )
 
 type MultiRegionScanner struct {
-	provider     shared.CloudProvider
-	providerName string
-	config       *SmartScanConfig
+    provider     shared.CloudProvider
+    providerName string
+    config       *SmartScanConfig
+    filters      map[string]string
 }
 
 type SmartScanConfig struct {
-	HideEmptyRegions   bool
-	HideEmptyServices  bool
-	MaxConcurrency     int
-	RegionTimeout      time.Duration
-	PreferredRegions   []string
+    HideEmptyRegions   bool
+    HideEmptyServices  bool
+    MaxConcurrency     int
+    RegionTimeout      time.Duration
+    PreferredRegions   []string
+    IncludeRelationships bool
 }
 
 type RegionScanResult struct {
@@ -61,11 +63,16 @@ func NewMultiRegionScanner(provider shared.CloudProvider, providerName string, c
 		}
 	}
 	
-	return &MultiRegionScanner{
-		provider:     provider,
-		providerName: providerName,
-		config:       config,
-	}
+    return &MultiRegionScanner{
+        provider:     provider,
+        providerName: providerName,
+        config:       config,
+    }
+}
+
+// SetFilters sets request-level filters that will be propagated to provider scan requests
+func (mrs *MultiRegionScanner) SetFilters(filters map[string]string) {
+    mrs.filters = filters
 }
 
 func (mrs *MultiRegionScanner) ScanMultipleRegions(ctx context.Context, regions []string, services []string) (*AggregatedResults, error) {
@@ -143,12 +150,13 @@ func (mrs *MultiRegionScanner) scanSingleRegion(ctx context.Context, region stri
 	}
 
 	// Create BatchScan request for this region
-	req := &pb.BatchScanRequest{
-		Services:             services,
-		Region:               region,
-		IncludeRelationships: false, // Keep it fast for smart scanning
-		Concurrency:          int32(mrs.config.MaxConcurrency),
-	}
+    req := &pb.BatchScanRequest{
+        Services:             services,
+        Region:               region,
+        IncludeRelationships: mrs.config.IncludeRelationships,
+        Concurrency:          int32(mrs.config.MaxConcurrency),
+        Filters:              mrs.filters,
+    }
 
 	// Execute scan
 	resp, err := mrs.provider.BatchScan(regionCtx, req)

@@ -6,11 +6,12 @@ Corkscrew is a modular cloud configuration scanner designed to discover, analyze
 
 ## What it does
 
-- **Multi-Cloud Support**: Plugin architecture supports any cloud provider with a Go SDK
-- **Resource Discovery**: Automatically discovers and catalogs cloud resources via API calls
-- **Relationship Mapping**: Maps dependencies and relationships between resources in a graph database
-- **Powerful Querying**: Stores everything in DuckDB for SQL-based analysis and reporting
-- **Lightweight Core**: Only load the cloud services you need at runtime
+- **Multi-Cloud Support**: Production-ready plugins for AWS (410+ services), Azure, GCP, and Kubernetes
+- **Advanced Resource Discovery**: Automatic service discovery with dynamic schema generation
+- **Cross-Cloud Analysis**: Correlate resources across providers using IP, DNS, and network topology
+- **Security Posture Management**: SQL-based compliance monitoring with 19 specialized analysis tables
+- **Powerful Querying**: DuckDB with advanced analytics for privilege escalation, risk assessment, and compliance
+- **Enterprise-Ready**: Management group support (Azure), organization scanning (GCP), multi-cluster (K8s)
 
 This project uses a plugin-based architecture that integrates with cloud provider Go SDKs. CloudProvider plugins use dynamic service discovery to automatically detect available services, discover resources via SDK API calls, and save their configuration into DuckDB for SQL-based analysis.
 
@@ -48,27 +49,35 @@ For more information on writing plugins see: [PLUGIN_DEVELOPMENT.md](/plugins/PL
 
 ## 🔌 Cloud Provider Plugins
 
-Corkscrew supports multiple cloud providers through specialized plugins, each optimized for their platform's unique capabilities:
+Corkscrew supports **four production-ready cloud providers** through specialized plugins, each optimized for their platform's unique capabilities:
 
-### 🚀 [AWS Provider](plugins/aws-provider/README.md)
-The AWS provider leverages **advanced reflection-based discovery** to automatically support 200+ AWS services without manual configuration. Using dynamic SDK analysis and AWS Resource Explorer integration, it discovers new services automatically as AWS releases them. Features include unified scanning across all services, intelligent caching with 40% memory reduction, and comprehensive relationship mapping between resources. Perfect for environments that need zero-maintenance service discovery and enterprise-scale AWS deployments.
+### 🚀 [AWS Provider](plugins/aws-provider/README.md) - **410+ Services Supported**
+The AWS provider leverages **advanced reflection-based discovery** to automatically support 410+ AWS services without manual configuration. Using dynamic SDK analysis and AWS Resource Explorer integration, it discovers new services automatically as AWS releases them. Features include unified scanning across all services, intelligent caching with 40% memory reduction, and comprehensive relationship mapping between resources. Perfect for environments that need zero-maintenance service discovery and enterprise-scale AWS deployments.
 
-### 🏢 [Azure Provider](plugins/azure-provider/README.md)  
-The Azure provider achieves **superior performance through native Resource Graph integration**, enabling tenant-wide discovery across management group hierarchies in minutes instead of weeks. It features automated Entra ID enterprise app deployment, KQL-based bulk resource queries, and real-time schema generation from live Azure data. This provider excels in enterprise environments with its zero-maintenance approach - automatically discovering new Azure services without code updates. Ideal for organizations needing comprehensive tenant visibility and governance.
+**Current Status**: ✅ **Production Ready** - Supports all major AWS services with automatic discovery
 
-### 📊 [GCP Provider](plugins/gcp-provider/README.md)
+### 🏢 [Azure Provider](plugins/azure-provider/README.md) - **Enterprise Management Groups**
+The Azure provider achieves **superior performance through native Resource Graph integration**, enabling tenant-wide discovery across management group hierarchies in minutes instead of weeks. It features automated Entra ID enterprise app deployment, KQL-based bulk resource queries, and real-time schema generation from live Azure data. This provider excels in enterprise environments with its zero-maintenance approach - automatically discovering new Azure services without code updates.
+
+**Current Status**: ✅ **Production Ready** - Full tenant-wide scanning with management group support
+
+### 📊 [GCP Provider](plugins/gcp-provider/README.md) - **Cloud Asset Inventory Integration**
 The GCP provider harnesses **Google Cloud Asset Inventory for 10x faster bulk resource discovery** across projects, folders, and entire organizations. It combines high-performance asset queries with enhanced change tracking, drift detection, and automated service account deployment. Supporting 50+ GCP services with intelligent fallback to standard APIs when needed, this provider is optimized for multi-project environments and organizations requiring efficient resource scanning at scale.
 
-### ⚓ [Kubernetes Provider](plugins/kubernetes-provider/README.md)
+**Current Status**: ✅ **Production Ready** - Supports organization-wide scanning with asset inventory
+
+### ⚓ [Kubernetes Provider](plugins/kubernetes-provider/README.md) - **Universal CRD Support**
 The Kubernetes provider offers **universal resource discovery** that works with any Kubernetes resource type, including Custom Resource Definitions (CRDs), without configuration. Using native API discovery and informers for real-time updates, it provides rich relationship extraction, multi-cluster support, and Helm release integration. Unlike cloud providers that require SDK analysis, Kubernetes' consistent API structure enables automatic discovery of any resource type, making it perfect for dynamic containerized environments.
+
+**Current Status**: ✅ **Production Ready** - Supports any Kubernetes cluster with real-time updates
 
 ### 🎯 Choosing the Right Provider
 
 Each provider is optimized for its platform's strengths:
-- **AWS**: Best for comprehensive service coverage with zero maintenance
-- **Azure**: Ideal for enterprise-scale tenant management and performance  
-- **GCP**: Optimal for multi-project organizations needing bulk operations
-- **Kubernetes**: Perfect for container platforms with dynamic resources
+- **AWS**: Best for comprehensive service coverage (410+ services) with zero maintenance
+- **Azure**: Ideal for enterprise-scale tenant management and Resource Graph performance
+- **GCP**: Optimal for multi-project organizations needing Cloud Asset Inventory bulk operations
+- **Kubernetes**: Perfect for container platforms with dynamic CRD resources
 
 See the [Plugin Development Guide](plugins/PLUGIN_DEVELOPMENT.md) for detailed architectural comparisons and guidance on building new providers.
 
@@ -127,21 +136,30 @@ export PATH="$HOME/.corkscrew/bin:$PATH"
 # Show provider information
 ./corkscrew info
 
-# Discover available AWS services
-./corkscrew discover --verbose
+# Discover available AWS services (410+ services supported)
+./corkscrew discover --provider aws --verbose
+
+# Multi-cloud service discovery
+./corkscrew discover --provider azure --verbose
+./corkscrew discover --provider gcp --verbose
+./corkscrew discover --provider kubernetes --verbose
 
 # List resources from a specific service
-./corkscrew list --service s3 --verbose
+./corkscrew list --provider aws --services s3 --verbose
 
-# Scan multiple services
-./corkscrew scan --services s3,ec2 --verbose
+# Scan multiple services across multiple regions
+./corkscrew scan --provider aws --services s3,ec2,lambda --region us-east-1,us-west-2
 
-# Scan all configured services
-./corkscrew scan --verbose
+# Scan all discovered services in all regions
+./corkscrew scan --provider aws --region all --verbose
 
-# Scan with specific region
-export AWS_REGION=us-east-1
-./corkscrew scan --services iam --verbose
+# Multi-cloud scanning
+./corkscrew scan --provider azure --services compute,storage --region eastus
+./corkscrew scan --provider gcp --services compute,storage,container
+./corkscrew scan --provider kubernetes --all-namespaces
+
+# Cross-cloud correlation scanning
+./corkscrew crosscloud scan --providers aws,azure --regions us-east-1,eastus
 ```
 
 ### Configuration
@@ -305,20 +323,98 @@ CREATE TABLE aws_relationships (
 );
 ```
 
-### Graph Queries
+### Advanced Cloud Posture Querying & Analysis
 
-```go
-// Get resource dependencies
-dependencies, err := graphLoader.GetResourceDependencies(ctx, "my-bucket")
+Corkscrew provides sophisticated SQL-based analysis capabilities for cloud security posture management:
 
-// Get resources by type
-s3Buckets, err := graphLoader.GetResourcesByType(ctx, "Bucket")
+#### Database Tables (19 Available)
+```bash
+# View all available tables
+./corkscrew query --query "SHOW TABLES" --output table
 
-// Find path between resources
-path, err := graphLoader.FindResourcePath(ctx, "vpc-123", "instance-456")
+# Key tables include:
+# - aws_resources, azure_resources, kubernetes_resources
+# - cross_cloud_correlations, cross_cloud_dns_records
+# - privilege_escalation_paths, security_risk_assessments
+# - compliance_mappings, policy_similarity_analysis
+```
 
-// Get resource neighborhood
-neighborhood, err := graphLoader.GetResourceNeighborhood(ctx, "my-resource", 2)
+#### Resource Analysis Queries
+```bash
+# Count resources by provider and type
+./corkscrew query --query "SELECT type, COUNT(*) as count FROM aws_resources GROUP BY type"
+
+# Find resources across multiple clouds
+./corkscrew query --query "
+  SELECT 'AWS' as provider, type, COUNT(*) as count FROM aws_resources GROUP BY type
+  UNION ALL
+  SELECT 'Azure' as provider, type, COUNT(*) as count FROM azure_resources GROUP BY type
+" --output csv
+
+# Cross-cloud resource correlation
+./corkscrew query --query "SELECT * FROM cross_cloud_correlations WHERE confidence > 0.8"
+
+# Network topology analysis
+./corkscrew query --query "SELECT * FROM cross_cloud_network_topology" --output json
+```
+
+#### Compliance & Security Posture Analysis
+```bash
+# List installed compliance packs
+./corkscrew query --list-packs
+
+# Run specific compliance control
+./corkscrew query --control s3-security/S3.001
+
+# Run entire compliance pack
+./corkscrew query --pack ccc-storage --output json
+
+# Security risk assessment
+./corkscrew query --query "SELECT * FROM security_risk_assessments WHERE severity = 'CRITICAL'"
+
+# Privilege escalation path analysis
+./corkscrew query --query "SELECT * FROM privilege_escalation_paths" --output table
+```
+
+#### Example: S3 Bucket Security Analysis
+```sql
+-- Complex compliance query for S3 bucket deletion protection
+SELECT
+    CASE WHEN NOT is_protected THEN 'FAIL' ELSE 'PASS' END AS status,
+    name AS bucket_name,
+    region,
+    CASE
+        WHEN NOT is_protected THEN 'Bucket lacks adequate deletion protection'
+        ELSE 'Bucket has proper deletion protection'
+    END AS issue_description,
+    json_object(
+        'versioning_status', versioning_status,
+        'mfa_delete_status', mfa_delete_status,
+        'has_lifecycle_policy', has_lifecycle_policy
+    ) AS details
+FROM (
+    SELECT *,
+        CASE
+            WHEN versioning_status = 'Enabled'
+                AND (has_lifecycle_policy OR has_delete_protection_policy)
+            THEN true
+            ELSE false
+        END AS is_protected
+    FROM bucket_analysis
+)
+ORDER BY is_protected ASC, bucket_name;
+```
+
+### Cross-Cloud Correlation
+```bash
+# Correlate resources by IP addresses
+./corkscrew correlate ip --providers aws,azure
+
+# DNS-based correlation
+./corkscrew correlate dns --providers aws,azure,gcp
+
+# Network topology mapping
+./corkscrew crosscloud topology --output json
 ```
 
 ### Property Graph Queries (PGQ)
@@ -773,6 +869,81 @@ spec:
 ## License
 
 [License information here]
+
+## Complete Cloud Posture Analysis Example
+
+Here's a comprehensive example demonstrating Corkscrew's current capabilities from scanning to security analysis:
+
+### Step 1: Multi-Cloud Resource Discovery
+```bash
+# Discover and scan resources across all supported providers
+./corkscrew discover --provider aws --verbose
+./corkscrew scan --provider aws --services s3,ec2,iam --region us-east-1,us-west-2
+./corkscrew scan --provider azure --services compute,storage --region eastus
+./corkscrew scan --provider gcp --services compute,storage
+./corkscrew scan --provider kubernetes --all-namespaces
+```
+
+### Step 2: Cross-Cloud Resource Analysis
+```bash
+# Analyze resource distribution
+./corkscrew query --query "
+  SELECT 'AWS' as provider, type, COUNT(*) as count FROM aws_resources GROUP BY type
+  UNION ALL
+  SELECT 'Azure' as provider, type, COUNT(*) as count FROM azure_resources GROUP BY type
+  UNION ALL
+  SELECT 'Kubernetes' as provider, kind as type, COUNT(*) as count FROM kubernetes_resources GROUP BY kind
+" --output table
+
+# Cross-cloud network correlation
+./corkscrew correlate ip --providers aws,azure
+./corkscrew query --query "SELECT * FROM cross_cloud_ip_addresses" --output json
+```
+
+### Step 3: Security Posture Assessment
+```bash
+# Run compliance checks
+./corkscrew query --pack ccc-storage --output json
+./corkscrew query --control s3-security/S3.001
+
+# Security risk analysis
+./corkscrew query --query "
+  SELECT
+    resource_id,
+    severity,
+    issue_description,
+    details
+  FROM security_risk_assessments
+  WHERE severity IN ('CRITICAL', 'HIGH')
+  ORDER BY severity DESC
+" --output table
+
+# Privilege escalation analysis
+./corkscrew query --query "SELECT * FROM privilege_escalation_paths" --output csv
+```
+
+### Step 4: Advanced Analytics
+```bash
+# Resource relationships
+./corkscrew query --query "
+  SELECT
+    source_type,
+    target_type,
+    relationship_type,
+    COUNT(*) as count
+  FROM aws_relationships
+  GROUP BY source_type, target_type, relationship_type
+  ORDER BY count DESC
+"
+
+# Cross-cloud DNS analysis
+./corkscrew query --query "SELECT * FROM cross_cloud_dns_records WHERE confidence > 0.8"
+
+# Policy similarity analysis
+./corkscrew query --query "SELECT * FROM policy_similarity_analysis" --output json
+```
+
+This example demonstrates Corkscrew's ability to provide comprehensive cloud security posture management across multiple cloud providers with advanced correlation and compliance analysis.
 
 ## Support
 

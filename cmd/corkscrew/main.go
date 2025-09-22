@@ -360,17 +360,25 @@ func printUsage() {
 }
 
 func runScan(args []string) {
-	fs := flag.NewFlagSet("scan", flag.ExitOnError)
+    fs := flag.NewFlagSet("scan", flag.ExitOnError)
 
-	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
-	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
-	regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
-	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
-	showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
-	configPath := fs.String("config", "", "Path to configuration file")
-	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
-	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
-	databasePath := fs.String("database", "", "Path to DuckDB database file (default: ~/.corkscrew/db/corkscrew.duckdb)")
+    providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
+    servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
+    regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
+    outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
+    showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
+    configPath := fs.String("config", "", "Path to configuration file")
+    concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
+    saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
+    databasePath := fs.String("database", "", "Path to DuckDB database file (default: ~/.corkscrew/db/corkscrew.duckdb)")
+    dbProviderTable := fs.String("db-provider-table", "", "Override target table for persistence (routes all rows)")
+    // Kubernetes-specific and filter options
+    namespace := fs.String("namespace", "", "Kubernetes namespace filter (single)")
+    labelSelector := fs.String("label-selector", "", "Kubernetes label selector (e.g., app=myapp)")
+    fieldSelector := fs.String("field-selector", "", "Kubernetes field selector")
+    kubeconfig := fs.String("kubeconfig", "", "Path to kubeconfig file for Kubernetes provider")
+    kubeContext := fs.String("context", "", "Kubernetes context name")
+    includeRels := fs.Bool("include-relationships", true, "Include and persist basic relationships")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -395,18 +403,25 @@ func runScan(args []string) {
 	}
 	defer pc.Close()
 
-	// Run enhanced multi-region scan
-	options := smartscan.EnhancedScanOptions{
-		Provider:       *providerName,
-		Regions:        regions,
-		Services:       services,
-		OutputFormat:   *outputFormat,
-		SaveToFile:     *saveToFile,
-		ShowEmpty:      *showEmpty,
-		ConfigPath:     *configPath,
-		MaxConcurrency: *concurrency,
-		DatabasePath:   *databasePath,
-	}
+    // Run enhanced multi-region scan
+    options := smartscan.EnhancedScanOptions{
+        Provider:       *providerName,
+        Regions:        regions,
+        Services:       services,
+        OutputFormat:   *outputFormat,
+        SaveToFile:     *saveToFile,
+        ShowEmpty:      *showEmpty,
+        ConfigPath:     *configPath,
+        MaxConcurrency: *concurrency,
+        DatabasePath:   *databasePath,
+        DBProviderTableOverride: strings.TrimSpace(*dbProviderTable),
+        Namespace:      strings.TrimSpace(*namespace),
+        LabelSelector:  strings.TrimSpace(*labelSelector),
+        FieldSelector:  strings.TrimSpace(*fieldSelector),
+        KubeconfigPath: strings.TrimSpace(*kubeconfig),
+        KubeContext:    strings.TrimSpace(*kubeContext),
+        IncludeRelationships: *includeRels,
+    }
 
 	if err := smartscan.RunEnhancedScan(context.Background(), options); err != nil {
 		log.Fatalf("Scan failed: %v", err)
@@ -427,9 +442,9 @@ func runDiscover(args []string) {
 	
 	fmt.Printf("🔍 Discovering services for provider: %s\n", *providerName)
 	
-	// Initialize plugin client
-	pc, err := client.NewPluginClient(*providerName)
-	if err != nil {
+    // Initialize plugin client
+    pc, err := client.NewPluginClient(*providerName)
+    if err != nil {
 		// Provide helpful error message with suggestions
 		pm := plugins.NewPluginManager()
 		if pm.CanBuildPlugin(*providerName) {
@@ -439,12 +454,17 @@ func runDiscover(args []string) {
 			log.Fatalf("Plugin not found: %s\n\n💡 Available plugins:\n   corkscrew plugin list", *providerName)
 		}
 	}
-	defer pc.Close()
-	
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
+    defer pc.Close()
+
+    provider, err := pc.GetProvider()
+    if err != nil {
+        log.Fatalf("Failed to get provider: %v", err)
+    }
+    // Ensure provider is initialized (required for some providers like Kubernetes)
+    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
+        // Non-fatal for providers that don't require initialization for discovery
+        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+    }
 	
 	// Create discover request
 	req := &pb.DiscoverServicesRequest{
@@ -557,10 +577,18 @@ func runList(args []string) {
 	}
 	defer pc.Close()
 	
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
+    provider, err := pc.GetProvider()
+    if err != nil {
+        log.Fatalf("Failed to get provider: %v", err)
+    }
+    // Initialize provider with basic hints (region if provided)
+    initCfg := map[string]string{}
+    if len(regions) > 0 {
+        initCfg["region"] = regions[0]
+    }
+    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
+        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+    }
 	
 	// Create list request
 	req := &pb.ListResourcesRequest{
@@ -688,10 +716,18 @@ func runDescribe(args []string) {
 	}
 	defer pc.Close()
 	
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
+    provider, err := pc.GetProvider()
+    if err != nil {
+        log.Fatalf("Failed to get provider: %v", err)
+    }
+    // Initialize provider to ensure describe path works for all providers
+    initCfg := map[string]string{}
+    if *region != "" {
+        initCfg["region"] = *region
+    }
+    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
+        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+    }
 	
 	// Create describe request
 	req := &pb.DescribeResourceRequest{
@@ -795,10 +831,14 @@ func runInfo(args []string) {
 	}
 	defer pc.Close()
 	
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
+    provider, err := pc.GetProvider()
+    if err != nil {
+        log.Fatalf("Failed to get provider: %v", err)
+    }
+    // Best-effort initialization (important for Kubernetes)
+    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
+        // Not fatal; some providers support GetProviderInfo without init
+    }
 	
 	// Get info
 	resp, err := provider.GetProviderInfo(context.Background(), &pb.Empty{})
@@ -878,10 +918,14 @@ func runSchemas(args []string) {
 	}
 	defer pc.Close()
 	
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
+    provider, err := pc.GetProvider()
+    if err != nil {
+        log.Fatalf("Failed to get provider: %v", err)
+    }
+    // Initialize provider to ensure schema generation works for all providers
+    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
+        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+    }
 	
 	// Get schemas
 	req := &pb.GetSchemasRequest{
