@@ -11,7 +11,7 @@ func TestDiscoverServicesFromGoMod(t *testing.T) {
 	tmpDir := t.TempDir()
 	goModContent := `module test
 
-go 1.26
+go 1.26.2
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.24.0

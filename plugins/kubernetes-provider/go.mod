@@ -1,6 +1,6 @@
 module github.com/jlgore/corkscrew/plugins/kubernetes-provider
 
-go 1.26.0
+go 1.26.2
 
 require (
 	github.com/hashicorp/go-plugin v1.8.0

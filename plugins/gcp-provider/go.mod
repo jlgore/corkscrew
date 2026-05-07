@@ -1,6 +1,6 @@
 module github.com/jlgore/corkscrew/plugins/gcp-provider
 
-go 1.26
+go 1.26.2
 
 require (
 	cloud.google.com/go/asset v1.26.0

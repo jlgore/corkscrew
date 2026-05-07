@@ -343,7 +343,7 @@ func GetPackagePath() string {
 func (sl *ServiceLoader) generateGoMod(serviceName string) string {
 	return fmt.Sprintf(`module aws-%s-plugin
 
-go 1.26
+go 1.26.2
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3

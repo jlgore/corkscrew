@@ -158,7 +158,7 @@ func TestGenerateGoMod(t *testing.T) {
 
 	expectedStrings := []string{
 		"module aws-s3-plugin",
-		"go 1.26",
+		"go 1.26.2",
 		"github.com/aws/aws-sdk-go-v2",
 		"github.com/aws/aws-sdk-go-v2/service/s3",
 	}

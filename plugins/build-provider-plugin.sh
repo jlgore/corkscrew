@@ -21,7 +21,7 @@ if [[ ! -d "$PLUGIN_DIR" ]]; then
 fi
 
 if ! command -v go >/dev/null 2>&1; then
-  echo "❌ Go is not installed. Please install Go 1.26 or later."
+  echo "❌ Go is not installed. Please install Go 1.26.2 or later."
   exit 1
 fi
 
