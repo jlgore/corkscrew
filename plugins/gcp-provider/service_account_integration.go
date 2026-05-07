@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -11,22 +10,17 @@ import (
 	"cloud.google.com/go/iam/admin/apiv1"
 	"cloud.google.com/go/iam/admin/apiv1/adminpb"
 	"cloud.google.com/go/resourcemanager/apiv3"
-	"cloud.google.com/go/resourcemanager/apiv3/resourcemanagerpb"
-	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	"google.golang.org/api/iam/v1"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ServiceAccountIntegration manages service account automation for Corkscrew
 type ServiceAccountIntegration struct {
-	projectID         string
-	iamClient         *admin.IamClient
-	resourceManager   *resourcemanager.ProjectsClient
-	crmService        *cloudresourcemanager.Service
-	iamService        *iam.Service
+	projectID       string
+	iamClient       *admin.IamClient
+	resourceManager *resourcemanager.ProjectsClient
+	crmService      *cloudresourcemanager.Service
+	iamService      *iam.Service
 }
 
 // ServiceAccountConfig represents service account deployment configuration
@@ -43,36 +37,36 @@ type ServiceAccountConfig struct {
 
 // ServiceAccountDeploymentResult represents the result of a deployment
 type ServiceAccountDeploymentResult struct {
-	Success            bool                 `json:"success"`
-	ServiceAccountEmail string              `json:"service_account_email"`
-	ProjectID          string               `json:"project_id"`
-	RolesAssigned      []string             `json:"roles_assigned"`
-	KeyCreated         bool                 `json:"key_created"`
-	KeyFilePath        string               `json:"key_file_path,omitempty"`
-	DeploymentTime     time.Time            `json:"deployment_time"`
-	Warnings           []string             `json:"warnings,omitempty"`
-	Errors             []string             `json:"errors,omitempty"`
-	Recommendations    []string             `json:"recommendations,omitempty"`
+	Success             bool      `json:"success"`
+	ServiceAccountEmail string    `json:"service_account_email"`
+	ProjectID           string    `json:"project_id"`
+	RolesAssigned       []string  `json:"roles_assigned"`
+	KeyCreated          bool      `json:"key_created"`
+	KeyFilePath         string    `json:"key_file_path,omitempty"`
+	DeploymentTime      time.Time `json:"deployment_time"`
+	Warnings            []string  `json:"warnings,omitempty"`
+	Errors              []string  `json:"errors,omitempty"`
+	Recommendations     []string  `json:"recommendations,omitempty"`
 }
 
 // ServiceAccountValidationResult represents validation results
 type ServiceAccountValidationResult struct {
-	Valid                  bool                    `json:"valid"`
-	ServiceAccountEmail    string                  `json:"service_account_email"`
-	ProjectID              string                  `json:"project_id"`
-	ExistingRoles          []string               `json:"existing_roles"`
-	MissingRoles           []string               `json:"missing_roles"`
-	HasAssetInventoryAccess bool                   `json:"has_asset_inventory_access"`
-	HasKeyFileAccess       bool                   `json:"has_key_file_access"`
-	ValidationTime         time.Time              `json:"validation_time"`
-	Issues                 []ValidationIssue      `json:"issues"`
-	Recommendations        []string               `json:"recommendations"`
+	Valid                   bool              `json:"valid"`
+	ServiceAccountEmail     string            `json:"service_account_email"`
+	ProjectID               string            `json:"project_id"`
+	ExistingRoles           []string          `json:"existing_roles"`
+	MissingRoles            []string          `json:"missing_roles"`
+	HasAssetInventoryAccess bool              `json:"has_asset_inventory_access"`
+	HasKeyFileAccess        bool              `json:"has_key_file_access"`
+	ValidationTime          time.Time         `json:"validation_time"`
+	Issues                  []ValidationIssue `json:"issues"`
+	Recommendations         []string          `json:"recommendations"`
 }
 
 // ValidationIssue represents a specific validation issue
 type ValidationIssue struct {
-	Type        string `json:"type"`        // "error", "warning", "info"
-	Category    string `json:"category"`    // "permissions", "configuration", "security"
+	Type        string `json:"type"`     // "error", "warning", "info"
+	Category    string `json:"category"` // "permissions", "configuration", "security"
 	Message     string `json:"message"`
 	Remediation string `json:"remediation,omitempty"`
 }
@@ -120,29 +114,29 @@ func NewServiceAccountIntegration(ctx context.Context, projectID string) (*Servi
 // Close closes all clients
 func (sai *ServiceAccountIntegration) Close() error {
 	var errors []error
-	
+
 	if err := sai.iamClient.Close(); err != nil {
 		errors = append(errors, fmt.Errorf("failed to close IAM client: %w", err))
 	}
-	
+
 	if err := sai.resourceManager.Close(); err != nil {
 		errors = append(errors, fmt.Errorf("failed to close Resource Manager client: %w", err))
 	}
-	
+
 	if len(errors) > 0 {
 		return fmt.Errorf("errors closing clients: %v", errors)
 	}
-	
+
 	return nil
 }
 
 // DeployCorkscrewServiceAccount deploys a service account for Corkscrew scanning
 func (sai *ServiceAccountIntegration) DeployCorkscrewServiceAccount(ctx context.Context, config *ServiceAccountConfig) (*ServiceAccountDeploymentResult, error) {
 	result := &ServiceAccountDeploymentResult{
-		ProjectID:      config.ProjectID,
-		DeploymentTime: time.Now(),
-		Warnings:       []string{},
-		Errors:         []string{},
+		ProjectID:       config.ProjectID,
+		DeploymentTime:  time.Now(),
+		Warnings:        []string{},
+		Errors:          []string{},
 		Recommendations: []string{},
 	}
 
@@ -154,14 +148,14 @@ func (sai *ServiceAccountIntegration) DeployCorkscrewServiceAccount(ctx context.
 		result.Errors = append(result.Errors, fmt.Sprintf("Failed to create service account: %v", err))
 		return result, err
 	}
-	
+
 	result.ServiceAccountEmail = serviceAccountEmail
 	log.Printf("✅ Service account created/verified: %s", serviceAccountEmail)
 
 	// Step 2: Assign IAM roles
 	assignedRoles, roleErrors := sai.assignIAMRoles(ctx, config, serviceAccountEmail)
 	result.RolesAssigned = assignedRoles
-	
+
 	for _, roleErr := range roleErrors {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Role assignment warning: %v", roleErr))
 	}
@@ -173,7 +167,7 @@ func (sai *ServiceAccountIntegration) DeployCorkscrewServiceAccount(ctx context.
 		keyCreated, keyErr := sai.createServiceAccountKey(ctx, serviceAccountEmail, config.KeyOutputPath)
 		result.KeyCreated = keyCreated
 		result.KeyFilePath = config.KeyOutputPath
-		
+
 		if keyErr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("Key creation warning: %v", keyErr))
 		}
@@ -194,10 +188,10 @@ func (sai *ServiceAccountIntegration) DeployCorkscrewServiceAccount(ctx context.
 func (sai *ServiceAccountIntegration) ValidateServiceAccount(ctx context.Context, serviceAccountEmail string) (*ServiceAccountValidationResult, error) {
 	result := &ServiceAccountValidationResult{
 		ServiceAccountEmail: serviceAccountEmail,
-		ProjectID:          sai.projectID,
-		ValidationTime:     time.Now(),
-		Issues:             []ValidationIssue{},
-		Recommendations:    []string{},
+		ProjectID:           sai.projectID,
+		ValidationTime:      time.Now(),
+		Issues:              []ValidationIssue{},
+		Recommendations:     []string{},
 	}
 
 	log.Printf("🔍 Validating service account: %s", serviceAccountEmail)
@@ -233,12 +227,12 @@ func (sai *ServiceAccountIntegration) ValidateServiceAccount(ctx context.Context
 		})
 	} else {
 		result.ExistingRoles = existingRoles
-		
+
 		// Check for required roles
 		requiredRoles := sai.getDefaultRoles()
 		missingRoles := sai.findMissingRoles(existingRoles, requiredRoles)
 		result.MissingRoles = missingRoles
-		
+
 		if len(missingRoles) > 0 {
 			result.Issues = append(result.Issues, ValidationIssue{
 				Type:        "warning",
@@ -275,13 +269,13 @@ func (sai *ServiceAccountIntegration) ValidateServiceAccount(ctx context.Context
 
 func (sai *ServiceAccountIntegration) createServiceAccount(ctx context.Context, config *ServiceAccountConfig) (string, error) {
 	serviceAccountEmail := fmt.Sprintf("%s@%s.iam.gserviceaccount.com", config.AccountName, config.ProjectID)
-	
+
 	// Check if service account already exists
 	exists, err := sai.serviceAccountExists(ctx, serviceAccountEmail)
 	if err != nil {
 		return "", fmt.Errorf("failed to check service account existence: %w", err)
 	}
-	
+
 	if exists {
 		log.Printf("ℹ️ Service account already exists: %s", serviceAccountEmail)
 		return serviceAccountEmail, nil
@@ -310,7 +304,7 @@ func (sai *ServiceAccountIntegration) serviceAccountExists(ctx context.Context, 
 	req := &adminpb.GetServiceAccountRequest{
 		Name: fmt.Sprintf("projects/%s/serviceAccounts/%s", sai.projectID, email),
 	}
-	
+
 	_, err := sai.iamClient.GetServiceAccount(ctx, req)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -318,7 +312,7 @@ func (sai *ServiceAccountIntegration) serviceAccountExists(ctx context.Context, 
 		}
 		return false, err
 	}
-	
+
 	return true, nil
 }
 
@@ -381,7 +375,7 @@ func (sai *ServiceAccountIntegration) assignRole(ctx context.Context, projectID,
 	_, err = sai.crmService.Projects.SetIamPolicy(projectID, &cloudresourcemanager.SetIamPolicyRequest{
 		Policy: policy,
 	}).Do()
-	
+
 	return err
 }
 
@@ -414,7 +408,7 @@ func saveKeyToFile(keyData []byte, filePath string) error {
 
 func (sai *ServiceAccountIntegration) getServiceAccountRoles(ctx context.Context, serviceAccountEmail string) ([]string, error) {
 	member := fmt.Sprintf("serviceAccount:%s", serviceAccountEmail)
-	
+
 	policy, err := sai.crmService.Projects.GetIamPolicy(sai.projectID, &cloudresourcemanager.GetIamPolicyRequest{}).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get IAM policy: %w", err)
@@ -481,7 +475,7 @@ func (sai *ServiceAccountIntegration) generateRecommendations(config *ServiceAcc
 	recommendations = append(recommendations, "🔐 Consider using Workload Identity instead of service account keys in production environments")
 	recommendations = append(recommendations, "🔄 Set up automatic service account key rotation (every 90 days)")
 	recommendations = append(recommendations, "📊 Enable audit logging for service account usage monitoring")
-	
+
 	// Performance recommendations
 	if len(config.RequiredRoles) > 10 {
 		recommendations = append(recommendations, "⚡ Consider using fewer, broader roles for better performance")
@@ -651,7 +645,7 @@ func (p *GCPProvider) ValidateServiceAccount(ctx context.Context, req *pb.Valida
 }
 */
 
-// GetServiceAccountRecommendations provides recommendations for service account setup  
+// GetServiceAccountRecommendations provides recommendations for service account setup
 // TODO: Implement when protobuf types are available
 /*
 func (p *GCPProvider) GetServiceAccountRecommendations(ctx context.Context, req *pb.RecommendationsRequest) (*pb.RecommendationsResponse, error) {

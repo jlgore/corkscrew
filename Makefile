@@ -2,7 +2,7 @@
 # Streamlined Makefile focusing on actual usage patterns
 
 # Variables
-GO_VERSION := 1.24
+GO_VERSION := 1.26
 CORKSCREW_DIR := $(HOME)/.corkscrew
 PLUGIN_DIR := $(CORKSCREW_DIR)/plugins
 BIN_DIR := $(CORKSCREW_DIR)/bin

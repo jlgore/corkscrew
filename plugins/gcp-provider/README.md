@@ -96,7 +96,7 @@ The GCP provider is a comprehensive, high-performance cloud provider plugin that
 
 ### Prerequisites
 - Google Cloud CLI (`gcloud`) installed and configured
-- Go 1.24+ for building from source
+- Go 1.26+ for building from source
 - Appropriate GCP permissions (see [Permissions](#permissions))
 
 ### 🔍 Automated Service Account Deployment

@@ -57,7 +57,7 @@ The AWS provider is a comprehensive, enterprise-ready cloud provider plugin that
 
 ### Prerequisites
 - AWS CLI configured (`aws configure`) or appropriate IAM credentials
-- Go 1.24+ for building from source
+- Go 1.26+ for building from source
 - Appropriate AWS permissions (see [Permissions](#permissions))
 
 ### Basic Setup

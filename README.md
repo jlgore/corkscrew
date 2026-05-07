@@ -85,7 +85,7 @@ See the [Plugin Development Guide](plugins/PLUGIN_DEVELOPMENT.md) for detailed a
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.26 or later
 - Protocol Buffers compiler (`protoc`)
 - Cloud provider credentials configured (AWS, Azure, etc.)
 

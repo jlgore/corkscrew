@@ -313,7 +313,7 @@ Based on the existing providers, your `go.mod` should look like:
 ```go
 module github.com/jlgore/corkscrew/plugins/your-provider
 
-go 1.24
+go 1.26
 
 require (
     // Your cloud provider SDK

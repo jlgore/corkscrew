@@ -26,7 +26,7 @@ on:
         default: 'false'
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26'
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
   AWS_REGION: 'us-east-1'
   AZURE_REGION: 'eastus'
