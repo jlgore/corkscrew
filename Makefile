@@ -148,8 +148,9 @@ generate-proto:
 	@echo "🔄 Generating protobuf code..."
 	@if [ -d "proto" ]; then \
 		export PATH="$$PATH:$$HOME/go/bin"; \
-		protoc --go_out=. --go_opt=paths=source_relative \
-		       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		protoc --proto_path=proto \
+		       --go_out=internal/proto --go_opt=paths=source_relative \
+		       --go-grpc_out=internal/proto --go-grpc_opt=paths=source_relative \
 		       proto/*.proto; \
 		echo "✅ Protobuf code generated"; \
 	else \

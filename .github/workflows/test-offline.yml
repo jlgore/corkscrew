@@ -30,9 +30,19 @@ jobs:
     
     - name: Install dependencies
       run: go mod tidy
+
+    - name: Check formatting
+      run: |
+        gofmt -w .
+        git diff --exit-code
     
     - name: Generate protobuf code
-      run: make generate-proto
+      run: |
+        make generate-proto
+        git diff --exit-code internal/proto
+
+    - name: Run tests
+      run: go test ./...
     
     - name: Generate plugin registry
       run: |

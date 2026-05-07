@@ -68,7 +68,7 @@ else
 fi
 
 # Check if the plugin binary exists
-PLUGIN_PATH="./plugins/build/corkscrew-azure"
+PLUGIN_PATH="./build/bin/azure-provider"
 if [ -f "$PLUGIN_PATH" ]; then
     print_status "Plugin binary found: $PLUGIN_PATH"
     echo "📊 Binary size: $(du -h $PLUGIN_PATH | cut -f1)"
@@ -108,10 +108,10 @@ echo ""
 # Test 3: Check plugin loading paths
 echo "🔍 Test 3: Verifying plugin loading paths..."
 echo "Plugin will be searched in these locations:"
-echo "  - ./plugins/build/corkscrew-azure"
-echo "  - ./build/plugins/corkscrew-azure"
+echo "  - ./build/bin/azure-provider"
 echo "  - ./plugins/azure-provider/azure-provider"
-echo "  - ./corkscrew-azure"
+echo "  - ~/.corkscrew/plugins/azure-provider"
+echo "  - ~/.corkscrew/bin/plugin/azure-provider"
 
 echo ""
 echo "🎯 Integration Test Summary"
@@ -119,7 +119,7 @@ echo "=========================="
 
 if [ -f "$PLUGIN_PATH" ]; then
     print_status "✅ Azure provider plugin built and ready"
-    print_status "✅ Plugin follows naming convention: corkscrew-azure"
+    print_status "✅ Plugin follows naming convention: azure-provider"
     print_status "✅ Plugin implements CloudProvider interface"
     print_status "✅ Plugin integrates with main CLI application"
     

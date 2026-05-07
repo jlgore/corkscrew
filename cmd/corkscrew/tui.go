@@ -5,18 +5,18 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jlgore/corkscrew/internal/config"
 	"github.com/jlgore/corkscrew/internal/db"
 	"github.com/jlgore/corkscrew/internal/tui"
 	"github.com/jlgore/corkscrew/pkg/crosscloud"
+	"github.com/jlgore/corkscrew/pkg/smartscan"
 )
 
 // runTUIMode starts the interactive TUI interface
 func runTUIMode(args []string) error {
 	// Parse TUI-specific flags
 	var (
-		dbPath     = "./corkscrew.db"
-		configPath = "./corkscrew.yaml"
+		dbPath     = defaultDatabasePath()
+		configPath = ""
 		startView  = "main"
 	)
 
@@ -41,14 +41,14 @@ func runTUIMode(args []string) error {
 	}
 
 	// Initialize dependencies
-	database, config, scanner, err := initializeTUIDependencies(dbPath, configPath)
+	database, cfg, scanner, err := initializeTUIDependencies(dbPath, configPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize TUI dependencies: %w", err)
 	}
 
 	// Create TUI application
 	app := tui.NewCorkscrewApp()
-	app.SetDependencies(database, config, scanner)
+	app.SetDependencies(database, cfg, scanner)
 
 	// Set initial view based on arguments
 	switch startView {
@@ -94,7 +94,7 @@ func initializeTUIDependencies(dbPath, configPath string) (interface{}, interfac
 	}
 
 	// Load configuration
-	cfg, err := config.LoadServiceConfig()
+	cfg, err := smartscan.LoadSmartScanConfig(configPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to load configuration (%v), using defaults\n", err)
 		cfg = nil
@@ -162,7 +162,7 @@ func containsFlag(args []string, flag string) bool {
 // fallbackToCLI gracefully falls back to CLI mode if TUI fails
 func fallbackToCLI(err error, originalArgs []string) {
 	fmt.Printf("TUI mode unavailable (%v), falling back to CLI mode\n", err)
-	
+
 	// Remove --tui flags from args
 	var cleanArgs []string
 	for _, arg := range originalArgs {

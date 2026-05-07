@@ -562,7 +562,7 @@ This adds value beyond basic Kubernetes resources by understanding the higher-le
 # Kubernetes provider build
 build-kubernetes-plugin:
 	@echo "🔧 Building Kubernetes Provider Plugin..."
-	@cd plugins/kubernetes-provider && go build -o ../build/corkscrew-kubernetes .
+	@cd plugins/kubernetes-provider && go build -o ../build/kubernetes-provider .
 	@echo "✅ Kubernetes provider built successfully!"
 
 # Generate code from discovered resources
@@ -576,7 +576,7 @@ generate-k8s-scanners:
 test-kubernetes-provider:
 	@echo "🧪 Testing Kubernetes provider..."
 	@cd plugins/kubernetes-provider && go test ./...
-	@./plugins/build/corkscrew-kubernetes --test
+	@./plugins/build/kubernetes-provider --test
 ```
 
 ## Usage Examples

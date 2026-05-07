@@ -85,7 +85,7 @@ See the [Plugin Development Guide](plugins/PLUGIN_DEVELOPMENT.md) for detailed a
 
 ### Prerequisites
 
-- Go 1.21 or later
+- Go 1.24 or later
 - Protocol Buffers compiler (`protoc`)
 - Cloud provider credentials configured (AWS, Azure, etc.)
 
@@ -164,23 +164,27 @@ export PATH="$HOME/.corkscrew/bin:$PATH"
 
 ### Configuration
 
-Corkscrew now supports flexible service configuration. You can specify which services to analyze via:
-
-- Configuration file (`corkscrew.yaml`)
-- Environment variables (`CORKSCREW_AWS_SERVICES`)
-- Command-line arguments
+Corkscrew uses a single YAML config model (`corkscrew.yaml`) for scan settings. Generate one with:
 
 ```bash
+# Create default configuration
+./corkscrew config init
+
 # View current configuration
 ./corkscrew config show
 
 # Validate configuration
 ./corkscrew config validate
 
-# Use environment variable to override services
-export CORKSCREW_AWS_SERVICES="s3,ec2,lambda,rds"
-./corkscrew scan
+# Scan using configured regions/services
+./corkscrew scan --provider aws
+
+# Use custom config path
+export CORKSCREW_CONFIG_FILE=/path/to/corkscrew.yaml
+./corkscrew scan --provider aws
 ```
+
+Default DuckDB path is `~/.corkscrew/db/corkscrew.duckdb` (override with `scan --database` or `query --db`).
 
 See [Configuration Guide](docs/CONFIGURATION_GUIDE.md) for detailed information.
 
@@ -191,7 +195,7 @@ See [Configuration Guide](docs/CONFIGURATION_GUIDE.md) for detailed information.
 ./plugins/aws-provider/aws-provider --test
 
 # Test Azure plugin directly  
-./plugins/build/corkscrew-azure --test
+./build/bin/azure-provider --test
 
 # List available plugins
 make list-plugins

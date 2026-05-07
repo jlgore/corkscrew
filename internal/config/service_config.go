@@ -34,28 +34,30 @@ type AnalysisConfig struct {
 	CacheTTL     string `yaml:"cache_ttl"`
 }
 
+var discoverServicesFunc = discoverServices
+
 // LoadServiceConfig loads configuration from various sources
 func LoadServiceConfig() (*ServiceConfig, error) {
 	// Priority order: CLI args > env vars > config file > defaults
-	
+
 	// 1. Try to load from config file
 	config, err := loadFromFile()
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to load config file: %w", err)
 	}
-	
+
 	if config == nil {
 		config = getDefaultConfig()
 	}
-	
+
 	// 2. Override with environment variables
 	applyEnvOverrides(config)
-	
+
 	// 3. Validate configuration
 	if err := validateConfig(config); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
-	
+
 	return config, nil
 }
 
@@ -64,7 +66,7 @@ func loadFromFile() (*ServiceConfig, error) {
 	if configFile := os.Getenv("CORKSCREW_CONFIG_FILE"); configFile != "" {
 		return loadConfigFile(configFile)
 	}
-	
+
 	// Look for config file in standard locations
 	locations := []string{
 		"corkscrew.yaml",
@@ -73,13 +75,13 @@ func loadFromFile() (*ServiceConfig, error) {
 		".corkscrew.yml",
 		filepath.Join(os.Getenv("HOME"), ".corkscrew", "config.yaml"),
 	}
-	
+
 	for _, loc := range locations {
 		if _, err := os.Stat(loc); err == nil {
 			return loadConfigFile(loc)
 		}
 	}
-	
+
 	return nil, os.ErrNotExist
 }
 
@@ -88,12 +90,12 @@ func loadConfigFile(path string) (*ServiceConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var config ServiceConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
-	
+
 	return &config, nil
 }
 
@@ -134,7 +136,7 @@ func applyEnvOverrides(config *ServiceConfig) {
 			config.Providers["aws"] = awsProv
 		}
 	}
-	
+
 	// Override discovery mode
 	if mode := os.Getenv("CORKSCREW_DISCOVERY_MODE"); mode != "" {
 		if awsProv, ok := config.Providers["aws"]; ok {
@@ -150,51 +152,51 @@ func (c *ServiceConfig) GetServicesForProvider(provider string) ([]string, error
 	if !ok {
 		return nil, fmt.Errorf("provider %s not configured", provider)
 	}
-	
+
 	services := make(map[string]bool)
-	
+
 	switch prov.DiscoveryMode {
 	case "manual":
 		// Only use explicitly included services
 		for _, svc := range prov.Services.Include {
 			services[svc] = true
 		}
-		
+
 	case "auto":
 		// Auto-discover from go.mod and AWS SDK
-		discovered, err := discoverServices()
+		discovered, err := discoverServicesFunc()
 		if err != nil {
 			return nil, fmt.Errorf("failed to auto-discover services: %w", err)
 		}
 		for _, svc := range discovered {
 			services[svc] = true
 		}
-		
+
 	case "hybrid":
 		// Start with manual list, add auto-discovered
 		for _, svc := range prov.Services.Include {
 			services[svc] = true
 		}
-		discovered, _ := discoverServices()
+		discovered, _ := discoverServicesFunc()
 		for _, svc := range discovered {
 			services[svc] = true
 		}
-		
+
 	default:
 		return nil, fmt.Errorf("unknown discovery mode: %s", prov.DiscoveryMode)
 	}
-	
+
 	// Apply exclusions
 	for _, svc := range prov.Services.Exclude {
 		delete(services, svc)
 	}
-	
+
 	// Convert to slice
 	result := make([]string, 0, len(services))
 	for svc := range services {
 		result = append(result, svc)
 	}
-	
+
 	return result, nil
 }
 
@@ -204,12 +206,12 @@ func (c *ServiceConfig) GetServiceGroup(provider, group string) ([]string, error
 	if !ok {
 		return nil, fmt.Errorf("provider %s not configured", provider)
 	}
-	
+
 	services, ok := prov.ServiceGroups[group]
 	if !ok {
 		return nil, fmt.Errorf("service group %s not found", group)
 	}
-	
+
 	return services, nil
 }
 
@@ -217,7 +219,7 @@ func validateConfig(config *ServiceConfig) error {
 	if config.Version == "" {
 		config.Version = "1.0"
 	}
-	
+
 	// Validate provider configurations
 	for name, prov := range config.Providers {
 		// Validate discovery mode
@@ -225,7 +227,7 @@ func validateConfig(config *ServiceConfig) error {
 		if !validModes[prov.DiscoveryMode] {
 			return fmt.Errorf("invalid discovery mode '%s' for provider %s", prov.DiscoveryMode, name)
 		}
-		
+
 		// Ensure analysis config has sensible defaults
 		if prov.Analysis.Workers <= 0 {
 			prov.Analysis.Workers = 4
@@ -233,15 +235,15 @@ func validateConfig(config *ServiceConfig) error {
 		if prov.Analysis.CacheTTL == "" {
 			prov.Analysis.CacheTTL = "24h"
 		}
-		
+
 		// Validate cache TTL format
 		if _, err := time.ParseDuration(prov.Analysis.CacheTTL); err != nil {
 			return fmt.Errorf("invalid cache TTL format: %w", err)
 		}
-		
+
 		config.Providers[name] = prov
 	}
-	
+
 	return nil
 }
 
@@ -254,13 +256,13 @@ func InitializeConfigFile() error {
 		".corkscrew.yaml",
 		".corkscrew.yml",
 	}
-	
+
 	for _, loc := range locations {
 		if _, err := os.Stat(loc); err == nil {
 			return fmt.Errorf("configuration file already exists at %s", loc)
 		}
 	}
-	
+
 	// Create example configuration
 	exampleConfig := `# Corkscrew Configuration
 version: "1.0"
@@ -365,12 +367,12 @@ providers:
       cache_enabled: true
       cache_ttl: 24h
 `
-	
+
 	// Write to corkscrew.yaml
 	if err := os.WriteFile("corkscrew.yaml", []byte(exampleConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write configuration file: %w", err)
 	}
-	
+
 	fmt.Println("Created corkscrew.yaml with example configuration")
 	return nil
 }

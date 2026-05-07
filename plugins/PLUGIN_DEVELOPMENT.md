@@ -664,11 +664,11 @@ echo "  ./corkscrew scan --provider your-provider --services compute,storage --r
 
 ### Plugin Binary Naming
 
-Your binary should be named following the pattern: `corkscrew-{provider-name}`
+Your binary should be named following the pattern: `{provider-name}-provider`
 
 Examples from existing providers:
-- AWS: `corkscrew-aws` or `aws-provider`
-- Azure: `corkscrew-azure`
+- AWS: `aws-provider`
+- Azure: `azure-provider`
 
 ## Testing Your Plugin
 

@@ -11,7 +11,7 @@ func TestDiscoverServicesFromGoMod(t *testing.T) {
 	tmpDir := t.TempDir()
 	goModContent := `module test
 
-go 1.21
+go 1.24
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.24.0
@@ -79,60 +79,89 @@ func TestDiscoverServicesFromAWSSDK(t *testing.T) {
 	// This test might not find actual SDK installations in CI
 	// but should at least not crash
 	services, err := discoverServicesFromAWSSDK()
-	
+
 	if err != nil {
 		t.Errorf("discoverServicesFromAWSSDK() unexpected error: %v", err)
 		return
 	}
-	
+
 	// In CI or without SDK, it should return empty list without error
 	t.Logf("discoverServicesFromAWSSDK() found %d services", len(services))
 }
 
 func TestDiscoverServices(t *testing.T) {
 	// Test the main discovery function
-	// It should combine results from multiple sources
+	// It should combine results from local sources by default
 	services, err := discoverServices()
-	
+
 	if err != nil {
 		t.Errorf("discoverServices() error: %v", err)
 		return
 	}
-	
-	// Should return at least some services (even if just from fallback)
+
+	// Should return at least some services from local go.mod/module cache
 	if len(services) == 0 {
 		t.Error("discoverServices() returned no services")
 	}
-	
+
 	t.Logf("discoverServices() found %d services", len(services))
 }
 
+func TestRemoteDiscoveryEnabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "unset", want: false},
+		{name: "false", value: "false", want: false},
+		{name: "zero", value: "0", want: false},
+		{name: "true", value: "true", want: true},
+		{name: "one", value: "1", want: true},
+		{name: "yes", value: "yes", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CORKSCREW_ENABLE_REMOTE_DISCOVERY", tt.value)
+
+			if got := remoteDiscoveryEnabled(); got != tt.want {
+				t.Fatalf("remoteDiscoveryEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDiscoverServicesFromGitHub(t *testing.T) {
+	if !remoteDiscoveryEnabled() {
+		t.Skip("Skipping GitHub API test unless CORKSCREW_ENABLE_REMOTE_DISCOVERY is enabled")
+	}
+
 	// Skip this test if we don't have internet access or in CI
 	if os.Getenv("CI") == "true" || os.Getenv("SKIP_NETWORK_TESTS") == "true" {
 		t.Skip("Skipping GitHub API test in CI")
 	}
-	
+
 	services, err := discoverServicesFromGitHub()
-	
+
 	// GitHub API might fail due to rate limits or network issues
 	if err != nil {
 		t.Logf("discoverServicesFromGitHub() error (might be rate limited): %v", err)
 		return
 	}
-	
+
 	// If successful, should return many services
 	if len(services) < 50 {
 		t.Errorf("discoverServicesFromGitHub() returned only %d services, expected more", len(services))
 	}
-	
+
 	// Check for some common services
 	expectedServices := []string{"s3", "ec2", "lambda", "dynamodb", "iam"}
 	serviceMap := make(map[string]bool)
 	for _, svc := range services {
 		serviceMap[svc] = true
 	}
-	
+
 	for _, expected := range expectedServices {
 		if !serviceMap[expected] {
 			t.Errorf("discoverServicesFromGitHub() missing expected service: %s", expected)

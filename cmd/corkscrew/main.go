@@ -19,15 +19,13 @@ import (
 	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
 	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/ui"
 	"github.com/jlgore/corkscrew/internal/client"
-	"github.com/jlgore/corkscrew/internal/config"
+	"github.com/jlgore/corkscrew/internal/db"
 	// "github.com/jlgore/corkscrew/pkg/crosscloud" // TODO: Uncomment when implementing actual cross-cloud logic
 	pb "github.com/jlgore/corkscrew/internal/proto"
-	"github.com/jlgore/corkscrew/internal/server"
 	"github.com/jlgore/corkscrew/pkg/plugins"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"github.com/jlgore/corkscrew/pkg/query/compliance"
 	"github.com/jlgore/corkscrew/pkg/smartscan"
-	"gopkg.in/yaml.v3"
 )
 
 // Build-time variables set by GoReleaser
@@ -51,7 +49,6 @@ var serviceGroups = map[string][]string{
 // parameterFlags implements flag.Value for collecting multiple --param flags
 type parameterFlags map[string]interface{}
 
-
 func (p parameterFlags) String() string {
 	return fmt.Sprintf("%v", map[string]interface{}(p))
 }
@@ -61,23 +58,23 @@ func parseServices(servicesStr string) []string {
 	if servicesStr == "" {
 		return []string{}
 	}
-	
+
 	parts := strings.Split(servicesStr, ",")
 	expanded := []string{}
-	
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		
+
 		// Check if it's a group
 		if group, exists := serviceGroups[part]; exists {
-			fmt.Printf("📦 Expanding group '%s' to: %s\n", 
+			fmt.Printf("📦 Expanding group '%s' to: %s\n",
 				part, strings.Join(group, ", "))
 			expanded = append(expanded, group...)
 		} else {
 			expanded = append(expanded, part)
 		}
 	}
-	
+
 	// Remove duplicates
 	seen := make(map[string]bool)
 	result := []string{}
@@ -87,8 +84,21 @@ func parseServices(servicesStr string) []string {
 			result = append(result, svc)
 		}
 	}
-	
+
 	return result
+}
+
+func defaultDatabasePath() string {
+	path, err := db.GetUnifiedDatabasePath()
+	if err == nil {
+		return path
+	}
+
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		return ".corkscrew.duckdb"
+	}
+	return filepath.Join(home, ".corkscrew", "db", "corkscrew.duckdb")
 }
 
 // createPluginClient creates a plugin client with consistent error handling
@@ -98,7 +108,7 @@ func createPluginClient(providerName string) (*client.PluginClient, error) {
 		// Provide helpful error message with suggestions
 		pm := plugins.NewPluginManager()
 		if pm.CanBuildPlugin(providerName) {
-			return nil, fmt.Errorf("plugin not found: %s\n\n💡 To build this plugin, run:\n   corkscrew plugin build %s\n   corkscrew plugin install %s", 
+			return nil, fmt.Errorf("plugin not found: %s\n\n💡 To build this plugin, run:\n   corkscrew plugin build %s\n   corkscrew plugin install %s",
 				providerName, providerName, providerName)
 		} else {
 			return nil, fmt.Errorf("plugin not found: %s\n\n💡 Available plugins:\n   corkscrew plugin list", providerName)
@@ -117,60 +127,60 @@ func groupServicesByCategory(services []*pb.ServiceInfo) map[string][]*pb.Servic
 		"Monitoring": {},
 		"Other":      {},
 	}
-	
+
 	for _, svc := range services {
 		category := categorizeService(svc.Name)
 		categories[category] = append(categories[category], svc)
 	}
-	
+
 	return categories
 }
 
 func categorizeService(serviceName string) string {
 	serviceName = strings.ToLower(serviceName)
-	
+
 	// Compute services
 	if strings.Contains(serviceName, "ec2") || strings.Contains(serviceName, "lambda") ||
 		strings.Contains(serviceName, "ecs") || strings.Contains(serviceName, "eks") ||
 		strings.Contains(serviceName, "batch") || strings.Contains(serviceName, "compute") {
 		return "Compute"
 	}
-	
+
 	// Storage services
 	if strings.Contains(serviceName, "s3") || strings.Contains(serviceName, "ebs") ||
 		strings.Contains(serviceName, "efs") || strings.Contains(serviceName, "fsx") ||
 		strings.Contains(serviceName, "backup") || strings.Contains(serviceName, "storage") {
 		return "Storage"
 	}
-	
-	// Database services  
+
+	// Database services
 	if strings.Contains(serviceName, "rds") || strings.Contains(serviceName, "dynamodb") ||
 		strings.Contains(serviceName, "elasticache") || strings.Contains(serviceName, "redshift") ||
 		strings.Contains(serviceName, "documentdb") || strings.Contains(serviceName, "database") {
 		return "Database"
 	}
-	
+
 	// Networking services
 	if strings.Contains(serviceName, "vpc") || strings.Contains(serviceName, "elb") ||
 		strings.Contains(serviceName, "route53") || strings.Contains(serviceName, "cloudfront") ||
 		strings.Contains(serviceName, "apigateway") || strings.Contains(serviceName, "network") {
 		return "Networking"
 	}
-	
+
 	// Security services
 	if strings.Contains(serviceName, "iam") || strings.Contains(serviceName, "kms") ||
 		strings.Contains(serviceName, "secretsmanager") || strings.Contains(serviceName, "acm") ||
 		strings.Contains(serviceName, "guardduty") || strings.Contains(serviceName, "security") {
 		return "Security"
 	}
-	
+
 	// Monitoring services
 	if strings.Contains(serviceName, "cloudwatch") || strings.Contains(serviceName, "logs") ||
 		strings.Contains(serviceName, "xray") || strings.Contains(serviceName, "sns") ||
 		strings.Contains(serviceName, "sqs") || strings.Contains(serviceName, "monitoring") {
 		return "Monitoring"
 	}
-	
+
 	return "Other"
 }
 
@@ -179,10 +189,10 @@ func (p parameterFlags) Set(value string) error {
 	if len(parts) != 2 {
 		return fmt.Errorf("parameter must be in format key=value")
 	}
-	
+
 	key := strings.TrimSpace(parts[0])
 	val := strings.TrimSpace(parts[1])
-	
+
 	// Try to parse as different types
 	if val == "true" {
 		p[key] = true
@@ -200,7 +210,7 @@ func (p parameterFlags) Set(value string) error {
 		// Default to string
 		p[key] = val
 	}
-	
+
 	return nil
 }
 
@@ -360,25 +370,25 @@ func printUsage() {
 }
 
 func runScan(args []string) {
-    fs := flag.NewFlagSet("scan", flag.ExitOnError)
+	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 
-    providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
-    servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
-    regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
-    outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
-    showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
-    configPath := fs.String("config", "", "Path to configuration file")
-    concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
-    saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
-    databasePath := fs.String("database", "", "Path to DuckDB database file (default: ~/.corkscrew/db/corkscrew.duckdb)")
-    dbProviderTable := fs.String("db-provider-table", "", "Override target table for persistence (routes all rows)")
-    // Kubernetes-specific and filter options
-    namespace := fs.String("namespace", "", "Kubernetes namespace filter (single)")
-    labelSelector := fs.String("label-selector", "", "Kubernetes label selector (e.g., app=myapp)")
-    fieldSelector := fs.String("field-selector", "", "Kubernetes field selector")
-    kubeconfig := fs.String("kubeconfig", "", "Path to kubeconfig file for Kubernetes provider")
-    kubeContext := fs.String("context", "", "Kubernetes context name")
-    includeRels := fs.Bool("include-relationships", true, "Include and persist basic relationships")
+	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
+	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
+	regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
+	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
+	showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
+	configPath := fs.String("config", "", "Path to configuration file")
+	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
+	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
+	databasePath := fs.String("database", "", "Path to DuckDB database file (default: config database.path or ~/.corkscrew/db/corkscrew.duckdb)")
+	dbProviderTable := fs.String("db-provider-table", "", "Override target table for persistence (routes all rows)")
+	// Kubernetes-specific and filter options
+	namespace := fs.String("namespace", "", "Kubernetes namespace filter (single)")
+	labelSelector := fs.String("label-selector", "", "Kubernetes label selector (e.g., app=myapp)")
+	fieldSelector := fs.String("field-selector", "", "Kubernetes field selector")
+	kubeconfig := fs.String("kubeconfig", "", "Path to kubeconfig file for Kubernetes provider")
+	kubeContext := fs.String("context", "", "Kubernetes context name")
+	includeRels := fs.Bool("include-relationships", true, "Include and persist basic relationships")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -403,80 +413,79 @@ func runScan(args []string) {
 	}
 	defer pc.Close()
 
-    // Run enhanced multi-region scan
-    options := smartscan.EnhancedScanOptions{
-        Provider:       *providerName,
-        Regions:        regions,
-        Services:       services,
-        OutputFormat:   *outputFormat,
-        SaveToFile:     *saveToFile,
-        ShowEmpty:      *showEmpty,
-        ConfigPath:     *configPath,
-        MaxConcurrency: *concurrency,
-        DatabasePath:   *databasePath,
-        DBProviderTableOverride: strings.TrimSpace(*dbProviderTable),
-        Namespace:      strings.TrimSpace(*namespace),
-        LabelSelector:  strings.TrimSpace(*labelSelector),
-        FieldSelector:  strings.TrimSpace(*fieldSelector),
-        KubeconfigPath: strings.TrimSpace(*kubeconfig),
-        KubeContext:    strings.TrimSpace(*kubeContext),
-        IncludeRelationships: *includeRels,
-    }
+	// Run enhanced multi-region scan
+	options := smartscan.EnhancedScanOptions{
+		Provider:                *providerName,
+		Regions:                 regions,
+		Services:                services,
+		OutputFormat:            *outputFormat,
+		SaveToFile:              *saveToFile,
+		ShowEmpty:               *showEmpty,
+		ConfigPath:              *configPath,
+		MaxConcurrency:          *concurrency,
+		DatabasePath:            *databasePath,
+		DBProviderTableOverride: strings.TrimSpace(*dbProviderTable),
+		Namespace:               strings.TrimSpace(*namespace),
+		LabelSelector:           strings.TrimSpace(*labelSelector),
+		FieldSelector:           strings.TrimSpace(*fieldSelector),
+		KubeconfigPath:          strings.TrimSpace(*kubeconfig),
+		KubeContext:             strings.TrimSpace(*kubeContext),
+		IncludeRelationships:    *includeRels,
+	}
 
 	if err := smartscan.RunEnhancedScan(context.Background(), options); err != nil {
 		log.Fatalf("Scan failed: %v", err)
 	}
 }
 
-
 func runDiscover(args []string) {
 	fs := flag.NewFlagSet("discover", flag.ExitOnError)
-	
+
 	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
 	verbose := fs.Bool("verbose", false, "Enable verbose logging")
 	outputFormat := fs.String("output", "table", "Output format (table, json)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("🔍 Discovering services for provider: %s\n", *providerName)
-	
-    // Initialize plugin client
-    pc, err := client.NewPluginClient(*providerName)
-    if err != nil {
+
+	// Initialize plugin client
+	pc, err := client.NewPluginClient(*providerName)
+	if err != nil {
 		// Provide helpful error message with suggestions
 		pm := plugins.NewPluginManager()
 		if pm.CanBuildPlugin(*providerName) {
-			log.Fatalf("Plugin not found: %s\n\n💡 To build this plugin, run:\n   corkscrew plugin build %s\n   corkscrew plugin install %s", 
+			log.Fatalf("Plugin not found: %s\n\n💡 To build this plugin, run:\n   corkscrew plugin build %s\n   corkscrew plugin install %s",
 				*providerName, *providerName, *providerName)
 		} else {
 			log.Fatalf("Plugin not found: %s\n\n💡 Available plugins:\n   corkscrew plugin list", *providerName)
 		}
 	}
-    defer pc.Close()
+	defer pc.Close()
 
-    provider, err := pc.GetProvider()
-    if err != nil {
-        log.Fatalf("Failed to get provider: %v", err)
-    }
-    // Ensure provider is initialized (required for some providers like Kubernetes)
-    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
-        // Non-fatal for providers that don't require initialization for discovery
-        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
-    }
-	
+	provider, err := pc.GetProvider()
+	if err != nil {
+		log.Fatalf("Failed to get provider: %v", err)
+	}
+	// Ensure provider is initialized (required for some providers like Kubernetes)
+	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
+		// Non-fatal for providers that don't require initialization for discovery
+		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+	}
+
 	// Create discover request
 	req := &pb.DiscoverServicesRequest{
 		ForceRefresh: *verbose, // Use verbose as force refresh for now
 	}
-	
+
 	// Execute discovery
 	resp, err := provider.DiscoverServices(context.Background(), req)
 	if err != nil {
 		log.Fatalf("Discovery failed: %v", err)
 	}
-	
+
 	// Handle results based on output format
 	switch *outputFormat {
 	case "json":
@@ -490,32 +499,32 @@ func runDiscover(args []string) {
 func printDiscoverResults(resp *pb.DiscoverServicesResponse) {
 	fmt.Printf("\n✅ Discovery completed successfully!\n")
 	fmt.Printf("📊 Found %d services\n\n", len(resp.Services))
-	
+
 	if len(resp.Services) > 0 {
 		// Group services by category
 		categories := groupServicesByCategory(resp.Services)
-		
+
 		for category, services := range categories {
 			if len(services) == 0 {
 				continue
 			}
-			
+
 			fmt.Printf("📦 %s Services (%d):\n", category, len(services))
-			
+
 			// Show in columns with resource counts
 			for i := 0; i < len(services); i += 3 {
 				fmt.Print("   ")
 				for j := 0; j < 3 && i+j < len(services); j++ {
 					svc := services[i+j]
 					// Show name with resource type count
-					fmt.Printf("%-25s", fmt.Sprintf("%s (%d types)", 
+					fmt.Printf("%-25s", fmt.Sprintf("%s (%d types)",
 						svc.Name, len(svc.ResourceTypes)))
 				}
 				fmt.Println()
 			}
 			fmt.Println()
 		}
-		
+
 		// Show popular services for quick start
 		fmt.Println("💡 Quick Start - Popular Services:")
 		fmt.Println("   corkscrew scan --provider aws --services common")
@@ -529,18 +538,18 @@ func printDiscoverResults(resp *pb.DiscoverServicesResponse) {
 
 func runList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	
+
 	providerName := fs.String("provider", "aws", "Cloud provider")
 	servicesStr := fs.String("services", "", "Comma-separated list of services")
 	regionsStr := fs.String("region", "", "Region to list (default: current)")
 	resourceType := fs.String("type", "", "Filter by resource type")
 	limit := fs.Int("limit", 50, "Maximum number of resources to list")
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	// Parse services
 	services := []string{}
 	if *servicesStr != "" {
@@ -549,7 +558,7 @@ func runList(args []string) {
 			services[i] = strings.TrimSpace(s)
 		}
 	}
-	
+
 	// Parse regions
 	regions := []string{}
 	if *regionsStr != "" {
@@ -558,7 +567,7 @@ func runList(args []string) {
 			regions[i] = strings.TrimSpace(r)
 		}
 	}
-	
+
 	fmt.Printf("📋 Listing resources for provider: %s\n", *providerName)
 	if len(services) > 0 {
 		fmt.Printf("   Services: %s\n", strings.Join(services, ", "))
@@ -569,27 +578,27 @@ func runList(args []string) {
 	if *resourceType != "" {
 		fmt.Printf("   Resource type: %s\n", *resourceType)
 	}
-	
+
 	// Initialize plugin client
 	pc, err := createPluginClient(*providerName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer pc.Close()
-	
-    provider, err := pc.GetProvider()
-    if err != nil {
-        log.Fatalf("Failed to get provider: %v", err)
-    }
-    // Initialize provider with basic hints (region if provided)
-    initCfg := map[string]string{}
-    if len(regions) > 0 {
-        initCfg["region"] = regions[0]
-    }
-    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
-        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
-    }
-	
+
+	provider, err := pc.GetProvider()
+	if err != nil {
+		log.Fatalf("Failed to get provider: %v", err)
+	}
+	// Initialize provider with basic hints (region if provided)
+	initCfg := map[string]string{}
+	if len(regions) > 0 {
+		initCfg["region"] = regions[0]
+	}
+	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
+		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+	}
+
 	// Create list request
 	req := &pb.ListResourcesRequest{
 		Service:      "", // Services will be set based on first service
@@ -603,13 +612,13 @@ func runList(args []string) {
 	if len(regions) > 0 {
 		req.Region = regions[0]
 	}
-	
+
 	// Execute list
 	resp, err := provider.ListResources(context.Background(), req)
 	if err != nil {
 		log.Fatalf("List failed: %v", err)
 	}
-	
+
 	// Handle results based on output format
 	switch *outputFormat {
 	case "json":
@@ -624,12 +633,12 @@ func runList(args []string) {
 
 func printListResults(resp *pb.ListResourcesResponse) {
 	fmt.Printf("\n📊 Found %d resources\n\n", len(resp.Resources))
-	
+
 	if len(resp.Resources) > 0 {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "ID\tType\tService\tRegion\tStatus")
 		fmt.Fprintln(w, "--\t----\t-------\t------\t------")
-		
+
 		for _, res := range resp.Resources {
 			status := "active"
 			if res.BasicAttributes != nil {
@@ -637,7 +646,7 @@ func printListResults(resp *pb.ListResourcesResponse) {
 					status = s
 				}
 			}
-			
+
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				truncateString(res.Id, 40),
 				res.Type,
@@ -646,7 +655,7 @@ func printListResults(resp *pb.ListResourcesResponse) {
 				status)
 		}
 		w.Flush()
-		
+
 		if resp.NextToken != "" {
 			fmt.Printf("\n📌 More results available. Use --token %s to continue.\n", resp.NextToken)
 		}
@@ -658,10 +667,10 @@ func printListResults(resp *pb.ListResourcesResponse) {
 func printListCSV(resp *pb.ListResourcesResponse) {
 	w := csv.NewWriter(os.Stdout)
 	defer w.Flush()
-	
+
 	// Write header
 	w.Write([]string{"ID", "Type", "Service", "Region", "Status"})
-	
+
 	// Write data
 	for _, res := range resp.Resources {
 		status := "active"
@@ -670,7 +679,7 @@ func printListCSV(resp *pb.ListResourcesResponse) {
 				status = s
 			}
 		}
-		
+
 		w.Write([]string{
 			res.Id,
 			res.Type,
@@ -690,45 +699,45 @@ func truncateString(s string, maxLen int) string {
 
 func runDescribe(args []string) {
 	fs := flag.NewFlagSet("describe", flag.ExitOnError)
-	
+
 	providerName := fs.String("provider", "aws", "Cloud provider")
 	resourceID := fs.String("resource-id", "", "Resource ID to describe")
 	service := fs.String("service", "", "Service name (required for some providers)")
 	region := fs.String("region", "", "Region (if different from resource location)")
 	outputFormat := fs.String("output", "yaml", "Output format (yaml, json)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	if *resourceID == "" {
 		fmt.Println("Error: --resource-id is required")
 		fs.Usage()
 		os.Exit(1)
 	}
-	
+
 	fmt.Printf("🔍 Describing resource: %s\n", *resourceID)
-	
+
 	// Initialize plugin client
 	pc, err := client.NewPluginClient(*providerName)
 	if err != nil {
 		log.Fatalf("Failed to initialize plugin client: %v", err)
 	}
 	defer pc.Close()
-	
-    provider, err := pc.GetProvider()
-    if err != nil {
-        log.Fatalf("Failed to get provider: %v", err)
-    }
-    // Initialize provider to ensure describe path works for all providers
-    initCfg := map[string]string{}
-    if *region != "" {
-        initCfg["region"] = *region
-    }
-    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
-        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
-    }
-	
+
+	provider, err := pc.GetProvider()
+	if err != nil {
+		log.Fatalf("Failed to get provider: %v", err)
+	}
+	// Initialize provider to ensure describe path works for all providers
+	initCfg := map[string]string{}
+	if *region != "" {
+		initCfg["region"] = *region
+	}
+	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
+		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+	}
+
 	// Create describe request
 	req := &pb.DescribeResourceRequest{
 		ResourceRef: &pb.ResourceRef{
@@ -737,13 +746,13 @@ func runDescribe(args []string) {
 			Region:  *region,
 		},
 	}
-	
+
 	// Execute describe
 	resp, err := provider.DescribeResource(context.Background(), req)
 	if err != nil {
 		log.Fatalf("Describe failed: %v", err)
 	}
-	
+
 	// Handle results based on output format
 	switch *outputFormat {
 	case "json":
@@ -759,33 +768,33 @@ func printDescribeResults(resp *pb.DescribeResourceResponse) {
 		fmt.Println("Resource not found")
 		return
 	}
-	
+
 	res := resp.Resource
 	fmt.Printf("\n📋 Resource Details:\n")
 	fmt.Printf("   ID:      %s\n", res.Id)
 	fmt.Printf("   Type:    %s\n", res.Type)
 	fmt.Printf("   Service: %s\n", res.Service)
 	fmt.Printf("   Region:  %s\n", res.Region)
-	
+
 	if res.Arn != "" {
 		fmt.Printf("   ARN:     %s\n", res.Arn)
 	}
-	
+
 	if res.CreatedAt != nil {
 		fmt.Printf("   Created: %s\n", res.CreatedAt.AsTime().Format(time.RFC3339))
 	}
-	
+
 	if res.ModifiedAt != nil {
 		fmt.Printf("   Updated: %s\n", res.ModifiedAt.AsTime().Format(time.RFC3339))
 	}
-	
+
 	if len(res.Tags) > 0 {
 		fmt.Printf("\n🏷️  Tags:\n")
 		for k, v := range res.Tags {
 			fmt.Printf("   %s: %s\n", k, v)
 		}
 	}
-	
+
 	if res.Attributes != "" {
 		fmt.Printf("\n📊 Attributes:\n")
 		// Try to parse as JSON
@@ -798,7 +807,7 @@ func printDescribeResults(resp *pb.DescribeResourceResponse) {
 			fmt.Printf("   %s\n", res.Attributes)
 		}
 	}
-	
+
 	if res.RawData != "" {
 		fmt.Printf("\n📄 Raw Data:\n")
 		// Try to pretty print JSON
@@ -814,38 +823,38 @@ func printDescribeResults(resp *pb.DescribeResourceResponse) {
 
 func runInfo(args []string) {
 	fs := flag.NewFlagSet("info", flag.ExitOnError)
-	
+
 	providerName := fs.String("provider", "aws", "Cloud provider")
 	outputFormat := fs.String("output", "table", "Output format (table, json)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("ℹ️  Getting info for provider: %s\n", *providerName)
-	
+
 	// Initialize plugin client
 	pc, err := client.NewPluginClient(*providerName)
 	if err != nil {
 		log.Fatalf("Failed to initialize plugin client: %v", err)
 	}
 	defer pc.Close()
-	
-    provider, err := pc.GetProvider()
-    if err != nil {
-        log.Fatalf("Failed to get provider: %v", err)
-    }
-    // Best-effort initialization (important for Kubernetes)
-    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
-        // Not fatal; some providers support GetProviderInfo without init
-    }
-	
+
+	provider, err := pc.GetProvider()
+	if err != nil {
+		log.Fatalf("Failed to get provider: %v", err)
+	}
+	// Best-effort initialization (important for Kubernetes)
+	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
+		// Not fatal; some providers support GetProviderInfo without init
+	}
+
 	// Get info
 	resp, err := provider.GetProviderInfo(context.Background(), &pb.Empty{})
 	if err != nil {
 		log.Fatalf("GetProviderInfo failed: %v", err)
 	}
-	
+
 	// Handle results based on output format
 	switch *outputFormat {
 	case "json":
@@ -861,7 +870,7 @@ func printInfoResults(resp *pb.ProviderInfoResponse) {
 	fmt.Printf("   Name:        %s\n", resp.Name)
 	fmt.Printf("   Version:     %s\n", resp.Version)
 	fmt.Printf("   Description: %s\n", resp.Description)
-	
+
 	if len(resp.SupportedServices) > 0 {
 		fmt.Printf("\n📦 Supported Services (%d):\n", len(resp.SupportedServices))
 		// Group services in columns
@@ -874,7 +883,7 @@ func printInfoResults(resp *pb.ProviderInfoResponse) {
 			fmt.Println()
 		}
 	}
-	
+
 	if len(resp.Capabilities) > 0 {
 		fmt.Printf("\n📊 Capabilities:\n")
 		for k, v := range resp.Capabilities {
@@ -885,16 +894,16 @@ func printInfoResults(resp *pb.ProviderInfoResponse) {
 
 func runSchemas(args []string) {
 	fs := flag.NewFlagSet("schemas", flag.ExitOnError)
-	
+
 	providerName := fs.String("provider", "aws", "Cloud provider")
 	servicesStr := fs.String("services", "", "Comma-separated list of services (empty for all)")
 	outputFormat := fs.String("output", "sql", "Output format (sql, json)")
 	dialect := fs.String("dialect", "duckdb", "SQL dialect (duckdb, postgres, sqlite)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	// Parse services
 	services := []string{}
 	if *servicesStr != "" {
@@ -903,41 +912,41 @@ func runSchemas(args []string) {
 			services[i] = strings.TrimSpace(s)
 		}
 	}
-	
+
 	fmt.Printf("📊 Getting schemas for provider: %s\n", *providerName)
 	if len(services) > 0 {
 		fmt.Printf("   Services: %s\n", strings.Join(services, ", "))
 	} else {
 		fmt.Printf("   Services: all\n")
 	}
-	
+
 	// Initialize plugin client
 	pc, err := client.NewPluginClient(*providerName)
 	if err != nil {
 		log.Fatalf("Failed to initialize plugin client: %v", err)
 	}
 	defer pc.Close()
-	
-    provider, err := pc.GetProvider()
-    if err != nil {
-        log.Fatalf("Failed to get provider: %v", err)
-    }
-    // Initialize provider to ensure schema generation works for all providers
-    if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
-        fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
-    }
-	
+
+	provider, err := pc.GetProvider()
+	if err != nil {
+		log.Fatalf("Failed to get provider: %v", err)
+	}
+	// Initialize provider to ensure schema generation works for all providers
+	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
+		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
+	}
+
 	// Get schemas
 	req := &pb.GetSchemasRequest{
 		Services: services,
 		Format:   "sql",
 	}
-	
+
 	resp, err := provider.GetSchemas(context.Background(), req)
 	if err != nil {
 		log.Fatalf("GetSchemas failed: %v", err)
 	}
-	
+
 	// Handle results based on output format
 	switch *outputFormat {
 	case "json":
@@ -952,7 +961,7 @@ func printSchemaSQL(resp *pb.SchemaResponse, dialect string) {
 	fmt.Println("\n-- Resource Schemas")
 	fmt.Println("-- Generated by Corkscrew")
 	fmt.Printf("-- Dialect: %s\n\n", dialect)
-	
+
 	for _, schema := range resp.Schemas {
 		// Print schema info
 		fmt.Printf("-- Service: %s\n", schema.Service)
@@ -960,7 +969,7 @@ func printSchemaSQL(resp *pb.SchemaResponse, dialect string) {
 		if schema.Description != "" {
 			fmt.Printf("-- Description: %s\n", schema.Description)
 		}
-		
+
 		// Print the SQL
 		if schema.Sql != "" {
 			fmt.Println(schema.Sql)
@@ -1032,53 +1041,59 @@ func getSQLType(protoType string, dialect string) string {
 // runQuery executes SQL queries or compliance checks
 func runQuery(args []string) {
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
-	
+	defaultDBPath := defaultDatabasePath()
+
 	// SQL query options
 	queryStr := fs.String("query", "", "SQL query to execute")
 	queryFile := fs.String("file", "", "SQL file to execute")
 	stdin := fs.Bool("stdin", false, "Read query from stdin")
-	
+
 	// Compliance options
 	control := fs.String("control", "", "Control ID to check (e.g., jlgore/cfi-ccc/CCC.C01)")
 	pack := fs.String("pack", "", "Compliance pack to run")
 	compliance := fs.Bool("compliance", false, "Run compliance queries")
 	tags := fs.String("tag", "", "Filter queries by tags (comma-separated)")
 	dryRun := fs.Bool("dry-run", false, "Validate queries without executing")
-	
+
 	// Common options
-	dbPath := fs.String("db", "", "Path to database file (default: ~/.corkscrew/corkscrew.db)")
+	dbPath := fs.String("db", defaultDBPath, "Path to database file")
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
 	verbose := fs.Bool("verbose", false, "Enable verbose output")
 	noHeader := fs.Bool("no-header", false, "Omit header in table output")
-	
+
 	// Create parameter flags handler
 	params := make(parameterFlags)
 	fs.Var(params, "param", "Set parameter value (can be used multiple times)")
-	
+
 	// Special flags for pack management
 	listPacks := fs.Bool("list-packs", false, "List installed compliance packs")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	// Check for pack management subcommand
 	if len(args) > 0 && args[0] == "pack" {
 		runPackCommand(args[1:])
 		return
 	}
-	
+
 	// Handle list-packs
 	if *listPacks {
 		listInstalledPacks(*outputFormat)
 		return
 	}
-	
+
+	resolvedDBPath := strings.TrimSpace(*dbPath)
+	if resolvedDBPath == "" {
+		resolvedDBPath = defaultDBPath
+	}
+
 	// Determine query source
 	var sqlQuery string
 	if *control != "" || *pack != "" || *compliance {
 		// Run compliance query
-		runComplianceQuery(*control, *pack, *tags, params, *dryRun, *outputFormat, *verbose)
+		runComplianceQuery(resolvedDBPath, *control, *pack, *tags, params, *dryRun, *outputFormat, *verbose)
 		return
 	} else if *queryFile != "" {
 		// Read from file
@@ -1105,27 +1120,21 @@ func runQuery(args []string) {
 		fs.Usage()
 		os.Exit(1)
 	}
-	
-	// Get database path
-	if *dbPath == "" {
-		home, _ := os.UserHomeDir()
-		*dbPath = filepath.Join(home, ".corkscrew", "corkscrew.db")
-	}
-	
+
 	// Execute query
-	engine, err := query.NewEngine(*dbPath)
+	engine, err := query.NewEngine(resolvedDBPath)
 	if err != nil {
 		log.Fatalf("Failed to create query engine: %v", err)
 	}
 	defer engine.Close()
-	
+
 	// Execute the query
 	rows, columns, err := query.ExecuteQuery(engine, sqlQuery)
 	if err != nil {
-		handleQueryError(err, sqlQuery)
+		handleQueryError(err, sqlQuery, resolvedDBPath)
 		os.Exit(1)
 	}
-	
+
 	// Format and display results
 	switch *outputFormat {
 	case "json":
@@ -1138,17 +1147,14 @@ func runQuery(args []string) {
 }
 
 // runComplianceQuery handles compliance-specific queries
-func runComplianceQuery(controlID, packName, tags string, params map[string]interface{}, dryRun bool, outputFormat string, verbose bool) {
+func runComplianceQuery(dbPath, controlID, packName, tags string, params map[string]interface{}, dryRun bool, outputFormat string, verbose bool) {
 	// Initialize compliance executor
-	home, _ := os.UserHomeDir()
-	dbPath := filepath.Join(home, ".corkscrew", "corkscrew.db")
-	
 	executor, err := compliance.NewExecutor(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to create compliance executor: %v", err)
 	}
 	defer executor.Close()
-	
+
 	// Build options
 	options := compliance.ExecuteOptions{
 		ControlID:  controlID,
@@ -1157,16 +1163,16 @@ func runComplianceQuery(controlID, packName, tags string, params map[string]inte
 		Parameters: params,
 		DryRun:     dryRun,
 	}
-	
+
 	// Show what we're about to do
 	printComplianceOptions(options)
-	
+
 	// Execute compliance check
 	results, err := executor.Execute(options)
 	if err != nil {
 		log.Fatalf("Compliance check failed: %v", err)
 	}
-	
+
 	// Display results
 	switch outputFormat {
 	case "json":
@@ -1194,12 +1200,12 @@ func printComplianceTable(results []compliance.SimpleQueryResult, verbose bool) 
 		fmt.Println("No compliance checks were executed")
 		return
 	}
-	
+
 	// Summary
 	passed := 0
 	failed := 0
 	errors := 0
-	
+
 	for _, r := range results {
 		if r.Error != nil {
 			errors++
@@ -1209,15 +1215,15 @@ func printComplianceTable(results []compliance.SimpleQueryResult, verbose bool) 
 			failed++
 		}
 	}
-	
+
 	fmt.Printf("\n📊 Compliance Check Results\n")
 	fmt.Printf("✅ Passed: %d | ❌ Failed: %d | ⚠️  Errors: %d\n\n", passed, failed, errors)
-	
+
 	// Detailed results
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "Control\tStatus\tResources\tMessage")
 	fmt.Fprintln(w, "-------\t------\t---------\t-------")
-	
+
 	for _, r := range results {
 		status := "✅ PASS"
 		if r.Error != nil {
@@ -1225,20 +1231,20 @@ func printComplianceTable(results []compliance.SimpleQueryResult, verbose bool) 
 		} else if !r.Passed {
 			status = "❌ FAIL"
 		}
-		
+
 		message := r.Title
 		if r.Error != nil {
 			message = r.Error.Error()
 		}
-		
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", 
-			r.ControlID, 
+
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
+			r.ControlID,
 			status,
 			r.ResourceCount,
 			truncateString(message, 50))
 	}
 	w.Flush()
-	
+
 	// Show failed resources if verbose
 	if verbose && failed > 0 {
 		fmt.Printf("\n❌ Failed Resources:\n")
@@ -1263,10 +1269,10 @@ func printComplianceJSON(results []compliance.SimpleQueryResult) {
 		} `json:"summary"`
 		Results []compliance.SimpleQueryResult `json:"results"`
 	}{}
-	
+
 	output.Results = results
 	output.Summary.Total = len(results)
-	
+
 	for _, r := range results {
 		if r.Error != nil {
 			output.Summary.Errors++
@@ -1276,7 +1282,7 @@ func printComplianceJSON(results []compliance.SimpleQueryResult) {
 			output.Summary.Failed++
 		}
 	}
-	
+
 	data, _ := json.MarshalIndent(output, "", "  ")
 	fmt.Println(string(data))
 }
@@ -1284,22 +1290,22 @@ func printComplianceJSON(results []compliance.SimpleQueryResult) {
 func printComplianceCSV(results []compliance.SimpleQueryResult) {
 	w := csv.NewWriter(os.Stdout)
 	defer w.Flush()
-	
+
 	// Header
 	w.Write([]string{"ControlID", "Title", "Status", "ResourceCount", "Message"})
-	
+
 	// Data
 	for _, r := range results {
 		status := "PASS"
 		message := ""
-		
+
 		if r.Error != nil {
 			status = "ERROR"
 			message = r.Error.Error()
 		} else if !r.Passed {
 			status = "FAIL"
 		}
-		
+
 		w.Write([]string{
 			r.ControlID,
 			r.Title,
@@ -1317,7 +1323,7 @@ func runPackCommand(args []string) {
 		fmt.Println("Commands: search, install, list, update, validate")
 		return
 	}
-	
+
 	command := args[0]
 	switch command {
 	case "search":
@@ -1340,10 +1346,10 @@ func searchPacks(args []string) {
 		fmt.Println("Usage: corkscrew query pack search <query>")
 		return
 	}
-	
+
 	query := strings.Join(args, " ")
 	fmt.Printf("🔍 Searching for packs matching: %s\n", query)
-	
+
 	// TODO: Implement pack registry search
 	fmt.Println("Pack search will be available in a future release")
 }
@@ -1353,15 +1359,15 @@ func installPack(args []string) {
 		fmt.Println("Usage: corkscrew query pack install <pack-name>")
 		return
 	}
-	
+
 	packName := args[0]
 	fmt.Printf("📦 Installing pack: %s\n", packName)
-	
+
 	loader := compliance.NewLoader("")
 	if err := loader.InstallPack(packName); err != nil {
 		log.Fatalf("Failed to install pack: %v", err)
 	}
-	
+
 	fmt.Printf("✅ Successfully installed pack: %s\n", packName)
 }
 
@@ -1371,24 +1377,24 @@ func listInstalledPacks(format string) {
 	if err != nil {
 		log.Fatalf("Failed to list packs: %v", err)
 	}
-	
+
 	if format == "json" {
 		data, _ := json.MarshalIndent(packs, "", "  ")
 		fmt.Println(string(data))
 		return
 	}
-	
+
 	fmt.Printf("📦 Installed Compliance Packs (%d)\n\n", len(packs))
-	
+
 	if len(packs) == 0 {
 		fmt.Println("No packs installed. Use 'corkscrew query pack install' to add packs.")
 		return
 	}
-	
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "Pack\tVersion\tControls\tDescription")
 	fmt.Fprintln(w, "----\t-------\t--------\t-----------")
-	
+
 	for _, pack := range packs {
 		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
 			pack.Metadata.Name,
@@ -1407,12 +1413,12 @@ func updatePacks(args []string) {
 			break
 		}
 	}
-	
+
 	if !updateAll && len(args) == 0 {
 		fmt.Println("Usage: corkscrew query pack update <pack-name> or --all")
 		return
 	}
-	
+
 	if updateAll {
 		fmt.Println("🔄 Updating all packs...")
 		// TODO: Implement pack updates
@@ -1430,22 +1436,22 @@ func validatePack(args []string) {
 		fmt.Println("Usage: corkscrew query pack validate <pack-name>")
 		return
 	}
-	
+
 	packName := args[0]
 	fmt.Printf("🔍 Validating pack: %s\n", packName)
-	
+
 	loader := compliance.NewLoader("")
 	pack, err := loader.LoadPack(packName)
 	if err != nil {
 		log.Fatalf("Failed to load pack: %v", err)
 	}
-	
+
 	// Validate each query
 	errors := 0
 	warnings := 0
-	
+
 	fmt.Printf("\nValidating %d queries...\n", len(pack.Queries))
-	
+
 	for _, q := range pack.Queries {
 		// Basic validation
 		if q.ID == "" {
@@ -1453,17 +1459,17 @@ func validatePack(args []string) {
 			errors++
 			continue
 		}
-		
+
 		if q.SQL == "" {
 			fmt.Printf("❌ %s: Empty query\n", q.ID)
 			errors++
 			continue
 		}
-		
+
 		// TODO: Add SQL validation
 		fmt.Printf("✅ %s: Valid\n", q.ID)
 	}
-	
+
 	if errors == 0 && warnings == 0 {
 		fmt.Printf("\n✅ Pack validation successful!\n")
 	} else {
@@ -1471,20 +1477,18 @@ func validatePack(args []string) {
 	}
 }
 
-func handleQueryError(err error, sqlQuery string) {
+func handleQueryError(err error, sqlQuery, dbPath string) {
 	fmt.Fprintf(os.Stderr, "❌ Query execution failed: %v\n", err)
-	
+
 	// Try to provide helpful error messages
 	errorMsg := err.Error()
-	
+
 	// Check for common SQL errors
 	if strings.Contains(errorMsg, "no such table") || strings.Contains(errorMsg, "does not exist") {
 		fmt.Fprintf(os.Stderr, "\n💡 Hint: Make sure you've run 'corkscrew scan' to populate the database.\n")
 		fmt.Fprintf(os.Stderr, "Available tables:\n")
-		
+
 		// List available tables
-		home, _ := os.UserHomeDir()
-		dbPath := filepath.Join(home, ".corkscrew", "corkscrew.db")
 		if engine, err := query.NewEngine(dbPath); err == nil {
 			defer engine.Close()
 			if tables, _, err := query.ExecuteQuery(engine, "SELECT DISTINCT table_name FROM information_schema.tables WHERE table_schema = 'main'"); err == nil {
@@ -1495,13 +1499,13 @@ func handleQueryError(err error, sqlQuery string) {
 				}
 			}
 		}
-		
+
 		// Check for table not found (DuckDB format)
 		tableNotFoundRegex := regexp.MustCompile(`Table with name ([a-zA-Z_][a-zA-Z0-9_]*) does not exist`)
 		if matches := tableNotFoundRegex.FindStringSubmatch(errorMsg); len(matches) > 1 {
 			tableName := matches[1]
 			fmt.Fprintf(os.Stderr, "  🔍 Table '%s' not found\n", tableName)
-			
+
 			// Suggest similar table names
 			if suggestions := suggestTableNames(tableName); len(suggestions) > 0 {
 				fmt.Fprintf(os.Stderr, "  💡 Did you mean one of these?\n")
@@ -1512,7 +1516,7 @@ func handleQueryError(err error, sqlQuery string) {
 		}
 	} else if strings.Contains(errorMsg, "syntax error") {
 		fmt.Fprintf(os.Stderr, "\n💡 Hint: Check your SQL syntax. DuckDB uses standard SQL.\n")
-		
+
 		// Try to highlight the error position if available
 		if pos := extractErrorPosition(errorMsg); pos > 0 {
 			lines := strings.Split(sqlQuery, "\n")
@@ -1536,7 +1540,7 @@ func suggestTableNames(tableName string) []string {
 	// Common table names in corkscrew
 	commonTables := []string{
 		"aws_resources",
-		"aws_s3_buckets", 
+		"aws_s3_buckets",
 		"aws_ec2_instances",
 		"aws_iam_users",
 		"aws_iam_roles",
@@ -1546,10 +1550,10 @@ func suggestTableNames(tableName string) []string {
 		"gcp_resources",
 		"kubernetes_resources",
 	}
-	
+
 	suggestions := []string{}
 	lowerInput := strings.ToLower(tableName)
-	
+
 	for _, table := range commonTables {
 		lowerTable := strings.ToLower(table)
 		// Check if input is a substring or vice versa
@@ -1561,7 +1565,7 @@ func suggestTableNames(tableName string) []string {
 			suggestions = append(suggestions, table)
 		}
 	}
-	
+
 	return suggestions
 }
 
@@ -1572,13 +1576,13 @@ func levenshteinDistance(s1, s2 string) int {
 	if len(s2) == 0 {
 		return len(s1)
 	}
-	
+
 	// Create matrix
 	matrix := make([][]int, len(s1)+1)
 	for i := range matrix {
 		matrix[i] = make([]int, len(s2)+1)
 	}
-	
+
 	// Initialize first column and row
 	for i := 0; i <= len(s1); i++ {
 		matrix[i][0] = i
@@ -1586,7 +1590,7 @@ func levenshteinDistance(s1, s2 string) int {
 	for j := 0; j <= len(s2); j++ {
 		matrix[0][j] = j
 	}
-	
+
 	// Fill matrix
 	for i := 1; i <= len(s1); i++ {
 		for j := 1; j <= len(s2); j++ {
@@ -1594,7 +1598,7 @@ func levenshteinDistance(s1, s2 string) int {
 			if s1[i-1] != s2[j-1] {
 				cost = 1
 			}
-			
+
 			matrix[i][j] = min(
 				matrix[i-1][j]+1,      // deletion
 				matrix[i][j-1]+1,      // insertion
@@ -1602,7 +1606,7 @@ func levenshteinDistance(s1, s2 string) int {
 			)
 		}
 	}
-	
+
 	return matrix[len(s1)][len(s2)]
 }
 
@@ -1633,9 +1637,9 @@ func printTableResults(rows [][]interface{}, columns []string, noHeader bool) {
 		fmt.Println("No results found.")
 		return
 	}
-	
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	
+
 	// Print header
 	if !noHeader {
 		fmt.Fprintln(w, strings.Join(columns, "\t"))
@@ -1645,7 +1649,7 @@ func printTableResults(rows [][]interface{}, columns []string, noHeader bool) {
 		}
 		fmt.Fprintln(w, strings.Join(separators, "\t"))
 	}
-	
+
 	// Print rows
 	for _, row := range rows {
 		values := make([]string, len(row))
@@ -1654,15 +1658,15 @@ func printTableResults(rows [][]interface{}, columns []string, noHeader bool) {
 		}
 		fmt.Fprintln(w, strings.Join(values, "\t"))
 	}
-	
+
 	w.Flush()
-	
+
 	fmt.Printf("\n(%d rows)\n", len(rows))
 }
 
 func printJSONResults(rows [][]interface{}, columns []string) {
 	results := []map[string]interface{}{}
-	
+
 	for _, row := range rows {
 		record := make(map[string]interface{})
 		for i, col := range columns {
@@ -1672,7 +1676,7 @@ func printJSONResults(rows [][]interface{}, columns []string) {
 		}
 		results = append(results, record)
 	}
-	
+
 	data, _ := json.MarshalIndent(results, "", "  ")
 	fmt.Println(string(data))
 }
@@ -1680,12 +1684,12 @@ func printJSONResults(rows [][]interface{}, columns []string) {
 func printCSVQueryResults(rows [][]interface{}, columns []string, noHeader bool) {
 	w := csv.NewWriter(os.Stdout)
 	defer w.Flush()
-	
+
 	// Write header
 	if !noHeader {
 		w.Write(columns)
 	}
-	
+
 	// Write data
 	for _, row := range rows {
 		values := make([]string, len(row))
@@ -1700,7 +1704,7 @@ func formatValue(val interface{}) string {
 	if val == nil {
 		return "NULL"
 	}
-	
+
 	switch v := val.(type) {
 	case string:
 		return v
@@ -1717,28 +1721,28 @@ func formatValue(val interface{}) string {
 /*
 func runDiagram(args []string) {
 	fs := flag.NewFlagSet("diagram", flag.ExitOnError)
-	
+
 	providerName := fs.String("provider", "aws", "Cloud provider")
 	resourceType := fs.String("type", "", "Resource type to visualize")
 	outputFile := fs.String("output", "", "Output file (instead of interactive mode)")
 	format := fs.String("format", "ascii", "Output format (ascii, mermaid)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	// If output file is specified, generate static diagram
 	if *outputFile != "" {
 		generateStaticDiagram(*providerName, *resourceType, *outputFile, *format)
 		return
 	}
-	
+
 	// Otherwise, launch interactive viewer
 	fmt.Println("🎨 Launching interactive diagram viewer...")
-	
+
 	model := ui.NewModel()
 	p := tea.NewProgram(model, tea.WithAltScreen())
-	
+
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error running diagram viewer: %v", err)
 	}
@@ -1747,7 +1751,7 @@ func runDiagram(args []string) {
 func generateStaticDiagram(provider, resourceType, outputFile, format string) {
 	// TODO: Implement static diagram generation
 	fmt.Printf("Generating %s diagram for %s resources...\n", format, provider)
-	
+
 	var content string
 	switch format {
 	case "mermaid":
@@ -1757,358 +1761,39 @@ func generateStaticDiagram(provider, resourceType, outputFile, format string) {
 		r := renderer.NewASCIIRenderer()
 		content = r.Render(nil) // TODO: Pass actual graph
 	}
-	
+
 	if err := os.WriteFile(outputFile, []byte(content), 0644); err != nil {
 		log.Fatalf("Failed to write diagram: %v", err)
 	}
-	
+
 	fmt.Printf("✅ Diagram saved to: %s\n", outputFile)
 }
 */
 
-// runPlugin handles plugin management commands
-func runPlugin(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew plugin <command>")
-		fmt.Println("Commands: list, build, status, install")
-		return
-	}
-	
-	command := args[0]
-	switch command {
-	case "list":
-		listPlugins()
-	case "build":
-		buildPlugins(args[1:])
-	case "status":
-		checkPluginStatus(args[1:])
-	case "install":
-		installPlugin(args[1:])
-	case "groups":
-		listServiceGroups()
-	default:
-		fmt.Printf("Unknown plugin command: %s\n", command)
-		fmt.Println("Available commands: list, build, status, install, groups")
-	}
-}
-
-func listPlugins() {
-	pm := plugins.NewPluginManager()
-	pluginList := pm.ListAvailablePlugins()
-	
-	fmt.Println("📦 Available Plugins:")
-	fmt.Println()
-	
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "Provider\tStatus\tVersion\tDescription")
-	fmt.Fprintln(w, "--------\t------\t-------\t-----------")
-	
-	for provider, info := range pluginList {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", 
-			provider, 
-			pm.GetPluginStatus(provider), 
-			info.Version, 
-			info.Description)
-	}
-	w.Flush()
-	
-	fmt.Println()
-	fmt.Println("💡 Commands:")
-	fmt.Println("   corkscrew plugin build <provider>    - Build a specific plugin")
-	fmt.Println("   corkscrew plugin status <provider>   - Check plugin status")
-	fmt.Println("   corkscrew plugin groups              - Show service groups")
-}
-
-func buildPlugins(args []string) {
-	pm := plugins.NewPluginManager()
-	
-	providers := []string{"aws", "azure", "gcp", "kubernetes"}
-	if len(args) > 0 {
-		providers = args
-	}
-	
-	fmt.Println("🔨 Building plugins...")
-	
-	for _, provider := range providers {
-		fmt.Printf("  Building %s plugin...", provider)
-		
-		if !pm.CanBuildPlugin(provider) {
-			fmt.Printf(" ❌ No source available\n")
-			continue
-		}
-		
-		if err := pm.BuildPlugin(provider); err != nil {
-			fmt.Printf(" ❌ Failed: %v\n", err)
-		} else {
-			fmt.Printf(" ✅ Done\n")
-		}
-	}
-}
-
-func checkPluginStatus(args []string) {
-	providers := []string{"aws", "azure"}
-	if len(args) > 0 {
-		providers = args
-	}
-	
-	fmt.Println("🔍 Checking plugin status...")
-	fmt.Println()
-	
-	for _, providerName := range providers {
-		pc, err := client.NewPluginClient(providerName)
-		if err != nil {
-			pm := plugins.NewPluginManager()
-			status := pm.GetPluginStatus(providerName)
-			fmt.Printf("%s %s: %s\n", getStatusIcon(status), providerName, status)
-			continue
-		}
-		defer pc.Close()
-		
-		provider, err := pc.GetProvider()
-		if err != nil {
-			fmt.Printf("❌ %s: Failed to initialize - %v\n", providerName, err)
-			continue
-		}
-		
-		info, err := provider.GetProviderInfo(context.Background(), &pb.Empty{})
-		if err != nil {
-			fmt.Printf("❌ %s: Failed to get info - %v\n", providerName, err)
-			continue
-		}
-		
-		fmt.Printf("✅ %s: Ready\n", providerName)
-		fmt.Printf("   Version: %s\n", info.Version)
-		fmt.Printf("   Services: %d\n", len(info.SupportedServices))
-	}
-}
-
-func getStatusIcon(status string) string {
-	switch {
-	case strings.Contains(status, "Installed"):
-		return "✅"
-	case strings.Contains(status, "Can Build"):
-		return "🔨"
-	default:
-		return "❌"
-	}
-}
-
-func installPlugin(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew plugin install <provider>")
-		return
-	}
-	
-	provider := args[0]
-	pm := plugins.NewPluginManager()
-	
-	// Check if already installed
-	if status := pm.GetPluginStatus(provider); strings.Contains(status, "Installed") {
-		fmt.Printf("✅ %s plugin is already installed\n", provider)
-		return
-	}
-	
-	fmt.Printf("📦 Installing %s plugin...\n", provider)
-	
-	if !pm.CanBuildPlugin(provider) {
-		fmt.Printf("❌ No source available for %s plugin\n", provider)
-		fmt.Println("\n💡 Available plugins:")
-		fmt.Println("   corkscrew plugin list")
-		return
-	}
-	
-	// Prompt user for confirmation
-	built, err := pm.PromptBuildPlugin(provider)
-	if err != nil {
-		fmt.Printf("❌ Installation failed: %v\n", err)
-		return
-	}
-	
-	if !built {
-		fmt.Println("❌ Installation cancelled")
-		return
-	}
-	
-	fmt.Printf("✅ Successfully installed %s plugin\n", provider)
-}
-
-func listServiceGroups() {
-	fmt.Println("📦 Available Service Groups:")
-	fmt.Println()
-	
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "Group\tServices")
-	fmt.Fprintln(w, "-----\t--------")
-	
-	for group, services := range serviceGroups {
-		fmt.Fprintf(w, "%s\t%s\n", group, strings.Join(services, ", "))
-	}
-	w.Flush()
-	
-	fmt.Println()
-	fmt.Println("💡 Usage Examples:")
-	fmt.Println("   corkscrew scan --provider aws --services compute,storage")
-	fmt.Println("   corkscrew scan --provider aws --services common,monitoring")
-	fmt.Println("   corkscrew scan --provider aws --services database,s3")
-}
 func printComplianceOptions(options compliance.ExecuteOptions) {
 	fmt.Println("\n🔍 Compliance Check Configuration:")
-	
+
 	if options.ControlID != "" {
 		fmt.Printf("📌 Control: %s\n", options.ControlID)
 	}
-	
+
 	if options.PackName != "" {
 		fmt.Printf("📦 Pack: %s\n", options.PackName)
 	}
-	
+
 	if len(options.Tags) > 0 {
 		fmt.Printf("🏷️  Tags: %s\n", strings.Join(options.Tags, ", "))
 	}
-	
+
 	if len(options.Parameters) > 0 {
 		fmt.Printf("🔧 Parameters:\n")
 		for key, value := range options.Parameters {
 			fmt.Printf("  %s = %v\n", key, value)
 		}
 	}
-	
+
 	if options.DryRun {
 		fmt.Printf("✅ Dry-run validation would be performed for tagged queries\n")
-	}
-}
-
-// runConfig handles configuration management commands
-func runConfig(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew config <command>")
-		fmt.Println("Commands: init, show, validate")
-		return
-	}
-	
-	command := args[0]
-	switch command {
-	case "init":
-		runConfigInit()
-	case "show":
-		runConfigShow()
-	case "validate":
-		runConfigValidate()
-	default:
-		fmt.Printf("Unknown config command: %s\n", command)
-		fmt.Println("Available commands: init, show, validate")
-	}
-}
-
-func runConfigInit() {
-	fmt.Println("🔧 Initializing Corkscrew configuration...")
-	
-	if err := config.InitializeConfigFile(); err != nil {
-		log.Fatalf("Failed to initialize configuration: %v", err)
-	}
-	
-	fmt.Println("✅ Configuration file created: corkscrew.yaml")
-	fmt.Println("\nYou can now:")
-	fmt.Println("  - Edit corkscrew.yaml to customize service discovery")
-	fmt.Println("  - Run 'corkscrew config validate' to check your configuration")
-	fmt.Println("  - Run 'corkscrew config show' to view the current configuration")
-}
-
-func runConfigShow() {
-	cfg, err := config.LoadServiceConfig()
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
-	
-	fmt.Println("📋 Current Configuration:")
-	fmt.Println()
-	
-	// Convert to YAML for pretty printing
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		log.Fatalf("Failed to format configuration: %v", err)
-	}
-	
-	fmt.Println(string(data))
-	
-	// Show resolved services
-	fmt.Println("\n🔍 Resolved AWS Services:")
-	services, err := cfg.GetServicesForProvider("aws")
-	if err != nil {
-		fmt.Printf("Error resolving services: %v\n", err)
-	} else {
-		fmt.Printf("Total services: %d\n", len(services))
-		
-		// Display in columns
-		cols := 4
-		for i := 0; i < len(services); i += cols {
-			fmt.Print("  ")
-			for j := 0; j < cols && i+j < len(services); j++ {
-				fmt.Printf("%-20s", services[i+j])
-			}
-			fmt.Println()
-		}
-	}
-}
-
-func runConfigValidate() {
-	fmt.Println("🔍 Validating configuration...")
-	
-	cfg, err := config.LoadServiceConfig()
-	if err != nil {
-		log.Fatalf("❌ Configuration is invalid: %v", err)
-	}
-	
-	fmt.Println("✅ Configuration is valid")
-	
-	// Show summary
-	for provider, pconfig := range cfg.Providers {
-		fmt.Printf("\n📦 Provider: %s\n", provider)
-		fmt.Printf("  Discovery mode: %s\n", pconfig.DiscoveryMode)
-		
-		services, err := cfg.GetServicesForProvider(provider)
-		if err != nil {
-			fmt.Printf("  ❌ Error resolving services: %v\n", err)
-		} else {
-			fmt.Printf("  ✅ Services configured: %d\n", len(services))
-		}
-		
-		if len(pconfig.ServiceGroups) > 0 {
-			fmt.Printf("  📁 Service groups: %d\n", len(pconfig.ServiceGroups))
-			for group, svcs := range pconfig.ServiceGroups {
-				fmt.Printf("    - %s (%d services)\n", group, len(svcs))
-			}
-		}
-		
-		fmt.Printf("  ⚙️  Analysis settings:\n")
-		fmt.Printf("    - Skip empty: %v\n", pconfig.Analysis.SkipEmpty)
-		fmt.Printf("    - Workers: %d\n", pconfig.Analysis.Workers)
-		fmt.Printf("    - Cache: %v (TTL: %s)\n", pconfig.Analysis.CacheEnabled, pconfig.Analysis.CacheTTL)
-	}
-}
-
-// runServe starts the gRPC API server
-func runServe(args []string) {
-	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	
-	port := fs.Int("port", 9090, "Port to listen on")
-	host := fs.String("host", "localhost", "Host to bind to")
-	
-	if err := fs.Parse(args); err != nil {
-		log.Fatal(err)
-	}
-	
-	fmt.Printf("🚀 Starting Corkscrew gRPC API server...\n")
-	fmt.Printf("📍 Listening on %s:%d\n", *host, *port)
-	fmt.Printf("\n💡 Example commands to test the API:\n")
-	fmt.Printf("  grpcurl -plaintext %s:%d list\n", *host, *port)
-	fmt.Printf("  grpcurl -plaintext %s:%d corkscrew.api.CorkscrewAPI.HealthCheck\n", *host, *port)
-	fmt.Printf("  grpcurl -plaintext %s:%d corkscrew.api.CorkscrewAPI.ListProviders\n", *host, *port)
-	fmt.Printf("\n📖 For more gRPC client examples, visit the documentation\n")
-	fmt.Printf("⏹️  Press Ctrl+C to stop the server\n\n")
-	
-	if err := server.StartAPIServer(*port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
@@ -2118,7 +1803,7 @@ func runCrossCloud(args []string) {
 		printCrossCloudUsage()
 		return
 	}
-	
+
 	subcommand := args[0]
 	switch subcommand {
 	case "scan":
@@ -2146,7 +1831,7 @@ func runCorrelate(args []string) {
 		printCorrelateUsage()
 		return
 	}
-	
+
 	subcommand := args[0]
 	switch subcommand {
 	case "ip":
@@ -2167,7 +1852,7 @@ func runCorrelate(args []string) {
 // Cross-cloud scan implementation
 func runCrossCloudScan(args []string) {
 	fs := flag.NewFlagSet("crosscloud scan", flag.ExitOnError)
-	
+
 	providers := fs.String("providers", "", "Comma-separated list of providers (aws,azure,gcp)")
 	regions := fs.String("regions", "", "Comma-separated list of regions")
 	_ = fs.String("services", "", "Comma-separated list of services")
@@ -2175,17 +1860,17 @@ func runCrossCloudScan(args []string) {
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score for correlations")
 	_ = fs.Int("parallel", 3, "Number of parallel provider scans")
 	_ = fs.Duration("timeout", 30*time.Minute, "Scan timeout")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	if *providers == "" {
 		fmt.Println("❌ Error: --providers flag is required")
 		fmt.Println("Example: corkscrew crosscloud scan --providers aws,azure --regions us-east-1,eastus")
 		os.Exit(1)
 	}
-	
+
 	// Convert command-line options to NetworkAnalysisOptions
 	var regionList, providerList []string
 	if *regions != "" {
@@ -2194,15 +1879,15 @@ func runCrossCloudScan(args []string) {
 	if *providers != "" {
 		providerList = strings.Split(*providers, ",")
 	}
-	
+
 	options := NetworkAnalysisOptions{
-		Providers:      providerList,
-		Regions:        regionList,
-		OutputFormat:   *output,
-		MinConfidence:  *confidence,
-		MaxResults:     1000,
+		Providers:     providerList,
+		Regions:       regionList,
+		OutputFormat:  *output,
+		MinConfidence: *confidence,
+		MaxResults:    1000,
 	}
-	
+
 	// Get database path
 	dbPath := ""
 	if len(args) > 0 {
@@ -2213,7 +1898,7 @@ func runCrossCloudScan(args []string) {
 			}
 		}
 	}
-	
+
 	// Run network scan using our Phase 2 implementation
 	if err := runNetworkScan(dbPath, options); err != nil {
 		log.Fatalf("Cross-cloud network scan failed: %v", err)
@@ -2223,16 +1908,16 @@ func runCrossCloudScan(args []string) {
 // Cross-cloud correlation implementation
 func runCrossCloudCorrelate(args []string) {
 	fs := flag.NewFlagSet("crosscloud correlate", flag.ExitOnError)
-	
+
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score")
 	types := fs.String("types", "ip,dns,network", "Correlation types (ip,dns,network,all)")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
 	verify := fs.Bool("verify", false, "Verify correlations with additional checks")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("🔗 Finding cross-cloud correlations...\n")
 	fmt.Printf("🎯 Confidence threshold: %.2f\n", *confidence)
 	fmt.Printf("📊 Correlation types: %s\n", *types)
@@ -2240,7 +1925,7 @@ func runCrossCloudCorrelate(args []string) {
 		fmt.Println("✅ Verification enabled")
 	}
 	fmt.Println()
-	
+
 	// Implementation would go here
 	fmt.Println("✅ Correlation analysis completed")
 	fmt.Printf("📈 Found correlations will be displayed in %s format\n", *output)
@@ -2249,15 +1934,15 @@ func runCrossCloudCorrelate(args []string) {
 // Cross-cloud topology implementation
 func runCrossCloudTopology(args []string) {
 	fs := flag.NewFlagSet("crosscloud topology", flag.ExitOnError)
-	
+
 	output := fs.String("output", "table", "Output format (table, json, csv, graph)")
 	_ = fs.Int("depth", 3, "Maximum relationship depth")
 	includePrivate := fs.Bool("include-private", false, "Include private network connections")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	// Convert command-line options to NetworkAnalysisOptions
 	options := NetworkAnalysisOptions{
 		OutputFormat:        *output,
@@ -2265,13 +1950,13 @@ func runCrossCloudTopology(args []string) {
 		ShowDetails:         *includePrivate,
 		MaxResults:          1000,
 	}
-	
+
 	// Handle graph output format
 	if *output == "graph" {
 		options.VisualizationFormat = "ascii"
 		options.OutputFormat = "ascii"
 	}
-	
+
 	// Get database path
 	dbPath := ""
 	if len(args) > 0 {
@@ -2282,7 +1967,7 @@ func runCrossCloudTopology(args []string) {
 			}
 		}
 	}
-	
+
 	// Run network topology visualization using our Phase 2 implementation
 	if err := runNetworkTopology(dbPath, options); err != nil {
 		log.Fatalf("Cross-cloud topology generation failed: %v", err)
@@ -2292,15 +1977,15 @@ func runCrossCloudTopology(args []string) {
 // Cross-cloud export implementation
 func runCrossCloudExport(args []string) {
 	fs := flag.NewFlagSet("crosscloud export", flag.ExitOnError)
-	
+
 	format := fs.String("format", "json", "Export format (json, csv, yaml)")
 	output := fs.String("output", "", "Output file (default: stdout)")
 	includeRaw := fs.Bool("include-raw", false, "Include raw resource data")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("📤 Exporting cross-cloud data...\n")
 	fmt.Printf("📄 Format: %s\n", *format)
 	if *output != "" {
@@ -2310,7 +1995,7 @@ func runCrossCloudExport(args []string) {
 		fmt.Println("📋 Including raw data")
 	}
 	fmt.Println()
-	
+
 	// Implementation would go here
 	fmt.Println("✅ Export completed")
 }
@@ -2318,16 +2003,16 @@ func runCrossCloudExport(args []string) {
 // IP correlation implementation
 func runCorrelateIP(args []string) {
 	fs := flag.NewFlagSet("correlate ip", flag.ExitOnError)
-	
+
 	providers := fs.String("providers", "", "Comma-separated list of providers")
 	confidence := fs.Float64("confidence", 0.8, "Minimum confidence score")
 	publicOnly := fs.Bool("public-only", false, "Only correlate public IP addresses")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("🌐 Finding IP address correlations...\n")
 	if *providers != "" {
 		fmt.Printf("📍 Providers: %s\n", *providers)
@@ -2337,7 +2022,7 @@ func runCorrelateIP(args []string) {
 		fmt.Println("🌍 Public IPs only")
 	}
 	fmt.Println()
-	
+
 	// Implementation would go here
 	fmt.Println("✅ IP correlation analysis completed")
 	fmt.Printf("📄 Results formatted as: %s\n", *output)
@@ -2346,16 +2031,16 @@ func runCorrelateIP(args []string) {
 // DNS correlation implementation
 func runCorrelateDNS(args []string) {
 	fs := flag.NewFlagSet("correlate dns", flag.ExitOnError)
-	
+
 	providers := fs.String("providers", "", "Comma-separated list of providers")
 	confidence := fs.Float64("confidence", 0.8, "Minimum confidence score")
 	includeCNAME := fs.Bool("include-cname", true, "Include CNAME chain analysis")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("🌐 Finding DNS correlations...\n")
 	if *providers != "" {
 		fmt.Printf("📍 Providers: %s\n", *providers)
@@ -2365,7 +2050,7 @@ func runCorrelateDNS(args []string) {
 		fmt.Println("🔗 CNAME chain analysis enabled")
 	}
 	fmt.Println()
-	
+
 	// Implementation would go here
 	fmt.Println("✅ DNS correlation analysis completed")
 	fmt.Printf("📄 Results formatted as: %s\n", *output)
@@ -2374,17 +2059,17 @@ func runCorrelateDNS(args []string) {
 // Network correlation implementation
 func runCorrelateNetwork(args []string) {
 	fs := flag.NewFlagSet("correlate network", flag.ExitOnError)
-	
+
 	providers := fs.String("providers", "", "Comma-separated list of providers")
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score")
 	includeVPN := fs.Bool("include-vpn", true, "Include VPN connections")
 	includePeering := fs.Bool("include-peering", true, "Include peering connections")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("🌐 Finding network correlations...\n")
 	if *providers != "" {
 		fmt.Printf("📍 Providers: %s\n", *providers)
@@ -2397,7 +2082,7 @@ func runCorrelateNetwork(args []string) {
 		fmt.Println("🔗 Peering analysis enabled")
 	}
 	fmt.Println()
-	
+
 	// Implementation would go here
 	fmt.Println("✅ Network correlation analysis completed")
 	fmt.Printf("📄 Results formatted as: %s\n", *output)
@@ -2406,16 +2091,16 @@ func runCorrelateNetwork(args []string) {
 // All correlations implementation
 func runCorrelateAll(args []string) {
 	fs := flag.NewFlagSet("correlate all", flag.ExitOnError)
-	
+
 	providers := fs.String("providers", "", "Comma-separated list of providers")
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
 	parallel := fs.Bool("parallel", true, "Run correlations in parallel")
-	
+
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
 	}
-	
+
 	fmt.Printf("🌐 Running comprehensive correlation analysis...\n")
 	if *providers != "" {
 		fmt.Printf("📍 Providers: %s\n", *providers)
@@ -2425,7 +2110,7 @@ func runCorrelateAll(args []string) {
 		fmt.Println("⚡ Parallel processing enabled")
 	}
 	fmt.Println()
-	
+
 	// Implementation would go here
 	fmt.Println("✅ Comprehensive correlation analysis completed")
 	fmt.Printf("📄 Results formatted as: %s\n", *output)

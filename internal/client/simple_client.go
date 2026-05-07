@@ -19,16 +19,9 @@ type PluginClient struct {
 // NewPluginClient creates a new plugin client for the specified provider
 func NewPluginClient(providerName string) (*PluginClient, error) {
 	// Find plugin binary
-	home, _ := os.UserHomeDir()
-	pluginPaths := []string{
-		filepath.Join(".", "plugins", providerName+"-provider", providerName+"-provider"),
-		filepath.Join(home, ".corkscrew", "plugins", providerName+"-provider"),
-		filepath.Join(".", "plugins", providerName+"-provider"),
-	}
-
 	var pluginPath string
-	for _, path := range pluginPaths {
-		if _, err := os.Stat(path); err == nil {
+	for _, path := range pluginSearchPaths(providerName) {
+		if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
 			pluginPath = path
 			break
 		}
@@ -74,6 +67,18 @@ func NewPluginClient(providerName string) (*PluginClient, error) {
 		client:   client,
 		provider: provider,
 	}, nil
+}
+
+func pluginSearchPaths(providerName string) []string {
+	home, _ := os.UserHomeDir()
+	pluginName := providerName + "-provider"
+
+	return []string{
+		filepath.Join(".", "build", "bin", pluginName),
+		filepath.Join(".", "plugins", pluginName, pluginName),
+		filepath.Join(home, ".corkscrew", "plugins", pluginName),
+		filepath.Join(home, ".corkscrew", "bin", "plugin", pluginName),
+	}
 }
 
 // GetProvider returns the cloud provider interface

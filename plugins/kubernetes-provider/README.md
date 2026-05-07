@@ -209,9 +209,9 @@ go test ./...
 go test ./... -tags=integration
 
 # Test specific functionality
-./corkscrew-kubernetes --test
-./corkscrew-kubernetes --demo-discovery
-./corkscrew-kubernetes --test-multi-cluster
+./kubernetes-provider --test
+./kubernetes-provider --demo-discovery
+./kubernetes-provider --test-multi-cluster
 ```
 
 ### Extending the Provider

@@ -40,7 +40,7 @@ The integration testing framework provides:
 
 ### Prerequisites
 
-1. **Go 1.21+** with CGO enabled
+1. **Go 1.24+** with CGO enabled
 2. **Pulumi CLI** installed and configured
 3. **Cloud Provider Credentials** (AWS, Azure, or GCP)
 4. **Corkscrew Binary** built (`make build`)

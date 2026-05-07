@@ -4,16 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type SmartScanConfiguration struct {
-	Version   string                        `yaml:"version"`
-	Providers map[string]ProviderConfig     `yaml:"providers"`
-	Output    OutputConfig                  `yaml:"output"`
-	Database  DatabaseConfig                `yaml:"database"`
+	Version   string                    `yaml:"version"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+	Output    OutputConfig              `yaml:"output"`
+	Database  DatabaseConfig            `yaml:"database"`
 }
 
 type ProviderConfig struct {
@@ -35,6 +36,12 @@ type DatabaseConfig struct {
 }
 
 func LoadSmartScanConfig(configPath string) (*SmartScanConfiguration, error) {
+	if configPath == "" {
+		if configFile := strings.TrimSpace(os.Getenv("CORKSCREW_CONFIG_FILE")); configFile != "" {
+			configPath = configFile
+		}
+	}
+
 	if configPath == "" {
 		// Try to find config in common locations
 		candidates := []string{
@@ -143,11 +150,11 @@ func (c *SmartScanConfiguration) ShouldHideEmptyServices() bool {
 
 func (c *SmartScanConfiguration) GetSmartScanConfig(provider string) *SmartScanConfig {
 	regions, _ := c.GetRegionsForProvider(provider)
-	
+
 	return &SmartScanConfig{
 		HideEmptyRegions:  c.ShouldHideEmptyRegions(),
 		HideEmptyServices: c.ShouldHideEmptyServices(),
-		MaxConcurrency:    3, // Could be made configurable
+		MaxConcurrency:    3,               // Could be made configurable
 		RegionTimeout:     5 * time.Minute, // Set proper timeout for region scanning
 		PreferredRegions:  c.getPreferredRegions(provider, regions),
 	}
@@ -182,33 +189,33 @@ func (c *SmartScanConfiguration) getPreferredRegions(provider string, configured
 
 func (c *SmartScanConfiguration) ValidateProvider(provider string) error {
 	validProviders := []string{"aws", "azure", "gcp", "kubernetes"}
-	
+
 	for _, valid := range validProviders {
 		if provider == valid {
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("unsupported provider: %s. Valid providers: %v", provider, validProviders)
 }
 
 func (c *SmartScanConfiguration) PrintConfig() {
 	fmt.Printf("📋 Configuration Summary:\n")
 	fmt.Printf("Version: %s\n\n", c.Version)
-	
+
 	for provider, config := range c.Providers {
 		status := "❌ disabled"
 		if config.Enabled {
 			status = "✅ enabled"
 		}
-		
+
 		fmt.Printf("Provider %s: %s\n", provider, status)
 		if config.Enabled {
 			fmt.Printf("  Regions: %v\n", config.Regions)
 			fmt.Printf("  Services: %d configured\n", len(config.Services))
 		}
 	}
-	
+
 	fmt.Printf("\nOutput Settings:\n")
 	fmt.Printf("  Format: %s\n", c.Output.DefaultFormat)
 	fmt.Printf("  Hide empty regions: %t\n", c.Output.HideEmptyRegions)

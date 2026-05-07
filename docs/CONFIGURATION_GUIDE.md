@@ -1,325 +1,120 @@
-# Corkscrew Service Configuration Guide
+# Corkscrew Configuration Guide
 
 ## Overview
 
-Starting with version 2.0, Corkscrew supports flexible service configuration, replacing the hardcoded list of 18 AWS services with a configurable system that allows you to specify exactly which services to analyze.
+Corkscrew uses a single YAML configuration model for scanning and config commands.
 
-## Quick Start
-
-1. **Generate default configuration**:
-   ```bash
-   corkscrew config init
-   # or
-   make config-init
-   ```
-
-2. **View current configuration**:
-   ```bash
-   corkscrew config show
-   # or
-   make config-show
-   ```
-
-3. **Validate configuration**:
-   ```bash
-   corkscrew config validate
-   # or
-   make config-validate
-   ```
-
-## Configuration File
-
-The configuration file `corkscrew.yaml` should be placed in your project root. You can also specify a custom location using the `CORKSCREW_CONFIG_FILE` environment variable.
-
-### Basic Structure
-
-```yaml
-version: "1.0"
-providers:
-  aws:
-    discovery_mode: hybrid
-    services:
-      include:
-        - s3
-        - ec2
-        - lambda
-      exclude:
-        - gamelift
-    analysis:
-      skip_empty: true
-      workers: 4
-```
-
-## Discovery Modes
-
-### Manual Mode
-Only analyzes services explicitly listed in the `include` section:
-
-```yaml
-discovery_mode: manual
-services:
-  include:
-    - s3
-    - ec2
-    - lambda
-```
-
-### Auto Mode
-Automatically discovers services from:
-- Your `go.mod` file (AWS SDK dependencies)
-- Local AWS SDK installation
-- GitHub API (AWS SDK repository)
-
-```yaml
-discovery_mode: auto
-services:
-  exclude:
-    - chatbot  # Exclude rarely used services
-    - gamelift
-```
-
-### Hybrid Mode (Recommended)
-Combines manual and auto discovery. Starts with your explicit list and adds auto-discovered services:
-
-```yaml
-discovery_mode: hybrid
-services:
-  include:
-    - s3      # Always include these
-    - ec2
-    - lambda
-  exclude:
-    - chatbot # Never include these
-```
-
-## Service Groups
-
-Use predefined service groups for common scenarios:
-
-```yaml
-service_groups:
-  core:
-    - ec2
-    - s3
-    - iam
-    - vpc
-  
-  compute:
-    - lambda
-    - ecs
-    - eks
-    - batch
-  
-  data:
-    - rds
-    - dynamodb
-    - athena
-    - glue
-```
-
-Use service groups with the analyzer:
-```bash
-./cmd/analyzer/analyzer -service-group compute
-```
-
-## Configuration Methods
-
-### 1. Configuration File (Recommended)
-
-Create `corkscrew.yaml` in your project root. See `corkscrew.yaml.example` for a complete example.
-
-### 2. Environment Variables
-
-Override configuration with environment variables:
+Core commands:
 
 ```bash
-# Override service list
-export CORKSCREW_AWS_SERVICES="s3,ec2,lambda,rds,dynamodb"
-
-# Override discovery mode
-export CORKSCREW_DISCOVERY_MODE="auto"
-
-# Specify custom config file
-export CORKSCREW_CONFIG_FILE="/path/to/custom-config.yaml"
+corkscrew config init
+corkscrew config show
+corkscrew config validate
 ```
 
-### 3. Command-Line Arguments
+## Config File Location
 
-Override configuration when running the analyzer:
+Corkscrew resolves configuration in this order:
+
+1. `CORKSCREW_CONFIG_FILE` (if set)
+2. `corkscrew.yaml`
+3. `corkscrew.yml`
+4. `.corkscrew.yaml`
+5. `.corkscrew.yml`
+6. `~/.corkscrew/config.yaml`
+
+You can also pass `--config <path>` to `corkscrew scan`.
+
+## Schema
+
+```yaml
+version: "2.0"
+
+providers:
+  aws:
+    enabled: true
+    regions:
+      - us-east-1
+      - us-west-2
+    services:
+      - s3
+      - ec2
+      - iam
+
+  azure:
+    enabled: false
+    regions:
+      - eastus
+    services:
+      - storage
+      - compute
+
+  gcp:
+    enabled: false
+    regions:
+      - us-central1-a
+    services:
+      - storage
+      - compute
+
+  kubernetes:
+    enabled: false
+    regions:
+      - default
+    services:
+      - pods
+      - services
+
+database:
+  path: ~/.corkscrew/db/corkscrew.duckdb
+
+output:
+  default_format: table
+  colors: true
+  progress_bars: true
+  hide_empty_regions: true
+  hide_empty_services: true
+```
+
+## Provider Fields
+
+- `enabled`: enables/disables provider usage.
+- `regions`: list of regions/zones/contexts. Use `all` for full region discovery where supported.
+- `services`: list of provider service identifiers.
+
+## Database Defaults
+
+Canonical default database path:
+
+- `~/.corkscrew/db/corkscrew.duckdb`
+
+Behavior:
+
+- `scan`: uses `--database` if set, otherwise `database.path` from config, otherwise canonical default.
+- `query`: uses `--db` if set, otherwise canonical default.
+- API server and TUI default to the same canonical path.
+
+## Typical Workflow
 
 ```bash
-# Analyze specific services
-./cmd/analyzer/analyzer -services "s3,ec2,lambda"
+# Create config once
+corkscrew config init
 
-# Use a service group
-./cmd/analyzer/analyzer -service-group data
+# Review and edit providers/regions/services
+corkscrew config show
 
-# List services that would be analyzed
-./cmd/analyzer/analyzer -list-services
+# Validate structure/content
+corkscrew config validate
+
+# Run scan with config
+corkscrew scan --provider aws
+
+# Query results (same DB by default)
+corkscrew query "SELECT COUNT(*) FROM aws_resources"
 ```
-
-## Analysis Configuration
-
-Configure how services are analyzed:
-
-```yaml
-analysis:
-  # Skip services with no resources (default: true)
-  skip_empty: true
-  
-  # Number of parallel workers (default: 4)
-  workers: 4
-  
-  # Enable caching (default: true)
-  cache_enabled: true
-  
-  # Cache time-to-live (default: 24h)
-  cache_ttl: 24h
-```
-
-## Examples
-
-### Minimal Configuration
-
-```yaml
-version: "1.0"
-providers:
-  aws:
-    discovery_mode: manual
-    services:
-      include:
-        - s3
-        - ec2
-        - lambda
-```
-
-### Production Configuration
-
-```yaml
-version: "1.0"
-providers:
-  aws:
-    discovery_mode: hybrid
-    services:
-      include:
-        # Core infrastructure
-        - ec2
-        - s3
-        - vpc
-        - iam
-        
-        # Compute
-        - lambda
-        - ecs
-        - eks
-        
-        # Data
-        - rds
-        - dynamodb
-        - elasticache
-        
-        # Monitoring
-        - cloudwatch
-        - cloudtrail
-        
-      exclude:
-        # Gaming services
-        - gamelift
-        - gamesparks
-        
-        # Rarely used
-        - chatbot
-        - honeycode
-        
-    analysis:
-      skip_empty: true
-      workers: 8
-      cache_enabled: true
-      cache_ttl: 12h
-```
-
-### Development Configuration
-
-```yaml
-version: "1.0"
-providers:
-  aws:
-    discovery_mode: auto
-    services:
-      exclude: []  # Discover everything
-    analysis:
-      skip_empty: false  # See all services
-      workers: 2
-      cache_enabled: false  # Always fresh data
-```
-
-## Backward Compatibility
-
-If no configuration file is provided, Corkscrew uses the original 18 services for backward compatibility:
-
-- ec2, s3, lambda, rds, dynamodb, iam
-- sqs, sns, ecs, eks, cloudformation
-- cloudwatch, route53, elasticloadbalancing
-- autoscaling, kms, secretsmanager, ssm
 
 ## Troubleshooting
 
-### Services not being analyzed
-
-1. Check configuration is valid:
-   ```bash
-   corkscrew config validate
-   ```
-
-2. List services that will be analyzed:
-   ```bash
-   ./cmd/analyzer/analyzer -list-services
-   ```
-
-3. Check for typos in service names
-
-### Configuration not loading
-
-1. Check file location (should be in project root)
-2. Verify YAML syntax
-3. Check file permissions
-4. Use `corkscrew config show` to see what's loaded
-
-### Auto-discovery not working
-
-1. Ensure go.mod exists and is readable
-2. Run `go mod tidy` to clean up dependencies
-3. Check AWS SDK imports are properly formatted
-4. Try setting `GITHUB_TOKEN` for GitHub API access
-
-## Migration from Hardcoded Services
-
-1. Run `corkscrew config init` to create a default configuration
-2. The default includes all 18 original services plus common additions
-3. Customize as needed for your environment
-4. Test with `./cmd/analyzer/analyzer -list-services`
-5. Run full analysis to verify
-
-## Best Practices
-
-1. **Use hybrid mode** for the best balance of control and discovery
-2. **Exclude unused services** to improve performance
-3. **Use service groups** to organize related services
-4. **Enable caching** for faster repeated analyses
-5. **Version control** your `corkscrew.yaml` file
-6. **Document** why certain services are included/excluded
-
-## Performance Considerations
-
-- Each service adds analysis time
-- Use `skip_empty: true` to avoid analyzing services with no resources
-- Increase `workers` for faster parallel analysis (CPU permitting)
-- Enable caching to avoid repeated API calls
-
-## Future Enhancements
-
-- Service dependency resolution (automatically include dependent services)
-- Per-service analysis configuration
-- Service cost estimates
-- Region-specific service lists
-- Dynamic service list updates from AWS
+- `no configuration file found`: run `corkscrew config init`.
+- `provider X not found in configuration`: add that provider under `providers:`.
+- query shows empty tables after scan: ensure scan and query point to the same DB (`--database` / `--db`).

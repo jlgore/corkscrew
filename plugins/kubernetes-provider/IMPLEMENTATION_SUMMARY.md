@@ -195,16 +195,16 @@ The provider generates optimized DuckDB schemas with:
 go test ./...
 
 # Test basic functionality
-./corkscrew-kubernetes --test
+./kubernetes-provider --test
 
 # Test API discovery
-./corkscrew-kubernetes --demo-discovery
+./kubernetes-provider --demo-discovery
 
 # Test multi-cluster support
-./corkscrew-kubernetes --test-multi-cluster
+./kubernetes-provider --test-multi-cluster
 
 # Test Helm discovery
-./corkscrew-kubernetes --test-helm
+./kubernetes-provider --test-helm
 ```
 
 ## Future Enhancements

@@ -95,21 +95,8 @@ The fastest way to get started with Corkscrew:
 git clone https://github.com/your-org/corkscrew.git
 cd corkscrew
 
-# Create a basic configuration file
-cat > corkscrew.yaml << EOF
-version: "1.0"
-providers:
-  aws:
-    enabled: true
-    default_region: us-east-1
-    services: [s3, ec2, lambda, iam]
-  azure:
-    enabled: false
-  gcp:
-    enabled: false
-  kubernetes:
-    enabled: false
-EOF
+# Create a default configuration file
+./corkscrew config init
 
 # Initialize Corkscrew (downloads dependencies and builds plugins)
 ./corkscrew init
@@ -118,7 +105,7 @@ EOF
 export PATH="$HOME/.corkscrew/bin:$PATH"
 
 # Run your first scan
-corkscrew scan --provider aws --services s3
+corkscrew scan --provider aws
 ```
 
 ### Detailed Installation
@@ -135,12 +122,14 @@ cd corkscrew
 Create a `corkscrew.yaml` file in the project root. Here's a comprehensive example:
 
 ```yaml
-version: "1.0"
+version: "2.0"
 
 providers:
   aws:
     enabled: true
-    default_region: us-east-1
+    regions:
+      - us-east-1
+      - us-west-2
     services:
       - s3
       - ec2
@@ -151,7 +140,9 @@ providers:
   
   azure:
     enabled: true
-    default_region: eastus
+    regions:
+      - eastus
+      - westus2
     services:
       - storage
       - compute
@@ -160,7 +151,9 @@ providers:
   
   gcp:
     enabled: false
-    default_region: us-central1
+    regions:
+      - us-central1-a
+      - us-west1-a
     services:
       - storage
       - compute
@@ -168,13 +161,18 @@ providers:
   
   kubernetes:
     enabled: false
+    regions:
+      - default
+    services:
+      - pods
+      - services
 
 dependencies:
   protoc:
     version: "25.3"
     auto_download: true
   duckdb:
-    version: "1.30.1"
+    version: "1.3.0"
     auto_download: true
 
 database:
@@ -291,294 +289,134 @@ corkscrew config show
 
 ### Configuration File Structure
 
-The `corkscrew.yaml` file controls all aspects of Corkscrew's behavior. Here's a detailed breakdown:
+Corkscrew uses a single config schema. The most important keys are `providers`, `database`, and `output`.
 
 ```yaml
-version: "1.0"  # Configuration version
+version: "2.0"
 
-# Provider-specific settings
 providers:
   aws:
-    enabled: true              # Enable/disable this provider
-    default_region: us-east-1  # Default region for scans
-    discovery_mode: hybrid     # Discovery mode: manual, auto, or hybrid
-    services:                  # Services to scan
-      include:                 # Explicit include list
-        - s3
-        - ec2
-        - lambda
-      exclude:                 # Services to exclude (when using auto/hybrid)
-        - gamelift
-        - mediapackage
-    analysis:
-      skip_empty: true         # Skip services with no resources
-      workers: 4               # Parallel analysis workers
-      cache_enabled: true      # Enable result caching
-      cache_ttl: 24h          # Cache time-to-live
+    enabled: true
+    regions:
+      - us-east-1
+      - us-west-2
+    services:
+      - s3
+      - ec2
+      - lambda
+      - iam
 
   azure:
-    enabled: true
-    default_region: eastus
-    subscription_filter:       # Filter subscriptions
-      - "Production*"
-      - "Development*"
-    resource_group_filter:     # Filter resource groups
-      - "rg-prod-*"
+    enabled: false
+    regions:
+      - eastus
     services:
       - storage
       - compute
-      - keyvault
 
   gcp:
     enabled: false
-    default_region: us-central1
-    project_filter:           # Filter projects
-      - "prod-*"
-    use_asset_inventory: true # Use Cloud Asset Inventory for faster scans
-    
+    regions:
+      - us-central1-a
+    services:
+      - storage
+      - compute
+
   kubernetes:
     enabled: false
-    contexts:                 # Specific contexts to scan
-      - production
-      - staging
-    namespace_filter:         # Namespace patterns
-      - "app-*"
-      - "default"
+    regions:
+      - default
+    services:
+      - pods
+      - services
 
-# Dependency management
-dependencies:
-  protoc:
-    version: "25.3"
-    auto_download: true
-    custom_path: ""          # Optional: use system protoc
-  
-  duckdb:
-    version: "1.30.1"
-    auto_download: true
-    custom_path: ""          # Optional: use system duckdb
-
-# Database configuration
 database:
   path: "~/.corkscrew/db/corkscrew.duckdb"
-  auto_create: true
-  connection_options:
-    memory_limit: "4GB"
-    threads: 4
-    temp_directory: "/tmp/corkscrew"
 
-# Query engine settings
-query:
-  timeout: "5m"              # Query timeout
-  streaming_threshold: 10000 # Row count to trigger streaming
-  max_memory: "4GB"          # Maximum memory for queries
-  enable_progress: true      # Show query progress
-
-# Compliance settings
-compliance:
-  packs_dir: "~/.corkscrew/compliance-packs"
-  auto_update: true
-  update_frequency: "weekly"
-  custom_packs:
-    - "https://github.com/org/compliance-packs.git"
-
-# Logging configuration
-logging:
-  level: "info"              # debug, info, warn, error
-  format: "json"             # json or text
-  file: ""                   # Optional: log file path
-  max_size: "100MB"          # Max log file size
-  max_age: "30d"             # Max log retention
-  compress: true             # Compress old logs
-
-# Output settings
 output:
-  default_format: "table"    # table, json, csv
-  colors: true               # Colorized output
-  progress_bars: true        # Show progress bars
-  truncate_strings: 50       # Truncate long strings
-  null_value: "NULL"         # How to display NULL values
-
-# Performance tuning
-performance:
-  max_concurrent_regions: 5  # Max regions to scan concurrently
-  max_concurrent_services: 10 # Max services to scan concurrently
-  rate_limits:               # Service-specific rate limits
-    default: 10              # Requests per second
-    s3: 20
-    ec2: 15
-  retry:
-    max_attempts: 3
-    backoff: "exponential"
-    initial_delay: "1s"
-    max_delay: "30s"
-
-# Network settings
-network:
-  proxy: ""                  # HTTP proxy
-  no_proxy: ""              # Proxy exceptions
-  timeout: "30s"            # Network timeout
-  tls_skip_verify: false    # Skip TLS verification (not recommended)
+  default_format: "table"
+  colors: true
+  progress_bars: true
+  hide_empty_regions: true
+  hide_empty_services: true
 ```
 
 ### Provider Configuration
 
-#### AWS Provider Configuration
+Each provider block follows the same pattern:
 
-```yaml
-providers:
-  aws:
-    enabled: true
-    discovery_mode: hybrid    # Options: manual, auto, hybrid
-    default_region: us-east-1
-    regions:                  # Specific regions to scan
-      - us-east-1
-      - us-west-2
-      - eu-west-1
-    assume_role:              # Cross-account scanning
-      role_arn: "arn:aws:iam::123456789012:role/CorkscrewScanner"
-      external_id: "unique-external-id"
-      session_name: "corkscrew-scan"
-    services:
-      include: []             # Empty means all services
-      exclude:
-        - gamelift           # Exclude specific services
-        - mediapackage
-    service_config:           # Service-specific settings
-      s3:
-        include_versions: false
-        include_metrics: true
-      ec2:
-        include_user_data: false
-    tags_filter:              # Filter resources by tags
-      Environment: 
-        - production
-        - staging
-      Owner: "*"              # Wildcard matching
+- `enabled`: `true`/`false`
+- `regions`: list of regions, zones, or contexts
+- `services`: list of services to scan
+
+Notes:
+
+- Use `regions: [all]` for full region discovery where supported.
+- Kubernetes can use context names in `regions`.
+
+### Config Commands
+
+```bash
+# Create default config (fails if one already exists)
+corkscrew config init
+
+# Print current config and resolved summary
+corkscrew config show
+
+# Validate provider names and basic list integrity
+corkscrew config validate
 ```
 
-#### Azure Provider Configuration
+### Config Resolution
 
-```yaml
-providers:
-  azure:
-    enabled: true
-    default_region: eastus
-    tenant_id: "your-tenant-id"  # Optional: specific tenant
-    subscription_filter:
-      - "00000000-0000-0000-0000-000000000000"
-    resource_graph:
-      enabled: true           # Use Resource Graph for faster queries
-      batch_size: 1000
-      timeout: "2m"
-    management_groups:        # Scan entire management group
-      - "mg-production"
-    enterprise_app:           # Enterprise app settings
-      auto_deploy: true
-      app_name: "Corkscrew Scanner"
-      certificate_validity: "365d"
+Configuration path resolution order:
+
+1. `CORKSCREW_CONFIG_FILE`
+2. `corkscrew.yaml`
+3. `corkscrew.yml`
+4. `.corkscrew.yaml`
+5. `.corkscrew.yml`
+6. `~/.corkscrew/config.yaml`
+
+For scan commands, you can override directly with `--config`:
+
+```bash
+corkscrew scan --provider aws --config ./corkscrew.yaml
 ```
 
-#### GCP Provider Configuration
+### Database Path Behavior
 
-```yaml
-providers:
-  gcp:
-    enabled: true
-    default_region: us-central1
-    project_filter:
-      - "prod-*"
-      - "dev-*"
-    organization_id: "123456789"  # For org-wide scanning
-    use_asset_inventory: true     # Faster scanning
-    asset_inventory:
-      snapshot_time: ""           # Empty for latest
-      asset_types:                # Filter asset types
-        - "compute.googleapis.com/*"
-        - "storage.googleapis.com/*"
-    service_account:              # Custom service account
-      key_file: "/path/to/key.json"
+Canonical default database path:
+
+- `~/.corkscrew/db/corkscrew.duckdb`
+
+Behavior by command:
+
+- `scan`: `--database` overrides, otherwise `database.path` from config, otherwise canonical default.
+- `query`: `--db` overrides, otherwise canonical default.
+- API server and TUI use the same canonical default.
+
+Examples:
+
+```bash
+# Scan into custom DB
+corkscrew scan --provider aws --database /tmp/cs.duckdb
+
+# Query the same DB
+corkscrew query --db /tmp/cs.duckdb "SELECT COUNT(*) FROM aws_resources"
 ```
 
-#### Kubernetes Provider Configuration
+### Important Compatibility Note
+
+Old keys like `default_region`, `discovery_mode`, and nested `services.include/exclude` are legacy examples and are not the active config model for current scan/config commands.
+
+For the authoritative schema, see `docs/CONFIGURATION_GUIDE.md`.
+
+### Security Configuration
 
 ```yaml
-providers:
-  kubernetes:
-    enabled: true
-    kubeconfig: "~/.kube/config"  # Kubeconfig path
-    contexts:                      # Specific contexts
-      - production
-      - staging
-    current_context_only: false    # Only scan current context
-    namespace_filter:
-      include:
-        - "app-*"
-        - "default"
-      exclude:
-        - "kube-*"
-    resource_filter:               # Filter resource types
-      include:
-        - "apps/v1/*"
-        - "v1/Service"
-      exclude:
-        - "v1/Event"
-    label_selector: "app=myapp"    # Kubernetes label selector
-    field_selector: ""             # Kubernetes field selector
-```
-
-### Advanced Settings
-
-#### Service Discovery Modes
-
-1. **Manual Mode**: Only scan explicitly listed services
-   ```yaml
-   discovery_mode: manual
-   services: [s3, ec2, lambda]  # Only these services will be scanned
-   ```
-
-2. **Auto Mode**: Automatically discover all available services
-   ```yaml
-   discovery_mode: auto
-   services:
-     exclude: [gamelift]  # Exclude specific services
-   ```
-
-3. **Hybrid Mode**: Combine manual and auto discovery
-   ```yaml
-   discovery_mode: hybrid
-   services:
-     include: [s3, ec2]   # Always include these
-     exclude: [gamelift]  # Never include these
-   ```
-
-#### Performance Tuning
-
-Optimize scanning performance based on your environment:
-
-```yaml
-performance:
-  # For large environments
-  max_concurrent_regions: 10
-  max_concurrent_services: 20
-  workers_per_service: 5
-  
-  # For rate-limited environments
-  rate_limits:
-    default: 5
-    s3: 10  # S3 can handle more
-  
-  # For unreliable networks
-  retry:
-    max_attempts: 5
-    initial_delay: "2s"
-    max_delay: "60s"
-```
-
-#### Security Configuration
-
-```yaml
+# optional examples
 security:
-  # Credential handling
   credentials:
     aws:
       use_instance_profile: true

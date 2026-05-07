@@ -19,6 +19,7 @@ func NewPluginManager() *PluginManager {
 	homeDir, _ := os.UserHomeDir()
 	return &PluginManager{
 		pluginDirs: []string{
+			"./build/bin",
 			"./plugins",
 			filepath.Join(homeDir, ".corkscrew", "plugins"),
 			filepath.Join(homeDir, ".corkscrew", "bin", "plugin"),
@@ -30,15 +31,21 @@ func NewPluginManager() *PluginManager {
 
 // FindPlugin looks for installed plugin binary
 func (pm *PluginManager) FindPlugin(provider string) (string, error) {
-	pluginName := fmt.Sprintf("corkscrew-%s", provider)
-	
+	pluginName := fmt.Sprintf("%s-provider", provider)
+
 	for _, dir := range pm.pluginDirs {
-		path := filepath.Join(dir, pluginName)
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
+		candidates := []string{
+			filepath.Join(dir, pluginName),
+			filepath.Join(dir, pluginName, pluginName),
+		}
+
+		for _, path := range candidates {
+			if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
+				return path, nil
+			}
 		}
 	}
-	
+
 	return "", fmt.Errorf("plugin not found: %s", provider)
 }
 
@@ -52,7 +59,7 @@ func (pm *PluginManager) CanBuildPlugin(provider string) bool {
 // BuildPlugin builds a plugin from source
 func (pm *PluginManager) BuildPlugin(provider string) error {
 	fmt.Printf("🔨 Building %s plugin...\n", provider)
-	
+
 	script := filepath.Join("plugins", fmt.Sprintf("build-%s-plugin.sh", provider))
 	if _, err := os.Stat(script); err == nil {
 		// Use existing build script
@@ -61,32 +68,32 @@ func (pm *PluginManager) BuildPlugin(provider string) error {
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	}
-	
+
 	// Fallback to direct go build
 	sourceDir := filepath.Join(pm.sourceDir, fmt.Sprintf("%s-provider", provider))
-	
+
 	// Create plugins directory if it doesn't exist
 	pluginsDir := filepath.Join("plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create plugins directory: %w", err)
 	}
-	
-	outputPath := filepath.Join(pluginsDir, fmt.Sprintf("corkscrew-%s", provider))
-	
+
+	outputPath := filepath.Join(pluginsDir, fmt.Sprintf("%s-provider", provider))
+
 	cmd := exec.Command("go", "build", "-o", outputPath, ".")
 	cmd.Dir = sourceDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build failed: %w", err)
 	}
-	
+
 	// Make executable
 	if err := os.Chmod(outputPath, 0755); err != nil {
 		return fmt.Errorf("failed to make plugin executable: %w", err)
 	}
-	
+
 	fmt.Printf("✅ Built %s plugin successfully\n", provider)
 	return nil
 }
@@ -96,16 +103,16 @@ func (pm *PluginManager) PromptBuildPlugin(provider string) (bool, error) {
 	if !pm.CanBuildPlugin(provider) {
 		return false, fmt.Errorf("no source available for %s plugin", provider)
 	}
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Build %s plugin? [Y/n]: ", provider)
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
-	
+
 	if response == "" || response == "y" || response == "yes" {
 		return true, pm.BuildPlugin(provider)
 	}
-	
+
 	return false, nil
 }
 
@@ -114,11 +121,11 @@ func (pm *PluginManager) GetPluginStatus(provider string) string {
 	if _, err := pm.FindPlugin(provider); err == nil {
 		return "✅ Installed"
 	}
-	
+
 	if pm.CanBuildPlugin(provider) {
 		return "🔨 Can Build"
 	}
-	
+
 	return "❌ Not Available"
 }
 
@@ -140,7 +147,7 @@ func (pm *PluginManager) ListAvailablePlugins() map[string]PluginInfo {
 		}
 		return result
 	}
-	
+
 	// Fallback to hardcoded list
 	plugins := map[string]PluginInfo{
 		"aws": {
@@ -148,58 +155,58 @@ func (pm *PluginManager) ListAvailablePlugins() map[string]PluginInfo {
 			Description: "Amazon Web Services provider",
 			Version:     "2.0.0",
 			Source:      "plugins/aws-provider",
-			Binary:      "corkscrew-aws",
+			Binary:      "aws-provider",
 			Status:      "stable",
 		},
 		"azure": {
-			Name:        "azure-provider", 
+			Name:        "azure-provider",
 			Description: "Microsoft Azure provider",
 			Version:     "2.0.0",
 			Source:      "plugins/azure-provider",
-			Binary:      "corkscrew-azure",
+			Binary:      "azure-provider",
 			Status:      "stable",
 		},
 		"gcp": {
 			Name:        "gcp-provider",
-			Description: "Google Cloud Platform provider", 
+			Description: "Google Cloud Platform provider",
 			Version:     "1.0.0",
 			Source:      "plugins/gcp-provider",
-			Binary:      "corkscrew-gcp",
+			Binary:      "gcp-provider",
 			Status:      "beta",
 		},
 		"kubernetes": {
 			Name:        "kubernetes-provider",
 			Description: "Kubernetes provider",
-			Version:     "1.0.0", 
+			Version:     "1.0.0",
 			Source:      "plugins/kubernetes-provider",
-			Binary:      "corkscrew-kubernetes",
+			Binary:      "kubernetes-provider",
 			Status:      "beta",
 		},
 	}
-	
+
 	// Update status for each plugin
 	for provider, info := range plugins {
 		info.Status = pm.GetPluginStatus(provider)
 		plugins[provider] = info
 	}
-	
+
 	return plugins
 }
 
 // LoadRegistry loads the plugin registry from JSON file
 func (pm *PluginManager) LoadRegistry() (*PluginRegistry, error) {
 	registryPath := filepath.Join("plugins", "registry.json")
-	
+
 	data, err := os.ReadFile(registryPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read registry: %w", err)
 	}
-	
+
 	var registry PluginRegistry
 	if err := json.Unmarshal(data, &registry); err != nil {
 		return nil, fmt.Errorf("failed to parse registry: %w", err)
 	}
-	
+
 	return &registry, nil
 }
 
@@ -213,7 +220,7 @@ type PluginInfo struct {
 }
 
 type PluginRegistry struct {
-	Version string                     `json:"version"`
+	Version string                    `json:"version"`
 	Plugins map[string]PluginMetadata `json:"plugins"`
 }
 
