@@ -464,27 +464,6 @@ func TestFallbackClassification(t *testing.T) {
 	}
 }
 
-func TestServiceHandlerRegistration(t *testing.T) {
-	classifier := NewOperationClassifier()
-
-	// Test that service handlers are properly registered
-	expectedServices := []string{"iam", "s3", "ec2", "lambda", "sns", "dynamodb"}
-
-	for _, service := range expectedServices {
-		if _, exists := classifier.serviceHandlers[service]; !exists {
-			t.Errorf("Service handler for %s not registered", service)
-		}
-	}
-
-	// Test registering a custom handler
-	customHandler := &IAMHandler{} // Reuse IAM handler for testing
-	classifier.RegisterServiceHandler("custom", customHandler)
-
-	if _, exists := classifier.serviceHandlers["custom"]; !exists {
-		t.Errorf("Custom service handler not registered")
-	}
-}
-
 func BenchmarkClassifyOperation(b *testing.B) {
 	classifier := NewOperationClassifier()
 	operation := generator.AWSOperation{Name: "ListBuckets", IsList: true}

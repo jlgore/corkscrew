@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/discovery"
-	"github.com/jlgore/corkscrew/plugins/aws-provider/parameter"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/client"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/registry"
@@ -162,10 +161,6 @@ type AWSProvider struct {
 
 	// Change tracking and database auto-save
 	changeStorage *DuckDBChangeStorage
-	
-	// Parameter intelligence components
-	parameterCLI  *parameter.AWSParameterCLI
-	parameterExec *parameter.AWSParameterExecutor
 
 	// Caching
 	serviceCache  *Cache
@@ -220,10 +215,6 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 		log.Printf("Database auto-save initialized: aws_scans.db")
 	}
 	
-	// Initialize parameter intelligence components
-	p.parameterCLI = parameter.NewAWSParameterCLI()
-	p.parameterExec = parameter.NewAWSParameterExecutor()
-	
 	// Note: Generated client factory will be initialized after unified registry is created
 	
 	// Initialize unified registry system
@@ -264,16 +255,6 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.discovery.SetAnalysisGenerator(analysisGenerator)
 	p.discovery.EnableAnalysisGeneration(true)
 	log.Printf("Analysis generator initialized and enabled")
-	
-	// Wire parameter components with discovery
-	if p.parameterCLI != nil {
-		p.parameterCLI.SetDiscovery(p.discovery)
-		log.Printf("Parameter CLI connected to discovery system")
-	}
-	if p.parameterExec != nil {
-		p.parameterExec.SetDiscovery(p.discovery)
-		log.Printf("Parameter executor connected to discovery system")
-	}
 	
 	// Skip service discovery during initialization - will be done on-demand during scanning
 	log.Printf("Initialization complete - service discovery will be performed on-demand during scanning")

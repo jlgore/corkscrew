@@ -8,6 +8,25 @@ import (
 	pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
+type ChangeType string
+
+const (
+	ChangeTypeCreate       ChangeType = "CREATE"
+	ChangeTypeUpdate       ChangeType = "UPDATE"
+	ChangeTypeDelete       ChangeType = "DELETE"
+	ChangeTypePolicyChange ChangeType = "POLICY_CHANGE"
+	ChangeTypeTagChange    ChangeType = "TAG_CHANGE"
+	ChangeTypeStateChange  ChangeType = "STATE_CHANGE"
+)
+
+type ChangeSeverity string
+
+const (
+	SeverityLow      ChangeSeverity = "LOW"
+	SeverityMedium   ChangeSeverity = "MEDIUM"
+	SeverityHigh     ChangeSeverity = "HIGH"
+	SeverityCritical ChangeSeverity = "CRITICAL"
+)
 
 // ChangeTracker provides unified change tracking across cloud providers
 type ChangeTracker interface {

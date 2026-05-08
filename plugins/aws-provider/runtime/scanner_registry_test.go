@@ -33,6 +33,8 @@ func (m *MockUnifiedScanner) DescribeResource(ctx context.Context, ref *pb.Resou
 	return m.enriched, nil
 }
 
+func (m *MockUnifiedScanner) GetMetrics() interface{} { return nil }
+
 func TestScannerRegistry(t *testing.T) {
 	registry := NewScannerRegistry()
 	assert.NotNil(t, registry)

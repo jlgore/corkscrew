@@ -29,6 +29,11 @@ func (m *MockClientFactory) GetAvailableServices() []string {
 	return []string{"ec2", "s3", "lambda", "rds", "dynamodb"}
 }
 
+func (m *MockClientFactory) GetClientMethodNames(service string) []string  { return nil }
+func (m *MockClientFactory) GetListOperations(service string) []string     { return nil }
+func (m *MockClientFactory) GetDescribeOperations(service string) []string { return nil }
+func (m *MockClientFactory) HasClient(service string) bool                 { return true }
+
 // MockAWSClient simulates an AWS client
 type MockAWSClient struct {
 	service string
@@ -191,8 +196,8 @@ func BenchmarkResourceExtraction(b *testing.B) {
 	optimized := NewOptimizedUnifiedScanner(NewMockClientFactory())
 	
 	output := generateMockOutput(100)
-	outputValue := reflect.ValueOf(output)
-	
+	_ = reflect.ValueOf(output)
+
 	b.Run("Original", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			scanner.extractResources(output, "ec2", "DescribeInstances")
