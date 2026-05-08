@@ -450,6 +450,15 @@ func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Re
         rawParam = nil
     }
 
+    // The arn column has a UNIQUE constraint in the resource tables.
+    // Some Cloud Control resource types (and a few SDK ones too) don't
+    // populate an ARN — in that case every row would share arn="" and
+    // collide. Fall back to the resource Id, which is already unique.
+    arnValue := resource.Arn
+    if strings.TrimSpace(arnValue) == "" {
+        arnValue = resource.Id
+    }
+
     // Upsert via DELETE + INSERT
     tx, txErr := dbConfig.DB.Begin()
     if txErr != nil {
@@ -472,7 +481,7 @@ func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Re
     `, table)
     if _, insErr := tx.Exec(insertStmt,
         resource.Id,
-        resource.Arn,
+        arnValue,
         resource.Name,
         resource.Type,
         resource.Service,

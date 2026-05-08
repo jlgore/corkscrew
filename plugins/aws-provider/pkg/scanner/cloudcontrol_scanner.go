@@ -185,6 +185,13 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 		return nil, nil
 	}
 
+	// Dedupe by Id. Multiple CFN types under the same service often share
+	// an identifier — e.g. AWS::S3::Bucket and AWS::S3::BucketPolicy both
+	// use the bucket name as their resource ID, so iterating types naively
+	// yields the same physical resource twice. Types are sorted alphabetically
+	// in the discovered map, so first-wins typically picks the canonical
+	// type (Bucket before BucketPolicy, Function before FunctionAlias, etc).
+	seen := make(map[string]struct{})
 	var all []*pb.ResourceRef
 	for _, typeName := range types {
 		refs, err := s.listType(ctx, serviceName, typeName)
@@ -197,7 +204,13 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 			log.Printf("CloudControl: ListResources(%s) failed: %v", typeName, err)
 			continue
 		}
-		all = append(all, refs...)
+		for _, r := range refs {
+			if _, dup := seen[r.Id]; dup {
+				continue
+			}
+			seen[r.Id] = struct{}{}
+			all = append(all, r)
+		}
 	}
 	return all, nil
 }
