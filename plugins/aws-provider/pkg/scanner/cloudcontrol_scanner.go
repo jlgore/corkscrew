@@ -47,6 +47,11 @@ type CloudControlScanner struct {
 	// Used to enrich RE results via CC.GetResource.
 	reFormatToCFN map[string]string
 
+	// unsupportedTypes records CFN types that Cloud Control couldn't list
+	// (typically TypeNotFoundException or "not yet supported"). Reported back
+	// to the caller in the scan response so gaps are visible.
+	unsupportedTypes sync.Map // typeName -> string reason
+
 	// Metrics
 	listCalls    atomic.Int64
 	getCalls     atomic.Int64
@@ -184,6 +189,10 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 	for _, typeName := range types {
 		refs, err := s.listType(ctx, serviceName, typeName)
 		if err != nil {
+			if isUnsupportedTypeErr(err) {
+				s.unsupportedTypes.Store(typeName, err.Error())
+				continue
+			}
 			s.listFailures.Add(1)
 			log.Printf("CloudControl: ListResources(%s) failed: %v", typeName, err)
 			continue
@@ -191,6 +200,30 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 		all = append(all, refs...)
 	}
 	return all, nil
+}
+
+// isUnsupportedTypeErr matches the Cloud Control error returned when a type
+// either doesn't exist or hasn't onboarded the relevant handler (List/Read).
+// We treat these as "expected gaps" rather than failures.
+func isUnsupportedTypeErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "TypeNotFoundException") ||
+		strings.Contains(msg, "UnsupportedActionException") ||
+		strings.Contains(msg, "not currently supported")
+}
+
+// UnsupportedTypes returns a snapshot of the CFN types that Cloud Control
+// could not enumerate during this scanner's lifetime. Map of type → reason.
+func (s *CloudControlScanner) UnsupportedTypes() map[string]string {
+	out := map[string]string{}
+	s.unsupportedTypes.Range(func(k, v any) bool {
+		out[k.(string)] = v.(string)
+		return true
+	})
+	return out
 }
 
 func (s *CloudControlScanner) listType(ctx context.Context, serviceName, typeName string) ([]*pb.ResourceRef, error) {
