@@ -302,10 +302,20 @@ func (s *CloudControlScanner) listType(ctx context.Context, serviceName, typeNam
 		}
 
 		for _, rd := range out.ResourceDescriptions {
+			id := aws.ToString(rd.Identifier)
+			// AWS-managed IAM artifacts (managed policies, service-linked role
+			// policies) are global, identical across all accounts, and add up
+			// to ~1,100 GetResource calls per scan when included. Skip them.
+			// Customer/account-owned identifiers contain the 12-digit account
+			// number; AWS-managed identifiers use the literal "aws" or the
+			// "aws-managed" partition.
+			if strings.Contains(id, ":iam::aws:") {
+				continue
+			}
 			ref := &pb.ResourceRef{
 				Service:   serviceName,
 				Type:      typeName,
-				Id:        aws.ToString(rd.Identifier),
+				Id:        id,
 				Region:    region,
 				AccountId: s.getAccountID(),
 				BasicAttributes: map[string]string{
@@ -350,12 +360,11 @@ func (s *CloudControlScanner) DescribeResource(ctx context.Context, ref *pb.Reso
 		}
 	}
 
-	// Try a fresh GetResource for the canonical config.
-	getCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
+	// No per-call timeout — bounded parallelism in the caller and the parent
+	// context handle pacing. The previous 5s budget was tripping false-negative
+	// "deadline exceeded" while the SDK was still mid-retry on slow handlers.
 	s.getCalls.Add(1)
-	out, err := s.client.GetResource(getCtx, &cloudcontrol.GetResourceInput{
+	out, err := s.client.GetResource(ctx, &cloudcontrol.GetResourceInput{
 		TypeName:   aws.String(typeName),
 		Identifier: aws.String(ref.Id),
 	})

@@ -256,6 +256,13 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		services = p.scanner.SupportedServices()
 	}
 
+	// describeConcurrency caps in-flight GetResource calls. Empirically 20 is
+	// well under Cloud Control's per-account burst (~100) but high enough to
+	// fan out a 1000-resource service in seconds rather than minutes.
+	const describeConcurrency = 20
+
+	var statsMu sync.Mutex
+
 	for _, svc := range services {
 		p.currentProgressTracker.StartService(svc)
 		refs, err := p.scanner.ScanService(ctx, svc)
@@ -264,14 +271,33 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 			p.currentProgressTracker.CompleteService(svc, 0, err)
 			continue
 		}
+
+		// Concurrent GetResource enrichment with bounded parallelism.
+		results := make(chan *pb.Resource, len(refs))
+		sem := make(chan struct{}, describeConcurrency)
+		var wg sync.WaitGroup
 		for _, ref := range refs {
-			res, derr := p.scanner.DescribeResource(ctx, ref)
-			if derr != nil {
-				log.Printf("Describe %s/%s failed: %v", ref.Type, ref.Id, derr)
-				continue
-			}
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(r *pb.ResourceRef) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				res, derr := p.scanner.DescribeResource(ctx, r)
+				if derr != nil {
+					log.Printf("Describe %s/%s failed: %v", r.Type, r.Id, derr)
+					return
+				}
+				results <- res
+			}(ref)
+		}
+		wg.Wait()
+		close(results)
+
+		for res := range results {
 			allResources = append(allResources, res)
+			statsMu.Lock()
 			stats.ResourceCounts[res.Type]++
+			statsMu.Unlock()
 		}
 		stats.ServiceCounts[svc] = int32(len(refs))
 		p.currentProgressTracker.CompleteService(svc, len(refs), nil)
