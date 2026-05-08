@@ -266,6 +266,8 @@ func main() {
 		runConfig(os.Args[2:])
 	case "plugin":
 		runPlugin(os.Args[2:])
+	case "aws-org":
+		runAWSOrg(os.Args[2:])
 	case "serve":
 		runServe(os.Args[2:])
 	case "crosscloud":
