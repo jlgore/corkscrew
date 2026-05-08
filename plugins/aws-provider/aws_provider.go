@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +150,7 @@ type AWSProvider struct {
 	// Core components
 	discovery     *discovery.RuntimeServiceDiscovery
 	scanner       *scanner.UnifiedScanner
+	ccScanner     *scanner.CloudControlScanner // active when CORKSCREW_AWS_SCANNER=cloudcontrol
 	explorer      *ResourceExplorer
 	schemaGen     *SchemaGenerator
 	clientFactory *client.ClientFactory
@@ -172,6 +174,40 @@ type AWSProvider struct {
 	
 	// Progress tracking
 	currentProgressTracker *ScanProgressTracker
+}
+
+// scanService dispatches to the active scanner (Cloud Control or reflection-based).
+func (p *AWSProvider) scanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
+	if p.ccScanner != nil {
+		return p.ccScanner.ScanService(ctx, serviceName)
+	}
+	return p.scanner.ScanService(ctx, serviceName)
+}
+
+// describeResource dispatches to the active scanner.
+func (p *AWSProvider) describeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error) {
+	if p.ccScanner != nil {
+		return p.ccScanner.DescribeResource(ctx, ref)
+	}
+	return p.scanner.DescribeResource(ctx, ref)
+}
+
+// scanAllServices iterates all supported services on the active scanner.
+// Cloud Control mode walks its curated service map; legacy mode delegates.
+func (p *AWSProvider) scanAllServices(ctx context.Context) ([]*pb.ResourceRef, error) {
+	if p.ccScanner != nil {
+		var all []*pb.ResourceRef
+		for _, svc := range p.ccScanner.SupportedServices() {
+			refs, err := p.ccScanner.ScanService(ctx, svc)
+			if err != nil {
+				log.Printf("CloudControl scan of %s failed: %v", svc, err)
+				continue
+			}
+			all = append(all, refs...)
+		}
+		return all, nil
+	}
+	return p.scanner.ScanAllServices(ctx)
 }
 
 // NewAWSProvider creates a new AWS provider instance
@@ -241,6 +277,14 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.scanner = scanner.NewUnifiedScanner(p.clientFactory)
 	p.scanner.SetRelationshipExtractor(NewRelationshipExtractor())
 	p.schemaGen = NewSchemaGenerator()
+
+	// Optionally enable the Cloud Control API scanner for comparison.
+	// CORKSCREW_AWS_SCANNER=cloudcontrol routes BatchScan / ListResources /
+	// ScanService / DescribeResource through it instead of the reflection scanner.
+	if strings.EqualFold(os.Getenv("CORKSCREW_AWS_SCANNER"), "cloudcontrol") {
+		p.ccScanner = scanner.NewCloudControlScanner(cfg)
+		log.Printf("CloudControl scanner enabled (via CORKSCREW_AWS_SCANNER=cloudcontrol)")
+	}
 
 	// Initialize analysis generation (mandatory for enhanced configuration collection)
 	log.Printf("Creating analysis generator for enhanced scanning capabilities")
@@ -513,33 +557,34 @@ func (p *AWSProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 	var resources []*pb.ResourceRef
 
 	if req.Service != "" {
-		// List resources for a specific service
-		serviceResources, err := p.scanner.ScanService(ctx, req.Service)
+		serviceResources, err := p.scanService(ctx, req.Service)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan service %s: %w", req.Service, err)
 		}
 		resources = serviceResources
-	} else {
-		// List all resources - use Resource Explorer if available
-		if p.explorer != nil {
-			allResources, err := p.explorer.QueryAllResources(ctx)
-			if err != nil {
-				log.Printf("Resource Explorer query failed, falling back to SDK: %v", err)
-				// Fall back to SDK scanning
-				allResources, err = p.scanner.ScanAllServices(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("failed to scan all resources: %w", err)
-				}
-			}
-			resources = allResources
-		} else {
-			// Use SDK scanning
-			allResources, err := p.scanner.ScanAllServices(ctx)
+	} else if p.ccScanner != nil {
+		// Cloud Control mode: skip Resource Explorer, just iterate supported services.
+		allResources, err := p.scanAllServices(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan all resources: %w", err)
+		}
+		resources = allResources
+	} else if p.explorer != nil {
+		allResources, err := p.explorer.QueryAllResources(ctx)
+		if err != nil {
+			log.Printf("Resource Explorer query failed, falling back to SDK: %v", err)
+			allResources, err = p.scanAllServices(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to scan all resources: %w", err)
 			}
-			resources = allResources
 		}
+		resources = allResources
+	} else {
+		allResources, err := p.scanAllServices(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan all resources: %w", err)
+		}
+		resources = allResources
 	}
 
 	return &pb.ListResourcesResponse{
@@ -564,8 +609,13 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	
 	// Initialize progress tracking
 	p.currentProgressTracker = NewScanProgressTracker(scanID, req.Services)
-	
+
 	log.Printf("Starting batch scan %s with auto-save and progress tracking for %d services", scanID, len(req.Services))
+
+	// Cloud Control mode bypasses discovery / analysis-gen / pipeline.
+	if p.ccScanner != nil {
+		return p.cloudControlBatchScan(ctx, req, scanID, scanStartTime)
+	}
 
 	// Configure registry to only load requested services
 	if p.unifiedRegistry != nil {
@@ -684,6 +734,56 @@ func convertErrors(errors map[string]error) []string {
 		result = append(result, fmt.Sprintf("Service %s: %v", service, err))
 	}
 	return result
+}
+
+// cloudControlBatchScan implements BatchScan via the Cloud Control API.
+// It skips per-service discovery, analysis JSON, and the pipeline — for each
+// requested service, list resources via Cloud Control and enrich each one
+// with GetResource. Sequential and simple by design (this is a spike).
+func (p *AWSProvider) cloudControlBatchScan(ctx context.Context, req *pb.BatchScanRequest, scanID string, scanStartTime time.Time) (*pb.BatchScanResponse, error) {
+	stats := &pb.ScanStats{
+		ResourceCounts: map[string]int32{},
+		ServiceCounts:  map[string]int32{},
+	}
+	var allResources []*pb.Resource
+	var errs []string
+
+	services := req.Services
+	if len(services) == 0 {
+		services = p.ccScanner.SupportedServices()
+	}
+
+	for _, svc := range services {
+		refs, err := p.ccScanner.ScanService(ctx, svc)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("Service %s: %v", svc, err))
+			continue
+		}
+		for _, ref := range refs {
+			res, err := p.ccScanner.DescribeResource(ctx, ref)
+			if err != nil {
+				log.Printf("CloudControl describe %s/%s failed: %v", ref.Type, ref.Id, err)
+				continue
+			}
+			allResources = append(allResources, res)
+			stats.ResourceCounts[res.Type]++
+		}
+		stats.ServiceCounts[svc] = int32(len(refs))
+	}
+	stats.TotalResources = int32(len(allResources))
+	stats.DurationMs = time.Since(scanStartTime).Milliseconds()
+
+	if p.changeStorage != nil && len(allResources) > 0 {
+		go p.autoSaveScanResults(scanID, scanStartTime, allResources, services)
+	}
+
+	log.Printf("CloudControl batch scan %s: %d resources across %d services", scanID, len(allResources), len(services))
+
+	return &pb.BatchScanResponse{
+		Resources: allResources,
+		Stats:     stats,
+		Errors:    errs,
+	}, nil
 }
 
 // directBatchScan provides fallback scanning when pipeline is not available
@@ -813,8 +913,7 @@ func (p *AWSProvider) DescribeResource(ctx context.Context, req *pb.DescribeReso
 	}
 
 	log.Printf("DEBUG: About to call scanner.DescribeResource for %s:%s", resourceRef.Service, resourceRef.Id)
-	// Get detailed resource information
-	resource, err := p.scanner.DescribeResource(ctx, resourceRef)
+	resource, err := p.describeResource(ctx, resourceRef)
 	if err != nil {
 		return &pb.DescribeResourceResponse{
 			Error: fmt.Sprintf("failed to describe resource: %v", err),
@@ -839,8 +938,7 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 
 	log.Printf("ScanService called for service: %s", req.Service)
 
-	// Use UnifiedScanner to scan the service
-	resourceRefs, err := p.scanner.ScanService(ctx, req.Service)
+	resourceRefs, err := p.scanService(ctx, req.Service)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan service %s: %w", req.Service, err)
 	}
@@ -849,7 +947,7 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 	var resources []*pb.Resource
 	if req.IncludeRelationships { // Changed from IncludeDetails
 		for _, ref := range resourceRefs {
-			resource, err := p.scanner.DescribeResource(ctx, ref)
+			resource, err := p.describeResource(ctx, ref)
 			if err != nil {
 				log.Printf("Failed to describe resource %s: %v", ref.Id, err)
 				// Create basic resource on failure

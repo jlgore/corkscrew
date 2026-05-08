@@ -6,27 +6,19 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.16
-	github.com/aws/aws-sdk-go-v2/service/acm v1.38.3
-	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.66.2
+	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.29.15
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.11
-	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.55.11
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.57.0
-	github.com/aws/aws-sdk-go-v2/service/configservice v1.62.3
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.57.3
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.300.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.79.1
 	github.com/aws/aws-sdk-go-v2/service/eks v1.83.0
-	github.com/aws/aws-sdk-go-v2/service/elasticache v1.52.2
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.33.25
-	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.54.12
-	github.com/aws/aws-sdk-go-v2/service/glue v1.141.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.10
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.43.7
 	github.com/aws/aws-sdk-go-v2/service/kms v1.51.1
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.90.1
 	github.com/aws/aws-sdk-go-v2/service/rds v1.118.2
-	github.com/aws/aws-sdk-go-v2/service/redshift v1.62.7
 	github.com/aws/aws-sdk-go-v2/service/resourceexplorer2 v1.23.6
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
@@ -35,9 +27,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.27
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.6
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1
+	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/jlgore/corkscrew v0.1.2
-	github.com/marcboeker/go-duckdb v1.8.5
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
@@ -63,6 +55,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.21 // indirect
 	github.com/aws/smithy-go v1.25.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/duckdb/duckdb-go-bindings v0.10502.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10502.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10502.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10502.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10502.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10502.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
@@ -73,6 +71,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/oklog/run v1.2.0 // indirect
@@ -87,5 +86,6 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260504160031-60b97b32f348 // indirect
 	google.golang.org/grpc v1.81.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
