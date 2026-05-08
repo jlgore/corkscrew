@@ -8,8 +8,6 @@ package main
 
 //go:generate go run ./cmd/analyzer -output generated/services.json -sdk-path $GOPATH/pkg/mod/github.com/aws/aws-sdk-go-v2@latest
 //go:generate go run ./cmd/client-factory-generator -services generated/services.json -output generated/client_factory.go
-//go:generate go run ./cmd/schema-generator -services generated/services.json -output-dir generated/schemas -format sql
-//go:generate go run ./cmd/registry-generator -services generated/services.json -output generated/scanner_registry.go -package main
 //go:generate go fmt ./generated/...
 
 // Generate mock implementations for testing

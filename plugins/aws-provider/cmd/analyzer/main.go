@@ -13,28 +13,29 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	
+
 	"github.com/jlgore/corkscrew/internal/config"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/generator"
 )
 
 // ServiceInfo represents discovered AWS service information
 type ServiceInfo struct {
-	Name          string            `json:"name"`
-	PackagePath   string            `json:"package_path"`
-	ClientType    string            `json:"client_type"`
-	Operations    []OperationInfo   `json:"operations"`
+	Name          string             `json:"name"`
+	PackagePath   string             `json:"package_path"`
+	ClientType    string             `json:"client_type"`
+	Operations    []OperationInfo    `json:"operations"`
 	ResourceTypes []ResourceTypeInfo `json:"resource_types"`
-	LastUpdated   time.Time         `json:"last_updated"`
+	LastUpdated   time.Time          `json:"last_updated"`
 }
 
 // OperationInfo represents an AWS service operation
 type OperationInfo struct {
-	Name         string   `json:"name"`
-	InputType    string   `json:"input_type"`
-	OutputType   string   `json:"output_type"`
-	ResourceType string   `json:"resource_type,omitempty"`
-	IsList       bool     `json:"is_list"`
-	IsPaginated  bool     `json:"is_paginated"`
+	Name           string   `json:"name"`
+	InputType      string   `json:"input_type"`
+	OutputType     string   `json:"output_type"`
+	ResourceType   string   `json:"resource_type,omitempty"`
+	IsList         bool     `json:"is_list"`
+	IsPaginated    bool     `json:"is_paginated"`
 	RequiredParams []string `json:"required_params,omitempty"`
 }
 
@@ -48,12 +49,12 @@ type ResourceTypeInfo struct {
 
 // AnalysisResult contains all discovered services
 type AnalysisResult struct {
-	Version      string        `json:"version"`
-	AnalyzedAt   time.Time     `json:"analyzed_at"`
-	SDKVersion   string        `json:"sdk_version"`
-	Services     []ServiceInfo `json:"services"`
-	TotalOps     int           `json:"total_operations"`
-	TotalResources int         `json:"total_resources"`
+	Version        string        `json:"version"`
+	AnalyzedAt     time.Time     `json:"analyzed_at"`
+	SDKVersion     string        `json:"sdk_version"`
+	Services       []ServiceInfo `json:"services"`
+	TotalOps       int           `json:"total_operations"`
+	TotalResources int           `json:"total_resources"`
 }
 
 var (
@@ -68,19 +69,19 @@ var (
 
 func main() {
 	flag.Parse()
-	
+
 	// Load configuration
 	serviceConfig, err := loadConfiguration()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	
+
 	// Get services to analyze
 	servicesToAnalyze, err := getServicesToAnalyze(serviceConfig)
 	if err != nil {
 		log.Fatalf("Failed to determine services: %v", err)
 	}
-	
+
 	// Handle list-services flag
 	if *listServices {
 		fmt.Println("Services to analyze:")
@@ -90,7 +91,7 @@ func main() {
 		fmt.Printf("\nTotal: %d services\n", len(servicesToAnalyze))
 		return
 	}
-	
+
 	if *verbose {
 		log.Printf("Analyzing %d services: %v", len(servicesToAnalyze), servicesToAnalyze)
 	}
@@ -101,7 +102,7 @@ func main() {
 		SDKVersion: "v2-latest",
 		Services:   []ServiceInfo{},
 	}
-	
+
 	// Analyze services
 	analysisConfig := serviceConfig.Providers["aws"].Analysis
 	if analysisConfig.Workers > 1 {
@@ -131,15 +132,15 @@ func main() {
 
 		if serviceInfo != nil {
 			// Skip empty services if configured
-			if analysisConfig.SkipEmpty && 
-			   len(serviceInfo.Operations) == 0 && 
-			   len(serviceInfo.ResourceTypes) == 0 {
+			if analysisConfig.SkipEmpty &&
+				len(serviceInfo.Operations) == 0 &&
+				len(serviceInfo.ResourceTypes) == 0 {
 				if *verbose {
 					log.Printf("Skipping empty service: %s", serviceName)
 				}
 				continue
 			}
-			
+
 			result.Services = append(result.Services, *serviceInfo)
 			result.TotalOps += len(serviceInfo.Operations)
 			result.TotalResources += len(serviceInfo.ResourceTypes)
@@ -160,7 +161,7 @@ func loadConfiguration() (*config.ServiceConfig, error) {
 	if *configFile != "" {
 		os.Setenv("CORKSCREW_CONFIG_FILE", *configFile)
 	}
-	
+
 	return config.LoadServiceConfig()
 }
 
@@ -173,12 +174,12 @@ func getServicesToAnalyze(cfg *config.ServiceConfig) ([]string, error) {
 		}
 		return serviceList, nil
 	}
-	
+
 	// Service group specified
 	if *serviceGroup != "" {
 		return cfg.GetServiceGroup("aws", *serviceGroup)
 	}
-	
+
 	// Use configuration
 	return cfg.GetServicesForProvider("aws")
 }
@@ -193,7 +194,7 @@ func findServiceModulePath(serviceName string) string {
 
 	// Look for AWS SDK v2 service modules
 	serviceBasePath := filepath.Join(gopath, "pkg", "mod", "github.com", "aws", "aws-sdk-go-v2", "service")
-	
+
 	// Try to find the service directory
 	entries, err := ioutil.ReadDir(serviceBasePath)
 	if err != nil {
@@ -230,7 +231,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 
 	// For AWS SDK v2, we'll use a knowledge-based approach
 	// since the module structure makes direct analysis complex
-	
+
 	// Add known operations and resource types for common services
 	switch serviceName {
 	case "ec2":
@@ -250,7 +251,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 			ResourceTypeInfo{Name: "Subnet", GoType: "Subnet", PrimaryKey: "SubnetId", Fields: map[string]string{"SubnetId": "*string", "VpcId": "*string", "CidrBlock": "*string", "AvailabilityZone": "*string"}},
 			ResourceTypeInfo{Name: "SecurityGroup", GoType: "SecurityGroup", PrimaryKey: "GroupId", Fields: map[string]string{"GroupId": "*string", "GroupName": "*string", "VpcId": "*string", "Description": "*string"}},
 		)
-		
+
 	case "s3":
 		info.Operations = append(info.Operations,
 			OperationInfo{Name: "ListBuckets", InputType: "ListBucketsInput", OutputType: "ListBucketsOutput", IsList: true, ResourceType: "Bucket"},
@@ -267,7 +268,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 		info.ResourceTypes = append(info.ResourceTypes,
 			ResourceTypeInfo{Name: "Bucket", GoType: "Bucket", PrimaryKey: "Name", Fields: map[string]string{"Name": "*string", "CreationDate": "*time.Time"}},
 		)
-		
+
 	case "lambda":
 		info.Operations = append(info.Operations,
 			OperationInfo{Name: "ListFunctions", InputType: "ListFunctionsInput", OutputType: "ListFunctionsOutput", IsList: true, IsPaginated: true, ResourceType: "Function"},
@@ -276,7 +277,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 		info.ResourceTypes = append(info.ResourceTypes,
 			ResourceTypeInfo{Name: "Function", GoType: "FunctionConfiguration", PrimaryKey: "FunctionName", Fields: map[string]string{"FunctionName": "*string", "FunctionArn": "*string", "Runtime": "*string", "Handler": "*string", "CodeSize": "*int64"}},
 		)
-		
+
 	case "rds":
 		info.Operations = append(info.Operations,
 			OperationInfo{Name: "DescribeDBInstances", InputType: "DescribeDBInstancesInput", OutputType: "DescribeDBInstancesOutput", IsList: true, IsPaginated: true, ResourceType: "DBInstance"},
@@ -286,7 +287,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 			ResourceTypeInfo{Name: "DBInstance", GoType: "DBInstance", PrimaryKey: "DBInstanceIdentifier", Fields: map[string]string{"DBInstanceIdentifier": "*string", "DBInstanceClass": "*string", "Engine": "*string", "DBInstanceStatus": "*string"}},
 			ResourceTypeInfo{Name: "DBCluster", GoType: "DBCluster", PrimaryKey: "DBClusterIdentifier", Fields: map[string]string{"DBClusterIdentifier": "*string", "Engine": "*string", "Status": "*string"}},
 		)
-		
+
 	case "dynamodb":
 		info.Operations = append(info.Operations,
 			OperationInfo{Name: "ListTables", InputType: "ListTablesInput", OutputType: "ListTablesOutput", IsList: true, IsPaginated: true, ResourceType: "Table"},
@@ -295,7 +296,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 		info.ResourceTypes = append(info.ResourceTypes,
 			ResourceTypeInfo{Name: "Table", GoType: "TableDescription", PrimaryKey: "TableName", Fields: map[string]string{"TableName": "*string", "TableStatus": "*string", "ItemCount": "*int64", "TableSizeBytes": "*int64"}},
 		)
-		
+
 	case "iam":
 		info.Operations = append(info.Operations,
 			OperationInfo{Name: "ListUsers", InputType: "ListUsersInput", OutputType: "ListUsersOutput", IsList: true, IsPaginated: true, ResourceType: "User"},
@@ -307,7 +308,7 @@ func analyzeService(servicePath, serviceName string) (*ServiceInfo, error) {
 			ResourceTypeInfo{Name: "Role", GoType: "Role", PrimaryKey: "RoleName", Fields: map[string]string{"RoleName": "*string", "RoleId": "*string", "Arn": "*string", "CreateDate": "*time.Time"}},
 			ResourceTypeInfo{Name: "Policy", GoType: "Policy", PrimaryKey: "PolicyName", Fields: map[string]string{"PolicyName": "*string", "PolicyId": "*string", "Arn": "*string", "CreateDate": "*time.Time"}},
 		)
-		
+
 	default:
 		// For unknown services, add basic list operation
 		info.Operations = append(info.Operations,
@@ -395,9 +396,9 @@ func extractOperationInfo(fn *ast.FuncDecl, file *ast.File) *OperationInfo {
 
 	// Determine if it's a list operation
 	op.IsList = strings.HasPrefix(op.Name, "List") || strings.HasPrefix(op.Name, "Describe")
-	
+
 	// Check for pagination
-	op.IsPaginated = strings.HasSuffix(op.InputType, "Input") && 
+	op.IsPaginated = strings.HasSuffix(op.InputType, "Input") &&
 		(strings.Contains(op.OutputType, "NextToken") || strings.Contains(op.OutputType, "NextMarker"))
 
 	// Try to determine resource type
@@ -409,7 +410,7 @@ func extractOperationInfo(fn *ast.FuncDecl, file *ast.File) *OperationInfo {
 func extractResourceType(opName string) string {
 	// Common patterns for resource operations
 	prefixes := []string{"List", "Describe", "Get", "Create", "Update", "Delete"}
-	
+
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(opName, prefix) {
 			resourceName := strings.TrimPrefix(opName, prefix)
@@ -461,7 +462,7 @@ func isResourceType(typeName string) bool {
 	if strings.HasSuffix(typeName, "Input") || strings.HasSuffix(typeName, "Output") {
 		return false
 	}
-	
+
 	// Skip internal types
 	if strings.HasPrefix(typeName, "_") || strings.Contains(typeName, "internal") {
 		return false
@@ -499,7 +500,7 @@ func analyzeResourceType(typeName string, structType *ast.StructType) *ResourceT
 
 		fieldName := field.Names[0].Name
 		fieldType := extractFieldType(field.Type)
-		
+
 		info.Fields[fieldName] = fieldType
 
 		// Check for primary key field
@@ -559,10 +560,5 @@ func saveResults(result *AnalysisResult, outputPath string) error {
 		return fmt.Errorf("failed to marshal results: %w", err)
 	}
 
-	// Write to file
-	if err := ioutil.WriteFile(outputPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write output file: %w", err)
-	}
-
-	return nil
+	return generator.WriteFileAtomic(outputPath, data, 0644)
 }

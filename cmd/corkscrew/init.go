@@ -32,14 +32,14 @@ type InitConfig struct {
 
 // CorkscrewConfig represents the complete configuration from corkscrew.yaml
 type CorkscrewConfig struct {
-	Version   string                       `yaml:"version"`
-	Providers map[string]ProviderConfig    `yaml:"providers"`
+	Version      string                    `yaml:"version"`
+	Providers    map[string]ProviderConfig `yaml:"providers"`
 	Dependencies DependenciesConfig        `yaml:"dependencies"`
-	Database  DatabaseConfig               `yaml:"database"`
-	Query     QueryConfig                  `yaml:"query"`
-	Compliance ComplianceConfig            `yaml:"compliance"`
-	Logging   LoggingConfig                `yaml:"logging"`
-	Output    OutputConfig                 `yaml:"output"`
+	Database     DatabaseConfig            `yaml:"database"`
+	Query        QueryConfig               `yaml:"query"`
+	Compliance   ComplianceConfig          `yaml:"compliance"`
+	Logging      LoggingConfig             `yaml:"logging"`
+	Output       OutputConfig              `yaml:"output"`
 }
 
 // ProviderConfig represents configuration for a cloud provider
@@ -119,10 +119,10 @@ func runInit(args []string) {
 			return
 		}
 	}
-	
+
 	fmt.Println("🚀 Initializing Corkscrew v2.0.0...")
 	fmt.Println()
-	
+
 	// Parse flags
 	dryRun := false
 	upgrade := false
@@ -146,7 +146,7 @@ func runInit(args []string) {
 	config := &InitConfig{
 		CorkscrewDir:  filepath.Join(usr.HomeDir, ".corkscrew"),
 		ProtocVersion: "25.3",
-		DuckDBVersion: "1.3.0", // Updated to v1.3.0 with enhanced duckpgq support
+		DuckDBVersion: "1.5.2", // Updated to v1.5.2 with enhanced duckpgq support
 	}
 	config.BinDir = filepath.Join(config.CorkscrewDir, "bin")
 	config.PluginDir = filepath.Join(config.CorkscrewDir, "plugins")
@@ -170,9 +170,9 @@ func runInit(args []string) {
 	}
 	if dryRun {
 		if upgrade {
-			fmt.Println("  ✓ DRY RUN: Would force upgrade protoc v25.3 and duckdb v1.3.0")
+			fmt.Println("  ✓ DRY RUN: Would force upgrade protoc v25.3 and duckdb v1.5.2")
 		} else {
-			fmt.Println("  ✓ DRY RUN: Would download protoc v25.3 and duckdb v1.3.0")
+			fmt.Println("  ✓ DRY RUN: Would download protoc v25.3 and duckdb v1.5.2")
 		}
 	} else {
 		if err := downloadDependencies(config, upgrade); err != nil {
@@ -189,7 +189,7 @@ func runInit(args []string) {
 		fmt.Printf("❌ Failed to read configuration: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	// Step 4: Generate code for enabled providers
 	fmt.Println("⚙️  Generating scanner code for enabled providers...")
 	if dryRun {
@@ -205,7 +205,7 @@ func runInit(args []string) {
 		}
 	}
 	fmt.Println()
-	
+
 	// Step 5: Build enabled plugins
 	fmt.Println("🔨 Building enabled plugins...")
 	if dryRun {
@@ -225,8 +225,133 @@ func runInit(args []string) {
 	// Step 6: Success message
 	fmt.Println("🎉 Corkscrew initialized successfully!")
 	fmt.Println()
-	fmt.Printf("Add to your PATH: export PATH=\"%s:$PATH\"\n", config.BinDir)
-	fmt.Printf("Or run directly: %s/corkscrew scan --provider aws --services s3\n", config.BinDir)
+
+	// Step 7: PATH check / offer to install
+	ensureBinDirOnPath(config.BinDir, dryRun)
+
+	fmt.Printf("Run: %s/corkscrew scan --provider aws --services s3\n", config.BinDir)
+}
+
+// ensureBinDirOnPath checks whether binDir is on the user's $PATH and, if not,
+// offers to append an export line to the appropriate shell rc file.
+func ensureBinDirOnPath(binDir string, dryRun bool) {
+	if isOnPath(binDir) {
+		fmt.Printf("✅ %s is already on your PATH\n\n", binDir)
+		return
+	}
+
+	rcFile, shellName := detectShellRC()
+	exportLine := fmt.Sprintf("export PATH=\"%s:$PATH\"", binDir)
+	if shellName == "fish" {
+		exportLine = fmt.Sprintf("set -gx PATH %s $PATH", binDir)
+	}
+
+	fmt.Printf("⚠️  %s is not on your PATH.\n", binDir)
+
+	if dryRun {
+		if rcFile != "" {
+			fmt.Printf("   DRY RUN: would offer to append to %s:\n     %s\n\n", rcFile, exportLine)
+		} else {
+			fmt.Printf("   DRY RUN: add manually: %s\n\n", exportLine)
+		}
+		return
+	}
+
+	if rcFile == "" || !isStdinTTY() {
+		fmt.Printf("   Add this line to your shell rc file:\n     %s\n\n", exportLine)
+		return
+	}
+
+	fmt.Printf("   Append to %s? [y/N]: ", rcFile)
+	var resp string
+	fmt.Scanln(&resp)
+	resp = strings.ToLower(strings.TrimSpace(resp))
+	if resp != "y" && resp != "yes" {
+		fmt.Printf("   Skipped. Add manually when ready:\n     %s\n\n", exportLine)
+		return
+	}
+
+	if err := appendToRC(rcFile, exportLine); err != nil {
+		fmt.Printf("   ❌ Failed to update %s: %v\n", rcFile, err)
+		fmt.Printf("   Add manually: %s\n\n", exportLine)
+		return
+	}
+	fmt.Printf("   ✅ Added to %s. Run `source %s` or open a new shell.\n\n", rcFile, rcFile)
+}
+
+func isOnPath(dir string) bool {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir
+	}
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if p == "" {
+			continue
+		}
+		pAbs, err := filepath.Abs(p)
+		if err != nil {
+			pAbs = p
+		}
+		if pAbs == abs {
+			return true
+		}
+	}
+	return false
+}
+
+func detectShellRC() (rcFile, shellName string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+	shell := os.Getenv("SHELL")
+	switch {
+	case strings.Contains(shell, "zsh"):
+		return filepath.Join(home, ".zshrc"), "zsh"
+	case strings.Contains(shell, "fish"):
+		return filepath.Join(home, ".config", "fish", "config.fish"), "fish"
+	case strings.Contains(shell, "bash"):
+		// Prefer .bashrc on Linux, .bash_profile on macOS if it exists
+		bashrc := filepath.Join(home, ".bashrc")
+		if runtime.GOOS == "darwin" {
+			bp := filepath.Join(home, ".bash_profile")
+			if _, err := os.Stat(bp); err == nil {
+				return bp, "bash"
+			}
+		}
+		return bashrc, "bash"
+	}
+	// Fallback
+	profile := filepath.Join(home, ".profile")
+	return profile, "sh"
+}
+
+func isStdinTTY() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+func appendToRC(rcFile, exportLine string) error {
+	// Avoid duplicate entries
+	if existing, err := os.ReadFile(rcFile); err == nil {
+		if strings.Contains(string(existing), exportLine) {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(rcFile), 0755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	block := fmt.Sprintf("\n# Added by corkscrew init\n%s\n", exportLine)
+	_, err = f.WriteString(block)
+	return err
 }
 
 func createDirectories(config *InitConfig) error {
@@ -248,10 +373,10 @@ func createDirectories(config *InitConfig) error {
 
 func downloadDependencies(config *InitConfig, upgrade bool) error {
 	ctx := context.Background()
-	
+
 	// Detect platform
 	platform := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
-	
+
 	// Define dependencies
 	deps := []DependencyInfo{
 		{
@@ -293,20 +418,20 @@ func downloadDependencies(config *InitConfig, upgrade bool) error {
 func downloadAndInstallDependency(ctx context.Context, config *InitConfig, dep DependencyInfo) error {
 	// Create HTTP client with timeout
 	client := &http.Client{Timeout: 5 * time.Minute}
-	
+
 	// Get file size first
 	resp, err := client.Head(dep.URL)
 	if err != nil {
 		return fmt.Errorf("failed to get dependency info: %w", err)
 	}
 	resp.Body.Close()
-	
+
 	size := resp.ContentLength
 	platform := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
-	
+
 	// Start download
 	fmt.Printf("  ↓ %s v%s (%s)...", dep.Name, dep.Version, platform)
-	
+
 	resp, err = client.Get(dep.URL)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
@@ -331,7 +456,7 @@ func downloadAndInstallDependency(ctx context.Context, config *InitConfig, dep D
 		Total:     size,
 		StartTime: time.Now(),
 	}
-	
+
 	_, err = io.Copy(out, &progressReader{resp.Body, tracker})
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
@@ -344,11 +469,11 @@ func downloadAndInstallDependency(ctx context.Context, config *InitConfig, dep D
 
 	// Cleanup temp file
 	os.Remove(tempFile)
-	
+
 	// Calculate download size in MB
 	sizeMB := float64(size) / (1024 * 1024)
 	fmt.Printf(" ✓ (%.1f MB)\n", sizeMB)
-	
+
 	return nil
 }
 
@@ -420,9 +545,9 @@ func extractTarGz(archivePath, destDir, binaryName string) error {
 		}
 
 		// Look for the binary file
-		if header.Typeflag == tar.TypeReg && 
-		   (strings.HasSuffix(header.Name, binaryName) || strings.HasSuffix(header.Name, binaryName+".exe")) {
-			
+		if header.Typeflag == tar.TypeReg &&
+			(strings.HasSuffix(header.Name, binaryName) || strings.HasSuffix(header.Name, binaryName+".exe")) {
+
 			destPath := filepath.Join(destDir, binaryName)
 			if runtime.GOOS == "windows" {
 				destPath += ".exe"
@@ -445,7 +570,7 @@ func extractTarGz(archivePath, destDir, binaryName string) error {
 func getProtocURL(version, platform string) string {
 	archiveExt := "zip"
 	osArch := platform
-	
+
 	// Map Go platform names to protoc naming
 	switch platform {
 	case "linux-amd64":
@@ -488,9 +613,9 @@ func getProtocArchiveName(version, platform string) string {
 func getDuckDBURL(version, platform string) string {
 	ext := "zip"
 	if strings.HasPrefix(platform, "linux") {
-		ext = "zip"  // DuckDB provides zip for all platforms
+		ext = "zip" // DuckDB provides zip for all platforms
 	}
-	
+
 	osArch := platform
 	switch platform {
 	case "linux-amd64":
@@ -526,7 +651,7 @@ func getDuckDBArchiveName(version, platform string) string {
 
 func readConfiguration() (*CorkscrewConfig, error) {
 	configFile := "./corkscrew.yaml"
-	
+
 	// Check if config file exists
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		fmt.Println("  ⚠️  Configuration file not found, using defaults")
@@ -545,7 +670,7 @@ func readConfiguration() (*CorkscrewConfig, error) {
 	}
 
 	fmt.Println("  ✓ Configuration file found and parsed")
-	
+
 	// Display provider status
 	for provider, cfg := range config.Providers {
 		if cfg.Enabled {
@@ -584,7 +709,7 @@ func getDefaultConfig() *CorkscrewConfig {
 		},
 		Dependencies: DependenciesConfig{
 			Protoc: DependencyConfig{Version: "25.3", AutoDownload: true},
-			DuckDB: DependencyConfig{Version: "1.3.0", AutoDownload: true},
+			DuckDB: DependencyConfig{Version: "1.5.2", AutoDownload: true},
 		},
 	}
 }
@@ -596,7 +721,7 @@ func generateProviderCode(config *CorkscrewConfig) error {
 		}
 
 		fmt.Printf("  ⚙️  Generating %s-provider code...", provider)
-		
+
 		// Check if plugin source exists
 		pluginDir := fmt.Sprintf("./plugins/%s-provider", provider)
 		if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
@@ -645,42 +770,24 @@ func generateAWSScannersForServices(services []string, pluginDir string) error {
 	if _, err := os.Stat(analyzerFullPath); os.IsNotExist(err) {
 		return fmt.Errorf("AWS analyzer not found at %s", analyzerFullPath)
 	}
-	
+
 	// Create generated directory if it doesn't exist
 	generatedDir := filepath.Join(pluginDir, "generated")
 	if err := os.MkdirAll(generatedDir, 0755); err != nil {
 		return fmt.Errorf("failed to create generated directory: %w", err)
 	}
-	
+
 	// Run analyzer to generate services.json
-	cmd := exec.Command("go", "run", analyzerMainGo, 
+	cmd := exec.Command("go", "run", analyzerMainGo,
 		"-output", "generated/services.json",
 		"-services", strings.Join(services, ","))
 	cmd.Dir = pluginDir
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("AWS analyzer failed: %w, output: %s", err, output)
 	}
-	
-	// Run registry generator to create scanner registry
-	registryGeneratorMainGo := filepath.Join("cmd", "registry-generator", "main.go")
-	registryGeneratorFullPath := filepath.Join(pluginDir, registryGeneratorMainGo)
-	if _, err := os.Stat(registryGeneratorFullPath); os.IsNotExist(err) {
-		return fmt.Errorf("AWS registry generator not found at %s", registryGeneratorFullPath)
-	}
-	
-	cmd = exec.Command("go", "run", registryGeneratorMainGo,
-		"-services", "generated/services.json",
-		"-output", "generated/scanner_registry.go",
-		"-package", "generated")
-	cmd.Dir = pluginDir
-	
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("AWS registry generator failed: %w, output: %s", err, output)
-	}
-	
+
 	return nil
 }
 
@@ -691,44 +798,44 @@ func generateAzureScannersForServices(services []string, pluginDir string) error
 	if _, err := os.Stat(analyzerFullPath); os.IsNotExist(err) {
 		return fmt.Errorf("Azure analyzer not found at %s", analyzerFullPath)
 	}
-	
+
 	// Create generated directory if it doesn't exist
 	generatedDir := filepath.Join(pluginDir, "generated")
 	if err := os.MkdirAll(generatedDir, 0755); err != nil {
 		return fmt.Errorf("failed to create generated directory: %w", err)
 	}
-	
+
 	// First, run analyzer to generate service catalog
 	catalogPath := "generated/azure-service-catalog.json"
-	cmd := exec.Command("go", "run", analyzerMainGo, 
+	cmd := exec.Command("go", "run", analyzerMainGo,
 		"-output", catalogPath,
 		"-services", strings.Join(services, ","),
 		"-update") // Auto-download Azure SDK if needed
 	cmd.Dir = pluginDir
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Azure analyzer failed: %w, output: %s", err, output)
 	}
-	
+
 	// Then run scanner generator with the catalog
 	generatorMainGo := filepath.Join("cmd", "scanner-generator", "main.go")
 	generatorFullPath := filepath.Join(pluginDir, generatorMainGo)
 	if _, err := os.Stat(generatorFullPath); os.IsNotExist(err) {
 		return fmt.Errorf("Azure scanner generator not found at %s", generatorFullPath)
 	}
-	
-	cmd = exec.Command("go", "run", generatorMainGo, 
+
+	cmd = exec.Command("go", "run", generatorMainGo,
 		"-catalog", catalogPath,
 		"-services", strings.Join(services, ","),
 		"-output", "./generated")
 	cmd.Dir = pluginDir
-	
+
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Azure scanner generator failed: %w, output: %s", err, output)
 	}
-	
+
 	return nil
 }
 
@@ -739,24 +846,24 @@ func generateGCPScannersForServices(services []string, pluginDir string) error {
 	if _, err := os.Stat(generatorFullPath); os.IsNotExist(err) {
 		return fmt.Errorf("GCP scanner generator not found at %s", generatorFullPath)
 	}
-	
+
 	// Create generated directory if it doesn't exist
 	generatedDir := filepath.Join(pluginDir, "generated")
 	if err := os.MkdirAll(generatedDir, 0755); err != nil {
 		return fmt.Errorf("failed to create generated directory: %w", err)
 	}
-	
+
 	// GCP generator - check if it expects comma-separated services
 	cmd := exec.Command("go", "run", generatorMainGo,
 		"-services", strings.Join(services, ","),
 		"-output", "./generated")
 	cmd.Dir = pluginDir
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("GCP generator failed: %w, output: %s", err, output)
 	}
-	
+
 	return nil
 }
 
@@ -769,25 +876,25 @@ func generateKubernetesScannersForServices(services []string, pluginDir string) 
 		// No generator found, assume static implementation
 		return nil
 	}
-	
+
 	// Create generated directory if it doesn't exist
 	generatedDir := filepath.Join(pluginDir, "generated")
 	if err := os.MkdirAll(generatedDir, 0755); err != nil {
 		return fmt.Errorf("failed to create generated directory: %w", err)
 	}
-	
+
 	for _, service := range services {
 		cmd := exec.Command("go", "run", generatorMainGo,
 			"-service", service,
 			"-output", "./generated")
 		cmd.Dir = pluginDir
-		
+
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("Kubernetes generator failed for service %s: %w, output: %s", service, err, output)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -809,7 +916,6 @@ func generateAnalysisFilesForProvider(provider string, services []string, plugin
 	}
 }
 
-
 func buildPluginsFromConfig(config *InitConfig, corkscrewConfig *CorkscrewConfig) error {
 	for provider, cfg := range corkscrewConfig.Providers {
 		if !cfg.Enabled {
@@ -817,7 +923,7 @@ func buildPluginsFromConfig(config *InitConfig, corkscrewConfig *CorkscrewConfig
 		}
 
 		fmt.Printf("  🔨 Building %s-provider...", provider)
-		
+
 		// Check if plugin source exists
 		pluginDir := fmt.Sprintf("./plugins/%s-provider", provider)
 		if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
@@ -842,12 +948,12 @@ func buildPlugin(provider, pluginDir string) error {
 	target := fmt.Sprintf("build-%s-plugin", provider)
 	cmd := exec.Command("make", target)
 	cmd.Dir = "." // Run from current directory
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to build %s plugin: %v\nOutput: %s", provider, err, string(output))
 	}
-	
+
 	return nil
 }
 
@@ -876,7 +982,7 @@ func printInitUsage() {
 	fmt.Println()
 	fmt.Println("What it does:")
 	fmt.Println("  1. Creates ~/.corkscrew directory structure")
-	fmt.Println("  2. Downloads protoc v25.3 and duckdb v1.3.0")
+	fmt.Println("  2. Downloads protoc v25.3 and duckdb v1.5.2")
 	fmt.Println("  3. Reads configuration from ./corkscrew.yaml")
 	fmt.Println("  4. Generates scanner code for enabled providers")
 	fmt.Println("  5. Generates analysis files for enhanced discovery")

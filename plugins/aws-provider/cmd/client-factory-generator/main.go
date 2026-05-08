@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,10 +45,10 @@ type Operation struct {
 
 // Resource represents a resource type definition
 type Resource struct {
-	Name        string            `json:"name"`
-	ResourceType string           `json:"resource_type"`
-	Fields      map[string]string `json:"fields,omitempty"`
-	PrimaryKey  string            `json:"primary_key,omitempty"`
+	Name         string            `json:"name"`
+	ResourceType string            `json:"resource_type"`
+	Fields       map[string]string `json:"fields,omitempty"`
+	PrimaryKey   string            `json:"primary_key,omitempty"`
 }
 
 func main() {
@@ -82,12 +83,12 @@ func main() {
 		EnableValidation: true,
 		EnableCache:      false,
 	}
-	
+
 	// Create a minimal AWS config for the registry
 	awsCfg := aws.Config{
 		Region: "us-east-1", // Default region for registry
 	}
-	
+
 	reg := registry.NewUnifiedServiceRegistry(awsCfg, config)
 
 	// Convert and register services
@@ -104,7 +105,7 @@ func main() {
 
 	// Create generator
 	gen := generator.NewClientFactoryGenerator(reg, *outputPath)
-	
+
 	// Configure generator
 	if *packageName != "main" {
 		// Note: Need to check if ClientFactoryGenerator supports custom package names
@@ -118,7 +119,7 @@ func main() {
 	if *verbose {
 		log.Printf("Generating client factory...")
 	}
-	
+
 	if err := gen.GenerateClientFactory(); err != nil {
 		log.Fatalf("Failed to generate client factory: %v", err)
 	}
@@ -154,18 +155,18 @@ func convertToServiceDefinition(svc Service) registry.ServiceDefinition {
 		Description: fmt.Sprintf("AWS %s service", strings.ToUpper(svc.Name)),
 		PackagePath: svc.PackagePath,
 		ClientType:  fmt.Sprintf("*%s.%s", extractPackageName(svc.PackagePath), svc.ClientType),
-		
+
 		// Set reasonable defaults for rate limiting
 		RateLimit:  rate.Limit(20), // 20 requests per second
 		BurstLimit: 40,             // Burst up to 40 requests
-		
+
 		// Service characteristics
-		RequiresRegion:            !isGlobalService(svc.Name),
-		GlobalService:             isGlobalService(svc.Name),
-		SupportsPagination:        hasPaginatedOperations(svc.Operations),
-		SupportsResourceExplorer:  true, // Most services support resource discovery
-		SupportsParallelScan:      true, // Enable parallel scanning by default
-		
+		RequiresRegion:           !isGlobalService(svc.Name),
+		GlobalService:            isGlobalService(svc.Name),
+		SupportsPagination:       hasPaginatedOperations(svc.Operations),
+		SupportsResourceExplorer: true, // Most services support resource discovery
+		SupportsParallelScan:     true, // Enable parallel scanning by default
+
 		// Discovery metadata
 		DiscoveredAt:     time.Now(),
 		DiscoverySource:  "analyzer",
@@ -184,18 +185,18 @@ func convertToServiceDefinition(svc Service) registry.ServiceDefinition {
 			InputType:     op.InputType,
 			OutputType:    op.OutputType,
 			Paginated:     op.IsPaginated,
-			
+
 			// Set operation characteristics based on operation name
 			RequiresResourceID: !op.IsList,
 			IsGlobalOperation:  isGlobalService(svc.Name),
-			IsMutating:        isMutatingOperation(op.Name),
-			IsIdempotent:      !isMutatingOperation(op.Name),
-			SupportsFiltering: op.IsList,
+			IsMutating:         isMutatingOperation(op.Name),
+			IsIdempotent:       !isMutatingOperation(op.Name),
+			SupportsFiltering:  op.IsList,
 		}
-		
+
 		// Set required permissions based on operation
 		opDef.RequiredPermissions = generatePermissions(svc.Name, op.Name)
-		
+
 		def.Operations = append(def.Operations, opDef)
 	}
 
@@ -205,26 +206,26 @@ func convertToServiceDefinition(svc Service) registry.ServiceDefinition {
 			Name:         res.Name,
 			DisplayName:  res.Name,
 			ResourceType: res.ResourceType,
-			
+
 			// Find associated operations
 			ListOperation:       findListOperation(svc.Operations, res.ResourceType),
 			DescribeOperation:   findDescribeOperation(svc.Operations, res.ResourceType),
 			SupportedOperations: findAllOperations(svc.Operations, res.ResourceType),
-			
+
 			// Set resource characteristics
 			IsGlobalResource: isGlobalService(svc.Name),
 			SupportsTags:     true, // Most AWS resources support tags
 			Paginated:        hasResourcePagination(svc.Operations, res.ResourceType),
-			
+
 			// Set identification fields
 			IDField:          res.PrimaryKey,
 			IdentifierFields: []string{res.PrimaryKey},
 			FieldMappings:    res.Fields,
 		}
-		
+
 		// Set required permissions
 		resDef.RequiredPermissions = generateResourcePermissions(svc.Name, res.Name)
-		
+
 		def.ResourceTypes = append(def.ResourceTypes, resDef)
 	}
 
@@ -303,12 +304,12 @@ func determineOperationType(operationName string) string {
 
 func isGlobalService(serviceName string) bool {
 	globalServices := map[string]bool{
-		"iam":         true,
-		"s3":          true, // S3 buckets are global namespace but regionally stored
-		"cloudfront":  true,
-		"route53":     true,
-		"waf":         true,
-		"sts":         true,
+		"iam":        true,
+		"s3":         true, // S3 buckets are global namespace but regionally stored
+		"cloudfront": true,
+		"route53":    true,
+		"waf":        true,
+		"sts":        true,
 	}
 	return globalServices[strings.ToLower(serviceName)]
 }
@@ -379,7 +380,7 @@ func generatePermissions(serviceName, operationName string) []string {
 	// Generate IAM permission strings based on service and operation
 	service := strings.ToLower(serviceName)
 	action := strings.ToLower(operationName)
-	
+
 	// Convert operation name to IAM action
 	iamAction := operationName
 	if strings.HasPrefix(action, "describe") {
@@ -387,39 +388,39 @@ func generatePermissions(serviceName, operationName string) []string {
 	} else if strings.HasPrefix(action, "list") {
 		iamAction = strings.Replace(operationName, "List", "List", 1)
 	}
-	
+
 	permission := fmt.Sprintf("%s:%s", service, iamAction)
 	return []string{permission}
 }
 
 func generateResourcePermissions(serviceName, resourceName string) []string {
 	service := strings.ToLower(serviceName)
-	
+
 	// Common permissions for most resources
 	permissions := []string{
 		fmt.Sprintf("%s:List*", service),
 		fmt.Sprintf("%s:Describe*", service),
 		fmt.Sprintf("%s:Get*", service),
 	}
-	
+
 	return permissions
 }
 
 func generateServicePermissions(serviceName string, operations []registry.OperationDefinition) []string {
 	permissionMap := make(map[string]bool)
-	
+
 	// Add permissions from all operations
 	for _, op := range operations {
 		for _, perm := range op.RequiredPermissions {
 			permissionMap[perm] = true
 		}
 	}
-	
-	// Convert to slice
-	var permissions []string
+
+	permissions := make([]string, 0, len(permissionMap))
 	for perm := range permissionMap {
 		permissions = append(permissions, perm)
 	}
-	
+	sort.Strings(permissions)
+
 	return permissions
 }

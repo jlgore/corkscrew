@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"context"
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -63,15 +62,15 @@ type AnalysisGeneratorInterface interface {
 
 // ServiceMetadata holds cached metadata about a discovered AWS service
 type ServiceMetadata struct {
-	Name          string                    `json:"name"`
-	DisplayName   string                    `json:"display_name"`
-	PackageName   string                    `json:"package_name"`
-	ClientType    string                    `json:"client_type"`
-	Operations    map[string]OperationType  `json:"operations"`
-	ResourceTypes []string                  `json:"resource_types"`
-	Paginated     map[string]bool           `json:"paginated"`
+	Name           string                   `json:"name"`
+	DisplayName    string                   `json:"display_name"`
+	PackageName    string                   `json:"package_name"`
+	ClientType     string                   `json:"client_type"`
+	Operations     map[string]OperationType `json:"operations"`
+	ResourceTypes  []string                 `json:"resource_types"`
+	Paginated      map[string]bool          `json:"paginated"`
 	ReflectionData *ReflectionMetadata      `json:"reflection_data"`
-	DiscoveredAt  time.Time                 `json:"discovered_at"`
+	DiscoveredAt   time.Time                `json:"discovered_at"`
 }
 
 // ReflectionMetadata holds reflection-specific data about a service client
@@ -93,28 +92,3 @@ type AWSResourceRef struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-// ResourceScanner interface for service-specific resource discovery
-type ResourceScanner interface {
-	DiscoverAndListServiceResources(ctx context.Context, serviceName string) ([]AWSResourceRef, error)
-	ExecuteOperationWithParams(ctx context.Context, serviceName, operationName string, params map[string]interface{}) ([]AWSResourceRef, error)
-	GetRegion() string
-}
-
-// HierarchicalDiscoverer provides sophisticated resource discovery
-type HierarchicalDiscoverer struct {
-	resourceScanner ResourceScanner
-	debug           bool
-}
-
-// NewHierarchicalDiscoverer creates a new hierarchical discoverer
-func NewHierarchicalDiscoverer(scanner ResourceScanner, debug bool) *HierarchicalDiscoverer {
-	return &HierarchicalDiscoverer{
-		resourceScanner: scanner,
-		debug:           debug,
-	}
-}
-
-// DiscoverService discovers all resources for a service using hierarchical approach
-func (hd *HierarchicalDiscoverer) DiscoverService(ctx context.Context, serviceName string) ([]AWSResourceRef, error) {
-	return hd.resourceScanner.DiscoverAndListServiceResources(ctx, serviceName)
-}

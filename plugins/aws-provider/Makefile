@@ -95,20 +95,8 @@ generate-client-factory: analyze $(GENERATED_DIR)
 		echo "Using cached client factory"; \
 	fi
 
-# Generate schema definitions
-generate-schemas: analyze $(SCHEMA_DIR)
-	@echo "Generating schema definitions..."
-	@if [ -f .force-regenerate ] || [ ! -d $(SCHEMA_DIR) ] || [ -z "$$(ls -A $(SCHEMA_DIR))" ]; then \
-		go run ./cmd/schema-generator \
-			-services $(GENERATED_DIR)/services.json \
-			-output-dir $(SCHEMA_DIR) \
-			-format sql; \
-	else \
-		echo "Using cached schema definitions"; \
-	fi
-
-# Generate Go code (client factory + schemas)
-generate-go: generate-client-factory generate-schemas
+# Generate Go code (client factory)
+generate-go: generate-client-factory
 	@echo "Generating Go integration code..."
 	@go generate ./...
 
