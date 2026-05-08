@@ -49,6 +49,25 @@ func TestParseCloudControlEmpty(t *testing.T) {
 	}
 }
 
+func TestServiceFromCFNType(t *testing.T) {
+	cases := map[string]string{
+		"AWS::S3::Bucket":                            "s3",
+		"AWS::EC2::Instance":                         "ec2",
+		"AWS::IAM::Role":                             "iam",
+		"AWS::ElasticLoadBalancingV2::LoadBalancer":  "elasticloadbalancing",
+		"AWS::CloudFormation::Stack":                 "cloudformation",
+		"":                                           "",
+		"NotAWS::S3::Bucket":                         "",
+		"AWS::":                                      "",
+		"AWS::S3":                                    "",
+	}
+	for in, want := range cases {
+		if got := serviceFromCFNType(in); got != want {
+			t.Errorf("serviceFromCFNType(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
 func TestSupportedServicesNonEmpty(t *testing.T) {
 	s := &CloudControlScanner{}
 	got := s.SupportedServices()

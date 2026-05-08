@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,10 +30,16 @@ import (
 // Toggle from aws_provider.go via CORKSCREW_AWS_SCANNER=cloudcontrol.
 type CloudControlScanner struct {
 	client *cloudcontrol.Client
+	cfn    *cloudformation.Client
 	cfg    aws.Config
 
 	mu        sync.RWMutex
 	accountID string
+
+	// discovered is the dynamically-discovered service→types map. Populated by
+	// the first call to ensureDiscovery; nil falls through to curatedTypes.
+	discovered     map[string][]string
+	discoveryError error
 
 	// Metrics
 	listCalls    atomic.Int64
@@ -43,17 +52,14 @@ type CloudControlScanner struct {
 func NewCloudControlScanner(cfg aws.Config) *CloudControlScanner {
 	return &CloudControlScanner{
 		client: cloudcontrol.NewFromConfig(cfg),
+		cfn:    cloudformation.NewFromConfig(cfg),
 		cfg:    cfg,
 	}
 }
 
-// serviceToCFNTypes maps the service names corkscrew uses ("s3", "ec2", ...)
-// to the AWS::*::* type names Cloud Control API understands.
-//
-// This is curated for the spike. Cloud Control covers ~1100 types; this list is
-// the subset most users care about per service. Extend as needed; or replace
-// with a cloudformation.ListTypes(TypeNamePrefix="AWS::S3::") lookup.
-var serviceToCFNTypes = map[string][]string{
+// curatedTypes is the fallback map used when dynamic discovery via
+// cloudformation.ListTypes hasn't run or failed. Covers the common cases.
+var curatedTypes = map[string][]string{
 	"s3": {
 		"AWS::S3::Bucket",
 	},
@@ -120,21 +126,32 @@ var serviceToCFNTypes = map[string][]string{
 }
 
 // SupportedServices returns the services this scanner can enumerate.
+// Triggers dynamic discovery on first call; falls back to the curated map
+// if discovery fails. Note: this is best-effort — pass a context if you
+// want a deadline; otherwise discovery runs with a default 30s budget.
 func (s *CloudControlScanner) SupportedServices() []string {
-	services := make([]string, 0, len(serviceToCFNTypes))
-	for svc := range serviceToCFNTypes {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.ensureDiscovery(ctx)
+
+	m := s.activeTypeMap()
+	services := make([]string, 0, len(m))
+	for svc := range m {
 		services = append(services, svc)
 	}
+	sort.Strings(services)
 	return services
 }
 
 // ScanService lists every resource of every CFN type known for the service.
 func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
 	s.ensureAccountID(ctx)
+	s.ensureDiscovery(ctx)
 
-	types, ok := serviceToCFNTypes[strings.ToLower(serviceName)]
+	m := s.activeTypeMap()
+	types, ok := m[strings.ToLower(serviceName)]
 	if !ok {
-		log.Printf("CloudControl: service %q not in curated type map; skipping", serviceName)
+		log.Printf("CloudControl: service %q has no known CFN types; skipping", serviceName)
 		return nil, nil
 	}
 
@@ -266,6 +283,122 @@ func (s *CloudControlScanner) GetMetrics() interface{} {
 		"list_failures": s.listFailures.Load(),
 		"get_failures":  s.getFailures.Load(),
 	}
+}
+
+// ensureDiscovery lazily populates s.discovered via cloudformation.ListTypes.
+// Idempotent: runs at most once, then caches both success and failure. On
+// failure, scans fall back to the curated map.
+func (s *CloudControlScanner) ensureDiscovery(ctx context.Context) {
+	s.mu.RLock()
+	done := s.discovered != nil || s.discoveryError != nil
+	cfn := s.cfn
+	s.mu.RUnlock()
+	if done {
+		return
+	}
+	if cfn == nil {
+		// Zero-value scanner (e.g. in unit tests) — skip dynamic discovery.
+		s.mu.Lock()
+		s.discoveryError = fmt.Errorf("no cloudformation client configured")
+		s.mu.Unlock()
+		return
+	}
+
+	discovered, err := s.discoverTypes(ctx)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.discovered != nil || s.discoveryError != nil {
+		return // raced; another caller finished first
+	}
+	if err != nil {
+		s.discoveryError = err
+		log.Printf("CloudControl: type discovery failed (%v); falling back to curated map", err)
+		return
+	}
+	s.discovered = discovered
+	log.Printf("CloudControl: discovered %d services / %d total types via cloudformation.ListTypes",
+		len(discovered), countTypes(discovered))
+}
+
+// discoverTypes enumerates all FULLY_MUTABLE public AWS::* types and groups
+// them by service. Returns a map[service][]typeName.
+func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]string, error) {
+	out := map[string][]string{}
+
+	for _, prov := range []cfntypes.ProvisioningType{
+		cfntypes.ProvisioningTypeFullyMutable,
+		cfntypes.ProvisioningTypeImmutable,
+	} {
+		var nextToken *string
+		for {
+			resp, err := s.cfn.ListTypes(ctx, &cloudformation.ListTypesInput{
+				Type:             cfntypes.RegistryTypeResource,
+				Visibility:       cfntypes.VisibilityPublic,
+				ProvisioningType: prov,
+				NextToken:        nextToken,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("ListTypes(%s): %w", prov, err)
+			}
+			for _, t := range resp.TypeSummaries {
+				name := aws.ToString(t.TypeName)
+				if !strings.HasPrefix(name, "AWS::") {
+					continue // skip third-party types
+				}
+				svc := serviceFromCFNType(name)
+				if svc == "" {
+					continue
+				}
+				out[svc] = append(out[svc], name)
+			}
+			if resp.NextToken == nil || *resp.NextToken == "" {
+				break
+			}
+			nextToken = resp.NextToken
+		}
+	}
+
+	for svc := range out {
+		sort.Strings(out[svc])
+	}
+	return out, nil
+}
+
+// activeTypeMap returns the map of services→types currently in use.
+// Prefers the dynamically-discovered map; falls back to the curated map.
+func (s *CloudControlScanner) activeTypeMap() map[string][]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.discovered != nil {
+		return s.discovered
+	}
+	return curatedTypes
+}
+
+// serviceFromCFNType maps "AWS::S3::Bucket" → "s3".
+// Returns "" if the type name doesn't match the AWS::Service::Resource shape.
+func serviceFromCFNType(typeName string) string {
+	parts := strings.SplitN(typeName, "::", 3)
+	if len(parts) < 3 || parts[0] != "AWS" || parts[1] == "" {
+		return ""
+	}
+	svc := strings.ToLower(parts[1])
+	// Collapse a few CFN service names to the corkscrew-internal shorthand
+	// that other code paths use.
+	switch svc {
+	case "elasticloadbalancingv2":
+		return "elasticloadbalancing"
+	}
+	return svc
+}
+
+func countTypes(m map[string][]string) int {
+	n := 0
+	for _, v := range m {
+		n += len(v)
+	}
+	return n
 }
 
 func (s *CloudControlScanner) ensureAccountID(ctx context.Context) {
