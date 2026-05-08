@@ -124,9 +124,20 @@ func (mrs *MultiRegionScanner) ScanMultipleRegions(ctx context.Context, regions 
 
 	wg.Wait()
 
+	// Dedupe across regions. Global resources (S3 buckets, IAM roles,
+	// Route53 zones, etc.) are returned by every region's ListResources
+	// call, so AllResources contains duplicates. The provider stamps
+	// Region="" on global refs; we collapse on (account, type, id) which
+	// works for both global resources (same key across all regions) and
+	// catches any other accidental duplicates in regional types.
+	results.AllResources = dedupeResources(results.AllResources)
+
 	// Generate aggregated stats and summary
 	results.TotalStats = mrs.aggregateStats(results.RegionResults)
 	results.Summary = mrs.generateSummary(results.RegionResults, time.Since(start))
+	// Override the count with the deduped total, otherwise globals scanned
+	// in N regions appear N times in the headline number.
+	results.Summary.TotalResources = int32(len(results.AllResources))
 
 	// Apply filtering
 	if mrs.config.HideEmptyRegions {
@@ -412,4 +423,28 @@ func (mrs *MultiRegionScanner) PrintSummary(results *AggregatedResults) {
 			fmt.Printf("   %s: %d resources\n", topRegions[i].region, topRegions[i].count)
 		}
 	}
+}
+
+// dedupeResources collapses the AllResources slice on (AccountId, Type, Id).
+// Preserves order: first occurrence wins. Resources that lack any of the
+// three key fields fall back to ID-only — pragmatic, since a missing
+// AccountId or Type usually means a less-trusted source.
+func dedupeResources(in []*pb.Resource) []*pb.Resource {
+	if len(in) <= 1 {
+		return in
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]*pb.Resource, 0, len(in))
+	for _, r := range in {
+		key := r.AccountId + "\x00" + r.Type + "\x00" + r.Id
+		if r.AccountId == "" || r.Type == "" {
+			key = r.Id
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, r)
+	}
+	return out
 }

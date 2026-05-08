@@ -69,6 +69,24 @@ func NewCloudControlScanner(cfg aws.Config) *CloudControlScanner {
 	}
 }
 
+// globalServices are AWS services whose resources are not region-scoped:
+// the same physical resource is returned by ListResources in every region.
+// We stamp Region="" on those refs so the multi-region consumer can dedupe
+// by (account, type, id) without losing regional info on actually-regional
+// resources. Lowercase service shorthand (matches serviceFromCFNType output).
+var globalServices = map[string]bool{
+	"iam":            true,
+	"s3":             true, // buckets are listed globally even though a bucket has a home region
+	"route53":        true,
+	"cloudfront":     true,
+	"organizations":  true,
+	"support":        true,
+	"health":         true,
+	"billing":        true,
+	"globalaccelerator": true,
+	"chatbot":        true,
+}
+
 // curatedTypes is the fallback map used when dynamic discovery via
 // cloudformation.ListTypes hasn't run or failed. Covers the common cases.
 var curatedTypes = map[string][]string{
@@ -263,6 +281,15 @@ func (s *CloudControlScanner) UnsupportedTypes() map[string]string {
 func (s *CloudControlScanner) listType(ctx context.Context, serviceName, typeName string) ([]*pb.ResourceRef, error) {
 	s.listCalls.Add(1)
 
+	// Globally-namespaced services return the same resources from every
+	// region's ListResources call. Stamp Region="" on those refs so the
+	// downstream multi-region consumer dedupes by (account, type, id)
+	// without dropping legitimately-regional resources elsewhere.
+	region := s.cfg.Region
+	if globalServices[strings.ToLower(serviceName)] {
+		region = ""
+	}
+
 	var refs []*pb.ResourceRef
 	var nextToken *string
 	for {
@@ -279,7 +306,7 @@ func (s *CloudControlScanner) listType(ctx context.Context, serviceName, typeNam
 				Service:   serviceName,
 				Type:      typeName,
 				Id:        aws.ToString(rd.Identifier),
-				Region:    s.cfg.Region,
+				Region:    region,
 				AccountId: s.getAccountID(),
 				BasicAttributes: map[string]string{
 					"cfn_type": typeName,
