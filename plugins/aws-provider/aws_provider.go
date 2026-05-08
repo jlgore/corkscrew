@@ -308,7 +308,10 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 		accountID := p.scanner.GetAccountID()
 		p.explorer = NewResourceExplorer(cfg, viewArn, accountID)
 		p.scanner.SetResourceExplorer(p.explorer)
-		
+		if p.ccScanner != nil {
+			p.ccScanner.SetResourceExplorer(p.explorer)
+		}
+
 		// Test Resource Explorer connectivity
 		if p.explorer.IsHealthy(ctx) {
 			log.Printf("Resource Explorer initialized and healthy with view: %s", viewArn)

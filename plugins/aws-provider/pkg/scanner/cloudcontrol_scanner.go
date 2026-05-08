@@ -35,17 +35,24 @@ type CloudControlScanner struct {
 
 	mu        sync.RWMutex
 	accountID string
+	explorer  ResourceExplorer
 
 	// discovered is the dynamically-discovered service→types map. Populated by
 	// the first call to ensureDiscovery; nil falls through to curatedTypes.
 	discovered     map[string][]string
 	discoveryError error
 
+	// reFormatToCFN maps the Resource Explorer "service:resource" key to the
+	// canonical "AWS::Service::Resource" type name. Built alongside discovered.
+	// Used to enrich RE results via CC.GetResource.
+	reFormatToCFN map[string]string
+
 	// Metrics
 	listCalls    atomic.Int64
 	getCalls     atomic.Int64
 	listFailures atomic.Int64
 	getFailures  atomic.Int64
+	reQueries    atomic.Int64
 }
 
 // NewCloudControlScanner constructs a Cloud Control API-backed scanner.
@@ -143,10 +150,28 @@ func (s *CloudControlScanner) SupportedServices() []string {
 	return services
 }
 
+// SetResourceExplorer wires a Resource Explorer client. When set, ScanService
+// prefers RE for discovery and CC for enrichment.
+func (s *CloudControlScanner) SetResourceExplorer(re ResourceExplorer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.explorer = re
+}
+
 // ScanService lists every resource of every CFN type known for the service.
+// When a Resource Explorer is wired, prefer RE for discovery (one indexed
+// search across regions) and use CC.GetResource only for the type lookup.
 func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
 	s.ensureAccountID(ctx)
 	s.ensureDiscovery(ctx)
+
+	s.mu.RLock()
+	re := s.explorer
+	s.mu.RUnlock()
+
+	if re != nil {
+		return s.scanServiceViaRE(ctx, serviceName, re)
+	}
 
 	m := s.activeTypeMap()
 	types, ok := m[strings.ToLower(serviceName)]
@@ -282,6 +307,7 @@ func (s *CloudControlScanner) GetMetrics() interface{} {
 		"get_calls":     s.getCalls.Load(),
 		"list_failures": s.listFailures.Load(),
 		"get_failures":  s.getFailures.Load(),
+		"re_queries":    s.reQueries.Load(),
 	}
 }
 
@@ -322,9 +348,11 @@ func (s *CloudControlScanner) ensureDiscovery(ctx context.Context) {
 }
 
 // discoverTypes enumerates all FULLY_MUTABLE public AWS::* types and groups
-// them by service. Returns a map[service][]typeName.
+// them by service. Returns a map[service][]typeName. Also populates the
+// scanner's reFormatToCFN reverse map for RE-driven enrichment.
 func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]string, error) {
 	out := map[string][]string{}
+	reverse := map[string]string{}
 
 	for _, prov := range []cfntypes.ProvisioningType{
 		cfntypes.ProvisioningTypeFullyMutable,
@@ -351,6 +379,9 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 					continue
 				}
 				out[svc] = append(out[svc], name)
+				if k := reFormatKey(name); k != "" {
+					reverse[k] = name
+				}
 			}
 			if resp.NextToken == nil || *resp.NextToken == "" {
 				break
@@ -362,7 +393,59 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 	for svc := range out {
 		sort.Strings(out[svc])
 	}
+
+	s.mu.Lock()
+	s.reFormatToCFN = reverse
+	s.mu.Unlock()
+
 	return out, nil
+}
+
+// scanServiceViaRE queries Resource Explorer for the service, then looks up
+// each result's CFN type via the reverse map. Resources whose CFN type can't
+// be resolved are returned anyway (with whatever Type the RE result had);
+// the caller can still enrich by passing them to DescribeResource, which
+// falls back to the type already on the ref.
+func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName string, re ResourceExplorer) ([]*pb.ResourceRef, error) {
+	s.reQueries.Add(1)
+	refs, err := re.QueryByService(ctx, strings.ToLower(serviceName))
+	if err != nil {
+		return nil, fmt.Errorf("ResourceExplorer.QueryByService(%s): %w", serviceName, err)
+	}
+
+	s.mu.RLock()
+	reverse := s.reFormatToCFN
+	s.mu.RUnlock()
+
+	for _, r := range refs {
+		if r.BasicAttributes == nil {
+			r.BasicAttributes = map[string]string{}
+		}
+		// RE returns ResourceType in "service:resource" format. If we recognize
+		// it, stash the canonical CFN type on the ref so DescribeResource can
+		// hit Cloud Control directly.
+		key := strings.ToLower(r.Type)
+		if reverse != nil {
+			if cfnType, ok := reverse[key]; ok {
+				r.BasicAttributes["cfn_type"] = cfnType
+			}
+		}
+		// Normalize Service: RE may set it to upper-case shorthand.
+		r.Service = strings.ToLower(r.Service)
+	}
+	return refs, nil
+}
+
+// reFormatKey converts a CFN type name into the lowercase "service:resource"
+// shape Resource Explorer uses. Returns "" if the input isn't AWS::*::*.
+//
+// Example: "AWS::ElasticLoadBalancingV2::LoadBalancer" → "elasticloadbalancingv2:loadbalancer"
+func reFormatKey(cfnType string) string {
+	parts := strings.SplitN(cfnType, "::", 3)
+	if len(parts) < 3 || parts[0] != "AWS" {
+		return ""
+	}
+	return strings.ToLower(parts[1]) + ":" + strings.ToLower(parts[2])
 }
 
 // activeTypeMap returns the map of services→types currently in use.

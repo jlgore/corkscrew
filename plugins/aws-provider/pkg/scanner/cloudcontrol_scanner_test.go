@@ -49,6 +49,22 @@ func TestParseCloudControlEmpty(t *testing.T) {
 	}
 }
 
+func TestReFormatKey(t *testing.T) {
+	cases := map[string]string{
+		"AWS::S3::Bucket":                           "s3:bucket",
+		"AWS::EC2::Instance":                        "ec2:instance",
+		"AWS::ElasticLoadBalancingV2::LoadBalancer": "elasticloadbalancingv2:loadbalancer",
+		"":                                          "",
+		"AWS::S3":                                   "",
+		"NotAWS::S3::Bucket":                        "",
+	}
+	for in, want := range cases {
+		if got := reFormatKey(in); got != want {
+			t.Errorf("reFormatKey(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
 func TestServiceFromCFNType(t *testing.T) {
 	cases := map[string]string{
 		"AWS::S3::Bucket":                            "s3",
