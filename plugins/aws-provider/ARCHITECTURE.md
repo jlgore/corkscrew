@@ -1,216 +1,180 @@
 # AWS Provider Architecture
 
-## Overview
+## Goal
 
-The AWS Provider implements a streamlined resource discovery and scanning architecture that eliminates circular dependencies and provides efficient resource enumeration with rich configuration collection.
+Discover every AWS resource the calling principal can see, capture the full
+configuration of each one, and store it in DuckDB so it can be queried with SQL.
+Optionally do this across every account in an AWS Organization in one run.
 
-## Architecture Flow
+## Top-level shape
 
 ```
-CloudProvider Interface
-        ↓
-AWSProvider (aws_provider.go)
-        ↓
-RuntimePipeline (runtime/pipeline.go) ← Optional for advanced workflows
-        ↓
-ScannerRegistry (runtime/scanner_registry.go)
-        ↓
-UnifiedScanner (scanner.go) ← Core resource discovery
-        ↓
-AWS SDK Services + Resource Explorer
+corkscrew CLI                                AWS APIs
+─────────────                                ────────
+                                             ┌───────────────────────┐
+scan ─► gRPC ─► AWSProvider ─► CC scanner ──►│ cloudformation.       │
+                                             │   ListTypes (once)    │
+                                             ├───────────────────────┤
+                                             │ resourceexplorer2.    │
+                                             │   Search (if a view   │
+                                             │   exists)             │
+                                             ├───────────────────────┤
+                                             │ cloudcontrol.         │
+                                             │   ListResources       │
+                                             │   GetResource         │
+                                             ├───────────────────────┤
+                                             │ organizations.        │
+                                             │   ListAccounts        │
+                                             │ sts.AssumeRole         │
+                                             │   (org mode)          │
+                                             └───────────────────────┘
+                                                       │
+                                                       ▼
+                              ┌──────────────────────────────────┐
+                              │ DuckDB (~/.corkscrew/db/...)     │
+                              │   aws_resources                  │
+                              │   change_events                  │
+                              └──────────────────────────────────┘
 ```
 
-## Core Components
+## Why Cloud Control
 
-### 1. AWSProvider (`aws_provider.go`)
+Cloud Control API exposes a single uniform list/get/update/delete interface for
+**every CloudFormation-registered resource type** — about 1,100 types covering
+~250 services. From corkscrew's perspective:
 
-The main entry point implementing the CloudProvider interface. Key responsibilities:
+- **One API for everything**: no per-service typed clients, no SDK reflection,
+  no operation classification, no codegen. `ListResources(TypeName)` works the
+  same for `AWS::S3::Bucket`, `AWS::EC2::Instance`, `AWS::Lambda::Function`,
+  whatever.
+- **Full configuration, not metadata**: `GetResource` returns the resource's
+  complete JSON state — the same shape CloudFormation reads when it manages
+  the resource. That's exactly what we want to persist.
+- **New resource types come for free**: when AWS publishes a new CFN type,
+  `cloudformation.ListTypes` picks it up next run; nothing else changes.
 
-- **Initialization**: AWS configuration, credentials, and component setup
-- **Service Discovery**: Dynamic or fallback service enumeration  
-- **Resource Scanning**: Orchestrates resource discovery via UnifiedScanner
-- **Feature Flags**: Migration control and fallback behavior
-- **Integration**: Connects UnifiedScanner to RuntimePipeline when available
+This replaced ~25,000 lines of reflection scanner, codegen pipeline, parameter
+analyzer, and unified registry with ~1,500 LOC.
 
-### 2. UnifiedScanner (`scanner.go`)
+## The scanner stack
 
-The core resource discovery engine. Provides:
+### `pkg/scanner/cloudcontrol_scanner.go`
 
-- **Service Scanning**: `ScanService(serviceName)` → `[]*pb.ResourceRef`
-- **Resource Enrichment**: `DescribeResource(ref)` → `*pb.Resource`
-- **Multi-source Discovery**: AWS SDK + Resource Explorer fallback
-- **Client Factory Integration**: Dynamic AWS service client creation
-- **Rate Limiting**: Per-service request throttling
+The single-account scanner. Holds a `cloudcontrol.Client`, a
+`cloudformation.Client`, and (optionally) a `ResourceExplorer`. Three core methods:
 
-### 3. ScannerRegistry (`runtime/scanner_registry.go`)
+- **`SupportedServices() []string`** — returns the services it knows how to
+  enumerate. Triggers type discovery on first call.
+- **`ScanService(ctx, serviceName) []*ResourceRef`** — for each CFN type under
+  the service, calls `cloudcontrol.ListResources` and pages through. Dedupes by
+  Id within the scan, since types like `AWS::S3::Bucket` and
+  `AWS::S3::BucketPolicy` share identifiers.
+- **`DescribeResource(ctx, ref) *Resource`** — calls `cloudcontrol.GetResource`
+  and stuffs the full property JSON onto `raw_data`. Falls back to the
+  properties already stashed on the ref if GetResource fails.
 
-Manages scanner orchestration and provides:
+#### Type discovery
 
-- **Unified Interface**: Bridges between registry and UnifiedScanner
-- **Rate Limiting**: Service-specific request throttling
-- **Metadata Management**: Service capabilities and permissions
-- **Batch Operations**: Concurrent multi-service scanning
-- **No Generated Scanners**: Uses UnifiedScanner for all services
+`cloudformation.ListTypes(Visibility=PUBLIC, Type=RESOURCE,
+ProvisioningType=FULLY_MUTABLE | IMMUTABLE)` enumerates ~1,400 types. They get
+parsed (`AWS::Service::Resource`) and grouped into a `service → []typeName` map,
+plus a reverse `re-format → CFN-type` map for Resource Explorer lookups.
 
-### 4. RuntimePipeline (`runtime/pipeline.go`)
+This runs **once per process** via package-level `sync.Once`. Multi-region or
+multi-account scans share the cached map (otherwise CFN's throttle gets hit
+when multiple scanner instances run discovery concurrently).
 
-Optional advanced workflow orchestration:
+If discovery fails (no network, missing IAM, empty cfn client), the scanner
+falls back to a small curated map covering the common services.
 
-- **Resource Streaming**: Real-time resource processing
-- **Database Integration**: Handled by main CLI, not plugin
-- **Relationship Extraction**: Resource dependency mapping
-- **Performance Monitoring**: Scan statistics and metrics
+#### Resource Explorer mode
 
-## Key Design Principles
+When a Resource Explorer default view is available in the calling region,
+`ScanService` prefers RE for discovery — one indexed search across regions per
+service vs. one `ListResources` per type. The reverse map built during type
+discovery translates RE's `service:resource` format to the canonical
+`AWS::Service::Resource` so `GetResource` can be called for enrichment.
 
-### 1. No Circular Dependencies
+#### Global services
 
-**Previous Issue**: RuntimePipeline called back to AWSProvider for enrichment, creating cycles.
+S3, IAM, Route53, CloudFront, Organizations, etc. are returned by every
+region's `ListResources` call. The scanner stamps `Region=""` on those refs;
+the multi-region consumer collapses on `(account, type, id)` so they show up
+once.
 
-**Solution**: Direct UnifiedScanner integration in registry:
-```go
-// Registry uses UnifiedScanner directly
-registry.SetUnifiedScanner(scannerProvider)
+#### Unsupported types
 
-// UnifiedScanner provides both scanning and enrichment
-type UnifiedScannerProvider interface {
-    ScanService(ctx, serviceName) ([]*pb.ResourceRef, error)
-    DescribeResource(ctx, ref) (*pb.Resource, error)
-}
-```
+Some types fail in expected ways:
+- The CFN handler isn't registered (`TypeNotFoundException`).
+- A parent resource doesn't exist (`AWS::S3::AccessGrant` returns
+  "Access Grants Instance does not exist" if the account never set one up).
+- AWS-side handler bugs (`HandlerInternalFailureException`).
+- IAM gaps (`AccessDenied`).
 
-### 2. Single Source of Truth
+`isUnsupportedTypeErr` classifies these as gaps rather than failures — they're
+recorded in the scanner's `unsupportedTypes` set and surfaced in the scan
+response with an `unsupported_type:` prefix. The scan continues.
 
-**UnifiedScanner** is the authoritative resource discovery mechanism:
-- Replaces all generated service-specific scanners
-- Uses AWS SDK reflection for dynamic service support
-- Falls back to Resource Explorer when available
-- Provides consistent enrichment across all services
+### `orgscan/orgscan.go`
 
-### 3. Database Separation
+The org-mode scanner. Wraps N CloudControlScanners — one per account — behind
+the same `SupportedServices`/`ScanService`/`DescribeResource`/`UnsupportedTypes`
+surface. Implementation:
 
-**Plugin Responsibility**: Resource discovery and enrichment
-**Main CLI Responsibility**: Database operations and persistence
+1. `organizations.ListAccounts` to enumerate active accounts.
+2. Filter by include/exclude lists.
+3. For each account, `stscreds.NewAssumeRoleProvider` to build assumed creds.
+4. Construct a `CloudControlScanner` with that account's `aws.Config`.
+5. Run scans in a bounded worker pool (default 5 concurrent accounts).
+6. Stamp `AccountId` on every returned ref.
 
-This prevents database locking conflicts and simplifies plugin architecture.
+Resource Explorer is **not** wired into per-account scanners by default. RE
+indexes are per-account and the management-account RE only sees its own
+resources. A delegated-admin RE aggregator view is the longer-term answer for
+cross-account discovery; for now, member accounts use per-type
+`ListResources`.
 
-### 4. Feature Flag Migration
+`DescribeResource` re-assumes into the source account (creds are cached by the
+SDK's `aws.NewCredentialsCache`, so subsequent calls don't re-issue STS
+requests for the same account).
 
-Environment variables control behavior:
+### `aws_provider.go`
 
-- `AWS_PROVIDER_MIGRATION_ENABLED`: Use dynamic discovery (default: true)
-- `AWS_PROVIDER_FALLBACK_MODE`: Enable fallback behavior (default: false)  
-- `AWS_PROVIDER_MONITORING_ENABLED`: Enhanced logging (default: false)
+The gRPC server. Implements `pb.CloudProvider`. `Initialize` decides whether
+to construct a single-account scanner or `OrgScanner` based on env vars
+(see README). The `activeScanner` interface lets the rest of the file work
+without knowing which mode is active.
 
-## Resource Discovery Flow
+Methods that backed code-gen / analysis pipelines (`GenerateServiceScanners`,
+`AnalyzeDiscoveredData`, `GenerateFromAnalysis`, `ConfigureDiscovery`) are
+compliant stubs — the gRPC interface is shared with other providers and
+removing them would be a cross-provider refactor.
 
-### Standard Scanning
+## What persists
 
-1. **Request**: `corkscrew scan --provider aws --services s3,ec2`
-2. **AWSProvider**: Receives scan request
-3. **UnifiedScanner**: Scans each service via AWS SDK
-4. **ResourceRefs**: Returns lightweight resource references
-5. **Enrichment**: Calls `DescribeResource` for full details
-6. **Pipeline**: Optional streaming and relationship extraction
-7. **CLI**: Receives enriched resources for database storage
+Two DuckDB tables:
 
-### Resource Explorer Integration
+- **`aws_resources`** (in `~/.corkscrew/db/corkscrew.duckdb`) — one row per
+  unique resource. `raw_data` holds the full Cloud Control JSON; `attributes`
+  is a flattened string-only subset for quick filtering; tags and ARN are
+  promoted to first-class columns. Globally-namespaced resources have
+  `region=""`.
+- **`change_events`** (in `aws_scans.db` next to where the plugin runs) — one
+  row per resource per scan, used for drift/change tracking. Created/updated/
+  deleted classifications come from comparing scans over time.
 
-When available, Resource Explorer provides enhanced discovery:
+## What's not built
 
-1. **Query**: `service:s3 AND region:us-east-1`
-2. **Explorer**: Returns comprehensive resource list
-3. **Enrichment**: UnifiedScanner enriches each resource
-4. **Fallback**: SDK scanning if Explorer unavailable
+- **Multi-region scan optimization for globals.** Right now each region's
+  `ListResources` call still fires for global types; the consumer just
+  dedupes the result. Saves no API calls. A "primary region" flag in the
+  scanner would skip global types in non-primary regions.
+- **RE aggregator view.** A delegated-admin Resource Explorer can produce one
+  cross-account, cross-region search result. Would replace the per-account
+  per-region `ListResources` calls in org mode with a single search.
+- **AWS Config aggregator path.** AWS Config covers fewer types (~150) but
+  returns full configuration without needing per-account credentials. Useful
+  for orgs where Config is the system of record.
 
-## Configuration Collection
-
-The UnifiedScanner implements comprehensive configuration collection:
-
-### Service Clients
-- **Dynamic Creation**: Clients created on-demand via reflection
-- **Caching**: Reuse clients across multiple operations
-- **Region Support**: Multi-region scanning capabilities
-
-### Resource Enrichment
-- **Describe Operations**: Full resource configuration via AWS APIs
-- **Tag Collection**: Resource tags and metadata
-- **Relationship Mapping**: Dependencies and associations
-- **Error Handling**: Graceful degradation on API failures
-
-## Performance Characteristics
-
-### Rate Limiting
-- **Service-Specific**: Customized limits per AWS service
-- **Burst Handling**: Short burst allowances for initial operations
-- **Context Cancellation**: Timeout and cancellation support
-
-### Concurrency
-- **Configurable**: Default 10 concurrent operations
-- **Service Isolation**: Independent rate limiting per service
-- **Resource Streaming**: Non-blocking resource processing
-
-### Caching
-- **Service Discovery**: 24-hour cache for discovered services
-- **Resource Discovery**: 15-minute cache for resource lists
-- **Client Reuse**: Connection pooling and client caching
-
-## Testing Strategy
-
-### Unit Tests
-- **Scanner Registry**: Core functionality and rate limiting
-- **UnifiedScanner**: Service scanning and enrichment
-- **Pipeline Components**: Streaming and batch operations
-
-### Integration Tests
-- **End-to-End**: Full scan workflows with real AWS APIs
-- **Performance**: Benchmark tests for large resource sets
-- **Fallback**: Resource Explorer fallback scenarios
-
-### Mock Components
-- **MockUnifiedScanner**: Testing without AWS dependencies
-- **Rate Limiting**: Verify throttling behavior
-- **Error Scenarios**: API failure handling
-
-## Migration Benefits
-
-### Eliminated Components
-- ✅ **ScannerEnricher**: Redundant enrichment layer
-- ✅ **ConfigurationEnricher**: Circular dependency source
-- ✅ **Generated Scanners**: Replaced by UnifiedScanner
-- ✅ **Bridge Patterns**: Direct integration instead
-
-### Simplified Architecture
-- **Single Scanner**: UnifiedScanner handles all services
-- **Direct Integration**: Registry → UnifiedScanner (no callbacks)
-- **Clear Responsibilities**: Plugin discovers, CLI persists
-- **Maintainable Code**: Fewer abstractions and indirections
-
-## Future Enhancements
-
-### Additional Sources
-- **CloudFormation**: Template-based resource discovery
-- **AWS Config**: Compliance and configuration tracking
-- **Cost Explorer**: Resource cost attribution
-
-### Performance Optimizations
-- **Parallel Enrichment**: Concurrent resource detail collection
-- **Intelligent Caching**: Smart cache invalidation strategies
-- **Incremental Updates**: Delta-based resource synchronization
-
-## Development Guidelines
-
-### Adding New Services
-1. No code changes required - UnifiedScanner handles dynamically
-2. Add service to rate limiting configuration if needed
-3. Update integration tests for new service validation
-
-### Modifying Resource Collection
-1. Enhance UnifiedScanner discovery methods
-2. Update enrichment logic in `DescribeResource`
-3. Add relationship extraction in pipeline if needed
-
-### Performance Tuning
-1. Adjust rate limits in ScannerRegistry
-2. Modify concurrency settings in pipeline
-3. Update cache TTL values based on usage patterns
+These are documented as follow-ups in the commit history if you want to
+revisit them.
