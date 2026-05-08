@@ -28,6 +28,16 @@ import (
 // replaced by cloudformation.ListTypes lookup later.
 //
 // Toggle from aws_provider.go via CORKSCREW_AWS_SCANNER=cloudcontrol.
+// Package-level discovery cache. Type discovery via cloudformation.ListTypes
+// pulls ~1,400 types and burns CFN throttle budget; it's the same answer for
+// every CC scanner in a process, so cache it across instances.
+var (
+	discoveryOnce      sync.Once
+	discoveredTypesMap map[string][]string
+	discoveredReverse  map[string]string
+	discoveryRunErr    error
+)
+
 type CloudControlScanner struct {
 	client *cloudcontrol.Client
 	cfn    *cloudformation.Client
@@ -36,16 +46,6 @@ type CloudControlScanner struct {
 	mu        sync.RWMutex
 	accountID string
 	explorer  ResourceExplorer
-
-	// discovered is the dynamically-discovered service→types map. Populated by
-	// the first call to ensureDiscovery; nil falls through to curatedTypes.
-	discovered     map[string][]string
-	discoveryError error
-
-	// reFormatToCFN maps the Resource Explorer "service:resource" key to the
-	// canonical "AWS::Service::Resource" type name. Built alongside discovered.
-	// Used to enrich RE results via CC.GetResource.
-	reFormatToCFN map[string]string
 
 	// unsupportedTypes records CFN types that Cloud Control couldn't list
 	// (typically TypeNotFoundException or "not yet supported"). Reported back
@@ -202,17 +202,38 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 	return all, nil
 }
 
-// isUnsupportedTypeErr matches the Cloud Control error returned when a type
-// either doesn't exist or hasn't onboarded the relevant handler (List/Read).
-// We treat these as "expected gaps" rather than failures.
+// isUnsupportedTypeErr matches the Cloud Control errors that mean "this
+// type isn't enumerable in this account" rather than "the scan broke".
+// Includes:
+//   - TypeNotFoundException / UnsupportedActionException (CFN registry lookups)
+//   - "not currently supported" (CC's own gap message)
+//   - GeneralServiceException with "does not exist" or "not found"
+//     (returned when a parent resource the type depends on isn't set up,
+//     e.g. AWS::S3::AccessGrant when there's no Access Grants Instance)
+//   - HandlerInternalFailureException / HandlerErrorCode: InternalFailure
+//     (AWS-side bugs in the type's CC handler — not the user's problem)
+//   - "AccessDenied" / "is not authorized" (IAM gap; reported as unsupported
+//     so the rest of the scan continues)
 func isUnsupportedTypeErr(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "TypeNotFoundException") ||
-		strings.Contains(msg, "UnsupportedActionException") ||
-		strings.Contains(msg, "not currently supported")
+	for _, needle := range []string{
+		"TypeNotFoundException",
+		"UnsupportedActionException",
+		"not currently supported",
+		"does not exist",
+		"HandlerInternalFailureException",
+		"HandlerErrorCode: InternalFailure",
+		"AccessDenied",
+		"is not authorized",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // UnsupportedTypes returns a snapshot of the CFN types that Cloud Control
@@ -344,40 +365,27 @@ func (s *CloudControlScanner) GetMetrics() interface{} {
 	}
 }
 
-// ensureDiscovery lazily populates s.discovered via cloudformation.ListTypes.
-// Idempotent: runs at most once, then caches both success and failure. On
-// failure, scans fall back to the curated map.
+// ensureDiscovery runs cloudformation.ListTypes at most once per process.
+// Caches both success and failure across every CloudControlScanner instance
+// — important when the CLI fans out to multiple regions, because each
+// region used to spin up its own scanner that ran ListTypes independently
+// and tripped CFN's throttle. On failure, scans fall back to the curated map.
 func (s *CloudControlScanner) ensureDiscovery(ctx context.Context) {
-	s.mu.RLock()
-	done := s.discovered != nil || s.discoveryError != nil
-	cfn := s.cfn
-	s.mu.RUnlock()
-	if done {
-		return
-	}
-	if cfn == nil {
+	if s.cfn == nil {
 		// Zero-value scanner (e.g. in unit tests) — skip dynamic discovery.
-		s.mu.Lock()
-		s.discoveryError = fmt.Errorf("no cloudformation client configured")
-		s.mu.Unlock()
 		return
 	}
-
-	discovered, err := s.discoverTypes(ctx)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.discovered != nil || s.discoveryError != nil {
-		return // raced; another caller finished first
-	}
-	if err != nil {
-		s.discoveryError = err
-		log.Printf("CloudControl: type discovery failed (%v); falling back to curated map", err)
-		return
-	}
-	s.discovered = discovered
-	log.Printf("CloudControl: discovered %d services / %d total types via cloudformation.ListTypes",
-		len(discovered), countTypes(discovered))
+	discoveryOnce.Do(func() {
+		discovered, err := s.discoverTypes(ctx)
+		if err != nil {
+			discoveryRunErr = err
+			log.Printf("CloudControl: type discovery failed (%v); falling back to curated map", err)
+			return
+		}
+		discoveredTypesMap = discovered
+		log.Printf("CloudControl: discovered %d services / %d total types via cloudformation.ListTypes",
+			len(discovered), countTypes(discovered))
+	})
 }
 
 // discoverTypes enumerates all FULLY_MUTABLE public AWS::* types and groups
@@ -427,10 +435,7 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 		sort.Strings(out[svc])
 	}
 
-	s.mu.Lock()
-	s.reFormatToCFN = reverse
-	s.mu.Unlock()
-
+	discoveredReverse = reverse
 	return out, nil
 }
 
@@ -446,9 +451,7 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 		return nil, fmt.Errorf("ResourceExplorer.QueryByService(%s): %w", serviceName, err)
 	}
 
-	s.mu.RLock()
-	reverse := s.reFormatToCFN
-	s.mu.RUnlock()
+	reverse := discoveredReverse
 
 	for _, r := range refs {
 		if r.BasicAttributes == nil {
@@ -484,10 +487,8 @@ func reFormatKey(cfnType string) string {
 // activeTypeMap returns the map of services→types currently in use.
 // Prefers the dynamically-discovered map; falls back to the curated map.
 func (s *CloudControlScanner) activeTypeMap() map[string][]string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.discovered != nil {
-		return s.discovered
+	if discoveredTypesMap != nil {
+		return discoveredTypesMap
 	}
 	return curatedTypes
 }

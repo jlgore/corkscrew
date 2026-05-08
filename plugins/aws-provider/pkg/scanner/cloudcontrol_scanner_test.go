@@ -1,6 +1,9 @@
 package scanner
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestParseCloudControlProperties(t *testing.T) {
 	props, attrs := parseCloudControlProperties(`{
@@ -80,6 +83,35 @@ func TestServiceFromCFNType(t *testing.T) {
 	for in, want := range cases {
 		if got := serviceFromCFNType(in); got != want {
 			t.Errorf("serviceFromCFNType(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
+func TestIsUnsupportedTypeErr(t *testing.T) {
+	cases := map[string]bool{
+		// Real strings observed in CloudControl error responses.
+		"TypeNotFoundException: foo":                       true,
+		"UnsupportedActionException: bar":                  true,
+		"resource is not currently supported by ":          true,
+		"GeneralServiceException: AWS::S3::AccessGrant Handler returned status FAILED: Access Grants Instance does not exist": true,
+		"HandlerInternalFailureException: foo":             true,
+		"HandlerErrorCode: InternalFailure":                true,
+		"AccessDenied: User is not authorized":             true,
+		"User: arn:aws:iam::1:user/x is not authorized to perform: cloudcontrol:ListResources": true,
+
+		// Should NOT match (transient or unrelated):
+		"Throttling: Rate exceeded":              false,
+		"connection reset by peer":               false,
+		"context deadline exceeded":              false,
+		"":                                       false,
+	}
+	for msg, want := range cases {
+		var err error
+		if msg != "" {
+			err = fmt.Errorf("%s", msg)
+		}
+		if got := isUnsupportedTypeErr(err); got != want {
+			t.Errorf("isUnsupportedTypeErr(%q) = %v; want %v", msg, got, want)
 		}
 	}
 }

@@ -238,7 +238,10 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	scanStartTime := time.Now()
-	scanID := fmt.Sprintf("scan_%d", scanStartTime.Unix())
+	// UnixNano keeps scan IDs unique across rapid back-to-back BatchScan
+	// calls (e.g. one per region in multi-region runs). Unix() collided
+	// when two regions started in the same second.
+	scanID := fmt.Sprintf("scan_%d", scanStartTime.UnixNano())
 	p.currentProgressTracker = NewScanProgressTracker(scanID, req.Services)
 
 	stats := &pb.ScanStats{

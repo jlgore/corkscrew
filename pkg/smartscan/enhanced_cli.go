@@ -460,7 +460,7 @@ func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Re
         return fmt.Errorf("delete existing: %w", delErr)
     }
     insertStmt := fmt.Sprintf(`
-        INSERT OR REPLACE INTO %s (
+        INSERT INTO %s (
             id, arn, name, type, service, region, account_id,
             tags, attributes, raw_data, state,
             created_at, modified_at, scanned_at
@@ -536,7 +536,7 @@ func storeRelationshipsToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *
             toType = parts[2]
         }
         if _, insErr := tx.Exec(
-            `INSERT OR REPLACE INTO cloud_relationships (
+            `INSERT INTO cloud_relationships (
                 from_id, to_id, relationship_type, provider,
                 relationship_subtype, properties,
                 from_resource_type, to_resource_type, direction
