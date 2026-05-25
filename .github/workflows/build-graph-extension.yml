@@ -1,0 +1,128 @@
+name: Build corkscrew-graph DuckDB extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/corkscrew-graph/**'
+      - 'extensions/corkscrew-graph-tests/**'
+      - '.github/workflows/build-graph-extension.yml'
+  pull_request:
+    paths:
+      - 'extensions/corkscrew-graph/**'
+      - 'extensions/corkscrew-graph-tests/**'
+      - '.github/workflows/build-graph-extension.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_DUCKDB_EXT_VERSION: '0.5.0'
+  DUCKDB_EXT_VERSION: 'v1.5.2'
+
+jobs:
+  # In-process tests via the sibling `corkscrew-graph-tests` crate (bundled
+  # DuckDB). Single linux job — the test surface is platform-independent and
+  # bundling DuckDB on every OS just to re-run the same Rust tests is wasteful.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            extensions/corkscrew-graph/target
+            extensions/corkscrew-graph-tests/target
+          key: cargo-${{ runner.os }}-test-${{ hashFiles('extensions/corkscrew-graph/Cargo.lock', 'extensions/corkscrew-graph-tests/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-test-
+
+      - name: Run integration tests
+        working-directory: extensions/corkscrew-graph-tests
+        run: cargo test --release
+
+  # Per-platform packaged `.duckdb_extension` artifact. The packaging step
+  # appends a footer with (extension_version, duckdb_version, platform); a
+  # binary built on one platform will refuse to load on another, so we have
+  # to build each target natively.
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_amd64
+            runner: ubuntu-latest
+          - platform: osx_arm64
+            runner: macos-latest    # Apple Silicon by default
+          - platform: osx_amd64
+            runner: macos-13        # Intel macOS
+          - platform: windows_amd64
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo state
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/bin/cargo-duckdb-ext
+            ~/.cargo/bin/cargo-duckdb-ext.exe
+            extensions/corkscrew-graph/target
+          key: cargo-${{ matrix.platform }}-build-${{ env.CARGO_DUCKDB_EXT_VERSION }}-${{ hashFiles('extensions/corkscrew-graph/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.platform }}-build-${{ env.CARGO_DUCKDB_EXT_VERSION }}-
+            cargo-${{ matrix.platform }}-build-
+
+      - name: Install cargo-duckdb-ext-tools
+        shell: bash
+        run: |
+          if ! command -v cargo-duckdb-ext >/dev/null 2>&1; then
+            cargo install --locked cargo-duckdb-ext-tools --version "$CARGO_DUCKDB_EXT_VERSION"
+          else
+            echo "cargo-duckdb-ext already cached"
+          fi
+
+      - name: Build packaged extension
+        working-directory: extensions/corkscrew-graph
+        shell: bash
+        run: |
+          cargo duckdb-ext build \
+            --duckdb-version "$DUCKDB_EXT_VERSION" \
+            --duckdb-platform "${{ matrix.platform }}" \
+            -- --release
+          mkdir -p build
+          cp target/release/corkscrew_graph.duckdb_extension build/
+
+      - name: Verify extension footer
+        shell: bash
+        working-directory: extensions/corkscrew-graph
+        run: |
+          # The packaging step appends a metadata footer; sanity-check it's
+          # present and references the platform we asked for.
+          ls -la build/corkscrew_graph.duckdb_extension
+          # -a forces text mode on binary content; the footer is plain ASCII.
+          if ! grep -aq "${{ matrix.platform }}" build/corkscrew_graph.duckdb_extension; then
+            echo "::error::Packaged extension missing platform marker ${{ matrix.platform }}"
+            exit 1
+          fi
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: corkscrew_graph-${{ matrix.platform }}-${{ env.DUCKDB_EXT_VERSION }}
+          path: extensions/corkscrew-graph/build/corkscrew_graph.duckdb_extension
+          if-no-files-found: error
+          retention-days: 30
