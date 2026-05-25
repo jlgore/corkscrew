@@ -1,0 +1,45 @@
+[package]
+name = "corkscrew-graph"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+# NOTE: dependencies are optional in scaffold; features enable them for full build
+[dependencies]
+# DuckDB extension binding (targeting DuckDB v1.5.2)
+duckdb = { version = "1.10502.0", features = ["vtab", "vtab-arrow", "vscalar", "loadable-extension"] }
+
+# Direct low-level duckdb bindings used by vscalar code
+
+# Graph data structures & core algorithms
+petgraph = { version = "0.6", features = ["serde-1"] }
+
+# Subgraph isomorphism / pattern matching
+vf2 = { version = "1.0" }
+
+# Additional algorithm coverage
+# graphalgs = { version = "0.4" }
+
+# Serialization (for pattern definitions)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+
+# Error handling
+anyhow = { version = "1.0" }
+thiserror = { version = "1.0" }
+
+# Caching
+dashmap = { version = "5.5" }
+once_cell = "1.18"
+lru = { version = "0.12" }
+
+# Keep default features minimal for the scaffold; the above are marked optional
+
+[package.metadata]
+duckdb_version = "1.5.2"
+
+[dev-dependencies]
+tempfile = "3.6"

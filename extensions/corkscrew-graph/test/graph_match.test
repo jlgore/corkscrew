@@ -1,0 +1,50 @@
+statement ok
+LOAD './build/corkscrew_graph.duckdb_extension';
+
+statement ok
+ATTACH '__sqllogictest_graph_match.duckdb' AS fixture;
+
+statement ok
+CREATE TABLE fixture.aws_resources (
+    id VARCHAR, type VARCHAR, name VARCHAR, region VARCHAR,
+    account_id VARCHAR, arn VARCHAR, tags VARCHAR
+);
+
+statement ok
+CREATE TABLE fixture.aws_relationships (
+    from_id VARCHAR, to_id VARCHAR,
+    relationship_type VARCHAR, properties VARCHAR
+);
+
+statement ok
+INSERT INTO fixture.aws_resources VALUES
+    ('igw1','aws::ec2::InternetGateway','igw-1','us-east-1','123',NULL,NULL),
+    ('sg1','aws::ec2::SecurityGroup','sg-1','us-east-1','123',NULL,NULL),
+    ('inst1','aws::ec2::Instance','app-1','us-east-1','123',NULL,NULL),
+    ('db1','aws::rds::DBInstance','db-1','us-east-1','123',NULL,NULL),
+    ('bucket1','aws::s3::Bucket','bucket-1','us-east-1','123',NULL,NULL);
+
+statement ok
+INSERT INTO fixture.aws_relationships VALUES
+    ('igw1','sg1','allows',NULL),
+    ('sg1','inst1','member_of',NULL),
+    ('inst1','db1','connects_to',NULL),
+    ('inst1','bucket1','reads',NULL);
+
+query IT
+SELECT COUNT(*), MIN(CASE WHEN was_truncated THEN 1 ELSE 0 END)
+FROM graph_match_pattern('__sqllogictest_graph_match.duckdb', 'internet_to_database');
+----
+4 0
+
+query T
+SELECT pattern_name FROM graph_list_patterns() ORDER BY pattern_name;
+----
+cross_account_trust
+internet_to_database
+k8s_privileged_to_cloud
+lateral_movement_risk
+overprivileged_lambda
+public_lb_to_private_db
+public_s3_via_instance
+unencrypted_data_path

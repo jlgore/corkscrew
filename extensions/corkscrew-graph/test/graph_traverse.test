@@ -1,0 +1,43 @@
+statement ok
+LOAD './build/corkscrew_graph.duckdb_extension';
+
+statement ok
+ATTACH '__sqllogictest_graph_traverse.duckdb' AS fixture;
+
+statement ok
+CREATE TABLE fixture.aws_resources (
+    id VARCHAR, type VARCHAR, name VARCHAR, region VARCHAR,
+    account_id VARCHAR, arn VARCHAR, tags VARCHAR
+);
+
+statement ok
+CREATE TABLE fixture.aws_relationships (
+    from_id VARCHAR, to_id VARCHAR,
+    relationship_type VARCHAR, properties VARCHAR
+);
+
+statement ok
+INSERT INTO fixture.aws_resources VALUES
+    ('r1','aws::ec2::Instance','i-1','us-east-1','123',NULL,NULL),
+    ('r2','aws::ec2::Instance','i-2','us-east-1','123',NULL,NULL),
+    ('r3','aws::s3::Bucket','b-1','us-east-1','123',NULL,NULL);
+
+statement ok
+INSERT INTO fixture.aws_relationships VALUES
+    ('r1','r2','peer',NULL),
+    ('r1','r3','reads',NULL);
+
+query TT
+SELECT node_id, CAST(hop_count AS VARCHAR)
+FROM graph_traverse('__sqllogictest_graph_traverse.duckdb', 'r1', 3, 'outbound', NULL)
+ORDER BY hop_count, node_id;
+----
+r2 1
+r3 1
+
+query T
+SELECT node_id
+FROM graph_traverse('__sqllogictest_graph_traverse.duckdb', 'r1', 3, 'outbound', 'instance')
+ORDER BY node_id;
+----
+r2

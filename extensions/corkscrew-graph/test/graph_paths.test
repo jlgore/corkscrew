@@ -1,0 +1,50 @@
+statement ok
+LOAD './build/corkscrew_graph.duckdb_extension';
+
+statement ok
+ATTACH '__sqllogictest_graph_paths.duckdb' AS fixture;
+
+statement ok
+CREATE TABLE fixture.aws_resources (
+    id VARCHAR, type VARCHAR, name VARCHAR, region VARCHAR,
+    account_id VARCHAR, arn VARCHAR, tags VARCHAR
+);
+
+statement ok
+CREATE TABLE fixture.aws_relationships (
+    from_id VARCHAR, to_id VARCHAR,
+    relationship_type VARCHAR, properties VARCHAR
+);
+
+statement ok
+INSERT INTO fixture.aws_resources VALUES
+    ('r1','ec2','i-1','us-east-1','123',NULL,NULL),
+    ('r2','ec2','i-2','us-east-1','123',NULL,NULL),
+    ('r3','s3','b-1','us-east-1','123',NULL,NULL);
+
+statement ok
+INSERT INTO fixture.aws_relationships VALUES
+    ('r1','r2','peer',NULL),
+    ('r1','r3','reads',NULL);
+
+query TT
+SELECT CAST(hop_number AS VARCHAR), resource_id
+FROM graph_shortest_path('__sqllogictest_graph_paths.duckdb', 'r1', 'r3', false)
+ORDER BY hop_number;
+----
+0 r1
+1 r3
+
+query TT
+SELECT resource_type, CAST(reachable_count AS VARCHAR)
+FROM graph_blast_radius('__sqllogictest_graph_paths.duckdb', 'r1', 3)
+ORDER BY resource_type;
+----
+ec2 1
+s3 1
+
+query TT
+SELECT CAST(is_reachable AS VARCHAR), CAST(match_count AS VARCHAR)
+FROM graph_reachable('__sqllogictest_graph_paths.duckdb', 'r1', 's3', 3);
+----
+true 1

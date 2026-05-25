@@ -29,6 +29,17 @@ cmd/corkscrew/corkscrew
 cmd/generator/generator
 cmd/plugin-test/plugin-test
 
+# corkscrew-graph DuckDB extension build artifacts
+extensions/corkscrew-graph/target/
+extensions/corkscrew-graph-tests/target/
+extensions/corkscrew-graph/build/
+extensions/corkscrew-graph/__test_*.db
+extensions/corkscrew-graph/__test_*.db.wal
+extensions/corkscrew-graph/*.duckdb_extension
+# Sqllogic test fixtures live under extensions/corkscrew-graph/test/ and must
+# survive the global `*.test` rule above (which targets Go test binaries).
+!extensions/corkscrew-graph/test/*.test
+
 # Plugin binaries (CRITICAL: prevent accidental commits)
 # Be specific about binary files, not directories
 plugins/aws-provider/aws-provider
