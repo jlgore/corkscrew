@@ -62,8 +62,9 @@ jobs:
             runner: ubuntu-latest
           - platform: osx_arm64
             runner: macos-latest    # Apple Silicon by default
-          - platform: osx_amd64
-            runner: macos-13        # Intel macOS
+          # osx_amd64 (Intel) dropped — GitHub's macos-13 runner pool is
+          # frequently exhausted and jobs sit queued for hours. Apple Silicon
+          # is the only growing Mac target; revisit if Intel demand reappears.
           - platform: windows_amd64
             runner: windows-latest
     steps:
