@@ -420,7 +420,7 @@ func (sg *SchemaGenerator) generateIAMSchema() *pb.Schema {
 // generateGenericServiceSchema generates a generic schema for unknown services
 func (sg *SchemaGenerator) generateGenericServiceSchema(service string) *pb.Schema {
 	tableName := fmt.Sprintf("aws_%s_resources", strings.ReplaceAll(service, "-", "_"))
-	
+
 	sql := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     id TEXT PRIMARY KEY,
     name TEXT,

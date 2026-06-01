@@ -11,128 +11,128 @@ var (
 	ErrorColor     = lipgloss.Color("#EF4444") // Red
 	WarningColor   = lipgloss.Color("#F59E0B") // Amber
 	InfoColor      = lipgloss.Color("#3B82F6") // Blue
-	
+
 	// Neutral colors
-	TextColor      = lipgloss.Color("#FAFAFA") // Light gray
-	SubtleColor    = lipgloss.Color("#888888") // Medium gray
+	TextColor       = lipgloss.Color("#FAFAFA") // Light gray
+	SubtleColor     = lipgloss.Color("#888888") // Medium gray
 	BackgroundColor = lipgloss.Color("#1A1A1A") // Dark gray
-	BorderColor    = lipgloss.Color("#374151") // Border gray
+	BorderColor     = lipgloss.Color("#374151") // Border gray
 )
 
 // Base styles
 var (
 	BaseStyle = lipgloss.NewStyle().
-		Foreground(TextColor).
-		Background(BackgroundColor)
+			Foreground(TextColor).
+			Background(BackgroundColor)
 
 	TitleStyle = lipgloss.NewStyle().
-		Foreground(PrimaryColor).
-		Bold(true).
-		MarginBottom(1)
+			Foreground(PrimaryColor).
+			Bold(true).
+			MarginBottom(1)
 
 	SubtitleStyle = lipgloss.NewStyle().
-		Foreground(SubtleColor).
-		Italic(true)
+			Foreground(SubtleColor).
+			Italic(true)
 
 	ErrorStyle = lipgloss.NewStyle().
-		Foreground(ErrorColor).
-		Bold(true)
+			Foreground(ErrorColor).
+			Bold(true)
 
 	SuccessStyle = lipgloss.NewStyle().
-		Foreground(SuccessColor).
-		Bold(true)
+			Foreground(SuccessColor).
+			Bold(true)
 
 	WarningStyle = lipgloss.NewStyle().
-		Foreground(WarningColor).
-		Bold(true)
+			Foreground(WarningColor).
+			Bold(true)
 
 	InfoStyle = lipgloss.NewStyle().
-		Foreground(InfoColor)
+			Foreground(InfoColor)
 )
 
 // Component styles
 var (
 	// Status bar styles
 	StatusBarStyle = lipgloss.NewStyle().
-		Background(BorderColor).
-		Foreground(TextColor).
-		Padding(0, 1)
+			Background(BorderColor).
+			Foreground(TextColor).
+			Padding(0, 1)
 
 	StatusBarActiveStyle = lipgloss.NewStyle().
-		Background(PrimaryColor).
-		Foreground(TextColor).
-		Padding(0, 1).
-		Bold(true)
+				Background(PrimaryColor).
+				Foreground(TextColor).
+				Padding(0, 1).
+				Bold(true)
 
 	// Table styles
 	TableHeaderStyle = lipgloss.NewStyle().
-		Foreground(TextColor).
-		Background(PrimaryColor).
-		Bold(true).
-		Padding(0, 1)
+				Foreground(TextColor).
+				Background(PrimaryColor).
+				Bold(true).
+				Padding(0, 1)
 
 	SelectedRowStyle = lipgloss.NewStyle().
-		Foreground(TextColor).
-		Background(SecondaryColor).
-		Bold(true)
+				Foreground(TextColor).
+				Background(SecondaryColor).
+				Bold(true)
 
 	AlternateRowStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color("#2A2A2A"))
+				Background(lipgloss.Color("#2A2A2A"))
 
 	// Menu styles
 	MenuItemStyle = lipgloss.NewStyle().
-		Foreground(TextColor).
-		Padding(0, 2)
+			Foreground(TextColor).
+			Padding(0, 2)
 
 	SelectedMenuItemStyle = lipgloss.NewStyle().
-		Foreground(TextColor).
-		Background(PrimaryColor).
-		Padding(0, 2).
-		Bold(true)
+				Foreground(TextColor).
+				Background(PrimaryColor).
+				Padding(0, 2).
+				Bold(true)
 
 	MenuDescriptionStyle = lipgloss.NewStyle().
-		Foreground(SubtleColor).
-		Padding(0, 2, 0, 4)
+				Foreground(SubtleColor).
+				Padding(0, 2, 0, 4)
 
 	// Border styles
 	BorderStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(BorderColor)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(BorderColor)
 
 	FocusedBorderStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(PrimaryColor)
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(PrimaryColor)
 
 	// Help styles
 	HelpKeyStyle = lipgloss.NewStyle().
-		Foreground(AccentColor).
-		Bold(true)
+			Foreground(AccentColor).
+			Bold(true)
 
 	HelpDescStyle = lipgloss.NewStyle().
-		Foreground(SubtleColor)
+			Foreground(SubtleColor)
 
 	HelpSeparatorStyle = lipgloss.NewStyle().
-		Foreground(BorderColor)
+				Foreground(BorderColor)
 
 	// Progress styles
 	ProgressBarStyle = lipgloss.NewStyle().
-		Background(BorderColor).
-		Foreground(SuccessColor)
+				Background(BorderColor).
+				Foreground(SuccessColor)
 
 	ProgressCompleteStyle = lipgloss.NewStyle().
-		Background(SuccessColor).
-		Foreground(TextColor)
+				Background(SuccessColor).
+				Foreground(TextColor)
 
 	// Breadcrumb styles
 	BreadcrumbStyle = lipgloss.NewStyle().
-		Foreground(SubtleColor)
+			Foreground(SubtleColor)
 
 	BreadcrumbActiveStyle = lipgloss.NewStyle().
-		Foreground(PrimaryColor).
-		Bold(true)
+				Foreground(PrimaryColor).
+				Bold(true)
 
 	BreadcrumbSeparatorStyle = lipgloss.NewStyle().
-		Foreground(BorderColor)
+					Foreground(BorderColor)
 )
 
 // Layout constants
@@ -148,7 +148,7 @@ const (
 const (
 	IconScan       = "🔍"
 	IconConfig     = "⚙️"
-	IconResults    = "📊" 
+	IconResults    = "📊"
 	IconDiagrams   = "📈"
 	IconCompliance = "📋"
 	IconQuery      = "🗃️"
@@ -159,16 +159,16 @@ const (
 	IconWarning    = "⚠️"
 	IconInfo       = "ℹ️"
 	IconLoading    = "⏳"
-	
+
 	// Navigation symbols
-	SymbolUp       = "↑"
-	SymbolDown     = "↓"
-	SymbolLeft     = "←"
-	SymbolRight    = "→"
-	SymbolEnter    = "⏎"
-	SymbolEscape   = "⎋"
-	SymbolTab      = "⇥"
-	SymbolSpace    = "␣"
+	SymbolUp     = "↑"
+	SymbolDown   = "↓"
+	SymbolLeft   = "←"
+	SymbolRight  = "→"
+	SymbolEnter  = "⏎"
+	SymbolEscape = "⎋"
+	SymbolTab    = "⇥"
+	SymbolSpace  = "␣"
 )
 
 // Utility functions

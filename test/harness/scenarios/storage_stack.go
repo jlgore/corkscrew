@@ -181,12 +181,12 @@ func (s *StorageStackScenario) DefineResources(ctx *pulumi.Context, testID strin
 
 	// Create EFS file system
 	efsFileSystem, err := efs.NewFileSystem(ctx, "test-efs", &efs.FileSystemArgs{
-		CreationToken:   pulumi.String(fmt.Sprintf("corkscrew-test-%s", testID)),
-		PerformanceMode: pulumi.String("generalPurpose"),
-		ThroughputMode:  pulumi.String("provisioned"),
+		CreationToken:                pulumi.String(fmt.Sprintf("corkscrew-test-%s", testID)),
+		PerformanceMode:              pulumi.String("generalPurpose"),
+		ThroughputMode:               pulumi.String("provisioned"),
 		ProvisionedThroughputInMibps: pulumi.Float64(100),
-		Encrypted: pulumi.Bool(true),
-		Tags:      tags,
+		Encrypted:                    pulumi.Bool(true),
+		Tags:                         tags,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create EFS file system: %w", err)
@@ -351,9 +351,9 @@ func (s *StorageStackScenario) DefineResources(ctx *pulumi.Context, testID strin
 				"type": pulumi.String("FileSystem"),
 				"id":   efsFileSystem.ID(),
 				"attributes": pulumi.Map{
-					"performance_mode":   pulumi.String("generalPurpose"),
-					"throughput_mode":    pulumi.String("provisioned"),
-					"encrypted":          pulumi.Bool(true),
+					"performance_mode": pulumi.String("generalPurpose"),
+					"throughput_mode":  pulumi.String("provisioned"),
+					"encrypted":        pulumi.Bool(true),
 				},
 			},
 			pulumi.Map{

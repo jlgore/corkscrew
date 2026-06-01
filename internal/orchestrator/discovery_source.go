@@ -14,10 +14,10 @@ import (
 type DiscoverySource interface {
 	// Name returns the source identifier (github, api, local)
 	Name() string
-	
+
 	// Discover performs discovery and returns raw data
 	Discover(ctx context.Context, config SourceConfig) (interface{}, error)
-	
+
 	// Validate checks if the source is properly configured
 	Validate() error
 }
@@ -31,12 +31,12 @@ type GitHubSource struct {
 
 // GitHubConfig is passed by providers to configure GitHub discovery
 type GitHubConfig struct {
-	Owner      string                  // e.g., "aws", "Azure", "googleapis"
-	Repo       string                  // e.g., "aws-sdk-go-v2"
-	Path       string                  // e.g., "service/"
-	Branch     string                  // Default: "main"
-	FileFilter func(path string) bool  // Provider-specific filter
-	MaxDepth   int                     // Maximum directory depth to traverse
+	Owner      string                 // e.g., "aws", "Azure", "googleapis"
+	Repo       string                 // e.g., "aws-sdk-go-v2"
+	Path       string                 // e.g., "service/"
+	Branch     string                 // Default: "main"
+	FileFilter func(path string) bool // Provider-specific filter
+	MaxDepth   int                    // Maximum directory depth to traverse
 }
 
 // Validate implements SourceConfig
@@ -86,43 +86,43 @@ func (g *GitHubSource) Discover(ctx context.Context, config SourceConfig) (inter
 	if !ok {
 		return nil, fmt.Errorf("invalid config type, expected GitHubConfig")
 	}
-	
+
 	if err := githubConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
-	
+
 	result := &GitHubDiscoveryResult{
 		Files:       []FileInfo{},
 		Directories: []string{},
 		Metadata:    make(map[string]string),
 	}
-	
+
 	// Get repository information
 	repoURL := fmt.Sprintf("%s/repos/%s/%s", g.BaseURL, githubConfig.Owner, githubConfig.Repo)
 	repoInfo, err := g.makeRequest(ctx, repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repo info: %w", err)
 	}
-	
+
 	// Get the tree SHA for the branch
-	branchURL := fmt.Sprintf("%s/repos/%s/%s/branches/%s", 
+	branchURL := fmt.Sprintf("%s/repos/%s/%s/branches/%s",
 		g.BaseURL, githubConfig.Owner, githubConfig.Repo, githubConfig.Branch)
 	branchInfo, err := g.makeRequest(ctx, branchURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get branch info: %w", err)
 	}
-	
+
 	// Extract commit SHA
 	var branchData map[string]interface{}
 	if err := json.Unmarshal(branchInfo, &branchData); err != nil {
 		return nil, fmt.Errorf("failed to parse branch info: %w", err)
 	}
-	
+
 	commitSHA, _ := branchData["commit"].(map[string]interface{})["sha"].(string)
 	result.Metadata["commit"] = commitSHA
 	result.Metadata["discovered_at"] = time.Now().UTC().Format(time.RFC3339)
 	result.Metadata["branch"] = githubConfig.Branch
-	
+
 	// Get the tree
 	treeURL := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1",
 		g.BaseURL, githubConfig.Owner, githubConfig.Repo, commitSHA)
@@ -130,32 +130,32 @@ func (g *GitHubSource) Discover(ctx context.Context, config SourceConfig) (inter
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tree: %w", err)
 	}
-	
+
 	var tree map[string]interface{}
 	if err := json.Unmarshal(treeData, &tree); err != nil {
 		return nil, fmt.Errorf("failed to parse tree: %w", err)
 	}
-	
+
 	// Process tree entries
 	entries, ok := tree["tree"].([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid tree structure")
 	}
-	
+
 	for _, entry := range entries {
 		entryMap, ok := entry.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		
+
 		path, _ := entryMap["path"].(string)
 		entryType, _ := entryMap["type"].(string)
-		
+
 		// Check if path starts with configured path
 		if githubConfig.Path != "" && !strings.HasPrefix(path, githubConfig.Path) {
 			continue
 		}
-		
+
 		// Check depth
 		if githubConfig.MaxDepth > 0 {
 			depth := strings.Count(path, "/")
@@ -166,12 +166,12 @@ func (g *GitHubSource) Discover(ctx context.Context, config SourceConfig) (inter
 				continue
 			}
 		}
-		
+
 		// Apply file filter if provided
 		if githubConfig.FileFilter != nil && !githubConfig.FileFilter(path) {
 			continue
 		}
-		
+
 		if entryType == "blob" {
 			// It's a file
 			fileInfo := FileInfo{
@@ -180,22 +180,22 @@ func (g *GitHubSource) Discover(ctx context.Context, config SourceConfig) (inter
 				Type: "file",
 				SHA:  entryMap["sha"].(string),
 			}
-			
+
 			if size, ok := entryMap["size"].(float64); ok {
 				fileInfo.Size = int64(size)
 			}
-			
+
 			// Build file URL
 			fileInfo.URL = fmt.Sprintf("%s/repos/%s/%s/contents/%s?ref=%s",
 				g.BaseURL, githubConfig.Owner, githubConfig.Repo, path, githubConfig.Branch)
-			
+
 			result.Files = append(result.Files, fileInfo)
 		} else if entryType == "tree" {
 			// It's a directory
 			result.Directories = append(result.Directories, path)
 		}
 	}
-	
+
 	// Store repo metadata
 	var repoData map[string]interface{}
 	if err := json.Unmarshal(repoInfo, &repoData); err == nil {
@@ -209,7 +209,7 @@ func (g *GitHubSource) Discover(ctx context.Context, config SourceConfig) (inter
 			result.Metadata["repo_updated_at"] = updated
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -219,23 +219,23 @@ func (g *GitHubSource) makeRequest(ctx context.Context, url string) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	if g.Token != "" {
 		req.Header.Set("Authorization", "token "+g.Token)
 	}
-	
+
 	resp, err := g.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error: %d - %s", resp.StatusCode, string(body))
 	}
-	
+
 	return io.ReadAll(resp.Body)
 }
 
@@ -300,11 +300,11 @@ func (a *APISource) Discover(ctx context.Context, config SourceConfig) (interfac
 	if !ok {
 		return nil, fmt.Errorf("invalid config type, expected APIConfig")
 	}
-	
+
 	if err := apiConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
-	
+
 	// Build URL
 	url := a.Endpoint + apiConfig.Path
 	if len(apiConfig.QueryParams) > 0 {
@@ -314,7 +314,7 @@ func (a *APISource) Discover(ctx context.Context, config SourceConfig) (interfac
 		}
 		url += "?" + strings.Join(params, "&")
 	}
-	
+
 	// Prepare body
 	var bodyReader io.Reader
 	if apiConfig.Body != nil {
@@ -324,36 +324,36 @@ func (a *APISource) Discover(ctx context.Context, config SourceConfig) (interfac
 		}
 		bodyReader = strings.NewReader(string(bodyBytes))
 	}
-	
+
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, apiConfig.Method, url, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// Set headers
 	for k, v := range apiConfig.Headers {
 		req.Header.Set(k, v)
 	}
-	
+
 	// Apply authentication
 	if err := a.applyAuth(req); err != nil {
 		return nil, fmt.Errorf("failed to apply auth: %w", err)
 	}
-	
+
 	// Execute request
 	resp, err := a.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	result := &APIDiscoveryResult{
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
@@ -364,7 +364,7 @@ func (a *APISource) Discover(ctx context.Context, config SourceConfig) (interfac
 			"discovered_at": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
-	
+
 	// Apply custom parser if provided
 	if apiConfig.Parser != nil {
 		parsed, err := apiConfig.Parser(body)
@@ -373,7 +373,7 @@ func (a *APISource) Discover(ctx context.Context, config SourceConfig) (interfac
 		}
 		result.Metadata["parsed"] = parsed
 	}
-	
+
 	return result, nil
 }
 
@@ -386,7 +386,7 @@ func (a *APISource) applyAuth(req *http.Request) error {
 			return fmt.Errorf("bearer token not found in credentials")
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		
+
 	case "basic":
 		username, ok1 := a.AuthConfig.Credentials["username"]
 		password, ok2 := a.AuthConfig.Credentials["password"]
@@ -394,27 +394,27 @@ func (a *APISource) applyAuth(req *http.Request) error {
 			return fmt.Errorf("username or password not found in credentials")
 		}
 		req.SetBasicAuth(username, password)
-		
+
 	case "oauth":
 		token, ok := a.AuthConfig.Credentials["access_token"]
 		if !ok {
 			return fmt.Errorf("access_token not found in credentials")
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		
+
 	case "custom":
 		// Apply all credentials as headers
 		for k, v := range a.AuthConfig.Credentials {
 			req.Header.Set(k, v)
 		}
-		
+
 	case "":
 		// No auth
-		
+
 	default:
 		return fmt.Errorf("unsupported auth type: %s", a.AuthConfig.Type)
 	}
-	
+
 	return nil
 }
 

@@ -46,9 +46,9 @@ func main() {
 			AvailabilityZone:    pulumi.String("us-east-1a"),
 			MapPublicIpOnLaunch: pulumi.Bool(true),
 			Tags: pulumi.StringMap{
-				"Name":       pulumi.String("complex-public-subnet"),
-				"Type":       pulumi.String("public"),
-				"Scenario":   pulumi.String("complex"),
+				"Name":     pulumi.String("complex-public-subnet"),
+				"Type":     pulumi.String("public"),
+				"Scenario": pulumi.String("complex"),
 			},
 		})
 		if err != nil {
@@ -61,9 +61,9 @@ func main() {
 			CidrBlock:        pulumi.String("10.0.2.0/24"),
 			AvailabilityZone: pulumi.String("us-east-1b"),
 			Tags: pulumi.StringMap{
-				"Name":       pulumi.String("complex-private-subnet"),
-				"Type":       pulumi.String("private"),
-				"Scenario":   pulumi.String("complex"),
+				"Name":     pulumi.String("complex-private-subnet"),
+				"Type":     pulumi.String("private"),
+				"Scenario": pulumi.String("complex"),
 			},
 		})
 		if err != nil {
@@ -293,36 +293,36 @@ echo "Hello from complex scenario!" > /tmp/hello.txt
 		ctx.Export("vpcId", vpc.ID())
 		ctx.Export("vpcArn", vpc.Arn)
 		ctx.Export("vpcCidrBlock", vpc.CidrBlock)
-		
+
 		ctx.Export("internetGatewayId", igw.ID())
 		ctx.Export("internetGatewayArn", igw.Arn)
-		
+
 		ctx.Export("publicSubnetId", publicSubnet.ID())
 		ctx.Export("publicSubnetArn", publicSubnet.Arn)
 		ctx.Export("publicSubnetCidrBlock", publicSubnet.CidrBlock)
-		
+
 		ctx.Export("privateSubnetId", privateSubnet.ID())
 		ctx.Export("privateSubnetArn", privateSubnet.Arn)
 		ctx.Export("privateSubnetCidrBlock", privateSubnet.CidrBlock)
-		
+
 		ctx.Export("securityGroupId", securityGroup.ID())
 		ctx.Export("securityGroupArn", securityGroup.Arn)
 		ctx.Export("securityGroupName", securityGroup.Name)
-		
+
 		ctx.Export("instanceId", instance.ID())
 		ctx.Export("instanceArn", instance.Arn)
 		ctx.Export("instancePublicIp", instance.PublicIp)
 		ctx.Export("instancePrivateIp", instance.PrivateIp)
 		ctx.Export("instanceState", instance.InstanceState)
-		
+
 		ctx.Export("bucketId", bucket.ID())
 		ctx.Export("bucketArn", bucket.Arn)
 		ctx.Export("bucketDomainName", bucket.BucketDomainName)
-		
+
 		ctx.Export("iamRoleId", ec2Role.ID())
 		ctx.Export("iamRoleArn", ec2Role.Arn)
 		ctx.Export("iamRoleName", ec2Role.Name)
-		
+
 		ctx.Export("instanceProfileId", instanceProfile.ID())
 		ctx.Export("instanceProfileArn", instanceProfile.Arn)
 
@@ -332,7 +332,7 @@ echo "Hello from complex scenario!" > /tmp/hello.txt
 				publicSubnet.ID(),
 				privateSubnet.ID(),
 			},
-			"vpc_to_security_group": securityGroup.ID(),
+			"vpc_to_security_group":   securityGroup.ID(),
 			"vpc_to_internet_gateway": igw.ID(),
 			"subnet_to_instance": pulumi.Map{
 				"subnet":   publicSubnet.ID(),

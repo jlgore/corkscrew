@@ -30,20 +30,20 @@ type ServiceAccountConfig struct {
 
 func main() {
 	var (
-		projectID       = flag.String("project", "", "GCP Project ID")
-		accountName     = flag.String("account-name", "corkscrew-scanner", "Service account name")
-		displayName     = flag.String("display-name", "Corkscrew Cloud Scanner", "Service account display name")
-		description     = flag.String("description", "Service account for Corkscrew cloud resource scanning", "Service account description")
-		orgID           = flag.String("org-id", "", "Organization ID for org-wide access")
-		keyOutput       = flag.String("key-output", "corkscrew-key.json", "Output path for service account key")
-		rolesFlag       = flag.String("roles", "", "Comma-separated list of roles (uses defaults if empty)")
-		minimal         = flag.Bool("minimal", false, "Use minimal role set")
-		enhanced        = flag.Bool("enhanced", false, "Use enhanced role set")
-		generateScript  = flag.Bool("generate-script", false, "Generate deployment script instead of deploying")
-		validate        = flag.String("validate", "", "Validate existing service account (provide email)")
-		dryRun          = flag.Bool("dry-run", false, "Show what would be done without making changes")
-		quiet           = flag.Bool("quiet", false, "Suppress non-essential output")
-		outputFormat    = flag.String("output", "text", "Output format: text, json")
+		projectID      = flag.String("project", "", "GCP Project ID")
+		accountName    = flag.String("account-name", "corkscrew-scanner", "Service account name")
+		displayName    = flag.String("display-name", "Corkscrew Cloud Scanner", "Service account display name")
+		description    = flag.String("description", "Service account for Corkscrew cloud resource scanning", "Service account description")
+		orgID          = flag.String("org-id", "", "Organization ID for org-wide access")
+		keyOutput      = flag.String("key-output", "corkscrew-key.json", "Output path for service account key")
+		rolesFlag      = flag.String("roles", "", "Comma-separated list of roles (uses defaults if empty)")
+		minimal        = flag.Bool("minimal", false, "Use minimal role set")
+		enhanced       = flag.Bool("enhanced", false, "Use enhanced role set")
+		generateScript = flag.Bool("generate-script", false, "Generate deployment script instead of deploying")
+		validate       = flag.String("validate", "", "Validate existing service account (provide email)")
+		dryRun         = flag.Bool("dry-run", false, "Show what would be done without making changes")
+		quiet          = flag.Bool("quiet", false, "Suppress non-essential output")
+		outputFormat   = flag.String("output", "text", "Output format: text, json")
 	)
 	flag.Parse()
 
@@ -196,13 +196,13 @@ func printConfiguration(config *ServiceAccountConfig) {
 	fmt.Printf("📝 Display Name: %s\n", config.DisplayName)
 	fmt.Printf("📄 Description: %s\n", config.Description)
 	fmt.Printf("🔑 Key Output: %s\n", config.KeyOutputPath)
-	
+
 	if config.EnableOrgWideAccess {
 		fmt.Printf("🌍 Organization Scope: %s\n", config.OrgID)
 	} else {
 		fmt.Printf("📁 Project Scope: %s\n", config.ProjectID)
 	}
-	
+
 	fmt.Printf("🔐 Roles (%d):\n", len(config.RequiredRoles))
 	for i, role := range config.RequiredRoles {
 		fmt.Printf("  %d. %s\n", i+1, role)
@@ -213,16 +213,16 @@ func printConfiguration(config *ServiceAccountConfig) {
 // generateDeploymentScript generates the deployment script
 func generateDeploymentScript(config *ServiceAccountConfig) error {
 	script := generateScript(config)
-	
+
 	scriptPath := fmt.Sprintf("deploy-corkscrew-sa-%s.sh", config.ProjectID)
-	
+
 	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("failed to write script: %w", err)
 	}
 
 	fmt.Printf("✅ Deployment script generated: %s\n", scriptPath)
 	fmt.Printf("🚀 Run the script with: ./%s\n", scriptPath)
-	
+
 	return nil
 }
 
@@ -360,16 +360,16 @@ func validateServiceAccount(ctx context.Context, projectID, serviceAccountEmail,
 
 	fmt.Printf("🔍 Validating service account: %s\n", serviceAccountEmail)
 	fmt.Printf("📋 Project: %s\n", projectID)
-	
+
 	// For demonstration, we'll show what validation would include
 	validation := map[string]interface{}{
 		"service_account_email": serviceAccountEmail,
-		"project_id":           projectID,
-		"validation_time":      time.Now().Format(time.RFC3339),
-		"valid":               true,
-		"issues":              []string{},
-		"warnings":            []string{},
-		"has_asset_inventory":  true,
+		"project_id":            projectID,
+		"validation_time":       time.Now().Format(time.RFC3339),
+		"valid":                 true,
+		"issues":                []string{},
+		"warnings":              []string{},
+		"has_asset_inventory":   true,
 	}
 
 	if outputFormat == "json" {
@@ -425,12 +425,12 @@ func deployServiceAccount(ctx context.Context, config *ServiceAccountConfig, dry
 	}
 
 	result := map[string]interface{}{
-		"success":              true,
+		"success":               true,
 		"service_account_email": fmt.Sprintf("%s@%s.iam.gserviceaccount.com", config.AccountName, config.ProjectID),
-		"project_id":           config.ProjectID,
-		"key_file":             config.KeyOutputPath,
-		"roles_assigned":       len(config.RequiredRoles),
-		"deployment_time":      time.Now().Format(time.RFC3339),
+		"project_id":            config.ProjectID,
+		"key_file":              config.KeyOutputPath,
+		"roles_assigned":        len(config.RequiredRoles),
+		"deployment_time":       time.Now().Format(time.RFC3339),
 	}
 
 	if outputFormat == "json" {

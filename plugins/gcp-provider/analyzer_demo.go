@@ -93,9 +93,9 @@ func printAnalysisSummary(services []*pb.ServiceInfo, analyzer *ClientLibraryAna
 			fmt.Printf("... and %d more services\n", len(services)-10)
 			break
 		}
-		
+
 		resourceCount := len(service.ResourceTypes)
-		fmt.Printf("- %s (%s): %d resource types\n", 
+		fmt.Printf("- %s (%s): %d resource types\n",
 			service.Name, service.DisplayName, resourceCount)
 
 		// Show first few resource types
@@ -130,7 +130,7 @@ func printAnalysisSummary(services []*pb.ServiceInfo, analyzer *ClientLibraryAna
 		if count >= 5 {
 			break
 		}
-		
+
 		if len(mapping.ResourcePatterns) > 0 {
 			fmt.Printf("\nService: %s\n", serviceName)
 			patternCount := 0
@@ -139,15 +139,15 @@ func printAnalysisSummary(services []*pb.ServiceInfo, analyzer *ClientLibraryAna
 					fmt.Printf("  ... and %d more patterns\n", len(mapping.ResourcePatterns)-3)
 					break
 				}
-				
+
 				methodType := "Unknown"
 				if pattern.ListMethod {
 					methodType = "List"
 				} else if pattern.GetMethod {
 					methodType = "Get"
 				}
-				
-				fmt.Printf("  - %s (%s): %s -> %s\n", 
+
+				fmt.Printf("  - %s (%s): %s -> %s\n",
 					pattern.MethodName, methodType, pattern.ResourceType, pattern.AssetType)
 				patternCount++
 			}
@@ -160,9 +160,9 @@ func printAnalysisSummary(services []*pb.ServiceInfo, analyzer *ClientLibraryAna
 
 // saveDetailedReport saves the full analysis report to a JSON file
 func saveDetailedReport(report map[string]interface{}) {
-	filename := fmt.Sprintf("gcp-analysis-report-%s.json", 
+	filename := fmt.Sprintf("gcp-analysis-report-%s.json",
 		time.Now().Format("2006-01-02-150405"))
-	
+
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		log.Printf("Failed to marshal report: %v", err)

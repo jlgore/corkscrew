@@ -204,11 +204,11 @@ echo "<h1>Standalone Test Instance</h1>" > /var/www/html/index.html
 
 	// Create Auto Scaling Group
 	asg, err := autoscaling.NewGroup(ctx, "web-asg", &autoscaling.GroupArgs{
-		MinSize:           pulumi.Int(1),
-		MaxSize:           pulumi.Int(3),
-		DesiredCapacity:   pulumi.Int(2),
+		MinSize:            pulumi.Int(1),
+		MaxSize:            pulumi.Int(3),
+		DesiredCapacity:    pulumi.Int(2),
 		VpcZoneIdentifiers: pulumi.StringArray{subnet.ID()},
-		LoadBalancers:     pulumi.StringArray{elb.Name},
+		LoadBalancers:      pulumi.StringArray{elb.Name},
 		LaunchTemplate: &autoscaling.GroupLaunchTemplateArgs{
 			Id:      launchTemplate.ID(),
 			Version: pulumi.String("$Latest"),

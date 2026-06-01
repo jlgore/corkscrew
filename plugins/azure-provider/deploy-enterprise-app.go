@@ -14,12 +14,12 @@ import (
 
 func deployMain() {
 	var (
-		appName        = flag.String("app-name", "Corkscrew-Scanner", "Name of the enterprise application")
-		description    = flag.String("description", "Corkscrew cloud resource scanner and analyzer", "Description of the app")
-		mgScope        = flag.String("management-group", "", "Management group scope (empty for root)")
-		roles          = flag.String("roles", "Reader", "Comma-separated list of roles to assign")
-		useCert        = flag.Bool("use-certificate", false, "Use certificate credentials instead of client secret")
-		outputFile     = flag.String("output", "corkscrew-app.json", "Output file for app details")
+		appName     = flag.String("app-name", "Corkscrew-Scanner", "Name of the enterprise application")
+		description = flag.String("description", "Corkscrew cloud resource scanner and analyzer", "Description of the app")
+		mgScope     = flag.String("management-group", "", "Management group scope (empty for root)")
+		roles       = flag.String("roles", "Reader", "Comma-separated list of roles to assign")
+		useCert     = flag.Bool("use-certificate", false, "Use certificate credentials instead of client secret")
+		outputFile  = flag.String("output", "corkscrew-app.json", "Output file for app details")
 	)
 	flag.Parse()
 
@@ -45,10 +45,10 @@ func deployMain() {
 
 	// Create config
 	config := &EntraIDAppConfig{
-		AppName:              *appName,
-		Description:          *description,
-		ManagementGroupScope: *mgScope,
-		RoleDefinitions:      roleList,
+		AppName:                *appName,
+		Description:            *description,
+		ManagementGroupScope:   *mgScope,
+		RoleDefinitions:        roleList,
 		CertificateCredentials: *useCert,
 		RequiredPermissions: []string{
 			"User.Read",
@@ -92,13 +92,13 @@ func deployMain() {
 	log.Printf("Application ID: %s", result.ApplicationID)
 	log.Printf("Service Principal ID: %s", result.ServicePrincipalID)
 	log.Printf("Details saved to: %s", *outputFile)
-	
+
 	// Display next steps
 	fmt.Println("\n=== Next Steps ===")
 	fmt.Println("1. Grant admin consent for the API permissions in Azure Portal")
 	fmt.Println("2. Wait a few minutes for the service principal to propagate")
 	fmt.Println("3. Use the credentials in the output file to configure Corkscrew")
-	
+
 	if result.Credentials != nil && result.Credentials.ClientSecret != "" {
 		fmt.Println("\n=== IMPORTANT: Save these credentials securely! ===")
 		fmt.Printf("Client Secret: %s\n", result.Credentials.ClientSecret)

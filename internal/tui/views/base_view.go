@@ -110,9 +110,9 @@ func HandleViewSwitching(msg tea.KeyMsg) tea.Cmd {
 
 // ViewContainer wraps a view with common functionality
 type ViewContainer struct {
-	view      BaseView
-	state     ViewState
-	showHelp  bool
+	view     BaseView
+	state    ViewState
+	showHelp bool
 }
 
 // NewViewContainer creates a new view container
@@ -150,7 +150,7 @@ func (vc *ViewContainer) Update(msg tea.Msg) (*ViewContainer, tea.Cmd) {
 		if cmd = HandleCommonKeys(msg); cmd != nil {
 			return vc, cmd
 		}
-		
+
 		// Handle view switching
 		if cmd = HandleViewSwitching(msg); cmd != nil {
 			return vc, cmd

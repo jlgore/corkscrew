@@ -57,7 +57,7 @@ func (rm *RelationshipMapper) ExtractPodRelationships(pod *unstructured.Unstruct
 
 	// For now, just return empty slice
 	// TODO: Implement pod volume mount relationships, service account relationships, etc.
-	
+
 	return relationships
 }
 
@@ -67,6 +67,6 @@ func (rm *RelationshipMapper) ExtractServiceRelationships(service *unstructured.
 
 	// For now, just return empty slice
 	// TODO: Implement service selector relationships
-	
+
 	return relationships
 }

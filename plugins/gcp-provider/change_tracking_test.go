@@ -104,7 +104,7 @@ func TestBaseChangeTracker_ValidateQuery(t *testing.T) {
 		Provider:          "gcp",
 		MaxQueryTimeRange: 30 * 24 * time.Hour,
 	}
-	
+
 	tracker := NewBaseChangeTracker("gcp", storage, config)
 
 	t.Run("valid query", func(t *testing.T) {
@@ -161,7 +161,7 @@ func TestBaseChangeTracker_ImpactAnalysis(t *testing.T) {
 		}
 
 		assessment := tracker.AnalyzeChangeImpact(change)
-		
+
 		assert.NotNil(t, assessment)
 		assert.True(t, assessment.SecurityImpact.IAMChanges)
 		assert.True(t, assessment.SecurityImpact.NetworkChanges)
@@ -176,7 +176,7 @@ func TestBaseChangeTracker_ImpactAnalysis(t *testing.T) {
 		}
 
 		assessment := tracker.AnalyzeChangeImpact(change)
-		
+
 		assert.NotNil(t, assessment)
 		assert.Equal(t, SeverityHigh, assessment.CostImpact.Level) // Instance is high-cost resource
 		assert.Greater(t, assessment.CostImpact.EstimatedChange, 0.0)
@@ -190,7 +190,7 @@ func TestBaseChangeTracker_ImpactAnalysis(t *testing.T) {
 		}
 
 		assessment := tracker.AnalyzeChangeImpact(change)
-		
+
 		assert.NotNil(t, assessment)
 		assert.Equal(t, SeverityHigh, assessment.AvailabilityImpact.Level)
 		assert.Equal(t, "High", assessment.AvailabilityImpact.DowntimeRisk)
@@ -206,7 +206,7 @@ func TestGCPChangeTracker_Creation(t *testing.T) {
 
 	storage := &MockChangeStorage{}
 	config := &ChangeTrackerConfig{
-		Provider:               "gcp",
+		Provider:                 "gcp",
 		EnableRealTimeMonitoring: false, // Disable real-time for tests
 	}
 
@@ -390,7 +390,7 @@ func TestChangeAnalytics_BasicStats(t *testing.T) {
 	}
 
 	report, err := analytics.GenerateReport(context.Background(), query)
-	
+
 	assert.NoError(t, err)
 	assert.NotNil(t, report)
 	assert.Equal(t, 3, report.TotalChanges)
@@ -412,9 +412,9 @@ func TestAlertingSystem_RuleMatching(t *testing.T) {
 		Enabled:  true,
 		Provider: "gcp",
 		Conditions: &AlertConditions{
-			Severities:    []ChangeSeverity{SeverityHigh, SeverityCritical},
-			Services:      []string{"compute"},
-			ChangeTypes:   []ChangeType{ChangeTypeDelete},
+			Severities:  []ChangeSeverity{SeverityHigh, SeverityCritical},
+			Services:    []string{"compute"},
+			ChangeTypes: []ChangeType{ChangeTypeDelete},
 		},
 	}
 
@@ -636,7 +636,7 @@ func createTestChangeEvent(id string, changeType ChangeType, severity ChangeSeve
 
 func createTestBaseline(id string, resourceCount int) *DriftBaseline {
 	resources := make(map[string]*ResourceState)
-	
+
 	for i := 0; i < resourceCount; i++ {
 		resourceID := fmt.Sprintf("resource-%d", i)
 		resources[resourceID] = &ResourceState{

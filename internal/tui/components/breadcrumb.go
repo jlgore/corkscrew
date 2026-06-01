@@ -41,7 +41,7 @@ func (m *BreadcrumbModel) AddCrumb(item BreadcrumbItem) {
 	for i := range m.path {
 		m.path[i].Active = false
 	}
-	
+
 	// Add new item as active
 	item.Active = true
 	m.path = append(m.path, item)
@@ -52,18 +52,18 @@ func (m *BreadcrumbModel) PopCrumb() *BreadcrumbItem {
 	if len(m.path) == 0 {
 		return nil
 	}
-	
+
 	// Get the last item
 	last := m.path[len(m.path)-1]
-	
+
 	// Remove it from the path
 	m.path = m.path[:len(m.path)-1]
-	
+
 	// Set the new last item as active if it exists
 	if len(m.path) > 0 {
 		m.path[len(m.path)-1].Active = true
 	}
-	
+
 	return &last
 }
 
@@ -72,12 +72,12 @@ func (m *BreadcrumbModel) SetActiveCrumb(index int) {
 	if index < 0 || index >= len(m.path) {
 		return
 	}
-	
+
 	// Set all items as inactive
 	for i := range m.path {
 		m.path[i].Active = false
 	}
-	
+
 	// Set the specified item as active
 	m.path[index].Active = true
 }
@@ -93,7 +93,7 @@ func (m *BreadcrumbModel) NavigateToView(viewType types.ViewType, label string, 
 			return
 		}
 	}
-	
+
 	// Add new breadcrumb
 	icon := getViewIcon(viewType)
 	m.AddCrumb(BreadcrumbItem{
@@ -130,25 +130,25 @@ func (m BreadcrumbModel) View() string {
 	if len(m.path) == 0 {
 		return ""
 	}
-	
+
 	// Render each breadcrumb
 	var segments []string
 	totalWidth := 0
-	
+
 	for i, crumb := range m.path {
 		segment := m.renderCrumb(crumb)
 		segmentWidth := lipgloss.Width(segment)
-		
+
 		// Check if adding this segment would exceed max width
 		if totalWidth+segmentWidth > m.maxWidth && i > 0 {
 			// Add ellipsis and break
 			segments = append(segments, styles.BreadcrumbStyle.Render("..."))
 			break
 		}
-		
+
 		segments = append(segments, segment)
 		totalWidth += segmentWidth
-		
+
 		// Add separator if not the last item
 		if i < len(m.path)-1 {
 			separatorWidth := lipgloss.Width(m.separator)
@@ -158,27 +158,27 @@ func (m BreadcrumbModel) View() string {
 			}
 		}
 	}
-	
+
 	return strings.Join(segments, "")
 }
 
 // renderCrumb renders a single breadcrumb item
 func (m BreadcrumbModel) renderCrumb(crumb BreadcrumbItem) string {
 	var text string
-	
+
 	// Add icon if enabled
 	if m.showIcons && crumb.Icon != "" {
 		text = crumb.Icon + " "
 	}
-	
+
 	// Add label
 	text += crumb.Label
-	
+
 	// Style based on active state
 	if crumb.Active {
 		return styles.BreadcrumbActiveStyle.Render(text)
 	}
-	
+
 	return styles.BreadcrumbStyle.Render(text)
 }
 

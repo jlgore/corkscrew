@@ -101,11 +101,11 @@ type PolicySimilarity struct {
 
 // PolicyRiskAssessment represents risk assessment for policy similarities
 type PolicyRiskAssessment struct {
-	RiskLevel        string   `json:"risk_level"`        // LOW, MEDIUM, HIGH, CRITICAL
-	RiskScore        float64  `json:"risk_score"`        // 0-1
-	RiskFactors      []string `json:"risk_factors"`      // List of risk factors
-	Recommendations  []string `json:"recommendations"`   // Security recommendations
-	ComplianceTags   []string `json:"compliance_tags"`   // Compliance framework tags
+	RiskLevel       string   `json:"risk_level"`      // LOW, MEDIUM, HIGH, CRITICAL
+	RiskScore       float64  `json:"risk_score"`      // 0-1
+	RiskFactors     []string `json:"risk_factors"`    // List of risk factors
+	Recommendations []string `json:"recommendations"` // Security recommendations
+	ComplianceTags  []string `json:"compliance_tags"` // Compliance framework tags
 }
 
 // AnalyzePolicySimilarity analyzes policy similarities across clouds
@@ -352,13 +352,13 @@ func (pa *PolicyAnalyzer) parseAzurePolicies(id, name, resourceType string, rawD
 func (pa *PolicyAnalyzer) normalizePolicy(policy PolicyDocument) PolicyDocument {
 	// Parse statements from document
 	policy.Statements = pa.parseStatements(policy.Document)
-	
+
 	// Convert to normalized permissions
 	policy.Permissions = pa.extractPermissions(policy.Statements, policy.Provider)
-	
+
 	// Generate hash for quick comparison
 	policy.Hash = pa.generatePolicyHash(policy.Permissions)
-	
+
 	return policy
 }
 
@@ -498,26 +498,26 @@ func (pa *PolicyAnalyzer) normalizeActions(actions []string, provider string) []
 
 	actionMap := map[string]map[string]string{
 		"aws": {
-			"s3:GetObject":          "storage:read",
-			"s3:PutObject":          "storage:write",
-			"s3:DeleteObject":       "storage:delete",
-			"s3:ListBucket":         "storage:list",
-			"iam:GetUser":           "identity:read",
-			"iam:CreateUser":        "identity:write",
-			"iam:DeleteUser":        "identity:delete",
-			"ec2:DescribeInstances": "compute:read",
-			"ec2:RunInstances":      "compute:create",
+			"s3:GetObject":           "storage:read",
+			"s3:PutObject":           "storage:write",
+			"s3:DeleteObject":        "storage:delete",
+			"s3:ListBucket":          "storage:list",
+			"iam:GetUser":            "identity:read",
+			"iam:CreateUser":         "identity:write",
+			"iam:DeleteUser":         "identity:delete",
+			"ec2:DescribeInstances":  "compute:read",
+			"ec2:RunInstances":       "compute:create",
 			"ec2:TerminateInstances": "compute:delete",
 		},
 		"azure": {
 			"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read":   "storage:read",
 			"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write":  "storage:write",
 			"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete": "storage:delete",
-			"Microsoft.Authorization/*/read":  "identity:read",
-			"Microsoft.Authorization/*/write": "identity:write",
-			"Microsoft.Compute/virtualMachines/read":   "compute:read",
-			"Microsoft.Compute/virtualMachines/write":  "compute:create",
-			"Microsoft.Compute/virtualMachines/delete": "compute:delete",
+			"Microsoft.Authorization/*/read":                                         "identity:read",
+			"Microsoft.Authorization/*/write":                                        "identity:write",
+			"Microsoft.Compute/virtualMachines/read":                                 "compute:read",
+			"Microsoft.Compute/virtualMachines/write":                                "compute:create",
+			"Microsoft.Compute/virtualMachines/delete":                               "compute:delete",
 		},
 	}
 
@@ -604,13 +604,13 @@ func (pa *PolicyAnalyzer) comparePolicies(source, target PolicyDocument) *Policy
 	// Quick hash comparison
 	if source.Hash == target.Hash {
 		return &PolicySimilarity{
-			ID:              fmt.Sprintf("policy-sim-%s-%s", generateHash(source.ID), generateHash(target.ID)),
-			SourcePolicy:    source,
-			TargetPolicy:    target,
-			SimilarityScore: 1.0,
-			SimilarityType:  "identical",
+			ID:               fmt.Sprintf("policy-sim-%s-%s", generateHash(source.ID), generateHash(target.ID)),
+			SourcePolicy:     source,
+			TargetPolicy:     target,
+			SimilarityScore:  1.0,
+			SimilarityType:   "identical",
 			MatchingElements: []string{"Identical policies"},
-			DetectedAt:      time.Now(),
+			DetectedAt:       time.Now(),
 		}
 	}
 

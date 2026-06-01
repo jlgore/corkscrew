@@ -84,7 +84,7 @@ func printPackUsage() {
 // runPackSearch searches the registry for compliance packs
 func runPackSearch(args []string) {
 	fs := flag.NewFlagSet("pack search", flag.ExitOnError)
-	
+
 	provider := fs.String("provider", "", "Filter by provider (aws, azure, gcp, kubernetes)")
 	framework := fs.String("framework", "", "Filter by compliance framework (ccc, iso27001, nist, sox)")
 	category := fs.String("category", "", "Filter by category (security, cost, operations)")
@@ -128,7 +128,7 @@ func runPackSearch(args []string) {
 
 	// Create registry client
 	registryClient := compliance.NewRegistryClient()
-	
+
 	// Check for GitHub token
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		registryClient = registryClient.WithGitHubToken(token)
@@ -200,11 +200,11 @@ func displaySearchResults(result *compliance.SearchResult, verbose bool) {
 	fmt.Printf("📦 Found %d pack(s) (showing %d):\n\n", result.Total, len(result.Packs))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	
+
 	if verbose {
 		fmt.Fprintln(w, "NAMESPACE\tNAME\tVERSION\tPROVIDER\tFRAMEWORKS\tTAGS\tDESCRIPTION")
 		fmt.Fprintln(w, "---------\t----\t-------\t--------\t----------\t----\t-----------")
-		
+
 		for _, pack := range result.Packs {
 			frameworks := strings.Join(pack.Frameworks, ",")
 			if frameworks == "" {
@@ -214,12 +214,12 @@ func displaySearchResults(result *compliance.SearchResult, verbose bool) {
 			if tags == "" {
 				tags = "-"
 			}
-			
+
 			description := pack.Description
 			if len(description) > 50 {
 				description = description[:47] + "..."
 			}
-			
+
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				pack.Namespace, pack.Name, pack.LatestVersion, pack.Provider,
 				frameworks, tags, description)
@@ -227,18 +227,18 @@ func displaySearchResults(result *compliance.SearchResult, verbose bool) {
 	} else {
 		fmt.Fprintln(w, "NAMESPACE\tNAME\tVERSION\tPROVIDER\tDESCRIPTION")
 		fmt.Fprintln(w, "---------\t----\t-------\t--------\t-----------")
-		
+
 		for _, pack := range result.Packs {
 			description := pack.Description
 			if len(description) > 60 {
 				description = description[:57] + "..."
 			}
-			
+
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				pack.Namespace, pack.Name, pack.LatestVersion, pack.Provider, description)
 		}
 	}
-	
+
 	w.Flush()
 
 	// Show pagination info
@@ -255,7 +255,7 @@ func displaySearchResults(result *compliance.SearchResult, verbose bool) {
 // runPackInstall installs a compliance pack
 func runPackInstall(args []string) {
 	fs := flag.NewFlagSet("pack install", flag.ExitOnError)
-	
+
 	version := fs.String("version", "latest", "Specific version to install")
 	force := fs.Bool("force", false, "Force reinstall even if pack exists")
 	dryRun := fs.Bool("dry-run", false, "Show what would be installed without actually installing")
@@ -325,7 +325,7 @@ func runPackInstall(args []string) {
 	if !*dryRun {
 		fmt.Printf("✅ Pack '%s' installed successfully!\n", packRef)
 		fmt.Printf("📍 Location: %s\n", installDir)
-		
+
 		if *verbose {
 			fmt.Printf("\n💡 You can now use this pack with:\n")
 			fmt.Printf("  corkscrew query --pack %s\n", packRef)
@@ -336,7 +336,7 @@ func runPackInstall(args []string) {
 // installFromRegistry installs a pack from the central registry
 func installFromRegistry(ctx context.Context, packRef, version, installDir string, force, dryRun, installDeps, verbose bool) error {
 	registryClient := compliance.NewRegistryClient()
-	
+
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		registryClient = registryClient.WithGitHubToken(token)
 	}
@@ -392,7 +392,7 @@ func installFromGitHub(ctx context.Context, packRef, version, installDir string,
 // runPackList lists installed compliance packs
 func runPackList(args []string) {
 	fs := flag.NewFlagSet("pack list", flag.ExitOnError)
-	
+
 	output := fs.String("output", "table", "Output format: table, json")
 	verbose := fs.Bool("verbose", false, "Show detailed pack information")
 	showQueries := fs.Bool("queries", false, "Show query count for each pack")
@@ -406,7 +406,7 @@ func runPackList(args []string) {
 
 	// Create pack loader
 	loader := compliance.NewPackLoader()
-	
+
 	ctx := context.Background()
 
 	// Discover all available packs
@@ -483,22 +483,22 @@ func displayInstalledPacks(packs []*compliance.QueryPack, verbose, showQueries b
 	fmt.Printf("📦 Found %d installed compliance pack(s):\n\n", len(packs))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	
+
 	if verbose {
 		fmt.Fprintln(w, "NAMESPACE\tNAME\tVERSION\tPROVIDER\tFRAMEWORKS\tQUERIES\tLOADED FROM")
 		fmt.Fprintln(w, "---------\t----\t-------\t--------\t----------\t-------\t-----------")
-		
+
 		for _, pack := range packs {
 			frameworks := strings.Join(pack.Metadata.Frameworks, ",")
 			if frameworks == "" {
 				frameworks = "-"
 			}
-			
+
 			loadedFrom := pack.LoadedFrom
 			if len(loadedFrom) > 40 {
 				loadedFrom = "..." + loadedFrom[len(loadedFrom)-37:]
 			}
-			
+
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
 				pack.Namespace, pack.Metadata.Name, pack.Metadata.Version,
 				pack.Metadata.Provider, frameworks, len(pack.Queries), loadedFrom)
@@ -506,34 +506,34 @@ func displayInstalledPacks(packs []*compliance.QueryPack, verbose, showQueries b
 	} else {
 		header := "NAMESPACE\tNAME\tVERSION\tPROVIDER"
 		separator := "---------\t----\t-------\t--------"
-		
+
 		if showQueries {
 			header += "\tQUERIES"
 			separator += "\t-------"
 		}
-		
+
 		fmt.Fprintln(w, header)
 		fmt.Fprintln(w, separator)
-		
+
 		for _, pack := range packs {
 			line := fmt.Sprintf("%s\t%s\t%s\t%s",
 				pack.Namespace, pack.Metadata.Name, pack.Metadata.Version, pack.Metadata.Provider)
-			
+
 			if showQueries {
 				line += fmt.Sprintf("\t%d", len(pack.Queries))
 			}
-			
+
 			fmt.Fprintln(w, line)
 		}
 	}
-	
+
 	w.Flush()
 
 	// Summary
 	providers := make(map[string]int)
 	frameworks := make(map[string]int)
 	totalQueries := 0
-	
+
 	for _, pack := range packs {
 		providers[pack.Metadata.Provider]++
 		totalQueries += len(pack.Queries)
@@ -544,7 +544,7 @@ func displayInstalledPacks(packs []*compliance.QueryPack, verbose, showQueries b
 
 	fmt.Printf("\n📊 Summary:\n")
 	fmt.Printf("  Total Queries: %d\n", totalQueries)
-	
+
 	if len(providers) > 0 {
 		fmt.Printf("  Providers: ")
 		var providerList []string
@@ -558,7 +558,7 @@ func displayInstalledPacks(packs []*compliance.QueryPack, verbose, showQueries b
 // runPackUpdate updates installed packs
 func runPackUpdate(args []string) {
 	fs := flag.NewFlagSet("pack update", flag.ExitOnError)
-	
+
 	all := fs.Bool("all", false, "Update all installed packs")
 	dryRun := fs.Bool("dry-run", false, "Show what would be updated without actually updating")
 	force := fs.Bool("force", false, "Force update even if no newer version available")
@@ -567,7 +567,7 @@ func runPackUpdate(args []string) {
 	fs.Parse(args)
 
 	packRefs := fs.Args()
-	
+
 	if len(packRefs) == 0 && !*all {
 		fmt.Fprintf(os.Stderr, "❌ Pack name(s) or --all flag required\n")
 		fmt.Fprintf(os.Stderr, "💡 Examples:\n")
@@ -580,17 +580,17 @@ func runPackUpdate(args []string) {
 		if *verbose {
 			fmt.Printf("🔄 Updating all installed compliance packs...\n\n")
 		}
-		
+
 		// Load all installed packs
 		loader := compliance.NewPackLoader()
 		ctx := context.Background()
-		
+
 		packs, err := loader.DiscoverPacks(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to discover packs: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		packRefs = packs
 	}
 
@@ -605,12 +605,12 @@ func runPackUpdate(args []string) {
 	// Update each pack
 	updated := 0
 	failed := 0
-	
+
 	for _, packRef := range packRefs {
 		if *verbose {
 			fmt.Printf("🔄 Updating %s...\n", packRef)
 		}
-		
+
 		err := updateSinglePack(packRef, *force, *verbose)
 		if err != nil {
 			fmt.Printf("❌ Failed to update %s: %v\n", packRef, err)
@@ -636,19 +636,19 @@ func updateSinglePack(packRef string, force, verbose bool) error {
 	if verbose {
 		fmt.Printf("  Checking for updates to %s...\n", packRef)
 	}
-	
+
 	// TODO: Implement actual update logic
 	// 1. Check current version
 	// 2. Check latest version in registry
 	// 3. Download and install if newer version available
-	
+
 	return fmt.Errorf("pack update not yet implemented")
 }
 
 // runPackValidate validates pack integrity and dependencies
 func runPackValidate(args []string) {
 	fs := flag.NewFlagSet("pack validate", flag.ExitOnError)
-	
+
 	all := fs.Bool("all", false, "Validate all installed packs")
 	checkDeps := fs.Bool("deps", true, "Check dependencies")
 	checkQueries := fs.Bool("queries", true, "Validate SQL queries")
@@ -657,7 +657,7 @@ func runPackValidate(args []string) {
 	fs.Parse(args)
 
 	packRefs := fs.Args()
-	
+
 	if len(packRefs) == 0 && !*all {
 		fmt.Fprintf(os.Stderr, "❌ Pack name(s) or --all flag required\n")
 		fmt.Fprintf(os.Stderr, "💡 Examples:\n")
@@ -673,24 +673,24 @@ func runPackValidate(args []string) {
 		if *verbose {
 			fmt.Printf("🔍 Validating all installed compliance packs...\n\n")
 		}
-		
+
 		packs, err := loader.DiscoverPacks(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to discover packs: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		packRefs = packs
 	}
 
 	valid := 0
 	invalid := 0
-	
+
 	for _, packRef := range packRefs {
 		if *verbose {
 			fmt.Printf("🔍 Validating %s...\n", packRef)
 		}
-		
+
 		err := validateSinglePack(ctx, loader, packRef, *checkDeps, *checkQueries, *verbose)
 		if err != nil {
 			fmt.Printf("❌ %s: %v\n", packRef, err)
@@ -744,7 +744,7 @@ func validateSinglePack(ctx context.Context, loader *compliance.PackLoader, pack
 // runPackInfo shows detailed information about a pack
 func runPackInfo(args []string) {
 	fs := flag.NewFlagSet("pack info", flag.ExitOnError)
-	
+
 	output := fs.String("output", "table", "Output format: table, json")
 	verbose := fs.Bool("verbose", false, "Show detailed information")
 
@@ -788,18 +788,18 @@ func runPackInfo(args []string) {
 // displayPackInfo displays detailed pack information
 func displayPackInfo(pack *compliance.QueryPack, verbose bool) {
 	fmt.Printf("📦 Pack Information: %s\n\n", pack.Metadata.Name)
-	
+
 	fmt.Printf("Basic Information:\n")
 	fmt.Printf("  Name: %s\n", pack.Metadata.Name)
 	fmt.Printf("  Namespace: %s\n", pack.Namespace)
 	fmt.Printf("  Version: %s\n", pack.Metadata.Version)
 	fmt.Printf("  Description: %s\n", pack.Metadata.Description)
 	fmt.Printf("  Provider: %s\n", pack.Metadata.Provider)
-	
+
 	if pack.Metadata.Author != "" {
 		fmt.Printf("  Author: %s\n", pack.Metadata.Author)
 	}
-	
+
 	if len(pack.Metadata.Maintainers) > 0 {
 		fmt.Printf("  Maintainers: %s\n", strings.Join(pack.Metadata.Maintainers, ", "))
 	}
@@ -808,11 +808,11 @@ func displayPackInfo(pack *compliance.QueryPack, verbose bool) {
 	if len(pack.Metadata.Frameworks) > 0 {
 		fmt.Printf("  Frameworks: %s\n", strings.Join(pack.Metadata.Frameworks, ", "))
 	}
-	
+
 	if len(pack.Metadata.Resources) > 0 {
 		fmt.Printf("  Resources: %s\n", strings.Join(pack.Metadata.Resources, ", "))
 	}
-	
+
 	if len(pack.Metadata.Tags) > 0 {
 		fmt.Printf("  Tags: %s\n", strings.Join(pack.Metadata.Tags, ", "))
 	}
@@ -880,7 +880,7 @@ func runPackCache(args []string) {
 // runPackCacheInfo shows cache information
 func runPackCacheInfo() {
 	registryClient := compliance.NewRegistryClient()
-	
+
 	info, err := registryClient.GetCacheInfo()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to get cache info: %v\n", err)
@@ -896,7 +896,7 @@ func runPackCacheInfo() {
 // runPackCacheClear clears the registry cache
 func runPackCacheClear() {
 	registryClient := compliance.NewRegistryClient()
-	
+
 	if err := registryClient.ClearCache(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to clear cache: %v\n", err)
 		os.Exit(1)
@@ -908,15 +908,15 @@ func runPackCacheClear() {
 // runPackCacheUpdate updates the registry cache
 func runPackCacheUpdate() {
 	registryClient := compliance.NewRegistryClient()
-	
+
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		registryClient = registryClient.WithGitHubToken(token)
 	}
 
 	ctx := context.Background()
-	
+
 	fmt.Printf("🔄 Updating registry cache...\n")
-	
+
 	if err := registryClient.UpdateRegistry(ctx, true); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to update cache: %v\n", err)
 		os.Exit(1)

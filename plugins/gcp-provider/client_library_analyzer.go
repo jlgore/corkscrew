@@ -18,21 +18,21 @@ import (
 
 // ClientLibraryAnalyzer analyzes GCP client libraries to discover resource patterns
 type ClientLibraryAnalyzer struct {
-	GoPath       string
-	ModulePath   string
-	ServiceMappings map[string]*ServiceMapping
+	GoPath                 string
+	ModulePath             string
+	ServiceMappings        map[string]*ServiceMapping
 	AssetInventoryMappings map[string]string
 }
 
 // ServiceMapping contains discovered service information
 type ServiceMapping struct {
-	ServiceName      string                 `json:"service_name"`
-	PackagePath      string                 `json:"package_path"`
-	ClientName       string                 `json:"client_name"`
-	ResourcePatterns []*ResourcePattern     `json:"resource_patterns"`
-	IteratorPatterns []*IteratorPattern     `json:"iterator_patterns"`
-	AssetMappings    map[string]string      `json:"asset_mappings"`
-	ParentHierarchy  []*ParentRelationship  `json:"parent_hierarchy"`
+	ServiceName      string                `json:"service_name"`
+	PackagePath      string                `json:"package_path"`
+	ClientName       string                `json:"client_name"`
+	ResourcePatterns []*ResourcePattern    `json:"resource_patterns"`
+	IteratorPatterns []*IteratorPattern    `json:"iterator_patterns"`
+	AssetMappings    map[string]string     `json:"asset_mappings"`
+	ParentHierarchy  []*ParentRelationship `json:"parent_hierarchy"`
 }
 
 // ResourcePattern represents a discoverable resource pattern
@@ -50,12 +50,12 @@ type ResourcePattern struct {
 
 // IteratorPattern represents iterator-based resource listing
 type IteratorPattern struct {
-	ClientMethod    string            `json:"client_method"`
-	IteratorType    string            `json:"iterator_type"`
-	NextMethod      bool              `json:"next_method"`
-	PagesMethod     bool              `json:"pages_method"`
-	PageTokenSupport bool             `json:"page_token_support"`
-	Metadata        map[string]string `json:"metadata"`
+	ClientMethod     string            `json:"client_method"`
+	IteratorType     string            `json:"iterator_type"`
+	NextMethod       bool              `json:"next_method"`
+	PagesMethod      bool              `json:"pages_method"`
+	PageTokenSupport bool              `json:"page_token_support"`
+	Metadata         map[string]string `json:"metadata"`
 }
 
 // ParentRelationship represents resource hierarchy
@@ -125,7 +125,7 @@ func (cla *ClientLibraryAnalyzer) findGCPPackages() ([]string, error) {
 
 	// Look for cloud.google.com/go/* packages in GOPATH/pkg/mod
 	modPath := filepath.Join(cla.GoPath, "pkg", "mod", "cloud.google.com", "go")
-	
+
 	if _, err := os.Stat(modPath); os.IsNotExist(err) {
 		// Try alternative locations
 		modPath = filepath.Join(os.Getenv("HOME"), "go", "pkg", "mod", "cloud.google.com", "go")
@@ -225,11 +225,11 @@ func (cla *ClientLibraryAnalyzer) analyzePackage(ctx context.Context, packagePat
 
 	// Convert to ServiceInfo
 	serviceInfo := &pb.ServiceInfo{
-		Name:           serviceName,
-		DisplayName:    cla.getDisplayName(serviceName),
-		PackageName:    packagePath,
-		ClientType:     "google-cloud-go",
-		ResourceTypes:  cla.convertToResourceTypes(mapping),
+		Name:          serviceName,
+		DisplayName:   cla.getDisplayName(serviceName),
+		PackageName:   packagePath,
+		ClientType:    "google-cloud-go",
+		ResourceTypes: cla.convertToResourceTypes(mapping),
 	}
 
 	return serviceInfo, nil
@@ -246,7 +246,7 @@ func (cla *ClientLibraryAnalyzer) parsePackageSource(packagePath string, mapping
 	}
 
 	fset := token.NewFileSet()
-	
+
 	// Parse all Go files in the package
 	packages, err := parser.ParseDir(fset, srcPath, nil, parser.ParseComments)
 	if err != nil {
@@ -260,7 +260,7 @@ func (cla *ClientLibraryAnalyzer) parsePackageSource(packagePath string, mapping
 
 		// Extract documentation
 		doc := doc.New(pkg, "./", doc.AllDecls)
-		
+
 		// Analyze types and functions
 		cla.analyzeTypes(doc, mapping)
 		cla.analyzeFunctions(doc, mapping)
@@ -288,7 +288,7 @@ func (cla *ClientLibraryAnalyzer) analyzeTypes(doc *doc.Package, mapping *Servic
 				PagesMethod:  cla.hasMethod(typeDoc, "Pages"),
 				Metadata:     make(map[string]string),
 			}
-			
+
 			mapping.IteratorPatterns = append(mapping.IteratorPatterns, iteratorPattern)
 			log.Printf("Found iterator type: %s", typeName)
 		}
@@ -301,9 +301,9 @@ func (cla *ClientLibraryAnalyzer) analyzeFunctions(doc *doc.Package, mapping *Se
 		funcName := funcDoc.Name
 
 		// Skip constructors and utility functions
-		if strings.HasPrefix(funcName, "New") || 
-		   strings.HasPrefix(funcName, "Default") ||
-		   strings.Contains(funcName, "Option") {
+		if strings.HasPrefix(funcName, "New") ||
+			strings.HasPrefix(funcName, "Default") ||
+			strings.Contains(funcName, "Option") {
 			continue
 		}
 
@@ -365,53 +365,53 @@ func (cla *ClientLibraryAnalyzer) analyzeResourceMethod(funcName string, funcDoc
 func (cla *ClientLibraryAnalyzer) addStaticPatterns(serviceName string, mapping *ServiceMapping) {
 	staticPatterns := map[string][]*ResourcePattern{
 		"compute": {
-			{MethodName: "ListInstances", ResourceType: "Instance", ListMethod: true, 
-			 PaginationStyle: "pages", AssetType: "compute.googleapis.com/Instance",
-			 Parameters: []string{"project", "zone"}, Metadata: map[string]string{"scope": "zonal"}},
+			{MethodName: "ListInstances", ResourceType: "Instance", ListMethod: true,
+				PaginationStyle: "pages", AssetType: "compute.googleapis.com/Instance",
+				Parameters: []string{"project", "zone"}, Metadata: map[string]string{"scope": "zonal"}},
 			{MethodName: "GetInstance", ResourceType: "Instance", GetMethod: true,
-			 AssetType: "compute.googleapis.com/Instance",
-			 Parameters: []string{"project", "zone", "instance"}, Metadata: map[string]string{"scope": "zonal"}},
+				AssetType:  "compute.googleapis.com/Instance",
+				Parameters: []string{"project", "zone", "instance"}, Metadata: map[string]string{"scope": "zonal"}},
 			{MethodName: "ListDisks", ResourceType: "Disk", ListMethod: true,
-			 PaginationStyle: "pages", AssetType: "compute.googleapis.com/Disk",
-			 Parameters: []string{"project", "zone"}, Metadata: map[string]string{"scope": "zonal"}},
+				PaginationStyle: "pages", AssetType: "compute.googleapis.com/Disk",
+				Parameters: []string{"project", "zone"}, Metadata: map[string]string{"scope": "zonal"}},
 			{MethodName: "ListNetworks", ResourceType: "Network", ListMethod: true,
-			 PaginationStyle: "pages", AssetType: "compute.googleapis.com/Network",
-			 Parameters: []string{"project"}, Metadata: map[string]string{"scope": "global"}},
+				PaginationStyle: "pages", AssetType: "compute.googleapis.com/Network",
+				Parameters: []string{"project"}, Metadata: map[string]string{"scope": "global"}},
 			{MethodName: "ListSubnetworks", ResourceType: "Subnetwork", ListMethod: true,
-			 PaginationStyle: "pages", AssetType: "compute.googleapis.com/Subnetwork",
-			 Parameters: []string{"project", "region"}, Metadata: map[string]string{"scope": "regional"}},
+				PaginationStyle: "pages", AssetType: "compute.googleapis.com/Subnetwork",
+				Parameters: []string{"project", "region"}, Metadata: map[string]string{"scope": "regional"}},
 		},
 		"storage": {
 			{MethodName: "ListBuckets", ResourceType: "Bucket", ListMethod: true,
-			 PaginationStyle: "iterator", AssetType: "storage.googleapis.com/Bucket",
-			 Parameters: []string{"project"}, Metadata: map[string]string{"scope": "global"}},
+				PaginationStyle: "iterator", AssetType: "storage.googleapis.com/Bucket",
+				Parameters: []string{"project"}, Metadata: map[string]string{"scope": "global"}},
 			{MethodName: "ListObjects", ResourceType: "Object", ListMethod: true,
-			 PaginationStyle: "iterator", AssetType: "storage.googleapis.com/Object",
-			 Parameters: []string{"bucket"}, Metadata: map[string]string{"scope": "bucket"}},
+				PaginationStyle: "iterator", AssetType: "storage.googleapis.com/Object",
+				Parameters: []string{"bucket"}, Metadata: map[string]string{"scope": "bucket"}},
 		},
 		"container": {
 			{MethodName: "ListClusters", ResourceType: "Cluster", ListMethod: true,
-			 PaginationStyle: "simple", AssetType: "container.googleapis.com/Cluster",
-			 Parameters: []string{"project", "location"}, Metadata: map[string]string{"scope": "regional"}},
+				PaginationStyle: "simple", AssetType: "container.googleapis.com/Cluster",
+				Parameters: []string{"project", "location"}, Metadata: map[string]string{"scope": "regional"}},
 			{MethodName: "ListNodePools", ResourceType: "NodePool", ListMethod: true,
-			 PaginationStyle: "simple", AssetType: "container.googleapis.com/NodePool",
-			 Parameters: []string{"project", "location", "cluster"}, Metadata: map[string]string{"scope": "cluster"}},
+				PaginationStyle: "simple", AssetType: "container.googleapis.com/NodePool",
+				Parameters: []string{"project", "location", "cluster"}, Metadata: map[string]string{"scope": "cluster"}},
 		},
 		"bigquery": {
 			{MethodName: "ListDatasets", ResourceType: "Dataset", ListMethod: true,
-			 PaginationStyle: "iterator", AssetType: "bigqueryadmin.googleapis.com/Dataset",
-			 Parameters: []string{"project"}, Metadata: map[string]string{"scope": "project"}},
+				PaginationStyle: "iterator", AssetType: "bigqueryadmin.googleapis.com/Dataset",
+				Parameters: []string{"project"}, Metadata: map[string]string{"scope": "project"}},
 			{MethodName: "ListTables", ResourceType: "Table", ListMethod: true,
-			 PaginationStyle: "iterator", AssetType: "bigqueryadmin.googleapis.com/Table",
-			 Parameters: []string{"dataset"}, Metadata: map[string]string{"scope": "dataset"}},
+				PaginationStyle: "iterator", AssetType: "bigqueryadmin.googleapis.com/Table",
+				Parameters: []string{"dataset"}, Metadata: map[string]string{"scope": "dataset"}},
 		},
 		"pubsub": {
 			{MethodName: "ListTopics", ResourceType: "Topic", ListMethod: true,
-			 PaginationStyle: "iterator", AssetType: "pubsub.googleapis.com/Topic",
-			 Parameters: []string{"project"}, Metadata: map[string]string{"scope": "project"}},
+				PaginationStyle: "iterator", AssetType: "pubsub.googleapis.com/Topic",
+				Parameters: []string{"project"}, Metadata: map[string]string{"scope": "project"}},
 			{MethodName: "ListSubscriptions", ResourceType: "Subscription", ListMethod: true,
-			 PaginationStyle: "iterator", AssetType: "pubsub.googleapis.com/Subscription",
-			 Parameters: []string{"project"}, Metadata: map[string]string{"scope": "project"}},
+				PaginationStyle: "iterator", AssetType: "pubsub.googleapis.com/Subscription",
+				Parameters: []string{"project"}, Metadata: map[string]string{"scope": "project"}},
 		},
 	}
 
@@ -431,40 +431,40 @@ func (cla *ClientLibraryAnalyzer) extractServiceName(packagePath string) string 
 	}
 
 	serviceName := parts[len(parts)-1]
-	
+
 	// Remove version suffixes
 	serviceName = regexp.MustCompile(`v\d+$`).ReplaceAllString(serviceName, "")
 	serviceName = regexp.MustCompile(`apiv\d+$`).ReplaceAllString(serviceName, "")
-	
+
 	return serviceName
 }
 
 func (cla *ClientLibraryAnalyzer) getDisplayName(serviceName string) string {
 	displayNames := map[string]string{
-		"compute":             "Compute Engine",
-		"storage":             "Cloud Storage", 
-		"bigquery":            "BigQuery",
-		"pubsub":              "Pub/Sub",
-		"container":           "Kubernetes Engine",
-		"cloudsql":            "Cloud SQL",
-		"run":                 "Cloud Run",
-		"functions":           "Cloud Functions",
-		"appengine":           "App Engine",
-		"dataflow":            "Dataflow",
-		"dataproc":            "Dataproc",
-		"spanner":             "Spanner",
-		"firestore":           "Firestore",
-		"logging":             "Cloud Logging",
-		"monitoring":          "Cloud Monitoring",
-		"iam":                 "Identity and Access Management",
-		"resourcemanager":     "Resource Manager",
-		"dns":                 "Cloud DNS",
-		"secretmanager":       "Secret Manager",
-		"artifactregistry":    "Artifact Registry",
-		"kms":                 "Key Management Service",
-		"cloudbuild":          "Cloud Build",
-		"cloudtasks":          "Cloud Tasks",
-		"scheduler":           "Cloud Scheduler",
+		"compute":          "Compute Engine",
+		"storage":          "Cloud Storage",
+		"bigquery":         "BigQuery",
+		"pubsub":           "Pub/Sub",
+		"container":        "Kubernetes Engine",
+		"cloudsql":         "Cloud SQL",
+		"run":              "Cloud Run",
+		"functions":        "Cloud Functions",
+		"appengine":        "App Engine",
+		"dataflow":         "Dataflow",
+		"dataproc":         "Dataproc",
+		"spanner":          "Spanner",
+		"firestore":        "Firestore",
+		"logging":          "Cloud Logging",
+		"monitoring":       "Cloud Monitoring",
+		"iam":              "Identity and Access Management",
+		"resourcemanager":  "Resource Manager",
+		"dns":              "Cloud DNS",
+		"secretmanager":    "Secret Manager",
+		"artifactregistry": "Artifact Registry",
+		"kms":              "Key Management Service",
+		"cloudbuild":       "Cloud Build",
+		"cloudtasks":       "Cloud Tasks",
+		"scheduler":        "Cloud Scheduler",
 	}
 
 	if displayName, ok := displayNames[serviceName]; ok {
@@ -477,7 +477,7 @@ func (cla *ClientLibraryAnalyzer) getDisplayName(serviceName string) string {
 	if len(serviceName) > 0 {
 		serviceName = strings.ToUpper(serviceName[:1]) + serviceName[1:]
 	}
-	
+
 	return serviceName
 }
 
@@ -494,28 +494,28 @@ func (cla *ClientLibraryAnalyzer) getAssetType(serviceName, resourceType string)
 func (cla *ClientLibraryAnalyzer) initializeAssetInventoryMappings() {
 	// Initialize well-known Asset Inventory type mappings
 	cla.AssetInventoryMappings = map[string]string{
-		"compute.Instance":     "compute.googleapis.com/Instance",
-		"compute.Disk":         "compute.googleapis.com/Disk",
-		"compute.Network":      "compute.googleapis.com/Network",
-		"compute.Subnetwork":   "compute.googleapis.com/Subnetwork",
-		"compute.Firewall":     "compute.googleapis.com/Firewall",
-		"storage.Bucket":       "storage.googleapis.com/Bucket",
-		"storage.Object":       "storage.googleapis.com/Object",
-		"bigquery.Dataset":     "bigqueryadmin.googleapis.com/Dataset",
-		"bigquery.Table":       "bigqueryadmin.googleapis.com/Table",
-		"pubsub.Topic":         "pubsub.googleapis.com/Topic",
-		"pubsub.Subscription":  "pubsub.googleapis.com/Subscription",
-		"container.Cluster":    "container.googleapis.com/Cluster",
-		"container.NodePool":   "container.googleapis.com/NodePool",
-		"cloudsql.Instance":    "sqladmin.googleapis.com/Instance",
-		"run.Service":          "run.googleapis.com/Service",
-		"functions.Function":   "cloudfunctions.googleapis.com/Function",
+		"compute.Instance":    "compute.googleapis.com/Instance",
+		"compute.Disk":        "compute.googleapis.com/Disk",
+		"compute.Network":     "compute.googleapis.com/Network",
+		"compute.Subnetwork":  "compute.googleapis.com/Subnetwork",
+		"compute.Firewall":    "compute.googleapis.com/Firewall",
+		"storage.Bucket":      "storage.googleapis.com/Bucket",
+		"storage.Object":      "storage.googleapis.com/Object",
+		"bigquery.Dataset":    "bigqueryadmin.googleapis.com/Dataset",
+		"bigquery.Table":      "bigqueryadmin.googleapis.com/Table",
+		"pubsub.Topic":        "pubsub.googleapis.com/Topic",
+		"pubsub.Subscription": "pubsub.googleapis.com/Subscription",
+		"container.Cluster":   "container.googleapis.com/Cluster",
+		"container.NodePool":  "container.googleapis.com/NodePool",
+		"cloudsql.Instance":   "sqladmin.googleapis.com/Instance",
+		"run.Service":         "run.googleapis.com/Service",
+		"functions.Function":  "cloudfunctions.googleapis.com/Function",
 	}
 }
 
 func (cla *ClientLibraryAnalyzer) convertToResourceTypes(mapping *ServiceMapping) []*pb.ResourceType {
 	var resourceTypes []*pb.ResourceType
-	
+
 	// Convert resource patterns to resource types
 	seen := make(map[string]bool)
 	for _, pattern := range mapping.ResourcePatterns {
@@ -548,15 +548,15 @@ func (cla *ClientLibraryAnalyzer) detectPaginationStyle(funcDoc *doc.Func) strin
 	}
 
 	docText := funcDoc.Doc
-	
+
 	if strings.Contains(docText, "Iterator") || strings.Contains(docText, "Next()") {
 		return "iterator"
 	}
-	
+
 	if strings.Contains(docText, "Pages") || strings.Contains(docText, "PageToken") {
 		return "pages"
 	}
-	
+
 	if strings.Contains(docText, "callback") {
 		return "callback"
 	}
@@ -579,10 +579,10 @@ func (cla *ClientLibraryAnalyzer) extractReturnType(funcDoc *doc.Func) string {
 // GenerateAnalysisReport generates a comprehensive analysis report
 func (cla *ClientLibraryAnalyzer) GenerateAnalysisReport() map[string]interface{} {
 	report := map[string]interface{}{
-		"analyzed_at":     time.Now().Format(time.RFC3339),
-		"total_services":  len(cla.ServiceMappings),
-		"services":        cla.ServiceMappings,
-		"asset_mappings":  cla.AssetInventoryMappings,
+		"analyzed_at":    time.Now().Format(time.RFC3339),
+		"total_services": len(cla.ServiceMappings),
+		"services":       cla.ServiceMappings,
+		"asset_mappings": cla.AssetInventoryMappings,
 	}
 
 	// Add summary statistics

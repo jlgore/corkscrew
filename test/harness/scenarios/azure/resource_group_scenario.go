@@ -65,12 +65,12 @@ func (s *ResourceGroupScenario) DefineResources(ctx *pulumi.Context, testID stri
 		Sku: &storage.SkuArgs{
 			Name: pulumi.String("Standard_LRS"),
 		},
-		Kind:                    pulumi.String("StorageV2"),
-		AccessTier:              pulumi.String("Hot"),
-		AllowBlobPublicAccess:   pulumi.Bool(false),
-		EnableHttpsTrafficOnly:  pulumi.Bool(true),
-		MinimumTlsVersion:       pulumi.String("TLS1_2"),
-		Tags:                    tags,
+		Kind:                   pulumi.String("StorageV2"),
+		AccessTier:             pulumi.String("Hot"),
+		AllowBlobPublicAccess:  pulumi.Bool(false),
+		EnableHttpsTrafficOnly: pulumi.Bool(true),
+		MinimumTlsVersion:      pulumi.String("TLS1_2"),
+		Tags:                   tags,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create storage account: %w", err)

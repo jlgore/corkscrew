@@ -14,18 +14,18 @@ import (
 
 // RegressionAnalyzer analyzes performance trends and detects regressions
 type RegressionAnalyzer struct {
-	baselineDir   string
-	historyDir    string
-	outputDir     string
-	thresholds    RegressionThresholds
+	baselineDir string
+	historyDir  string
+	outputDir   string
+	thresholds  RegressionThresholds
 }
 
 // RegressionThresholds defines acceptable performance degradation limits
 type RegressionThresholds struct {
-	ScanTimeRatio        float64 `json:"scan_time_ratio"`         // 1.5 = 50% slower is regression
-	MemoryUsageRatio     float64 `json:"memory_usage_ratio"`      // 2.0 = 100% more memory is regression
-	DatabaseSizeRatio    float64 `json:"database_size_ratio"`     // 2.0 = 100% larger database is regression
-	SuccessRateThreshold float64 `json:"success_rate_threshold"`  // 95% = below 95% success is regression
+	ScanTimeRatio        float64 `json:"scan_time_ratio"`        // 1.5 = 50% slower is regression
+	MemoryUsageRatio     float64 `json:"memory_usage_ratio"`     // 2.0 = 100% more memory is regression
+	DatabaseSizeRatio    float64 `json:"database_size_ratio"`    // 2.0 = 100% larger database is regression
+	SuccessRateThreshold float64 `json:"success_rate_threshold"` // 95% = below 95% success is regression
 }
 
 // RegressionReport contains comprehensive regression analysis
@@ -46,21 +46,21 @@ type RegressionReport struct {
 type RegressionStatus string
 
 const (
-	StatusNoRegression   RegressionStatus = "no_regression"
+	StatusNoRegression    RegressionStatus = "no_regression"
 	StatusMinorRegression RegressionStatus = "minor_regression"
 	StatusMajorRegression RegressionStatus = "major_regression"
-	StatusImprovement    RegressionStatus = "improvement"
-	StatusInconclusive   RegressionStatus = "inconclusive"
+	StatusImprovement     RegressionStatus = "improvement"
+	StatusInconclusive    RegressionStatus = "inconclusive"
 )
 
 // ScenarioRegressionAnalysis analyzes regression for a specific scenario
 type ScenarioRegressionAnalysis struct {
-	Scenario         string                      `json:"scenario"`
-	ResourceCount    int                         `json:"resource_count"`
-	Status           RegressionStatus            `json:"status"`
-	Metrics          MetricComparison            `json:"metrics"`
-	HistoricalTrend  HistoricalTrend             `json:"historical_trend"`
-	RegressionDetails []RegressionDetail         `json:"regression_details"`
+	Scenario          string             `json:"scenario"`
+	ResourceCount     int                `json:"resource_count"`
+	Status            RegressionStatus   `json:"status"`
+	Metrics           MetricComparison   `json:"metrics"`
+	HistoricalTrend   HistoricalTrend    `json:"historical_trend"`
+	RegressionDetails []RegressionDetail `json:"regression_details"`
 }
 
 // MetricComparison compares current metrics with baseline
@@ -78,15 +78,15 @@ type MetricDelta struct {
 	Delta         float64 `json:"delta"`          // Absolute change
 	PercentChange float64 `json:"percent_change"` // Percentage change
 	IsRegression  bool    `json:"is_regression"`
-	Severity      string  `json:"severity"`       // "minor", "major", "critical"
+	Severity      string  `json:"severity"` // "minor", "major", "critical"
 }
 
 // HistoricalTrend analyzes performance trends over time
 type HistoricalTrend struct {
-	DataPoints      []TrendDataPoint `json:"data_points"`
-	TrendDirection  string           `json:"trend_direction"` // "improving", "degrading", "stable"
-	ChangeRate      float64          `json:"change_rate"`     // Rate of change per day
-	Correlation     float64          `json:"correlation"`     // R-squared for trend line
+	DataPoints     []TrendDataPoint `json:"data_points"`
+	TrendDirection string           `json:"trend_direction"` // "improving", "degrading", "stable"
+	ChangeRate     float64          `json:"change_rate"`     // Rate of change per day
+	Correlation    float64          `json:"correlation"`     // R-squared for trend line
 }
 
 // TrendDataPoint represents a single point in the performance timeline
@@ -100,31 +100,31 @@ type TrendDataPoint struct {
 
 // RegressionDetail provides specific details about detected regressions
 type RegressionDetail struct {
-	Metric      string  `json:"metric"`
-	Severity    string  `json:"severity"`
-	Description string  `json:"description"`
-	Impact      string  `json:"impact"`
-	Suggestion  string  `json:"suggestion"`
+	Metric      string `json:"metric"`
+	Severity    string `json:"severity"`
+	Description string `json:"description"`
+	Impact      string `json:"impact"`
+	Suggestion  string `json:"suggestion"`
 }
 
 // TrendAnalysis provides overall trend analysis across all scenarios
 type TrendAnalysis struct {
-	OverallTrend     string                     `json:"overall_trend"`
-	ScenarioTrends   map[string]string          `json:"scenario_trends"`
-	PerformanceScore float64                    `json:"performance_score"` // 0-100
-	ScalabilityScore float64                    `json:"scalability_score"` // 0-100
-	ReliabilityScore float64                    `json:"reliability_score"` // 0-100
+	OverallTrend     string            `json:"overall_trend"`
+	ScenarioTrends   map[string]string `json:"scenario_trends"`
+	PerformanceScore float64           `json:"performance_score"` // 0-100
+	ScalabilityScore float64           `json:"scalability_score"` // 0-100
+	ReliabilityScore float64           `json:"reliability_score"` // 0-100
 }
 
 // RegressionSummary provides high-level summary of regression analysis
 type RegressionSummary struct {
-	TotalScenarios      int                      `json:"total_scenarios"`
-	NoRegressionCount   int                      `json:"no_regression_count"`
-	MinorRegressionCount int                     `json:"minor_regression_count"`
-	MajorRegressionCount int                     `json:"major_regression_count"`
-	ImprovementCount    int                      `json:"improvement_count"`
-	CriticalIssues      []string                 `json:"critical_issues"`
-	ActionRequired      bool                     `json:"action_required"`
+	TotalScenarios       int      `json:"total_scenarios"`
+	NoRegressionCount    int      `json:"no_regression_count"`
+	MinorRegressionCount int      `json:"minor_regression_count"`
+	MajorRegressionCount int      `json:"major_regression_count"`
+	ImprovementCount     int      `json:"improvement_count"`
+	CriticalIssues       []string `json:"critical_issues"`
+	ActionRequired       bool     `json:"action_required"`
 }
 
 // NewRegressionAnalyzer creates a new regression analyzer
@@ -324,9 +324,9 @@ func (ra *RegressionAnalyzer) detectRegressions(metrics MetricComparison) []Regr
 	// Check scan time regression
 	if metrics.ScanTime.IsRegression {
 		regressions = append(regressions, RegressionDetail{
-			Metric:      "scan_time",
-			Severity:    metrics.ScanTime.Severity,
-			Description: fmt.Sprintf("Scan time increased by %.1f%% (%v to %v)", 
+			Metric:   "scan_time",
+			Severity: metrics.ScanTime.Severity,
+			Description: fmt.Sprintf("Scan time increased by %.1f%% (%v to %v)",
 				metrics.ScanTime.PercentChange,
 				time.Duration(metrics.ScanTime.Baseline),
 				time.Duration(metrics.ScanTime.Current)),
@@ -338,8 +338,8 @@ func (ra *RegressionAnalyzer) detectRegressions(metrics MetricComparison) []Regr
 	// Check memory usage regression
 	if metrics.MemoryUsage.IsRegression {
 		regressions = append(regressions, RegressionDetail{
-			Metric:      "memory_usage",
-			Severity:    metrics.MemoryUsage.Severity,
+			Metric:   "memory_usage",
+			Severity: metrics.MemoryUsage.Severity,
 			Description: fmt.Sprintf("Memory usage increased by %.1f%% (%.1f MB to %.1f MB)",
 				metrics.MemoryUsage.PercentChange,
 				metrics.MemoryUsage.Baseline/1024/1024,
@@ -352,8 +352,8 @@ func (ra *RegressionAnalyzer) detectRegressions(metrics MetricComparison) []Regr
 	// Check database size regression
 	if metrics.DatabaseSize.IsRegression {
 		regressions = append(regressions, RegressionDetail{
-			Metric:      "database_size",
-			Severity:    metrics.DatabaseSize.Severity,
+			Metric:   "database_size",
+			Severity: metrics.DatabaseSize.Severity,
 			Description: fmt.Sprintf("Database size increased by %.1f%% (%.1f KB to %.1f KB)",
 				metrics.DatabaseSize.PercentChange,
 				metrics.DatabaseSize.Baseline/1024,
@@ -366,8 +366,8 @@ func (ra *RegressionAnalyzer) detectRegressions(metrics MetricComparison) []Regr
 	// Check success rate regression
 	if metrics.SuccessRate.IsRegression {
 		regressions = append(regressions, RegressionDetail{
-			Metric:      "success_rate",
-			Severity:    "critical", // Always critical
+			Metric:   "success_rate",
+			Severity: "critical", // Always critical
 			Description: fmt.Sprintf("Success rate dropped from %.1f%% to %.1f%%",
 				metrics.SuccessRate.Baseline, metrics.SuccessRate.Current),
 			Impact:     "Lower success rates indicate reliability issues that affect data completeness",
@@ -413,7 +413,7 @@ func (ra *RegressionAnalyzer) analyzeHistoricalTrend(scenario string, resourceCo
 	// Calculate trend for scan time (primary metric)
 	scanTimes := make([]float64, len(trend.DataPoints))
 	timestamps := make([]float64, len(trend.DataPoints))
-	
+
 	baseTime := trend.DataPoints[0].Timestamp
 	for i, point := range trend.DataPoints {
 		scanTimes[i] = point.ScanTime
@@ -442,7 +442,7 @@ func (ra *RegressionAnalyzer) calculateLinearRegression(x, y []float64) (slope, 
 	}
 
 	n := float64(len(x))
-	
+
 	// Calculate means
 	var sumX, sumY float64
 	for i := 0; i < len(x); i++ {
@@ -467,7 +467,7 @@ func (ra *RegressionAnalyzer) calculateLinearRegression(x, y []float64) (slope, 
 	}
 
 	slope = sumXY / sumXX
-	
+
 	// Calculate R-squared
 	if sumYY == 0 {
 		rSquared = 1.0 // Perfect fit
@@ -493,7 +493,7 @@ func (ra *RegressionAnalyzer) performTrendAnalysis(history []BenchmarkReport, cu
 	for _, result := range current.Results {
 		trend := ra.analyzeHistoricalTrend(result.Scenario, result.ResourceCount, history)
 		scenarioTrends[result.Scenario] = trend.TrendDirection
-		
+
 		switch trend.TrendDirection {
 		case "improving":
 			improvingCount++
@@ -561,7 +561,7 @@ func (ra *RegressionAnalyzer) calculateScalabilityScore(report *BenchmarkReport)
 	// Analyze how performance scales with resource count
 	// This is a simplified implementation
 	scalabilityFactors := report.Summary.ScalabilityMetrics
-	
+
 	score := 100.0
 	for _, factor := range scalabilityFactors {
 		// Good scalability: factor close to 1.0 (linear scaling)

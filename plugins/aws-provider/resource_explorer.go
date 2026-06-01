@@ -47,7 +47,7 @@ func (re *ResourceExplorer) QueryByResourceType(ctx context.Context, resourceTyp
 // QueryWithFilter queries resources with custom filters
 func (re *ResourceExplorer) QueryWithFilter(ctx context.Context, filters map[string]string) ([]*pb.ResourceRef, error) {
 	var queryParts []string
-	
+
 	for key, value := range filters {
 		switch key {
 		case "service":
@@ -64,12 +64,12 @@ func (re *ResourceExplorer) QueryWithFilter(ctx context.Context, filters map[str
 			queryParts = append(queryParts, fmt.Sprintf("%s:%s", key, value))
 		}
 	}
-	
+
 	query := strings.Join(queryParts, " AND ")
 	if query == "" {
 		query = "*"
 	}
-	
+
 	return re.executeQuery(ctx, query, filters)
 }
 
@@ -117,7 +117,7 @@ func (re *ResourceExplorer) convertResults(resources []types.Resource) []*pb.Res
 		if resource.Arn != nil {
 			resourceRef.Id = *resource.Arn
 			resourceRef.BasicAttributes["arn"] = *resource.Arn
-			
+
 			// Parse ARN to extract service and resource type
 			if arnParts := re.parseARN(*resource.Arn); arnParts != nil {
 				resourceRef.Service = arnParts["service"]
@@ -155,7 +155,7 @@ func (re *ResourceExplorer) convertResults(resources []types.Resource) []*pb.Res
 			for _, prop := range resource.Properties {
 				if prop.Name != nil && prop.Data != nil {
 					key := strings.ToLower(*prop.Name)
-					
+
 					// Handle special properties
 					switch key {
 					case "name", "resourcename":
@@ -189,10 +189,10 @@ func (re *ResourceExplorer) parseARN(arn string) map[string]string {
 	}
 
 	result := map[string]string{
-		"partition":   parts[1],
-		"service":     parts[2],
-		"region":      parts[3],
-		"account_id":  parts[4],
+		"partition":  parts[1],
+		"service":    parts[2],
+		"region":     parts[3],
+		"account_id": parts[4],
 	}
 
 	// Handle resource part
@@ -250,7 +250,7 @@ func (re *ResourceExplorer) extractTags(data interface{}, resourceRef *pb.Resour
 // GetAvailableViews returns available Resource Explorer views
 func (re *ResourceExplorer) GetAvailableViews(ctx context.Context) ([]string, error) {
 	input := &resourceexplorer2.ListViewsInput{}
-	
+
 	result, err := re.client.ListViews(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Resource Explorer views: %w", err)

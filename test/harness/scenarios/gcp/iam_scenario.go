@@ -163,9 +163,9 @@ func (s *IAMScenario) DefineResources(ctx *pulumi.Context, testID string) error 
 				"name": storageServiceAccount.Email,
 				"id":   storageServiceAccount.ID(),
 				"attributes": pulumi.Map{
-					"account_id":    pulumi.String(fmt.Sprintf("corkscrew-storage-%s", testID)),
-					"display_name":  pulumi.String("Corkscrew Storage Service Account"),
-					"account_type":  pulumi.String("storage"),
+					"account_id":   pulumi.String(fmt.Sprintf("corkscrew-storage-%s", testID)),
+					"display_name": pulumi.String("Corkscrew Storage Service Account"),
+					"account_type": pulumi.String("storage"),
 				},
 			},
 			pulumi.Map{
@@ -173,9 +173,9 @@ func (s *IAMScenario) DefineResources(ctx *pulumi.Context, testID string) error 
 				"name": computeServiceAccount.Email,
 				"id":   computeServiceAccount.ID(),
 				"attributes": pulumi.Map{
-					"account_id":    pulumi.String(fmt.Sprintf("corkscrew-compute-%s", testID)),
-					"display_name":  pulumi.String("Corkscrew Compute Service Account"),
-					"account_type":  pulumi.String("compute"),
+					"account_id":   pulumi.String(fmt.Sprintf("corkscrew-compute-%s", testID)),
+					"display_name": pulumi.String("Corkscrew Compute Service Account"),
+					"account_type": pulumi.String("compute"),
 				},
 			},
 			pulumi.Map{

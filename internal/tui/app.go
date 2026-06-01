@@ -26,16 +26,16 @@ type CorkscrewApp struct {
 	config   interface{} // *config.Config
 
 	// Application state
-	width       int
-	height      int
-	ready       bool
-	showHelp    bool
-	lastError   error
-	startView   ViewType
+	width     int
+	height    int
+	ready     bool
+	showHelp  bool
+	lastError error
+	startView ViewType
 
 	// Scan state
-	scanStatus  *ScanStatus
-	scanning    bool
+	scanStatus *ScanStatus
+	scanning   bool
 
 	// Ticker for periodic updates
 	ticker *time.Ticker
@@ -129,7 +129,7 @@ func (app *CorkscrewApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		app.handleWindowSize(msg)
-		
+
 		// Forward to components
 		cmds = append(cmds, func() tea.Msg { return msg })
 
@@ -238,11 +238,11 @@ func (app *CorkscrewApp) View() string {
 // renderHeader renders the application header with breadcrumbs
 func (app *CorkscrewApp) renderHeader() string {
 	title := styles.TitleStyle.Render("Corkscrew Cloud Scanner")
-	
+
 	// Set breadcrumb max width
 	breadcrumbWidth := app.width - lipgloss.Width(title) - 4
 	app.breadcrumb.SetMaxWidth(breadcrumbWidth)
-	
+
 	breadcrumbView := app.breadcrumb.View()
 
 	// Create header layout
@@ -260,7 +260,7 @@ func (app *CorkscrewApp) renderHeader() string {
 // renderMain renders the main content area
 func (app *CorkscrewApp) renderMain(height int) string {
 	mainContent := app.router.View()
-	
+
 	return styles.BaseStyle.
 		Width(app.width).
 		Height(height).

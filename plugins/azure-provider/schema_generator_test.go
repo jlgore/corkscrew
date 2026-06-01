@@ -12,7 +12,7 @@ import (
 
 func TestNewAzureSchemaGenerator(t *testing.T) {
 	generator := NewAzureSchemaGenerator()
-	
+
 	assert.NotNil(t, generator)
 	assert.NotNil(t, generator.schemaCache)
 	assert.Equal(t, 0, len(generator.schemaCache))
@@ -29,7 +29,7 @@ func TestGenerateSchema(t *testing.T) {
 	}
 
 	schema := generator.GenerateSchema(resourceType)
-	
+
 	require.NotNil(t, schema)
 	assert.Equal(t, "azure_compute_virtualmachines", schema.TableName)
 	assert.NotEmpty(t, schema.Columns)
@@ -111,7 +111,7 @@ func TestAddResourceSpecificColumns(t *testing.T) {
 			name:         "Virtual Machines",
 			resourceType: "Microsoft.Compute/virtualMachines",
 			expectedColumns: []string{
-				"vm_size", "os_type", "os_disk_type", 
+				"vm_size", "os_type", "os_disk_type",
 				"availability_set_id", "network_interface_ids", "power_state",
 			},
 			expectedIndexes: []string{
@@ -239,7 +239,7 @@ func TestGenerateSchemaForProvider(t *testing.T) {
 	schemas := generator.GenerateSchemaForProvider(provider)
 
 	assert.Len(t, schemas, 3)
-	
+
 	expectedTableNames := []string{
 		"azure_test_typea",
 		"azure_test_typeb",
@@ -264,7 +264,7 @@ func TestGetCachedSchema(t *testing.T) {
 		ResourceType: "Microsoft.Test/testResource",
 	}
 	generatedSchema := generator.GenerateSchema(resourceType)
-	
+
 	// Now test cached schema
 	cachedSchema := generator.GetCachedSchema("Microsoft.Test/testResource")
 	assert.NotNil(t, cachedSchema)

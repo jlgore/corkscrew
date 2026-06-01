@@ -14,45 +14,45 @@ import (
 
 // AlertingSystem provides intelligent change alerting and notifications
 type AlertingSystem struct {
-	rules       []*AlertRule
-	channels    map[string]AlertChannel
-	processor   *AlertProcessor
-	throttler   *AlertThrottler
-	mu          sync.RWMutex
-	config      *AlertingConfig
+	rules     []*AlertRule
+	channels  map[string]AlertChannel
+	processor *AlertProcessor
+	throttler *AlertThrottler
+	mu        sync.RWMutex
+	config    *AlertingConfig
 }
 
 // AlertRule defines conditions and actions for change alerts
 type AlertRule struct {
-	ID                string                 `json:"id"`
-	Name              string                 `json:"name"`
-	Description       string                 `json:"description"`
-	Enabled           bool                   `json:"enabled"`
-	Provider          string                 `json:"provider"`
-	Conditions        *AlertConditions       `json:"conditions"`
-	Actions           []*AlertAction         `json:"actions"`
-	Throttling        *AlertThrottling       `json:"throttling"`
-	Priority          string                 `json:"priority"` // "critical", "high", "medium", "low"
-	Tags              map[string]string      `json:"tags"`
-	CreatedAt         time.Time              `json:"created_at"`
-	UpdatedAt         time.Time              `json:"updated_at"`
-	LastTriggered     *time.Time             `json:"last_triggered,omitempty"`
-	TriggerCount      int                    `json:"trigger_count"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	Enabled       bool              `json:"enabled"`
+	Provider      string            `json:"provider"`
+	Conditions    *AlertConditions  `json:"conditions"`
+	Actions       []*AlertAction    `json:"actions"`
+	Throttling    *AlertThrottling  `json:"throttling"`
+	Priority      string            `json:"priority"` // "critical", "high", "medium", "low"
+	Tags          map[string]string `json:"tags"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	LastTriggered *time.Time        `json:"last_triggered,omitempty"`
+	TriggerCount  int               `json:"trigger_count"`
 }
 
 // AlertConditions defines when an alert should trigger
 type AlertConditions struct {
-	ChangeTypes       []ChangeType           `json:"change_types,omitempty"`
-	Severities        []ChangeSeverity       `json:"severities,omitempty"`
-	Services          []string               `json:"services,omitempty"`
-	ResourceTypes     []string               `json:"resource_types,omitempty"`
-	Projects          []string               `json:"projects,omitempty"`
-	Regions           []string               `json:"regions,omitempty"`
-	ResourcePatterns  []string               `json:"resource_patterns,omitempty"` // Regex patterns for resource IDs
-	ImpactThreshold   float64                `json:"impact_threshold,omitempty"`
-	FrequencyThreshold *FrequencyThreshold   `json:"frequency_threshold,omitempty"`
-	ComplianceFrameworks []string            `json:"compliance_frameworks,omitempty"`
-	CustomConditions  map[string]interface{} `json:"custom_conditions,omitempty"`
+	ChangeTypes          []ChangeType           `json:"change_types,omitempty"`
+	Severities           []ChangeSeverity       `json:"severities,omitempty"`
+	Services             []string               `json:"services,omitempty"`
+	ResourceTypes        []string               `json:"resource_types,omitempty"`
+	Projects             []string               `json:"projects,omitempty"`
+	Regions              []string               `json:"regions,omitempty"`
+	ResourcePatterns     []string               `json:"resource_patterns,omitempty"` // Regex patterns for resource IDs
+	ImpactThreshold      float64                `json:"impact_threshold,omitempty"`
+	FrequencyThreshold   *FrequencyThreshold    `json:"frequency_threshold,omitempty"`
+	ComplianceFrameworks []string               `json:"compliance_frameworks,omitempty"`
+	CustomConditions     map[string]interface{} `json:"custom_conditions,omitempty"`
 }
 
 // FrequencyThreshold defines thresholds for change frequency alerts
@@ -64,18 +64,18 @@ type FrequencyThreshold struct {
 
 // AlertAction defines what happens when an alert triggers
 type AlertAction struct {
-	Type       string                 `json:"type"` // "webhook", "email", "slack", "teams", "pagerduty", "log"
-	Config     map[string]interface{} `json:"config"`
-	Template   *AlertTemplate         `json:"template,omitempty"`
-	Enabled    bool                   `json:"enabled"`
+	Type     string                 `json:"type"` // "webhook", "email", "slack", "teams", "pagerduty", "log"
+	Config   map[string]interface{} `json:"config"`
+	Template *AlertTemplate         `json:"template,omitempty"`
+	Enabled  bool                   `json:"enabled"`
 }
 
 // AlertTemplate defines message formatting for alerts
 type AlertTemplate struct {
-	Subject     string `json:"subject"`
-	Body        string `json:"body"`
-	Format      string `json:"format"` // "text", "html", "markdown", "json"
-	IncludeDetails bool `json:"include_details"`
+	Subject        string `json:"subject"`
+	Body           string `json:"body"`
+	Format         string `json:"format"` // "text", "html", "markdown", "json"
+	IncludeDetails bool   `json:"include_details"`
 }
 
 // AlertThrottling controls alert frequency
@@ -97,21 +97,21 @@ type AlertChannel interface {
 
 // Alert represents a triggered alert with context
 type Alert struct {
-	ID              string            `json:"id"`
-	RuleID          string            `json:"rule_id"`
-	RuleName        string            `json:"rule_name"`
-	Severity        ChangeSeverity    `json:"severity"`
-	Priority        string            `json:"priority"`
-	Title           string            `json:"title"`
-	Message         string            `json:"message"`
-	TriggeredAt     time.Time         `json:"triggered_at"`
-	TriggeredBy     *ChangeEvent      `json:"triggered_by"`
-	Context         *AlertContext     `json:"context"`
-	Status          string            `json:"status"` // "open", "acknowledged", "resolved"
-	AcknowledgedBy  string            `json:"acknowledged_by,omitempty"`
-	AcknowledgedAt  *time.Time        `json:"acknowledged_at,omitempty"`
-	ResolvedAt      *time.Time        `json:"resolved_at,omitempty"`
-	Tags            map[string]string `json:"tags"`
+	ID             string            `json:"id"`
+	RuleID         string            `json:"rule_id"`
+	RuleName       string            `json:"rule_name"`
+	Severity       ChangeSeverity    `json:"severity"`
+	Priority       string            `json:"priority"`
+	Title          string            `json:"title"`
+	Message        string            `json:"message"`
+	TriggeredAt    time.Time         `json:"triggered_at"`
+	TriggeredBy    *ChangeEvent      `json:"triggered_by"`
+	Context        *AlertContext     `json:"context"`
+	Status         string            `json:"status"` // "open", "acknowledged", "resolved"
+	AcknowledgedBy string            `json:"acknowledged_by,omitempty"`
+	AcknowledgedAt *time.Time        `json:"acknowledged_at,omitempty"`
+	ResolvedAt     *time.Time        `json:"resolved_at,omitempty"`
+	Tags           map[string]string `json:"tags"`
 }
 
 // AlertContext provides additional information about the alert
@@ -138,12 +138,12 @@ type ImpactSummary struct {
 
 // AlertingConfig provides configuration for the alerting system
 type AlertingConfig struct {
-	DefaultChannel      string        `json:"default_channel"`
-	MaxConcurrentAlerts int           `json:"max_concurrent_alerts"`
-	AlertRetention      time.Duration `json:"alert_retention"`
-	EnableThrottling    bool          `json:"enable_throttling"`
+	DefaultChannel      string           `json:"default_channel"`
+	MaxConcurrentAlerts int              `json:"max_concurrent_alerts"`
+	AlertRetention      time.Duration    `json:"alert_retention"`
+	EnableThrottling    bool             `json:"enable_throttling"`
 	DefaultThrottling   *AlertThrottling `json:"default_throttling"`
-	HealthCheckInterval time.Duration `json:"health_check_interval"`
+	HealthCheckInterval time.Duration    `json:"health_check_interval"`
 }
 
 // AlertProcessor handles alert processing logic
@@ -162,9 +162,9 @@ type AlertThrottler struct {
 
 // ThrottleState tracks throttling information for alert rules
 type ThrottleState struct {
-	Count         int       `json:"count"`
-	LastAlert     time.Time `json:"last_alert"`
-	WindowStart   time.Time `json:"window_start"`
+	Count         int            `json:"count"`
+	LastAlert     time.Time      `json:"last_alert"`
+	WindowStart   time.Time      `json:"window_start"`
 	GroupedAlerts map[string]int `json:"grouped_alerts"`
 }
 
@@ -424,25 +424,25 @@ func (as *AlertingSystem) generateAlertTitle(rule *AlertRule, change *ChangeEven
 
 func (as *AlertingSystem) generateAlertMessage(rule *AlertRule, change *ChangeEvent) string {
 	var message strings.Builder
-	
+
 	message.WriteString(fmt.Sprintf("Alert triggered by rule: %s\n", rule.Name))
 	message.WriteString(fmt.Sprintf("Change Type: %s\n", change.ChangeType))
 	message.WriteString(fmt.Sprintf("Resource: %s (%s)\n", change.ResourceID, change.ResourceType))
 	message.WriteString(fmt.Sprintf("Service: %s\n", change.Service))
 	message.WriteString(fmt.Sprintf("Severity: %s\n", change.Severity))
 	message.WriteString(fmt.Sprintf("Timestamp: %s\n", change.Timestamp.Format(time.RFC3339)))
-	
+
 	if change.Project != "" {
 		message.WriteString(fmt.Sprintf("Project: %s\n", change.Project))
 	}
-	
+
 	if change.Region != "" {
 		message.WriteString(fmt.Sprintf("Region: %s\n", change.Region))
 	}
 
 	if change.ImpactAssessment != nil {
 		message.WriteString(fmt.Sprintf("Risk Score: %.1f\n", change.ImpactAssessment.RiskScore))
-		
+
 		if len(change.ImpactAssessment.Recommendations) > 0 {
 			message.WriteString("Recommendations:\n")
 			for _, rec := range change.ImpactAssessment.Recommendations {
@@ -456,11 +456,11 @@ func (as *AlertingSystem) generateAlertMessage(rule *AlertRule, change *ChangeEv
 
 func (as *AlertingSystem) buildAlertContext(change *ChangeEvent) *AlertContext {
 	context := &AlertContext{
-		Provider:     change.Provider,
+		Provider:      change.Provider,
 		ResourceCount: 1,
 		ServiceCount:  1,
 		ProjectCount:  1,
-		Metadata:     make(map[string]interface{}),
+		Metadata:      make(map[string]interface{}),
 	}
 
 	if change.ImpactAssessment != nil {
@@ -468,7 +468,7 @@ func (as *AlertingSystem) buildAlertContext(change *ChangeEvent) *AlertContext {
 			TotalRiskScore:   change.ImpactAssessment.RiskScore,
 			AverageRiskScore: change.ImpactAssessment.RiskScore,
 		}
-		
+
 		// Count impact types
 		if change.ImpactAssessment.SecurityImpact.Level >= SeverityMedium {
 			context.ImpactSummary.SecurityImpact = 1
@@ -479,7 +479,7 @@ func (as *AlertingSystem) buildAlertContext(change *ChangeEvent) *AlertContext {
 		if change.ImpactAssessment.CostImpact.EstimatedChange != 0 {
 			context.ImpactSummary.CostImpact = change.ImpactAssessment.CostImpact.EstimatedChange
 		}
-		
+
 		context.Recommendations = change.ImpactAssessment.Recommendations
 	}
 
@@ -539,7 +539,7 @@ func (as *AlertingSystem) applyTemplate(alert *Alert, template *AlertTemplate) {
 	if template.Subject != "" {
 		alert.Title = as.processTemplate(template.Subject, alert)
 	}
-	
+
 	if template.Body != "" {
 		alert.Message = as.processTemplate(template.Body, alert)
 	}
@@ -548,20 +548,20 @@ func (as *AlertingSystem) applyTemplate(alert *Alert, template *AlertTemplate) {
 func (as *AlertingSystem) processTemplate(template string, alert *Alert) string {
 	// Simple template processing - in production would use a proper template engine
 	result := template
-	
+
 	result = strings.ReplaceAll(result, "{{.Title}}", alert.Title)
 	result = strings.ReplaceAll(result, "{{.Severity}}", string(alert.Severity))
 	result = strings.ReplaceAll(result, "{{.Priority}}", alert.Priority)
 	result = strings.ReplaceAll(result, "{{.RuleName}}", alert.RuleName)
 	result = strings.ReplaceAll(result, "{{.TriggeredAt}}", alert.TriggeredAt.Format(time.RFC3339))
-	
+
 	if alert.TriggeredBy != nil {
 		result = strings.ReplaceAll(result, "{{.ResourceID}}", alert.TriggeredBy.ResourceID)
 		result = strings.ReplaceAll(result, "{{.ResourceType}}", alert.TriggeredBy.ResourceType)
 		result = strings.ReplaceAll(result, "{{.Service}}", alert.TriggeredBy.Service)
 		result = strings.ReplaceAll(result, "{{.ChangeType}}", string(alert.TriggeredBy.ChangeType))
 	}
-	
+
 	return result
 }
 
@@ -575,7 +575,7 @@ func (as *AlertingSystem) updateRuleStats(rule *AlertRule) {
 func (as *AlertingSystem) initializeDefaultChannels() {
 	// Add log channel
 	as.channels["log"] = &LogAlertChannel{}
-	
+
 	// Add webhook channel
 	as.channels["webhook"] = &WebhookAlertChannel{}
 }

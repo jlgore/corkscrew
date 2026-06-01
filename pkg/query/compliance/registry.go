@@ -44,12 +44,12 @@ type RegistryCache struct {
 
 // Registry represents a pack registry
 type Registry struct {
-	Name        string               `json:"name"`
-	URL         string               `json:"url"`
-	Type        string               `json:"type"` // github, gitlab, custom
-	LastUpdated time.Time            `json:"last_updated"`
-	Packs       map[string]PackInfo  `json:"packs"`
-	Metadata    RegistryMetadata     `json:"metadata"`
+	Name        string              `json:"name"`
+	URL         string              `json:"url"`
+	Type        string              `json:"type"` // github, gitlab, custom
+	LastUpdated time.Time           `json:"last_updated"`
+	Packs       map[string]PackInfo `json:"packs"`
+	Metadata    RegistryMetadata    `json:"metadata"`
 }
 
 // RegistryMetadata contains registry-level metadata
@@ -65,20 +65,20 @@ type RegistryMetadata struct {
 
 // PackInfo represents information about a pack in the registry
 type PackInfo struct {
-	Name        string                 `json:"name"`
-	Namespace   string                 `json:"namespace"`
-	Description string                 `json:"description"`
-	Versions    []RegistryPackVersion  `json:"versions"`
-	LatestVersion string               `json:"latest_version"`
-	Provider    string                 `json:"provider"`
-	Frameworks  []string               `json:"frameworks"`
-	Tags        []string               `json:"tags"`
-	Categories  []string               `json:"categories"`
-	Maintainers []string               `json:"maintainers"`
-	Repository  PackRepository         `json:"repository"`
-	Downloads   PackDownloadStats      `json:"downloads"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	LastUpdated time.Time              `json:"last_updated"`
+	Name          string                 `json:"name"`
+	Namespace     string                 `json:"namespace"`
+	Description   string                 `json:"description"`
+	Versions      []RegistryPackVersion  `json:"versions"`
+	LatestVersion string                 `json:"latest_version"`
+	Provider      string                 `json:"provider"`
+	Frameworks    []string               `json:"frameworks"`
+	Tags          []string               `json:"tags"`
+	Categories    []string               `json:"categories"`
+	Maintainers   []string               `json:"maintainers"`
+	Repository    PackRepository         `json:"repository"`
+	Downloads     PackDownloadStats      `json:"downloads"`
+	Metadata      map[string]interface{} `json:"metadata"`
+	LastUpdated   time.Time              `json:"last_updated"`
 }
 
 // RegistryPackVersion represents a specific version of a pack in the registry
@@ -97,14 +97,14 @@ type RegistryPackVersion struct {
 
 // PackRepository contains repository information
 type PackRepository struct {
-	Type      string `json:"type"` // github, gitlab
-	Owner     string `json:"owner"`
-	Name      string `json:"name"`
-	Branch    string `json:"branch"`
-	Path      string `json:"path"`      // Path within repository
-	URL       string `json:"url"`       // Clone URL
-	WebURL    string `json:"web_url"`   // Web interface URL
-	APIURL    string `json:"api_url"`   // API URL
+	Type   string `json:"type"` // github, gitlab
+	Owner  string `json:"owner"`
+	Name   string `json:"name"`
+	Branch string `json:"branch"`
+	Path   string `json:"path"`    // Path within repository
+	URL    string `json:"url"`     // Clone URL
+	WebURL string `json:"web_url"` // Web interface URL
+	APIURL string `json:"api_url"` // API URL
 }
 
 // PackDownloadStats tracks download statistics
@@ -118,26 +118,26 @@ type PackDownloadStats struct {
 
 // SearchCriteria defines search parameters for packs
 type SearchCriteria struct {
-	Query      string   `json:"query,omitempty"`
-	Provider   string   `json:"provider,omitempty"`
-	Framework  string   `json:"framework,omitempty"`
-	Category   string   `json:"category,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-	Namespace  string   `json:"namespace,omitempty"`
-	Sort       string   `json:"sort,omitempty"`       // name, downloads, updated
-	Order      string   `json:"order,omitempty"`      // asc, desc
-	Limit      int      `json:"limit,omitempty"`
-	Offset     int      `json:"offset,omitempty"`
+	Query     string   `json:"query,omitempty"`
+	Provider  string   `json:"provider,omitempty"`
+	Framework string   `json:"framework,omitempty"`
+	Category  string   `json:"category,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Namespace string   `json:"namespace,omitempty"`
+	Sort      string   `json:"sort,omitempty"`  // name, downloads, updated
+	Order     string   `json:"order,omitempty"` // asc, desc
+	Limit     int      `json:"limit,omitempty"`
+	Offset    int      `json:"offset,omitempty"`
 }
 
 // SearchResult represents search results
 type SearchResult struct {
-	Packs      []PackInfo `json:"packs"`
-	Total      int        `json:"total"`
-	Limit      int        `json:"limit"`
-	Offset     int        `json:"offset"`
-	Query      string     `json:"query"`
-	Duration   time.Duration `json:"duration"`
+	Packs    []PackInfo    `json:"packs"`
+	Total    int           `json:"total"`
+	Limit    int           `json:"limit"`
+	Offset   int           `json:"offset"`
+	Query    string        `json:"query"`
+	Duration time.Duration `json:"duration"`
 }
 
 // RetryConfig defines retry behavior
@@ -168,14 +168,14 @@ func (e RegistryError) Unwrap() error {
 
 // GitHubRelease represents a GitHub release
 type GitHubRelease struct {
-	TagName     string                 `json:"tag_name"`
-	Name        string                 `json:"name"`
-	PublishedAt time.Time              `json:"published_at"`
-	TarballURL  string                 `json:"tarball_url"`
-	ZipballURL  string                 `json:"zipball_url"`
-	Assets      []GitHubReleaseAsset   `json:"assets"`
-	Prerelease  bool                   `json:"prerelease"`
-	Draft       bool                   `json:"draft"`
+	TagName     string               `json:"tag_name"`
+	Name        string               `json:"name"`
+	PublishedAt time.Time            `json:"published_at"`
+	TarballURL  string               `json:"tarball_url"`
+	ZipballURL  string               `json:"zipball_url"`
+	Assets      []GitHubReleaseAsset `json:"assets"`
+	Prerelease  bool                 `json:"prerelease"`
+	Draft       bool                 `json:"draft"`
 }
 
 // GitHubReleaseAsset represents a release asset
@@ -201,10 +201,10 @@ type GitHubRepository struct {
 func NewRegistryClient() *RegistryClient {
 	homeDir, _ := os.UserHomeDir()
 	cachePath := filepath.Join(homeDir, ".corkscrew", "query", "registry.json")
-	
+
 	// Ensure cache directory exists
 	os.MkdirAll(filepath.Dir(cachePath), 0755)
-	
+
 	client := &RegistryClient{
 		cachePath: cachePath,
 		httpClient: &http.Client{
@@ -220,10 +220,10 @@ func NewRegistryClient() *RegistryClient {
 			"https://api.github.com", // Default GitHub API
 		},
 	}
-	
+
 	// Load existing cache
 	client.loadCache()
-	
+
 	return client
 }
 
@@ -257,18 +257,18 @@ func (c *RegistryClient) WithCacheTTL(ttl time.Duration) *RegistryClient {
 func (c *RegistryClient) UpdateRegistry(ctx context.Context, forceRefresh bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	if c.offlineMode {
 		return nil // Skip update in offline mode
 	}
-	
+
 	// Check if update is needed
 	if !forceRefresh && c.registryCache != nil {
 		if time.Since(c.registryCache.LastUpdated) < c.registryCache.TTL {
 			return nil // Cache is still valid
 		}
 	}
-	
+
 	// Initialize cache if needed
 	if c.registryCache == nil {
 		c.registryCache = &RegistryCache{
@@ -278,7 +278,7 @@ func (c *RegistryClient) UpdateRegistry(ctx context.Context, forceRefresh bool) 
 			Version:    "1.0",
 		}
 	}
-	
+
 	// Update from GitHub-based registries
 	for _, baseURL := range c.baseURLs {
 		if strings.Contains(baseURL, "github.com") {
@@ -288,9 +288,9 @@ func (c *RegistryClient) UpdateRegistry(ctx context.Context, forceRefresh bool) 
 			}
 		}
 	}
-	
+
 	c.registryCache.LastUpdated = time.Now()
-	
+
 	// Save cache to disk
 	return c.saveCache()
 }
@@ -304,49 +304,49 @@ func (c *RegistryClient) updateFromGitHub(ctx context.Context, baseURL string) e
 		"ccc-pack",
 		"security-compliance",
 	}
-	
+
 	for _, topic := range topics {
 		if err := c.searchGitHubRepositories(ctx, topic); err != nil {
 			// Continue with other topics
 			continue
 		}
 	}
-	
+
 	return nil
 }
 
 // searchGitHubRepositories searches GitHub for repositories with compliance packs
 func (c *RegistryClient) searchGitHubRepositories(ctx context.Context, topic string) error {
 	url := fmt.Sprintf("https://api.github.com/search/repositories?q=topic:%s&sort=updated&order=desc&per_page=100", topic)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
 	}
-	
+
 	// Add authentication if available
 	if c.githubToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.githubToken))
 	}
-	
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", c.userAgent)
-	
+
 	resp, err := c.doRequestWithRetry(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	var searchResult struct {
 		TotalCount int                `json:"total_count"`
 		Items      []GitHubRepository `json:"items"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
 		return err
 	}
-	
+
 	// Process each repository
 	for _, repo := range searchResult.Items {
 		if err := c.processGitHubRepository(ctx, repo); err != nil {
@@ -354,7 +354,7 @@ func (c *RegistryClient) searchGitHubRepositories(ctx context.Context, topic str
 			continue
 		}
 	}
-	
+
 	return nil
 }
 
@@ -365,19 +365,19 @@ func (c *RegistryClient) processGitHubRepository(ctx context.Context, repo GitHu
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid repository name: %s", repo.FullName)
 	}
-	
+
 	owner, name := parts[0], parts[1]
-	
+
 	// Try to find pack metadata in the repository
 	packInfo, err := c.extractPackInfo(ctx, owner, name, repo)
 	if err != nil {
 		return err
 	}
-	
+
 	// Store in cache
 	namespace := fmt.Sprintf("%s/%s", owner, name)
 	c.registryCache.Packs[namespace] = *packInfo
-	
+
 	return nil
 }
 
@@ -389,7 +389,7 @@ func (c *RegistryClient) extractPackInfo(ctx context.Context, owner, name string
 		fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/pack.yaml", owner, name),
 		fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/corkscrew-pack.yaml", owner, name),
 	}
-	
+
 	var manifest *PackManifest
 	for _, url := range manifestURLs {
 		if m, err := c.fetchManifestFromGitHub(ctx, url); err == nil {
@@ -397,12 +397,12 @@ func (c *RegistryClient) extractPackInfo(ctx context.Context, owner, name string
 			break
 		}
 	}
-	
+
 	// If no manifest found, create basic pack info from repository
 	if manifest == nil {
 		return c.createPackInfoFromRepo(repo), nil
 	}
-	
+
 	// Create pack info from manifest
 	packInfo := &PackInfo{
 		Name:        manifest.Metadata.Name,
@@ -422,7 +422,7 @@ func (c *RegistryClient) extractPackInfo(ctx context.Context, owner, name string
 		},
 		LastUpdated: repo.UpdatedAt,
 	}
-	
+
 	// Fetch version information
 	versions, err := c.fetchPackVersions(ctx, owner, name)
 	if err == nil {
@@ -431,7 +431,7 @@ func (c *RegistryClient) extractPackInfo(ctx context.Context, owner, name string
 			packInfo.LatestVersion = versions[0].Version // Assuming sorted by date desc
 		}
 	}
-	
+
 	return packInfo, nil
 }
 
@@ -441,49 +441,49 @@ func (c *RegistryClient) fetchManifestFromGitHub(ctx context.Context, url string
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if c.githubToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.githubToken))
 	}
-	
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", c.userAgent)
-	
+
 	resp, err := c.doRequestWithRetry(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
-	
+
 	var fileInfo struct {
 		Content  string `json:"content"`
 		Encoding string `json:"encoding"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&fileInfo); err != nil {
 		return nil, err
 	}
-	
+
 	// Decode base64 content
 	if fileInfo.Encoding != "base64" {
 		return nil, fmt.Errorf("unsupported encoding: %s", fileInfo.Encoding)
 	}
-	
+
 	content, err := hex.DecodeString(fileInfo.Content)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Parse YAML manifest
 	var manifest PackManifest
 	if err := yaml.Unmarshal(content, &manifest); err != nil {
 		return nil, err
 	}
-	
+
 	return &manifest, nil
 }
 
@@ -491,7 +491,7 @@ func (c *RegistryClient) fetchManifestFromGitHub(ctx context.Context, url string
 func (c *RegistryClient) createPackInfoFromRepo(repo GitHubRepository) *PackInfo {
 	parts := strings.Split(repo.FullName, "/")
 	owner, name := parts[0], parts[1]
-	
+
 	return &PackInfo{
 		Name:        name,
 		Namespace:   repo.FullName,
@@ -512,40 +512,40 @@ func (c *RegistryClient) createPackInfoFromRepo(repo GitHubRepository) *PackInfo
 // fetchPackVersions fetches version information from GitHub releases
 func (c *RegistryClient) fetchPackVersions(ctx context.Context, owner, name string) ([]RegistryPackVersion, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, name)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if c.githubToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.githubToken))
 	}
-	
+
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", c.userAgent)
-	
+
 	resp, err := c.doRequestWithRetry(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
-	
+
 	var releases []GitHubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, err
 	}
-	
+
 	var versions []RegistryPackVersion
 	for _, release := range releases {
 		if release.Draft || release.Prerelease {
 			continue // Skip drafts and prereleases
 		}
-		
+
 		version := RegistryPackVersion{
 			Version:     release.TagName,
 			Tag:         release.TagName,
@@ -553,10 +553,10 @@ func (c *RegistryClient) fetchPackVersions(ctx context.Context, owner, name stri
 			TarballURL:  release.TarballURL,
 			DownloadURL: release.TarballURL,
 		}
-		
+
 		versions = append(versions, version)
 	}
-	
+
 	return versions, nil
 }
 
@@ -564,9 +564,9 @@ func (c *RegistryClient) fetchPackVersions(ctx context.Context, owner, name stri
 func (c *RegistryClient) SearchPacks(ctx context.Context, criteria SearchCriteria) (*SearchResult, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	start := time.Now()
-	
+
 	// Ensure registry is updated
 	if !c.offlineMode {
 		c.mu.RUnlock()
@@ -577,7 +577,7 @@ func (c *RegistryClient) SearchPacks(ctx context.Context, criteria SearchCriteri
 			c.mu.RLock()
 		}
 	}
-	
+
 	if c.registryCache == nil {
 		return &SearchResult{
 			Packs:    []PackInfo{},
@@ -585,19 +585,19 @@ func (c *RegistryClient) SearchPacks(ctx context.Context, criteria SearchCriteri
 			Duration: time.Since(start),
 		}, nil
 	}
-	
+
 	var matches []PackInfo
-	
+
 	// Filter packs based on criteria
 	for _, pack := range c.registryCache.Packs {
 		if c.matchesCriteria(pack, criteria) {
 			matches = append(matches, pack)
 		}
 	}
-	
+
 	// Sort results
 	c.sortPacks(matches, criteria.Sort, criteria.Order)
-	
+
 	// Apply pagination
 	total := len(matches)
 	if criteria.Limit > 0 {
@@ -611,7 +611,7 @@ func (c *RegistryClient) SearchPacks(ctx context.Context, criteria SearchCriteri
 			matches = matches[start:end]
 		}
 	}
-	
+
 	return &SearchResult{
 		Packs:    matches,
 		Total:    total,
@@ -633,27 +633,27 @@ func (c *RegistryClient) matchesCriteria(pack PackInfo, criteria SearchCriteria)
 			return false
 		}
 	}
-	
+
 	// Provider match
 	if criteria.Provider != "" && pack.Provider != criteria.Provider {
 		return false
 	}
-	
+
 	// Framework match
 	if criteria.Framework != "" && !c.contains(pack.Frameworks, criteria.Framework) {
 		return false
 	}
-	
+
 	// Category match
 	if criteria.Category != "" && !c.contains(pack.Categories, criteria.Category) {
 		return false
 	}
-	
+
 	// Namespace match
 	if criteria.Namespace != "" && !strings.HasPrefix(pack.Namespace, criteria.Namespace) {
 		return false
 	}
-	
+
 	// Tags match (all specified tags must be present)
 	if len(criteria.Tags) > 0 {
 		for _, tag := range criteria.Tags {
@@ -662,7 +662,7 @@ func (c *RegistryClient) matchesCriteria(pack PackInfo, criteria SearchCriteria)
 			}
 		}
 	}
-	
+
 	return true
 }
 
@@ -674,10 +674,10 @@ func (c *RegistryClient) sortPacks(packs []PackInfo, sortBy, order string) {
 	if order == "" {
 		order = "asc"
 	}
-	
+
 	sort.Slice(packs, func(i, j int) bool {
 		var less bool
-		
+
 		switch sortBy {
 		case "name":
 			less = packs[i].Name < packs[j].Name
@@ -688,7 +688,7 @@ func (c *RegistryClient) sortPacks(packs []PackInfo, sortBy, order string) {
 		default:
 			less = packs[i].Name < packs[j].Name
 		}
-		
+
 		if order == "desc" {
 			return !less
 		}
@@ -701,7 +701,7 @@ func (c *RegistryClient) DownloadPack(ctx context.Context, namespace, version st
 	c.mu.RLock()
 	packInfo, exists := c.registryCache.Packs[namespace]
 	c.mu.RUnlock()
-	
+
 	if !exists {
 		return nil, RegistryError{
 			Operation: "download",
@@ -709,7 +709,7 @@ func (c *RegistryClient) DownloadPack(ctx context.Context, namespace, version st
 			Message:   "pack not found in registry",
 		}
 	}
-	
+
 	// Find the specified version
 	var packVersion *RegistryPackVersion
 	if version == "" || version == "latest" {
@@ -726,7 +726,7 @@ func (c *RegistryClient) DownloadPack(ctx context.Context, namespace, version st
 			}
 		}
 	}
-	
+
 	if packVersion == nil {
 		return nil, RegistryError{
 			Operation: "download",
@@ -734,7 +734,7 @@ func (c *RegistryClient) DownloadPack(ctx context.Context, namespace, version st
 			Message:   fmt.Sprintf("version %s not found", version),
 		}
 	}
-	
+
 	// Download and extract the pack
 	return c.downloadAndExtract(ctx, packInfo, *packVersion, destDir)
 }
@@ -748,7 +748,7 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
-	
+
 	// Download the tarball
 	if err := c.downloadFile(ctx, version.TarballURL, tmpFile); err != nil {
 		return nil, RegistryError{
@@ -758,7 +758,7 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 			Cause:     err,
 		}
 	}
-	
+
 	// Verify checksum if available
 	if version.Checksum != "" {
 		if err := c.verifyChecksum(tmpFile.Name(), version.Checksum); err != nil {
@@ -770,7 +770,7 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 			}
 		}
 	}
-	
+
 	// Extract to destination
 	extractDir := filepath.Join(destDir, packInfo.Namespace)
 	if err := c.extractTarball(tmpFile.Name(), extractDir); err != nil {
@@ -781,7 +781,7 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 			Cause:     err,
 		}
 	}
-	
+
 	// Load the pack using the pack loader
 	loader := NewPackLoader().WithSearchPaths(destDir)
 	return loader.LoadPack(ctx, packInfo.Namespace)
@@ -793,23 +793,23 @@ func (c *RegistryClient) downloadFile(ctx context.Context, url string, dest *os.
 	if err != nil {
 		return err
 	}
-	
+
 	if c.githubToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.githubToken))
 	}
-	
+
 	req.Header.Set("User-Agent", c.userAgent)
-	
+
 	resp, err := c.doRequestWithRetry(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
-	
+
 	_, err = io.Copy(dest, resp.Body)
 	return err
 }
@@ -821,17 +821,17 @@ func (c *RegistryClient) verifyChecksum(filePath, expectedChecksum string) error
 		return err
 	}
 	defer file.Close()
-	
+
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		return err
 	}
-	
+
 	actualChecksum := hex.EncodeToString(hash.Sum(nil))
 	if actualChecksum != expectedChecksum {
 		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
 	}
-	
+
 	return nil
 }
 
@@ -841,21 +841,21 @@ func (c *RegistryClient) extractTarball(tarPath, destDir string) error {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
-	
+
 	file, err := os.Open(tarPath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	
+
 	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return err
 	}
 	defer gzr.Close()
-	
+
 	tr := tar.NewReader(gzr)
-	
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -864,26 +864,26 @@ func (c *RegistryClient) extractTarball(tarPath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// Skip root directory (GitHub tarballs have a root directory)
 		pathParts := strings.Split(header.Name, "/")
 		if len(pathParts) <= 1 {
 			continue
 		}
-		
+
 		// Remove the root directory from path
 		relativePath := strings.Join(pathParts[1:], "/")
 		if relativePath == "" {
 			continue
 		}
-		
+
 		targetPath := filepath.Join(destDir, relativePath)
-		
+
 		// Ensure we don't extract outside destination
 		if !strings.HasPrefix(targetPath, destDir) {
 			continue
 		}
-		
+
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(targetPath, os.FileMode(header.Mode)); err != nil {
@@ -894,12 +894,12 @@ func (c *RegistryClient) extractTarball(tarPath, destDir string) error {
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 				return err
 			}
-			
+
 			outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
 				return err
 			}
-			
+
 			if _, err := io.Copy(outFile, tr); err != nil {
 				outFile.Close()
 				return err
@@ -907,7 +907,7 @@ func (c *RegistryClient) extractTarball(tarPath, destDir string) error {
 			outFile.Close()
 		}
 	}
-	
+
 	return nil
 }
 
@@ -915,29 +915,29 @@ func (c *RegistryClient) extractTarball(tarPath, destDir string) error {
 func (c *RegistryClient) doRequestWithRetry(req *http.Request) (*http.Response, error) {
 	var lastErr error
 	delay := c.retryConfig.RetryDelay
-	
+
 	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(delay)
 			delay = time.Duration(float64(delay) * c.retryConfig.Backoff)
 		}
-		
+
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// Check for retryable status codes
 		if resp.StatusCode >= 500 || resp.StatusCode == 429 {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 			continue
 		}
-		
+
 		return resp, nil
 	}
-	
+
 	return nil, lastErr
 }
 
@@ -957,7 +957,7 @@ func (c *RegistryClient) loadCache() error {
 		}
 		return err
 	}
-	
+
 	var cache RegistryCache
 	if err := json.Unmarshal(data, &cache); err != nil {
 		// If cache is corrupted, reinitialize
@@ -969,7 +969,7 @@ func (c *RegistryClient) loadCache() error {
 		}
 		return nil
 	}
-	
+
 	c.registryCache = &cache
 	return nil
 }
@@ -980,13 +980,13 @@ func (c *RegistryClient) saveCache() error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Write to temporary file first, then rename for atomic operation
 	tempPath := c.cachePath + ".tmp"
 	if err := os.WriteFile(tempPath, data, 0644); err != nil {
 		return err
 	}
-	
+
 	return os.Rename(tempPath, c.cachePath)
 }
 
@@ -994,21 +994,21 @@ func (c *RegistryClient) saveCache() error {
 func (c *RegistryClient) GetCacheInfo() (map[string]interface{}, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	if c.registryCache == nil {
 		return map[string]interface{}{
 			"status": "empty",
 		}, nil
 	}
-	
+
 	return map[string]interface{}{
-		"last_updated": c.registryCache.LastUpdated,
-		"ttl":          c.registryCache.TTL,
-		"version":      c.registryCache.Version,
-		"pack_count":   len(c.registryCache.Packs),
+		"last_updated":   c.registryCache.LastUpdated,
+		"ttl":            c.registryCache.TTL,
+		"version":        c.registryCache.Version,
+		"pack_count":     len(c.registryCache.Packs),
 		"registry_count": len(c.registryCache.Registries),
-		"cache_path":   c.cachePath,
-		"offline_mode": c.offlineMode,
+		"cache_path":     c.cachePath,
+		"offline_mode":   c.offlineMode,
 	}, nil
 }
 
@@ -1016,14 +1016,14 @@ func (c *RegistryClient) GetCacheInfo() (map[string]interface{}, error) {
 func (c *RegistryClient) ClearCache() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.registryCache = &RegistryCache{
 		TTL:        24 * time.Hour,
 		Registries: make(map[string]Registry),
 		Packs:      make(map[string]PackInfo),
 		Version:    "1.0",
 	}
-	
+
 	return c.saveCache()
 }
 

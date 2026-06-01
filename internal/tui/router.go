@@ -13,9 +13,9 @@ type ViewRouter struct {
 	history     []ViewType
 
 	// Dependencies
-	database   interface{} // *db.GraphLoader
-	config     interface{} // *config.Config
-	scanner    interface{} // *crosscloud.Orchestrator
+	database interface{} // *db.GraphLoader
+	config   interface{} // *config.Config
+	scanner  interface{} // *crosscloud.Orchestrator
 
 	// Layout state
 	width  int
@@ -79,12 +79,12 @@ func (r *ViewRouter) SwitchView(viewType ViewType, data interface{}) tea.Cmd {
 	if newView, exists := r.views[viewType]; exists {
 		newView.Focus()
 		newView.Resize(r.width, r.height)
-		
+
 		// Handle view-specific data
 		if data != nil {
 			cmd = r.handleViewData(viewType, data)
 		}
-		
+
 		// Initialize view if this is the first time
 		initCmd := newView.Init()
 		if initCmd != nil && cmd != nil {

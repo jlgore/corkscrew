@@ -37,7 +37,7 @@ func (s *EdgeCasesScenario) GetServices() []string {
 func (s *EdgeCasesScenario) DefineResources(ctx *pulumi.Context, testID string) error {
 	// Generate maximum tags (AWS limit is 50 for most resources)
 	maxTags := s.generateMaxTags(testID)
-	
+
 	// Test 1: S3 bucket with maximum tags and unicode name
 	unicodeBucket, err := s.createUnicodeBucket(ctx, testID, maxTags)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *EdgeCasesScenario) generateMaxTags(testID string) pulumi.StringMap {
 func (s *EdgeCasesScenario) createUnicodeBucket(ctx *pulumi.Context, testID string, tags pulumi.StringMap) (*s3.Bucket, error) {
 	// S3 bucket names have restrictions, so we use a safe name but unicode in tags
 	bucketName := fmt.Sprintf("corkscrew-unicode-%s", strings.ToLower(testID[:10]))
-	
+
 	bucket, err := s3.NewBucket(ctx, "unicode-bucket", &s3.BucketArgs{
 		Bucket: pulumi.String(bucketName),
 		Tags:   tags,
@@ -171,7 +171,7 @@ func (s *EdgeCasesScenario) createLongNameInstance(ctx *pulumi.Context, testID s
 
 	instance, err := ec2.NewInstance(ctx, "long-name-instance", &ec2.InstanceArgs{
 		Ami:          pulumi.String("ami-0c55b159cbfafe1f0"), // Amazon Linux 2
-		InstanceType: pulumi.String("t2.nano"),              // Smallest instance
+		InstanceType: pulumi.String("t2.nano"),               // Smallest instance
 		Tags:         instanceTags,
 		UserData: pulumi.String(`#!/bin/bash
 # User data with unicode and special characters
@@ -266,7 +266,7 @@ func (s *EdgeCasesScenario) createCloudFrontDistribution(ctx *pulumi.Context, te
 	distribution, err := cloudfront.NewDistribution(ctx, "edge-distribution", &cloudfront.DistributionArgs{
 		Comment: pulumi.String(fmt.Sprintf("Edge case distribution 测试 🌐 - %s", testID)),
 		Enabled: pulumi.Bool(true),
-		
+
 		Origins: cloudfront.DistributionOriginArray{
 			&cloudfront.DistributionOriginArgs{
 				DomainName: originBucket.BucketDomainName,
@@ -276,7 +276,7 @@ func (s *EdgeCasesScenario) createCloudFrontDistribution(ctx *pulumi.Context, te
 				},
 			},
 		},
-		
+
 		DefaultCacheBehavior: &cloudfront.DistributionDefaultCacheBehaviorArgs{
 			TargetOriginId:       pulumi.String("edge-origin-测试"),
 			ViewerProtocolPolicy: pulumi.String("redirect-to-https"),
@@ -303,17 +303,17 @@ func (s *EdgeCasesScenario) createCloudFrontDistribution(ctx *pulumi.Context, te
 			DefaultTtl: pulumi.Int(3600),
 			MaxTtl:     pulumi.Int(86400),
 		},
-		
+
 		Restrictions: &cloudfront.DistributionRestrictionsArgs{
 			GeoRestriction: &cloudfront.DistributionRestrictionsGeoRestrictionArgs{
 				RestrictionType: pulumi.String("none"),
 			},
 		},
-		
+
 		ViewerCertificate: &cloudfront.DistributionViewerCertificateArgs{
 			CloudfrontDefaultCertificate: pulumi.Bool(true),
 		},
-		
+
 		Tags: pulumi.StringMap{
 			"TestHarness": pulumi.String("true"),
 			"TestID":      pulumi.String(testID),
@@ -364,26 +364,26 @@ func (s *EdgeCasesScenario) createCircularDependencies(ctx *pulumi.Context, test
 
 	// Create circular dependency: SG1 allows traffic from SG2, SG2 allows traffic from SG1
 	_, err = ec2.NewSecurityGroupRule(ctx, "sg1-to-sg2", &ec2.SecurityGroupRuleArgs{
-		Type:                     pulumi.String("ingress"),
-		FromPort:                 pulumi.Int(80),
-		ToPort:                   pulumi.Int(80),
-		Protocol:                 pulumi.String("tcp"),
-		SourceSecurityGroupId:    sg2.ID(),
-		SecurityGroupId:          sg1.ID(),
-		Description:              pulumi.String("Circular dependency: SG1 <- SG2 测试"),
+		Type:                  pulumi.String("ingress"),
+		FromPort:              pulumi.Int(80),
+		ToPort:                pulumi.Int(80),
+		Protocol:              pulumi.String("tcp"),
+		SourceSecurityGroupId: sg2.ID(),
+		SecurityGroupId:       sg1.ID(),
+		Description:           pulumi.String("Circular dependency: SG1 <- SG2 测试"),
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create SG1 rule: %w", err)
 	}
 
 	_, err = ec2.NewSecurityGroupRule(ctx, "sg2-to-sg1", &ec2.SecurityGroupRuleArgs{
-		Type:                     pulumi.String("ingress"),
-		FromPort:                 pulumi.Int(443),
-		ToPort:                   pulumi.Int(443),
-		Protocol:                 pulumi.String("tcp"),
-		SourceSecurityGroupId:    sg1.ID(),
-		SecurityGroupId:          sg2.ID(),
-		Description:              pulumi.String("Circular dependency: SG2 <- SG1 测试"),
+		Type:                  pulumi.String("ingress"),
+		FromPort:              pulumi.Int(443),
+		ToPort:                pulumi.Int(443),
+		Protocol:              pulumi.String("tcp"),
+		SourceSecurityGroupId: sg1.ID(),
+		SecurityGroupId:       sg2.ID(),
+		Description:           pulumi.String("Circular dependency: SG2 <- SG1 测试"),
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create SG2 rule: %w", err)
@@ -464,9 +464,9 @@ func (s *EdgeCasesScenario) exportResources(ctx *pulumi.Context, resources map[s
 			pulumi.Map{
 				"type": pulumi.String("Bucket"),
 				"attributes": pulumi.Map{
-					"tag_count":        pulumi.Int(50),
-					"unicode_support":  pulumi.Bool(true),
-					"lifecycle_rules":  pulumi.Int(1),
+					"tag_count":       pulumi.Int(50),
+					"unicode_support": pulumi.Bool(true),
+					"lifecycle_rules": pulumi.Int(1),
 				},
 			},
 		},
@@ -474,9 +474,9 @@ func (s *EdgeCasesScenario) exportResources(ctx *pulumi.Context, resources map[s
 			pulumi.Map{
 				"type": pulumi.String("Instance"),
 				"attributes": pulumi.Map{
-					"long_name":      pulumi.Bool(true),
-					"unicode_tags":   pulumi.Bool(true),
-					"user_data_set":  pulumi.Bool(true),
+					"long_name":     pulumi.Bool(true),
+					"unicode_tags":  pulumi.Bool(true),
+					"user_data_set": pulumi.Bool(true),
 				},
 			},
 			pulumi.Map{
@@ -496,9 +496,9 @@ func (s *EdgeCasesScenario) exportResources(ctx *pulumi.Context, resources map[s
 			pulumi.Map{
 				"type": pulumi.String("Role"),
 				"attributes": pulumi.Map{
-					"global_service":   pulumi.Bool(true),
-					"complex_policy":   pulumi.Bool(true),
-					"unicode_desc":     pulumi.Bool(true),
+					"global_service": pulumi.Bool(true),
+					"complex_policy": pulumi.Bool(true),
+					"unicode_desc":   pulumi.Bool(true),
 				},
 			},
 		},

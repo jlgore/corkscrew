@@ -40,7 +40,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "OWNED_BY", relationships[0].RelationshipType)
 		assert.Equal(t, "default/default/ReplicaSet/test-replicaset", relationships[0].TargetId)
@@ -71,7 +71,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		// Should have a SELECTED_BY relationship (without target, as it needs matching)
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "SELECTED_BY", relationships[0].RelationshipType)
@@ -102,7 +102,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "SELECTS", relationships[0].RelationshipType)
 		assert.Equal(t, "app=web", relationships[0].Properties["selector"])
@@ -136,7 +136,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "MOUNTS", relationships[0].RelationshipType)
 		assert.Equal(t, "default/default/ConfigMap/app-config", relationships[0].TargetId)
@@ -172,7 +172,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "MOUNTS", relationships[0].RelationshipType)
 		assert.Equal(t, "default/default/Secret/app-secret", relationships[0].TargetId)
@@ -207,7 +207,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "MOUNTS", relationships[0].RelationshipType)
 		assert.Equal(t, "default/default/PersistentVolumeClaim/db-pvc", relationships[0].TargetId)
@@ -254,7 +254,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "ROUTES_TO", relationships[0].RelationshipType)
 		assert.Equal(t, "default/default/Service/web-service", relationships[0].TargetId)
@@ -287,7 +287,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 		}
 
 		relationships := provider.extractBasicRelationships(resource)
-		
+
 		require.Len(t, relationships, 1)
 		assert.Equal(t, "APPLIES_TO", relationships[0].RelationshipType)
 		assert.Equal(t, "app=web", relationships[0].Properties["pod_selector"])
@@ -326,12 +326,12 @@ func TestLabelsToString(t *testing.T) {
 	}
 
 	result := provider.labelsToString(labels)
-	
+
 	// Result should contain all label pairs
 	assert.Contains(t, result, "app=web")
 	assert.Contains(t, result, "version=v1")
 	assert.Contains(t, result, "tier=frontend")
-	
+
 	// Should be comma-separated
 	assert.Contains(t, result, ",")
 }

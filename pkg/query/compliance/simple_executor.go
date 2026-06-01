@@ -24,7 +24,7 @@ func (l *Loader) ListPacks() ([]*QueryPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var packs []*QueryPack
 	for _, name := range packNames {
 		pack, err := l.PackLoader.LoadPack(context.Background(), name)
@@ -33,7 +33,7 @@ func (l *Loader) ListPacks() ([]*QueryPack, error) {
 		}
 		packs = append(packs, pack)
 	}
-	
+
 	return packs, nil
 }
 
@@ -60,7 +60,7 @@ func NewExecutor(dbPath string) (*Executor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create query engine: %w", err)
 	}
-	
+
 	return &Executor{
 		engine: engine,
 		loader: NewPackLoader(),
@@ -98,7 +98,7 @@ type SimpleQueryResult struct {
 // Execute runs compliance checks based on the options - returns SimpleQueryResult for CLI compatibility
 func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) {
 	var results []SimpleQueryResult
-	
+
 	// If specific control ID is provided
 	if options.ControlID != "" {
 		// Parse control ID (format: pack/control)
@@ -110,19 +110,19 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 			Passed:        true,
 			ResourceCount: 0,
 		}
-		
+
 		// TODO: Actually execute the control query
 		results = append(results, result)
 		return results, nil
 	}
-	
+
 	// If pack name is provided
 	if options.PackName != "" {
 		pack, err := e.loader.LoadPack(context.Background(), options.PackName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load pack %s: %w", options.PackName, err)
 		}
-		
+
 		// Execute each query in the pack
 		for _, query := range pack.Queries {
 			result := SimpleQueryResult{
@@ -132,20 +132,20 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 				Passed:        true,
 				ResourceCount: 0,
 			}
-			
+
 			// TODO: Actually execute the query
 			// For now, just add to results
 			results = append(results, result)
 		}
-		
+
 		return results, nil
 	}
-	
+
 	// If tags are provided
 	if len(options.Tags) > 0 {
 		// TODO: Find and execute queries matching tags
 		return results, fmt.Errorf("tag-based execution not yet implemented")
 	}
-	
+
 	return results, fmt.Errorf("no control ID, pack name, or tags provided")
 }

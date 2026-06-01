@@ -12,16 +12,16 @@ import (
 
 // CrossCloudCorrelation represents a correlation between resources (local type to avoid circular import)
 type CrossCloudCorrelation struct {
-	ID               string                 `json:"id"`
-	Type             string                 `json:"type"`
-	Source           *models.Resource       `json:"source"`
-	Target           *models.Resource       `json:"target"`
-	ConfidenceScore  float64                `json:"confidence_score"`
-	Description      string                 `json:"description"`
-	Properties       map[string]interface{} `json:"properties,omitempty"`
-	SourceProvider   string                 `json:"source_provider"`
-	TargetProvider   string                 `json:"target_provider"`
-	DiscoveredAt     string                 `json:"discovered_at"`
+	ID              string                 `json:"id"`
+	Type            string                 `json:"type"`
+	Source          *models.Resource       `json:"source"`
+	Target          *models.Resource       `json:"target"`
+	ConfidenceScore float64                `json:"confidence_score"`
+	Description     string                 `json:"description"`
+	Properties      map[string]interface{} `json:"properties,omitempty"`
+	SourceProvider  string                 `json:"source_provider"`
+	TargetProvider  string                 `json:"target_provider"`
+	DiscoveredAt    string                 `json:"discovered_at"`
 }
 
 // UnifiedDatabaseConfig holds configuration for the unified cloud database
@@ -36,28 +36,28 @@ func GetUnifiedDatabasePath(customPath ...string) (string, error) {
 	// Use custom path if provided
 	if len(customPath) > 0 && customPath[0] != "" {
 		dbPath := customPath[0]
-		
+
 		// Create directory if it doesn't exist
 		dbDir := filepath.Dir(dbPath)
 		if err := os.MkdirAll(dbDir, 0755); err != nil {
 			return "", fmt.Errorf("failed to create database directory %s: %w", dbDir, err)
 		}
-		
+
 		return dbPath, nil
 	}
-	
+
 	// Default behavior
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
-	
+
 	// Create ~/.corkscrew/db directory if it doesn't exist
 	dbDir := filepath.Join(homeDir, ".corkscrew", "db")
 	if err := os.MkdirAll(dbDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create database directory: %w", err)
 	}
-	
+
 	return filepath.Join(dbDir, "corkscrew.duckdb"), nil
 }
 
@@ -68,78 +68,78 @@ func InitializeUnifiedDatabase(customPath ...string) (*UnifiedDatabaseConfig, er
 	if err != nil {
 		return nil, err
 	}
-	
+
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	
+
 	// Install and load JSON extension for DuckDB
 	if _, err := db.Exec("INSTALL json; LOAD json;"); err != nil {
 		return nil, fmt.Errorf("failed to load JSON extension: %w", err)
 	}
-	
+
 	config := &UnifiedDatabaseConfig{
 		DatabasePath: dbPath,
 		DB:           db,
 	}
-	
+
 	// Initialize all cloud provider tables
 	if err := config.createUnifiedTables(); err != nil {
 		return nil, fmt.Errorf("failed to create unified tables: %w", err)
 	}
-	
+
 	return config, nil
 }
 
 // createUnifiedTables creates all the tables for different cloud providers
 func (c *UnifiedDatabaseConfig) createUnifiedTables() error {
-    // Create AWS tables
-    if err := c.createAWSTable(); err != nil {
-        return fmt.Errorf("failed to create AWS tables: %w", err)
-    }
+	// Create AWS tables
+	if err := c.createAWSTable(); err != nil {
+		return fmt.Errorf("failed to create AWS tables: %w", err)
+	}
 
-    // Create Azure tables
-    if err := c.createAzureTables(); err != nil {
-        return fmt.Errorf("failed to create Azure tables: %w", err)
-    }
+	// Create Azure tables
+	if err := c.createAzureTables(); err != nil {
+		return fmt.Errorf("failed to create Azure tables: %w", err)
+	}
 
-    // Create Kubernetes tables
-    if err := c.createKubernetesTables(); err != nil {
-        return fmt.Errorf("failed to create Kubernetes tables: %w", err)
-    }
-	
+	// Create Kubernetes tables
+	if err := c.createKubernetesTables(); err != nil {
+		return fmt.Errorf("failed to create Kubernetes tables: %w", err)
+	}
+
 	// Create unified relationships table
 	if err := c.createUnifiedRelationshipsTable(); err != nil {
 		return fmt.Errorf("failed to create relationships table: %w", err)
 	}
-	
+
 	// Create scan metadata table
 	if err := c.createScanMetadataTable(); err != nil {
 		return fmt.Errorf("failed to create scan metadata table: %w", err)
 	}
-	
+
 	// Create API action metadata table
 	if err := c.createAPIActionMetadataTable(); err != nil {
 		return fmt.Errorf("failed to create API action metadata table: %w", err)
 	}
-	
+
 	// Create cross-cloud specific tables
 	if err := c.createCrossCloudTables(); err != nil {
 		return fmt.Errorf("failed to create cross-cloud tables: %w", err)
 	}
-	
+
 	// Create security tables for Phase 3
 	if err := c.createSecurityTables(); err != nil {
 		return fmt.Errorf("failed to create security tables: %w", err)
 	}
-	
-    return nil
+
+	return nil
 }
 
 // createKubernetesTables creates the Kubernetes resources table
 func (c *UnifiedDatabaseConfig) createKubernetesTables() error {
-    k8sTableSQL := `
+	k8sTableSQL := `
 CREATE TABLE IF NOT EXISTS kubernetes_resources (
     -- Primary identifiers
     id VARCHAR PRIMARY KEY,                    -- Resource ID (e.g., cluster/namespace/Kind/name)
@@ -167,26 +167,26 @@ CREATE TABLE IF NOT EXISTS kubernetes_resources (
     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-    if _, err := c.DB.Exec(k8sTableSQL); err != nil {
-        return err
-    }
+	if _, err := c.DB.Exec(k8sTableSQL); err != nil {
+		return err
+	}
 
-    // Indexes
-    indexes := []string{
-        "CREATE INDEX IF NOT EXISTS idx_k8s_type ON kubernetes_resources(type)",
-        "CREATE INDEX IF NOT EXISTS idx_k8s_service ON kubernetes_resources(service)",
-        "CREATE INDEX IF NOT EXISTS idx_k8s_region ON kubernetes_resources(region)",
-        "CREATE INDEX IF NOT EXISTS idx_k8s_parent_id ON kubernetes_resources(parent_id)",
-        "CREATE INDEX IF NOT EXISTS idx_k8s_scanned_at ON kubernetes_resources(scanned_at)",
-    }
+	// Indexes
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_k8s_type ON kubernetes_resources(type)",
+		"CREATE INDEX IF NOT EXISTS idx_k8s_service ON kubernetes_resources(service)",
+		"CREATE INDEX IF NOT EXISTS idx_k8s_region ON kubernetes_resources(region)",
+		"CREATE INDEX IF NOT EXISTS idx_k8s_parent_id ON kubernetes_resources(parent_id)",
+		"CREATE INDEX IF NOT EXISTS idx_k8s_scanned_at ON kubernetes_resources(scanned_at)",
+	}
 
-    for _, idx := range indexes {
-        if _, err := c.DB.Exec(idx); err != nil {
-            return fmt.Errorf("failed to create index: %w", err)
-        }
-    }
+	for _, idx := range indexes {
+		if _, err := c.DB.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
 
-    return nil
+	return nil
 }
 
 // createAWSTable creates the AWS resources table
@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS aws_resources (
 	if _, err := c.DB.Exec(awsTableSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes separately
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_aws_type ON aws_resources(type)",
@@ -234,13 +234,13 @@ CREATE TABLE IF NOT EXISTS aws_resources (
 		"CREATE INDEX IF NOT EXISTS idx_aws_parent_id ON aws_resources(parent_id)",
 		"CREATE INDEX IF NOT EXISTS idx_aws_scanned_at ON aws_resources(scanned_at)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS azure_resources (
 	if _, err := c.DB.Exec(azureTableSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes separately
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_azure_type ON azure_resources(type)",
@@ -309,13 +309,13 @@ CREATE TABLE IF NOT EXISTS azure_resources (
 		"CREATE INDEX IF NOT EXISTS idx_azure_provisioning_state ON azure_resources(provisioning_state)",
 		"CREATE INDEX IF NOT EXISTS idx_azure_scanned_at ON azure_resources(scanned_at)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -351,7 +351,7 @@ CREATE TABLE IF NOT EXISTS cloud_relationships (
 	if _, err := c.DB.Exec(relationshipsSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes separately
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_rel_from_id ON cloud_relationships(from_id)",
@@ -361,13 +361,13 @@ CREATE TABLE IF NOT EXISTS cloud_relationships (
 		"CREATE INDEX IF NOT EXISTS idx_rel_from_type ON cloud_relationships(from_resource_type)",
 		"CREATE INDEX IF NOT EXISTS idx_rel_to_type ON cloud_relationships(to_resource_type)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -378,7 +378,7 @@ func (c *UnifiedDatabaseConfig) createScanMetadataTable() error {
 		// Log but don't fail - table might not exist
 		fmt.Printf("Note: Could not drop scan_metadata table: %v\n", err)
 	}
-	
+
 	scanMetadataSQL := `
 CREATE TABLE IF NOT EXISTS scan_metadata (
     -- Scan identifiers
@@ -417,7 +417,7 @@ CREATE TABLE IF NOT EXISTS scan_metadata (
 	if _, err := c.DB.Exec(scanMetadataSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes separately
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_scan_provider ON scan_metadata(provider)",
@@ -425,13 +425,13 @@ CREATE TABLE IF NOT EXISTS scan_metadata (
 		"CREATE INDEX IF NOT EXISTS idx_scan_start_time ON scan_metadata(scan_start_time)",
 		"CREATE INDEX IF NOT EXISTS idx_scan_status ON scan_metadata(status)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -492,7 +492,7 @@ CREATE TABLE IF NOT EXISTS api_action_metadata (
 	if _, err := c.DB.Exec(apiMetadataSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes separately
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_api_provider ON api_action_metadata(provider)",
@@ -503,13 +503,13 @@ CREATE TABLE IF NOT EXISTS api_action_metadata (
 		"CREATE INDEX IF NOT EXISTS idx_api_account_id ON api_action_metadata(account_id)",
 		"CREATE INDEX IF NOT EXISTS idx_api_correlation_id ON api_action_metadata(correlation_id)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -592,22 +592,22 @@ func (c *UnifiedDatabaseConfig) createCrossCloudTables() error {
 	if err := c.createIPAddressTable(); err != nil {
 		return fmt.Errorf("failed to create IP address table: %w", err)
 	}
-	
+
 	// Create DNS correlation table
 	if err := c.createDNSTable(); err != nil {
 		return fmt.Errorf("failed to create DNS table: %w", err)
 	}
-	
+
 	// Create cross-cloud correlation table
 	if err := c.createCrossCloudCorrelationTable(); err != nil {
 		return fmt.Errorf("failed to create cross-cloud correlation table: %w", err)
 	}
-	
+
 	// Create network topology table
 	if err := c.createNetworkTopologyTable(); err != nil {
 		return fmt.Errorf("failed to create network topology table: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -652,7 +652,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_ip_addresses (
 	if _, err := c.DB.Exec(ipAddressSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_ip_address ON cross_cloud_ip_addresses(ip_address)",
@@ -662,13 +662,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_ip_addresses (
 		"CREATE INDEX IF NOT EXISTS idx_ip_type ON cross_cloud_ip_addresses(ip_type)",
 		"CREATE INDEX IF NOT EXISTS idx_ip_vpc ON cross_cloud_ip_addresses(vpc_id)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -716,7 +716,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_dns_records (
 	if _, err := c.DB.Exec(dnsSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_dns_name ON cross_cloud_dns_records(dns_name)",
@@ -726,13 +726,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_dns_records (
 		"CREATE INDEX IF NOT EXISTS idx_dns_zone ON cross_cloud_dns_records(zone_id)",
 		"CREATE INDEX IF NOT EXISTS idx_dns_service ON cross_cloud_dns_records(dns_service)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -787,7 +787,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_correlations (
 	if _, err := c.DB.Exec(correlationSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_cc_source_resource ON cross_cloud_correlations(source_resource_id)",
@@ -799,13 +799,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_correlations (
 		"CREATE INDEX IF NOT EXISTS idx_cc_status ON cross_cloud_correlations(status)",
 		"CREATE INDEX IF NOT EXISTS idx_cc_providers ON cross_cloud_correlations(source_provider, target_provider)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -864,7 +864,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_topology (
 	if _, err := c.DB.Exec(topologySQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_topo_connection_type ON cross_cloud_network_topology(connection_type)",
@@ -876,13 +876,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_topology (
 		"CREATE INDEX IF NOT EXISTS idx_topo_status ON cross_cloud_network_topology(status)",
 		"CREATE INDEX IF NOT EXISTS idx_topo_providers ON cross_cloud_network_topology(source_provider, target_provider)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := c.DB.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 

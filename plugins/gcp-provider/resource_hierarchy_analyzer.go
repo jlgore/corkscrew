@@ -18,24 +18,24 @@ type ResourceHierarchyAnalyzer struct {
 
 // HierarchyRule defines parent-child relationships and requirements
 type HierarchyRule struct {
-	ChildResource    string              `json:"child_resource"`
-	ParentResource   string              `json:"parent_resource"`
-	ParentRequired   bool                `json:"parent_required"`
-	Scope           string              `json:"scope"`
-	PathPattern     string              `json:"path_pattern"`
-	RequiredParams  []string            `json:"required_params"`
-	Examples        []string            `json:"examples"`
-	Metadata        map[string]string   `json:"metadata"`
+	ChildResource  string            `json:"child_resource"`
+	ParentResource string            `json:"parent_resource"`
+	ParentRequired bool              `json:"parent_required"`
+	Scope          string            `json:"scope"`
+	PathPattern    string            `json:"path_pattern"`
+	RequiredParams []string          `json:"required_params"`
+	Examples       []string          `json:"examples"`
+	Metadata       map[string]string `json:"metadata"`
 }
 
 // ResourceNamePattern represents GCP resource name pattern analysis
 type ResourceNamePattern struct {
-	FullPattern     string            `json:"full_pattern"`
-	Components      []string          `json:"components"`
-	ParentPattern   string            `json:"parent_pattern"`
-	ResourcePattern string            `json:"resource_pattern"`
-	Scope          string            `json:"scope"`
-	Examples       []string          `json:"examples"`
+	FullPattern     string   `json:"full_pattern"`
+	Components      []string `json:"components"`
+	ParentPattern   string   `json:"parent_pattern"`
+	ResourcePattern string   `json:"resource_pattern"`
+	Scope           string   `json:"scope"`
+	Examples        []string `json:"examples"`
 }
 
 // NewResourceHierarchyAnalyzer creates a new hierarchy analyzer
@@ -44,10 +44,10 @@ func NewResourceHierarchyAnalyzer(serviceMappings map[string]*ServiceMapping) *R
 		serviceMappings: serviceMappings,
 		hierarchyRules:  make(map[string]*HierarchyRule),
 	}
-	
+
 	// Initialize built-in hierarchy rules
 	rha.initializeHierarchyRules()
-	
+
 	return rha
 }
 
@@ -77,20 +77,20 @@ func (rha *ResourceHierarchyAnalyzer) analyzeServiceHierarchy(serviceName string
 	for _, pattern := range mapping.ResourcePatterns {
 		// Analyze resource name patterns to detect parent relationships
 		namePattern := rha.analyzeResourceNamePattern(serviceName, pattern)
-		
+
 		// Create parent relationship if detected
 		if parentRel := rha.extractParentRelationship(namePattern, pattern); parentRel != nil {
 			mapping.ParentHierarchy = append(mapping.ParentHierarchy, parentRel)
-			
+
 			// Store as hierarchy rule
 			key := fmt.Sprintf("%s.%s", serviceName, pattern.ResourceType)
 			rha.hierarchyRules[key] = &HierarchyRule{
 				ChildResource:  pattern.ResourceType,
 				ParentResource: parentRel.ParentResource,
 				ParentRequired: true,
-				Scope:         parentRel.Scope,
+				Scope:          parentRel.Scope,
 				RequiredParams: parentRel.RequiredParams,
-				Metadata:      pattern.Metadata,
+				Metadata:       pattern.Metadata,
 			}
 		}
 	}
@@ -109,7 +109,7 @@ func (rha *ResourceHierarchyAnalyzer) analyzeResourceNamePattern(serviceName str
 	namePattern := &ResourceNamePattern{
 		Components: []string{},
 		Examples:   []string{},
-		Scope:     rha.detectScope(serviceName, pattern),
+		Scope:      rha.detectScope(serviceName, pattern),
 	}
 
 	// Build pattern based on service and resource type
@@ -140,8 +140,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeComputeResourcePattern(pattern *Res
 			Components:      []string{"projects", "zones", "instances"},
 			ParentPattern:   "projects/{project}/zones/{zone}",
 			ResourcePattern: "{instance}",
-			Scope:          "zonal",
-			Examples:       []string{"projects/my-project/zones/us-central1-a/instances/my-instance"},
+			Scope:           "zonal",
+			Examples:        []string{"projects/my-project/zones/us-central1-a/instances/my-instance"},
 		}
 	case "Disk":
 		return &ResourceNamePattern{
@@ -149,8 +149,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeComputeResourcePattern(pattern *Res
 			Components:      []string{"projects", "zones", "disks"},
 			ParentPattern:   "projects/{project}/zones/{zone}",
 			ResourcePattern: "{disk}",
-			Scope:          "zonal",
-			Examples:       []string{"projects/my-project/zones/us-central1-a/disks/my-disk"},
+			Scope:           "zonal",
+			Examples:        []string{"projects/my-project/zones/us-central1-a/disks/my-disk"},
 		}
 	case "Network":
 		return &ResourceNamePattern{
@@ -158,8 +158,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeComputeResourcePattern(pattern *Res
 			Components:      []string{"projects", "global", "networks"},
 			ParentPattern:   "projects/{project}",
 			ResourcePattern: "{network}",
-			Scope:          "global",
-			Examples:       []string{"projects/my-project/global/networks/default"},
+			Scope:           "global",
+			Examples:        []string{"projects/my-project/global/networks/default"},
 		}
 	case "Subnetwork":
 		return &ResourceNamePattern{
@@ -167,12 +167,12 @@ func (rha *ResourceHierarchyAnalyzer) analyzeComputeResourcePattern(pattern *Res
 			Components:      []string{"projects", "regions", "subnetworks"},
 			ParentPattern:   "projects/{project}/regions/{region}",
 			ResourcePattern: "{subnetwork}",
-			Scope:          "regional",
-			Examples:       []string{"projects/my-project/regions/us-central1/subnetworks/default"},
+			Scope:           "regional",
+			Examples:        []string{"projects/my-project/regions/us-central1/subnetworks/default"},
 		}
 	default:
 		return &ResourceNamePattern{
-			FullPattern: fmt.Sprintf("projects/{project}/zones/{zone}/%ss/{%s}", 
+			FullPattern: fmt.Sprintf("projects/{project}/zones/{zone}/%ss/{%s}",
 				strings.ToLower(pattern.ResourceType), strings.ToLower(pattern.ResourceType)),
 			Scope: "zonal",
 		}
@@ -188,8 +188,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeStorageResourcePattern(pattern *Res
 			Components:      []string{"projects", "buckets"},
 			ParentPattern:   "projects/{project}",
 			ResourcePattern: "{bucket}",
-			Scope:          "global",
-			Examples:       []string{"projects/my-project/buckets/my-bucket"},
+			Scope:           "global",
+			Examples:        []string{"projects/my-project/buckets/my-bucket"},
 		}
 	case "Object":
 		return &ResourceNamePattern{
@@ -197,19 +197,19 @@ func (rha *ResourceHierarchyAnalyzer) analyzeStorageResourcePattern(pattern *Res
 			Components:      []string{"projects", "buckets", "objects"},
 			ParentPattern:   "projects/{project}/buckets/{bucket}",
 			ResourcePattern: "{object}",
-			Scope:          "bucket",
-			Examples:       []string{"projects/my-project/buckets/my-bucket/objects/path/to/file.txt"},
+			Scope:           "bucket",
+			Examples:        []string{"projects/my-project/buckets/my-bucket/objects/path/to/file.txt"},
 		}
 	default:
 		return &ResourceNamePattern{
-			FullPattern: fmt.Sprintf("projects/{project}/buckets/{bucket}/%ss/{%s}", 
+			FullPattern: fmt.Sprintf("projects/{project}/buckets/{bucket}/%ss/{%s}",
 				strings.ToLower(pattern.ResourceType), strings.ToLower(pattern.ResourceType)),
 			Scope: "bucket",
 		}
 	}
 }
 
-// analyzeContainerResourcePattern analyzes Kubernetes Engine resource patterns  
+// analyzeContainerResourcePattern analyzes Kubernetes Engine resource patterns
 func (rha *ResourceHierarchyAnalyzer) analyzeContainerResourcePattern(pattern *ResourcePattern) *ResourceNamePattern {
 	switch pattern.ResourceType {
 	case "Cluster":
@@ -218,8 +218,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeContainerResourcePattern(pattern *R
 			Components:      []string{"projects", "locations", "clusters"},
 			ParentPattern:   "projects/{project}/locations/{location}",
 			ResourcePattern: "{cluster}",
-			Scope:          "regional",
-			Examples:       []string{"projects/my-project/locations/us-central1/clusters/my-cluster"},
+			Scope:           "regional",
+			Examples:        []string{"projects/my-project/locations/us-central1/clusters/my-cluster"},
 		}
 	case "NodePool":
 		return &ResourceNamePattern{
@@ -227,8 +227,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeContainerResourcePattern(pattern *R
 			Components:      []string{"projects", "locations", "clusters", "nodePools"},
 			ParentPattern:   "projects/{project}/locations/{location}/clusters/{cluster}",
 			ResourcePattern: "{nodepool}",
-			Scope:          "cluster",
-			Examples:       []string{"projects/my-project/locations/us-central1/clusters/my-cluster/nodePools/default-pool"},
+			Scope:           "cluster",
+			Examples:        []string{"projects/my-project/locations/us-central1/clusters/my-cluster/nodePools/default-pool"},
 		}
 	default:
 		return &ResourceNamePattern{
@@ -248,8 +248,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeBigQueryResourcePattern(pattern *Re
 			Components:      []string{"projects", "datasets"},
 			ParentPattern:   "projects/{project}",
 			ResourcePattern: "{dataset}",
-			Scope:          "project",
-			Examples:       []string{"projects/my-project/datasets/my_dataset"},
+			Scope:           "project",
+			Examples:        []string{"projects/my-project/datasets/my_dataset"},
 		}
 	case "Table":
 		return &ResourceNamePattern{
@@ -257,8 +257,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzeBigQueryResourcePattern(pattern *Re
 			Components:      []string{"projects", "datasets", "tables"},
 			ParentPattern:   "projects/{project}/datasets/{dataset}",
 			ResourcePattern: "{table}",
-			Scope:          "dataset",
-			Examples:       []string{"projects/my-project/datasets/my_dataset/tables/my_table"},
+			Scope:           "dataset",
+			Examples:        []string{"projects/my-project/datasets/my_dataset/tables/my_table"},
 		}
 	default:
 		return &ResourceNamePattern{
@@ -278,8 +278,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzePubSubResourcePattern(pattern *Reso
 			Components:      []string{"projects", "topics"},
 			ParentPattern:   "projects/{project}",
 			ResourcePattern: "{topic}",
-			Scope:          "project",
-			Examples:       []string{"projects/my-project/topics/my-topic"},
+			Scope:           "project",
+			Examples:        []string{"projects/my-project/topics/my-topic"},
 		}
 	case "Subscription":
 		return &ResourceNamePattern{
@@ -287,8 +287,8 @@ func (rha *ResourceHierarchyAnalyzer) analyzePubSubResourcePattern(pattern *Reso
 			Components:      []string{"projects", "subscriptions"},
 			ParentPattern:   "projects/{project}",
 			ResourcePattern: "{subscription}",
-			Scope:          "project",
-			Examples:       []string{"projects/my-project/subscriptions/my-subscription"},
+			Scope:           "project",
+			Examples:        []string{"projects/my-project/subscriptions/my-subscription"},
 		}
 	default:
 		return &ResourceNamePattern{
@@ -302,15 +302,15 @@ func (rha *ResourceHierarchyAnalyzer) analyzePubSubResourcePattern(pattern *Reso
 // analyzeGenericResourcePattern provides fallback generic analysis
 func (rha *ResourceHierarchyAnalyzer) analyzeGenericResourcePattern(serviceName string, pattern *ResourcePattern) *ResourceNamePattern {
 	resourceType := strings.ToLower(pattern.ResourceType)
-	
+
 	// Most GCP resources are project-scoped
 	return &ResourceNamePattern{
 		FullPattern:     fmt.Sprintf("projects/{project}/%ss/{%s}", resourceType, resourceType),
 		Components:      []string{"projects", resourceType + "s"},
 		ParentPattern:   "projects/{project}",
 		ResourcePattern: fmt.Sprintf("{%s}", resourceType),
-		Scope:          "project",
-		Examples:       []string{fmt.Sprintf("projects/my-project/%ss/my-%s", resourceType, resourceType)},
+		Scope:           "project",
+		Examples:        []string{fmt.Sprintf("projects/my-project/%ss/my-%s", resourceType, resourceType)},
 	}
 }
 
@@ -333,7 +333,7 @@ func (rha *ResourceHierarchyAnalyzer) extractParentRelationship(namePattern *Res
 		ChildResource:  resourcePattern.ResourceType,
 		ParentResource: parentResource,
 		RequiredParams: requiredParams,
-		Scope:         namePattern.Scope,
+		Scope:          namePattern.Scope,
 	}
 }
 
@@ -374,17 +374,17 @@ func (rha *ResourceHierarchyAnalyzer) extractParentResourceType(parentPattern, s
 // extractRequiredParameters extracts required parameters from resource pattern
 func (rha *ResourceHierarchyAnalyzer) extractRequiredParameters(pattern string) []string {
 	var params []string
-	
+
 	// Find all {param} patterns
 	re := regexp.MustCompile(`\{([^}]+)\}`)
 	matches := re.FindAllStringSubmatch(pattern, -1)
-	
+
 	for _, match := range matches {
 		if len(match) > 1 {
 			params = append(params, match[1])
 		}
 	}
-	
+
 	return params
 }
 
@@ -451,29 +451,29 @@ func (rha *ResourceHierarchyAnalyzer) analyzeCrossServiceRelationships() {
 			ChildResource:  "compute.Instance",
 			ParentResource: "compute.Network",
 			ParentRequired: true,
-			Scope:         "network",
-			Metadata:      map[string]string{"relationship_type": "uses"},
+			Scope:          "network",
+			Metadata:       map[string]string{"relationship_type": "uses"},
 		},
 		{
-			ChildResource:  "compute.Instance", 
+			ChildResource:  "compute.Instance",
 			ParentResource: "storage.Bucket",
 			ParentRequired: false,
-			Scope:         "access",
-			Metadata:      map[string]string{"relationship_type": "accesses"},
+			Scope:          "access",
+			Metadata:       map[string]string{"relationship_type": "accesses"},
 		},
 		{
 			ChildResource:  "container.Cluster",
 			ParentResource: "compute.Network",
 			ParentRequired: true,
-			Scope:         "network",
-			Metadata:      map[string]string{"relationship_type": "uses"},
+			Scope:          "network",
+			Metadata:       map[string]string{"relationship_type": "uses"},
 		},
 		{
 			ChildResource:  "container.NodePool",
 			ParentResource: "container.Cluster",
 			ParentRequired: true,
-			Scope:         "cluster",
-			Metadata:      map[string]string{"relationship_type": "belongs_to"},
+			Scope:          "cluster",
+			Metadata:       map[string]string{"relationship_type": "belongs_to"},
 		},
 	}
 
@@ -491,24 +491,24 @@ func (rha *ResourceHierarchyAnalyzer) initializeHierarchyRules() {
 			ChildResource:  "Organization",
 			ParentResource: "",
 			ParentRequired: false,
-			Scope:         "global",
-			PathPattern:   "organizations/{organization}",
+			Scope:          "global",
+			PathPattern:    "organizations/{organization}",
 			RequiredParams: []string{"organization"},
 		},
 		"folder": {
 			ChildResource:  "Folder",
 			ParentResource: "Organization",
 			ParentRequired: false,
-			Scope:         "organizational",
-			PathPattern:   "folders/{folder}",
+			Scope:          "organizational",
+			PathPattern:    "folders/{folder}",
 			RequiredParams: []string{"folder"},
 		},
 		"project": {
 			ChildResource:  "Project",
 			ParentResource: "Folder",
 			ParentRequired: false,
-			Scope:         "organizational",
-			PathPattern:   "projects/{project}",
+			Scope:          "organizational",
+			PathPattern:    "projects/{project}",
 			RequiredParams: []string{"project"},
 		},
 	}
@@ -528,7 +528,7 @@ func (rha *ResourceHierarchyAnalyzer) GenerateHierarchyRelationships() []*pb.Rel
 			RelationshipType: "parent_of",
 			Properties: map[string]string{
 				"child_resource":  rule.ChildResource,
-				"scope":          rule.Scope,
+				"scope":           rule.Scope,
 				"parent_required": fmt.Sprintf("%t", rule.ParentRequired),
 			},
 		}
@@ -559,7 +559,7 @@ func (rha *ResourceHierarchyAnalyzer) GetHierarchyRule(serviceName, resourceType
 func (rha *ResourceHierarchyAnalyzer) ValidateResourceHierarchy(resourcePath string) (bool, error) {
 	// Parse the resource path and validate against hierarchy rules
 	components := strings.Split(strings.Trim(resourcePath, "/"), "/")
-	
+
 	if len(components) < 2 {
 		return false, fmt.Errorf("invalid resource path: %s", resourcePath)
 	}

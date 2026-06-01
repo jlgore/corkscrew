@@ -64,11 +64,11 @@ func (s *VPCScenario) DefineResources(ctx *pulumi.Context, testID string) error 
 
 	// Create private subnet
 	privateSubnet, err := compute.NewSubnetwork(ctx, "private-subnet", &compute.SubnetworkArgs{
-		Name:        pulumi.String(fmt.Sprintf("private-subnet-%s", testID)),
-		Network:     network.ID(),
-		IpCidrRange: pulumi.String("10.0.2.0/24"),
-		Region:      pulumi.String("us-central1"),
-		Description: pulumi.String("Private subnet for Corkscrew test"),
+		Name:                  pulumi.String(fmt.Sprintf("private-subnet-%s", testID)),
+		Network:               network.ID(),
+		IpCidrRange:           pulumi.String("10.0.2.0/24"),
+		Region:                pulumi.String("us-central1"),
+		Description:           pulumi.String("Private subnet for Corkscrew test"),
 		PrivateIpGoogleAccess: pulumi.Bool(true),
 	})
 	if err != nil {
@@ -96,9 +96,9 @@ func (s *VPCScenario) DefineResources(ctx *pulumi.Context, testID string) error 
 
 	// Create NAT gateway
 	nat, err := compute.NewRouterNat(ctx, "test-nat", &compute.RouterNatArgs{
-		Name:   pulumi.String(fmt.Sprintf("corkscrew-nat-%s", testID)),
-		Router: router.Name,
-		Region: router.Region,
+		Name:                pulumi.String(fmt.Sprintf("corkscrew-nat-%s", testID)),
+		Router:              router.Name,
+		Region:              router.Region,
 		NatIpAllocateOption: pulumi.String("MANUAL_ONLY"),
 		NatIps: pulumi.StringArray{
 			natIP.SelfLink,
@@ -234,10 +234,10 @@ func (s *VPCScenario) DefineResources(ctx *pulumi.Context, testID string) error 
 				"name": publicSubnet.Name,
 				"id":   publicSubnet.ID(),
 				"attributes": pulumi.Map{
-					"ip_cidr_range":           pulumi.String("10.0.1.0/24"),
-					"region":                  pulumi.String("us-central1"),
+					"ip_cidr_range":            pulumi.String("10.0.1.0/24"),
+					"region":                   pulumi.String("us-central1"),
 					"private_ip_google_access": pulumi.Bool(false),
-					"subnet_type":             pulumi.String("public"),
+					"subnet_type":              pulumi.String("public"),
 				},
 			},
 			pulumi.Map{

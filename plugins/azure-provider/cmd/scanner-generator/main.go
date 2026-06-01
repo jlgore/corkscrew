@@ -35,41 +35,41 @@ type ServiceCatalog struct {
 }
 
 type ServiceDefinition struct {
-	Name        string                `json:"name"`
-	Namespace   string                `json:"namespace"`
-	Package     string                `json:"package"`
-	Version     string                `json:"version"`
-	Resources   []ResourceDefinition  `json:"resources"`
-	SharedTypes []TypeDefinition      `json:"sharedTypes"`
+	Name        string                 `json:"name"`
+	Namespace   string                 `json:"namespace"`
+	Package     string                 `json:"package"`
+	Version     string                 `json:"version"`
+	Resources   []ResourceDefinition   `json:"resources"`
+	SharedTypes []TypeDefinition       `json:"sharedTypes"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 type ResourceDefinition struct {
-	Type                 string                    `json:"type"`
-	ARMType             string                    `json:"armType"`
-	Operations          map[string]OperationDef   `json:"operations"`
-	Properties          []PropertyDef             `json:"properties"`
+	Type                  string                  `json:"type"`
+	ARMType               string                  `json:"armType"`
+	Operations            map[string]OperationDef `json:"operations"`
+	Properties            []PropertyDef           `json:"properties"`
 	RequiresResourceGroup bool                    `json:"requiresResourceGroup"`
-	SupportsListAll     bool                      `json:"supportsListAll"`
-	PaginationType      string                    `json:"paginationType"`
-	RelatedResources    []string                  `json:"relatedResources"`
-	ResourceGraphQuery  string                    `json:"resourceGraphQuery"`
-	CommonTags          []string                  `json:"commonTags"`
-	Metadata            map[string]interface{}    `json:"metadata"`
+	SupportsListAll       bool                    `json:"supportsListAll"`
+	PaginationType        string                  `json:"paginationType"`
+	RelatedResources      []string                `json:"relatedResources"`
+	ResourceGraphQuery    string                  `json:"resourceGraphQuery"`
+	CommonTags            []string                `json:"commonTags"`
+	Metadata              map[string]interface{}  `json:"metadata"`
 }
 
 type OperationDef struct {
-	Method              string              `json:"method"`
-	OperationType       string              `json:"operationType"`
+	Method                string            `json:"method"`
+	OperationType         string            `json:"operationType"`
 	SupportsResourceGroup bool              `json:"supportsResourceGroup"`
-	ResponseType        string              `json:"responseType"`
-	Parameters          []ParameterInfo     `json:"parameters"`
-	IsPaginated         bool                `json:"isPaginated"`
-	PaginationType      string              `json:"paginationType"`
-	RequiresAuth        []string            `json:"requiresAuth"`
-	RateLimits          map[string]int      `json:"rateLimits"`
-	ResourceGraphOptimal bool               `json:"resourceGraphOptimal"`
-	Metadata            map[string]string   `json:"metadata"`
+	ResponseType          string            `json:"responseType"`
+	Parameters            []ParameterInfo   `json:"parameters"`
+	IsPaginated           bool              `json:"isPaginated"`
+	PaginationType        string            `json:"paginationType"`
+	RequiresAuth          []string          `json:"requiresAuth"`
+	RateLimits            map[string]int    `json:"rateLimits"`
+	ResourceGraphOptimal  bool              `json:"resourceGraphOptimal"`
+	Metadata              map[string]string `json:"metadata"`
 }
 
 type PropertyDef struct {
@@ -86,11 +86,11 @@ type PropertyDef struct {
 }
 
 type TypeDefinition struct {
-	Name        string                 `json:"name"`
-	Type        string                 `json:"type"`
-	Fields      []FieldDefinition      `json:"fields"`
-	UsedBy      []string               `json:"usedBy"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	Name     string                 `json:"name"`
+	Type     string                 `json:"type"`
+	Fields   []FieldDefinition      `json:"fields"`
+	UsedBy   []string               `json:"usedBy"`
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 type FieldDefinition struct {
@@ -102,14 +102,14 @@ type FieldDefinition struct {
 }
 
 type ResourceRelationship struct {
-	SourceType      string            `json:"sourceType"`
-	TargetType      string            `json:"targetType"`
-	RelationType    string            `json:"relationType"`
-	Direction       string            `json:"direction"`
-	PropertyPath    string            `json:"propertyPath"`
-	Cardinality     string            `json:"cardinality"`
-	Required        bool              `json:"required"`
-	Metadata        map[string]string `json:"metadata"`
+	SourceType   string            `json:"sourceType"`
+	TargetType   string            `json:"targetType"`
+	RelationType string            `json:"relationType"`
+	Direction    string            `json:"direction"`
+	PropertyPath string            `json:"propertyPath"`
+	Cardinality  string            `json:"cardinality"`
+	Required     bool              `json:"required"`
+	Metadata     map[string]string `json:"metadata"`
 }
 
 type Pattern struct {
@@ -151,31 +151,31 @@ type ScannerGenerator struct {
 
 // GeneratedScanner represents a generated scanner file
 type GeneratedScanner struct {
-	Name        string
-	Path        string
-	Type        string // service, resource, batch, relationship
-	Service     string
+	Name         string
+	Path         string
+	Type         string // service, resource, batch, relationship
+	Service      string
 	ResourceType string
-	FileSize    int64
-	Generated   time.Time
+	FileSize     int64
+	Generated    time.Time
 }
 
 func main() {
 	flag.Parse()
-	
+
 	if *catalogPath == "" {
 		log.Fatal("catalog path is required")
 	}
-	
+
 	log.Printf("🔧 Starting Azure Scanner Generator")
 	startTime := time.Now()
-	
+
 	// Load service catalog
 	catalog, err := loadServiceCatalog(*catalogPath)
 	if err != nil {
 		log.Fatalf("Failed to load service catalog: %v", err)
 	}
-	
+
 	// Merge with existing catalog if specified
 	if *mergeWith != "" {
 		existingCatalog, err := loadServiceCatalog(*mergeWith)
@@ -186,10 +186,10 @@ func main() {
 			log.Printf("Merged with existing catalog")
 		}
 	}
-	
-	log.Printf("📋 Loaded catalog with %d services, %d resources", 
+
+	log.Printf("📋 Loaded catalog with %d services, %d resources",
 		len(catalog.Services), catalog.Summary.TotalResources)
-	
+
 	// Create scanner generator
 	generator := &ScannerGenerator{
 		catalog:     catalog,
@@ -199,12 +199,12 @@ func main() {
 		verbose:     *verbose,
 		templates:   make(map[string]*template.Template),
 	}
-	
+
 	// Initialize templates and helper functions
 	if err := generator.initializeTemplates(); err != nil {
 		log.Fatalf("Failed to initialize templates: %v", err)
 	}
-	
+
 	// Parse services filter
 	var targetServices []string
 	if *services != "" {
@@ -213,23 +213,23 @@ func main() {
 			targetServices[i] = strings.TrimSpace(s)
 		}
 	}
-	
+
 	// Generate scanners
 	generatedScanners, err := generator.GenerateScanners(targetServices)
 	if err != nil {
 		log.Fatalf("Failed to generate scanners: %v", err)
 	}
-	
+
 	generationTime := time.Since(startTime)
-	
+
 	// Write generation report
 	reportPath := filepath.Join(*outputDir, "generation_report.json")
 	if err := generator.writeGenerationReport(generatedScanners, generationTime, reportPath); err != nil {
 		log.Printf("Warning: Failed to write generation report: %v", err)
 	}
-	
+
 	log.Printf("✅ Scanner generation complete in %v", generationTime)
-	log.Printf("📊 Generated %d scanners across %d services", 
+	log.Printf("📊 Generated %d scanners across %d services",
 		len(generatedScanners), len(targetServices))
 	log.Printf("📄 Generation report: %s", reportPath)
 }
@@ -240,12 +240,12 @@ func loadServiceCatalog(path string) (*ServiceCatalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read catalog file: %w", err)
 	}
-	
+
 	var catalog ServiceCatalog
 	if err := json.Unmarshal(data, &catalog); err != nil {
 		return nil, fmt.Errorf("failed to parse catalog JSON: %w", err)
 	}
-	
+
 	return &catalog, nil
 }
 
@@ -258,7 +258,7 @@ func mergeCatalogs(new, existing *ServiceCatalog) *ServiceCatalog {
 		GeneratedAt:    time.Now(),
 		SDKVersion:     new.SDKVersion,
 	}
-	
+
 	// Merge services
 	for name, service := range existing.Services {
 		merged.Services[name] = service
@@ -266,11 +266,11 @@ func mergeCatalogs(new, existing *ServiceCatalog) *ServiceCatalog {
 	for name, service := range new.Services {
 		merged.Services[name] = service // New services override existing
 	}
-	
+
 	// Merge relationships
 	merged.Relationships = append(merged.Relationships, existing.Relationships...)
 	merged.Relationships = append(merged.Relationships, new.Relationships...)
-	
+
 	// Merge patterns
 	for name, pattern := range existing.CommonPatterns {
 		merged.CommonPatterns[name] = pattern
@@ -278,7 +278,7 @@ func mergeCatalogs(new, existing *ServiceCatalog) *ServiceCatalog {
 	for name, pattern := range new.CommonPatterns {
 		merged.CommonPatterns[name] = pattern
 	}
-	
+
 	// Update summary
 	totalResources := 0
 	totalOperations := 0
@@ -288,54 +288,54 @@ func mergeCatalogs(new, existing *ServiceCatalog) *ServiceCatalog {
 			totalOperations += len(resource.Operations)
 		}
 	}
-	
+
 	merged.Summary = AnalysisSummary{
 		TotalServices:      len(merged.Services),
 		TotalResources:     totalResources,
 		TotalOperations:    totalOperations,
 		TotalRelationships: len(merged.Relationships),
 	}
-	
+
 	return merged
 }
 
 // initializeTemplates loads and parses scanner templates
 func (g *ScannerGenerator) initializeTemplates() error {
 	g.helperFunctions = template.FuncMap{
-		"toLower":     strings.ToLower,
-		"toUpper":     strings.ToUpper,
-		"toTitle":     strings.Title,
-		"toCamel":     g.toCamelCase,
-		"toPascal":    g.toPascalCase,
-		"toSnake":     g.toSnakeCase,
-		"join":        strings.Join,
-		"replace":     strings.ReplaceAll,
-		"contains":    strings.Contains,
-		"hasPrefix":   strings.HasPrefix,
-		"hasSuffix":   strings.HasSuffix,
-		"formatTime":  g.formatTime,
-		"formatJSON":  g.formatJSON,
-		"quote":       g.quote,
-		"escape":      g.escapeString,
-		"indent":      g.indentString,
-		"comment":     g.commentString,
+		"toLower":      strings.ToLower,
+		"toUpper":      strings.ToUpper,
+		"toTitle":      strings.Title,
+		"toCamel":      g.toCamelCase,
+		"toPascal":     g.toPascalCase,
+		"toSnake":      g.toSnakeCase,
+		"join":         strings.Join,
+		"replace":      strings.ReplaceAll,
+		"contains":     strings.Contains,
+		"hasPrefix":    strings.HasPrefix,
+		"hasSuffix":    strings.HasSuffix,
+		"formatTime":   g.formatTime,
+		"formatJSON":   g.formatJSON,
+		"quote":        g.quote,
+		"escape":       g.escapeString,
+		"indent":       g.indentString,
+		"comment":      g.commentString,
 		"resourceName": g.generateResourceName,
-		"packageName": g.generatePackageName,
-		"clientName":  g.generateClientName,
+		"packageName":  g.generatePackageName,
+		"clientName":   g.generateClientName,
 	}
-	
+
 	// Load template files
 	templateFiles := map[string]string{
 		"service":      "azure-service-scanner.tmpl",
-		"resource":     "azure-resource-scanner.tmpl", 
+		"resource":     "azure-resource-scanner.tmpl",
 		"batch":        "azure-batch-scanner.tmpl",
 		"relationship": "azure-relationship-scanner.tmpl",
 		"master":       "azure-master-scanner.tmpl",
 	}
-	
+
 	for name, filename := range templateFiles {
 		templatePath := filepath.Join(g.templateDir, filename)
-		
+
 		// Create default templates if they don't exist
 		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 			if err := g.createDefaultTemplate(templatePath, name); err != nil {
@@ -343,27 +343,27 @@ func (g *ScannerGenerator) initializeTemplates() error {
 				continue
 			}
 		}
-		
+
 		tmpl, err := template.New(filename).Funcs(g.helperFunctions).ParseFiles(templatePath)
 		if err != nil {
 			return fmt.Errorf("failed to parse template %s: %w", name, err)
 		}
-		
+
 		g.templates[name] = tmpl
 	}
-	
+
 	return nil
 }
 
 // GenerateScanners generates all types of scanners from the catalog
 func (g *ScannerGenerator) GenerateScanners(targetServices []string) ([]GeneratedScanner, error) {
 	var allScanners []GeneratedScanner
-	
+
 	// Create output directory
 	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
-	
+
 	// Filter services if specified
 	servicesToGenerate := make(map[string]ServiceDefinition)
 	if len(targetServices) > 0 {
@@ -377,28 +377,28 @@ func (g *ScannerGenerator) GenerateScanners(targetServices []string) ([]Generate
 	} else {
 		servicesToGenerate = g.catalog.Services
 	}
-	
+
 	log.Printf("🔧 Generating scanners for %d services", len(servicesToGenerate))
-	
+
 	// Generate service-level scanners
 	for serviceName, service := range servicesToGenerate {
 		if g.verbose {
 			log.Printf("  📦 Generating service scanner: %s", serviceName)
 		}
-		
+
 		scanners, err := g.generateServiceScanner(service)
 		if err != nil {
 			log.Printf("Warning: Failed to generate service scanner for %s: %v", serviceName, err)
 			continue
 		}
 		allScanners = append(allScanners, scanners...)
-		
+
 		// Generate resource-specific scanners
 		for _, resource := range service.Resources {
 			if g.verbose {
 				log.Printf("    🔍 Generating resource scanner: %s", resource.Type)
 			}
-			
+
 			resourceScanners, err := g.generateResourceScanner(resource, service)
 			if err != nil {
 				log.Printf("Warning: Failed to generate resource scanner for %s: %v", resource.Type, err)
@@ -406,14 +406,14 @@ func (g *ScannerGenerator) GenerateScanners(targetServices []string) ([]Generate
 			}
 			allScanners = append(allScanners, resourceScanners...)
 		}
-		
+
 		// Generate relationship scanners if service has relationships
 		relationships := g.findServiceRelationships(service)
 		if len(relationships) > 0 {
 			if g.verbose {
 				log.Printf("    🔗 Generating relationship scanner: %s", serviceName)
 			}
-			
+
 			relScanners, err := g.generateRelationshipScanner(service, relationships)
 			if err != nil {
 				log.Printf("Warning: Failed to generate relationship scanner for %s: %v", serviceName, err)
@@ -422,19 +422,19 @@ func (g *ScannerGenerator) GenerateScanners(targetServices []string) ([]Generate
 			}
 		}
 	}
-	
+
 	// Generate master batch scanner
 	if g.verbose {
 		log.Printf("  🚀 Generating master batch scanner")
 	}
-	
+
 	batchScanners, err := g.generateBatchScanner(servicesToGenerate)
 	if err != nil {
 		log.Printf("Warning: Failed to generate batch scanner: %v", err)
 	} else {
 		allScanners = append(allScanners, batchScanners...)
 	}
-	
+
 	return allScanners, nil
 }
 
@@ -442,7 +442,7 @@ func (g *ScannerGenerator) GenerateScanners(targetServices []string) ([]Generate
 func (g *ScannerGenerator) generateServiceScanner(service ServiceDefinition) ([]GeneratedScanner, error) {
 	filename := fmt.Sprintf("%s_service_scanner.go", g.toSnakeCase(service.Name))
 	outputPath := filepath.Join(g.outputDir, filename)
-	
+
 	data := struct {
 		Service       ServiceDefinition
 		GeneratedAt   time.Time
@@ -454,37 +454,37 @@ func (g *ScannerGenerator) generateServiceScanner(service ServiceDefinition) ([]
 		GeneratorInfo: "Azure Scanner Generator v1.0.0",
 		Optimize:      g.optimize,
 	}
-	
+
 	content, err := g.executeTemplate("service", data)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := g.writeFormattedGoFile(outputPath, content); err != nil {
 		return nil, err
 	}
-	
+
 	scanner := GeneratedScanner{
-		Name:        fmt.Sprintf("%sServiceScanner", g.toPascalCase(service.Name)),
-		Path:        outputPath,
-		Type:        "service",
-		Service:     service.Name,
-		Generated:   time.Now(),
+		Name:      fmt.Sprintf("%sServiceScanner", g.toPascalCase(service.Name)),
+		Path:      outputPath,
+		Type:      "service",
+		Service:   service.Name,
+		Generated: time.Now(),
 	}
-	
+
 	if stat, err := os.Stat(outputPath); err == nil {
 		scanner.FileSize = stat.Size()
 	}
-	
+
 	return []GeneratedScanner{scanner}, nil
 }
 
 // generateResourceScanner generates resource-specific scanners with optimizations
 func (g *ScannerGenerator) generateResourceScanner(resource ResourceDefinition, service ServiceDefinition) ([]GeneratedScanner, error) {
-	filename := fmt.Sprintf("%s_%s_scanner.go", 
+	filename := fmt.Sprintf("%s_%s_scanner.go",
 		g.toSnakeCase(service.Name), g.toSnakeCase(resource.Type))
 	outputPath := filepath.Join(g.outputDir, filename)
-	
+
 	data := struct {
 		Resource         ResourceDefinition
 		Service          ServiceDefinition
@@ -504,16 +504,16 @@ func (g *ScannerGenerator) generateResourceScanner(resource ResourceDefinition, 
 		BatchSize:        g.calculateOptimalBatchSize(resource),
 		RetryConfig:      g.generateRetryConfig(resource),
 	}
-	
+
 	content, err := g.executeTemplate("resource", data)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := g.writeFormattedGoFile(outputPath, content); err != nil {
 		return nil, err
 	}
-	
+
 	scanner := GeneratedScanner{
 		Name:         fmt.Sprintf("%s%sScanner", g.toPascalCase(service.Name), g.toPascalCase(resource.Type)),
 		Path:         outputPath,
@@ -522,11 +522,11 @@ func (g *ScannerGenerator) generateResourceScanner(resource ResourceDefinition, 
 		ResourceType: resource.Type,
 		Generated:    time.Now(),
 	}
-	
+
 	if stat, err := os.Stat(outputPath); err == nil {
 		scanner.FileSize = stat.Size()
 	}
-	
+
 	return []GeneratedScanner{scanner}, nil
 }
 
@@ -534,15 +534,15 @@ func (g *ScannerGenerator) generateResourceScanner(resource ResourceDefinition, 
 func (g *ScannerGenerator) generateBatchScanner(services map[string]ServiceDefinition) ([]GeneratedScanner, error) {
 	filename := "azure_batch_scanner.go"
 	outputPath := filepath.Join(g.outputDir, filename)
-	
+
 	data := struct {
-		Services      map[string]ServiceDefinition
-		Catalog       *ServiceCatalog
-		GeneratedAt   time.Time
-		GeneratorInfo string
-		Optimize      bool
+		Services       map[string]ServiceDefinition
+		Catalog        *ServiceCatalog
+		GeneratedAt    time.Time
+		GeneratorInfo  string
+		Optimize       bool
 		MaxConcurrency int
-		BatchConfig   map[string]interface{}
+		BatchConfig    map[string]interface{}
 	}{
 		Services:       services,
 		Catalog:        g.catalog,
@@ -552,16 +552,16 @@ func (g *ScannerGenerator) generateBatchScanner(services map[string]ServiceDefin
 		MaxConcurrency: g.calculateOptimalConcurrency(),
 		BatchConfig:    g.generateBatchConfig(),
 	}
-	
+
 	content, err := g.executeTemplate("batch", data)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := g.writeFormattedGoFile(outputPath, content); err != nil {
 		return nil, err
 	}
-	
+
 	scanner := GeneratedScanner{
 		Name:      "AzureBatchScanner",
 		Path:      outputPath,
@@ -569,11 +569,11 @@ func (g *ScannerGenerator) generateBatchScanner(services map[string]ServiceDefin
 		Service:   "all",
 		Generated: time.Now(),
 	}
-	
+
 	if stat, err := os.Stat(outputPath); err == nil {
 		scanner.FileSize = stat.Size()
 	}
-	
+
 	return []GeneratedScanner{scanner}, nil
 }
 
@@ -581,7 +581,7 @@ func (g *ScannerGenerator) generateBatchScanner(services map[string]ServiceDefin
 func (g *ScannerGenerator) generateRelationshipScanner(service ServiceDefinition, relationships []ResourceRelationship) ([]GeneratedScanner, error) {
 	filename := fmt.Sprintf("%s_relationships_scanner.go", g.toSnakeCase(service.Name))
 	outputPath := filepath.Join(g.outputDir, filename)
-	
+
 	data := struct {
 		Service       ServiceDefinition
 		Relationships []ResourceRelationship
@@ -595,16 +595,16 @@ func (g *ScannerGenerator) generateRelationshipScanner(service ServiceDefinition
 		GeneratorInfo: "Azure Scanner Generator v1.0.0",
 		Optimize:      g.optimize,
 	}
-	
+
 	content, err := g.executeTemplate("relationship", data)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := g.writeFormattedGoFile(outputPath, content); err != nil {
 		return nil, err
 	}
-	
+
 	scanner := GeneratedScanner{
 		Name:      fmt.Sprintf("%sRelationshipScanner", g.toPascalCase(service.Name)),
 		Path:      outputPath,
@@ -612,11 +612,11 @@ func (g *ScannerGenerator) generateRelationshipScanner(service ServiceDefinition
 		Service:   service.Name,
 		Generated: time.Now(),
 	}
-	
+
 	if stat, err := os.Stat(outputPath); err == nil {
 		scanner.FileSize = stat.Size()
 	}
-	
+
 	return []GeneratedScanner{scanner}, nil
 }
 
@@ -634,7 +634,7 @@ func (g *ScannerGenerator) shouldUseResourceGraph(resource ResourceDefinition) b
 func (g *ScannerGenerator) calculateOptimalBatchSize(resource ResourceDefinition) int {
 	// Calculate optimal batch size based on resource type and operations
 	baseSize := 100
-	
+
 	// Adjust based on operation rate limits
 	for _, op := range resource.Operations {
 		if limit, exists := op.RateLimits["requests_per_minute"]; exists {
@@ -644,19 +644,19 @@ func (g *ScannerGenerator) calculateOptimalBatchSize(resource ResourceDefinition
 			}
 		}
 	}
-	
+
 	// Adjust based on resource complexity
 	if len(resource.Properties) > 50 {
 		baseSize = 75 // Smaller batches for complex resources
 	}
-	
+
 	return baseSize
 }
 
 func (g *ScannerGenerator) calculateOptimalConcurrency() int {
 	// Calculate optimal concurrency based on catalog size
 	totalResources := g.catalog.Summary.TotalResources
-	
+
 	switch {
 	case totalResources < 10:
 		return 2
@@ -676,7 +676,7 @@ func (g *ScannerGenerator) generateRetryConfig(resource ResourceDefinition) map[
 		"maxDelay":      "30s",
 		"backoffFactor": 2.0,
 	}
-	
+
 	// Adjust retry config based on operation characteristics
 	for _, op := range resource.Operations {
 		if op.OperationType == "list" && op.IsPaginated {
@@ -686,24 +686,24 @@ func (g *ScannerGenerator) generateRetryConfig(resource ResourceDefinition) map[
 			config["baseDelay"] = "2s" // Longer delays for rate-limited operations
 		}
 	}
-	
+
 	return config
 }
 
 func (g *ScannerGenerator) generateBatchConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"maxConcurrentServices": g.calculateOptimalConcurrency(),
+		"maxConcurrentServices":  g.calculateOptimalConcurrency(),
 		"maxConcurrentResources": 10,
-		"batchTimeout":          "10m",
-		"enableStreaming":       true,
-		"enableCaching":         true,
-		"cacheTTL":             "1h",
+		"batchTimeout":           "10m",
+		"enableStreaming":        true,
+		"enableCaching":          true,
+		"cacheTTL":               "1h",
 	}
 }
 
 func (g *ScannerGenerator) findServiceRelationships(service ServiceDefinition) []ResourceRelationship {
 	var relationships []ResourceRelationship
-	
+
 	for _, rel := range g.catalog.Relationships {
 		// Check if any resource in this service is involved in the relationship
 		for _, resource := range service.Resources {
@@ -713,7 +713,7 @@ func (g *ScannerGenerator) findServiceRelationships(service ServiceDefinition) [
 			}
 		}
 	}
-	
+
 	return relationships
 }
 
@@ -724,12 +724,12 @@ func (g *ScannerGenerator) executeTemplate(templateName string, data interface{}
 	if !exists {
 		return "", fmt.Errorf("template %s not found", templateName)
 	}
-	
+
 	var buf strings.Builder
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("failed to execute template %s: %w", templateName, err)
 	}
-	
+
 	return buf.String(), nil
 }
 
@@ -741,7 +741,7 @@ func (g *ScannerGenerator) writeFormattedGoFile(path, content string) error {
 		log.Printf("Warning: Failed to format Go code for %s: %v", path, err)
 		formatted = []byte(content)
 	}
-	
+
 	return os.WriteFile(path, formatted, 0644)
 }
 
@@ -759,29 +759,29 @@ func (g *ScannerGenerator) writeGenerationReport(scanners []GeneratedScanner, du
 			Relationships int `json:"relationships"`
 		} `json:"catalog"`
 	}{
-		GeneratedAt:   time.Now(),
-		Duration:      duration.String(),
-		TotalScanners: len(scanners),
+		GeneratedAt:    time.Now(),
+		Duration:       duration.String(),
+		TotalScanners:  len(scanners),
 		ScannersByType: make(map[string]int),
-		Scanners:      scanners,
+		Scanners:       scanners,
 	}
-	
+
 	// Count scanners by type
 	for _, scanner := range scanners {
 		report.ScannersByType[scanner.Type]++
 	}
-	
+
 	// Add catalog statistics
 	report.Catalog.Services = g.catalog.Summary.TotalServices
 	report.Catalog.Resources = g.catalog.Summary.TotalResources
 	report.Catalog.Operations = g.catalog.Summary.TotalOperations
 	report.Catalog.Relationships = g.catalog.Summary.TotalRelationships
-	
+
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(reportPath, data, 0644)
 }
 
@@ -794,11 +794,11 @@ func (g *ScannerGenerator) toCamelCase(s string) string {
 	parts := strings.FieldsFunc(s, func(c rune) bool {
 		return c == '_' || c == '-' || c == ' ' || c == '.'
 	})
-	
+
 	for i := 1; i < len(parts); i++ {
 		parts[i] = strings.Title(parts[i])
 	}
-	
+
 	return strings.Join(parts, "")
 }
 
@@ -817,7 +817,7 @@ func (g *ScannerGenerator) toSnakeCase(s string) string {
 	if s == "" {
 		return s
 	}
-	
+
 	var result strings.Builder
 	for i, r := range s {
 		if i > 0 && (r >= 'A' && r <= 'Z') {
@@ -825,7 +825,7 @@ func (g *ScannerGenerator) toSnakeCase(s string) string {
 		}
 		result.WriteRune(r)
 	}
-	
+
 	return strings.ToLower(result.String())
 }
 
@@ -891,12 +891,12 @@ func (g *ScannerGenerator) generateClientName(service ServiceDefinition) string 
 // createDefaultTemplate creates default templates if they don't exist
 func (g *ScannerGenerator) createDefaultTemplate(templatePath, templateType string) error {
 	templateContent := g.getDefaultTemplateContent(templateType)
-	
+
 	dir := filepath.Dir(templatePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(templatePath, []byte(templateContent), 0644)
 }
 

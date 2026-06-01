@@ -18,60 +18,60 @@ import (
 
 // EnhancedChangeTracker provides comprehensive change tracking for GCP resources
 type EnhancedChangeTracker struct {
-	mu                sync.RWMutex
-	projectID         string
-	assetClient       *asset.Client
-	loggingClient     *logging.Client
-	pubsubClient      *pubsub.Client
-	storage           GCPChangeStorage
-	analytics         *ChangeAnalytics
-	alerting          *AlertingSystem
-	driftDetector     *DriftDetector
-	
+	mu            sync.RWMutex
+	projectID     string
+	assetClient   *asset.Client
+	loggingClient *logging.Client
+	pubsubClient  *pubsub.Client
+	storage       GCPChangeStorage
+	analytics     *ChangeAnalytics
+	alerting      *AlertingSystem
+	driftDetector *DriftDetector
+
 	// Configuration
-	config            *ChangeTrackerConfig
-	isMonitoring      bool
-	subscriptions     map[string]*pubsub.Subscription
+	config        *ChangeTrackerConfig
+	isMonitoring  bool
+	subscriptions map[string]*pubsub.Subscription
 }
 
 // GCPChangeEvent represents a change event specific to GCP
 type GCPChangeEvent struct {
 	*ChangeEvent
-	AssetType         string                 `json:"asset_type"`
-	ResourceData      map[string]interface{} `json:"resource_data"`
-	IAMPolicyData     map[string]interface{} `json:"iam_policy_data,omitempty"`
-	AssetState        string                 `json:"asset_state"` // ACTIVE, DELETED
-	ChangeSource      string                 `json:"change_source"` // ASSET_INVENTORY, CLOUD_LOGGING, DISCOVERY
-	CloudLoggingData  map[string]interface{} `json:"cloud_logging_data,omitempty"`
+	AssetType        string                 `json:"asset_type"`
+	ResourceData     map[string]interface{} `json:"resource_data"`
+	IAMPolicyData    map[string]interface{} `json:"iam_policy_data,omitempty"`
+	AssetState       string                 `json:"asset_state"`   // ACTIVE, DELETED
+	ChangeSource     string                 `json:"change_source"` // ASSET_INVENTORY, CLOUD_LOGGING, DISCOVERY
+	CloudLoggingData map[string]interface{} `json:"cloud_logging_data,omitempty"`
 }
 
 // AssetHistoryQuery represents parameters for querying asset history
 type AssetHistoryQuery struct {
-	AssetNames        []string  `json:"asset_names,omitempty"`
-	AssetTypes        []string  `json:"asset_types,omitempty"`
-	StartTime         time.Time `json:"start_time"`
-	EndTime           time.Time `json:"end_time"`
-	ContentType       string    `json:"content_type"` // RESOURCE, IAM_POLICY, ORG_POLICY, ACCESS_POLICY
-	ReadTimeWindow    string    `json:"read_time_window,omitempty"`
-	MaxResults        int32     `json:"max_results,omitempty"`
+	AssetNames     []string  `json:"asset_names,omitempty"`
+	AssetTypes     []string  `json:"asset_types,omitempty"`
+	StartTime      time.Time `json:"start_time"`
+	EndTime        time.Time `json:"end_time"`
+	ContentType    string    `json:"content_type"` // RESOURCE, IAM_POLICY, ORG_POLICY, ACCESS_POLICY
+	ReadTimeWindow string    `json:"read_time_window,omitempty"`
+	MaxResults     int32     `json:"max_results,omitempty"`
 }
 
 // AssetHistoryResult contains the results of an asset history query
 type AssetHistoryResult struct {
-	Assets            []*TemporalAsset       `json:"assets"`
-	NextPageToken     string                 `json:"next_page_token,omitempty"`
-	ReadTime          time.Time              `json:"read_time"`
-	TotalChanges      int                    `json:"total_changes"`
-	ChangesByType     map[string]int         `json:"changes_by_type"`
+	Assets        []*TemporalAsset `json:"assets"`
+	NextPageToken string           `json:"next_page_token,omitempty"`
+	ReadTime      time.Time        `json:"read_time"`
+	TotalChanges  int              `json:"total_changes"`
+	ChangesByType map[string]int   `json:"changes_by_type"`
 }
 
 // TemporalAsset represents an asset at a specific point in time
 type TemporalAsset struct {
-	Window            *TimeWindow            `json:"window"`
-	Deleted           bool                   `json:"deleted"`
-	Asset             *GCPAsset              `json:"asset,omitempty"`
-	PriorAssetState   string                 `json:"prior_asset_state,omitempty"`
-	PriorAsset        *GCPAsset              `json:"prior_asset,omitempty"`
+	Window          *TimeWindow `json:"window"`
+	Deleted         bool        `json:"deleted"`
+	Asset           *GCPAsset   `json:"asset,omitempty"`
+	PriorAssetState string      `json:"prior_asset_state,omitempty"`
+	PriorAsset      *GCPAsset   `json:"prior_asset,omitempty"`
 }
 
 // TimeWindow represents a time range for temporal assets
@@ -82,14 +82,14 @@ type TimeWindow struct {
 
 // GCPAsset represents a GCP asset with extended metadata
 type GCPAsset struct {
-	Name              string                 `json:"name"`
-	AssetType         string                 `json:"asset_type"`
-	Resource          map[string]interface{} `json:"resource,omitempty"`
-	IAMPolicy         map[string]interface{} `json:"iam_policy,omitempty"`
-	OrgPolicy         []map[string]interface{} `json:"org_policy,omitempty"`
-	AccessPolicy      map[string]interface{} `json:"access_policy,omitempty"`
-	Ancestors         []string               `json:"ancestors,omitempty"`
-	UpdateTime        time.Time              `json:"update_time"`
+	Name         string                   `json:"name"`
+	AssetType    string                   `json:"asset_type"`
+	Resource     map[string]interface{}   `json:"resource,omitempty"`
+	IAMPolicy    map[string]interface{}   `json:"iam_policy,omitempty"`
+	OrgPolicy    []map[string]interface{} `json:"org_policy,omitempty"`
+	AccessPolicy map[string]interface{}   `json:"access_policy,omitempty"`
+	Ancestors    []string                 `json:"ancestors,omitempty"`
+	UpdateTime   time.Time                `json:"update_time"`
 }
 
 // NewEnhancedChangeTracker creates a new enhanced change tracker for GCP
@@ -188,12 +188,12 @@ func (ect *EnhancedChangeTracker) QueryAssetHistory(ctx context.Context, query *
 	ect.mu.RLock()
 	defer ect.mu.RUnlock()
 
-	log.Printf("🔍 Querying asset history: %d asset types, %v to %v", 
+	log.Printf("🔍 Querying asset history: %d asset types, %v to %v",
 		len(query.AssetTypes), query.StartTime, query.EndTime)
 
 	// Prepare the batch get assets history request
 	req := &assetpb.BatchGetAssetsHistoryRequest{
-		Parent: fmt.Sprintf("projects/%s", ect.projectID),
+		Parent:      fmt.Sprintf("projects/%s", ect.projectID),
 		ContentType: ect.convertContentType(query.ContentType),
 		ReadTimeWindow: &assetpb.TimeWindow{
 			StartTime: timestamppb.New(query.StartTime),
@@ -223,7 +223,7 @@ func (ect *EnhancedChangeTracker) QueryAssetHistory(ctx context.Context, query *
 		// Process temporal assets directly from the response
 		gcpAsset := ect.convertTemporalAsset(temporalAsset)
 		result.Assets = append(result.Assets, gcpAsset)
-		
+
 		// Track changes by type
 		if gcpAsset.Asset != nil {
 			result.ChangesByType[gcpAsset.Asset.AssetType]++
@@ -275,7 +275,7 @@ func (ect *EnhancedChangeTracker) TrackResourceChanges(ctx context.Context, reso
 		for i, gc := range enhancedChanges {
 			baseChanges[i] = gc.ChangeEvent
 		}
-		
+
 		if err := ect.storage.StoreChanges(baseChanges); err != nil {
 			log.Printf("⚠️ Failed to store changes: %v", err)
 		}
@@ -499,19 +499,19 @@ func (ect *EnhancedChangeTracker) setupCloudLoggingSink(ctx context.Context) err
 func (ect *EnhancedChangeTracker) setupPubSubSubscriptions(ctx context.Context) error {
 	// Set up Pub/Sub subscriptions for real-time events
 	log.Printf("🔧 Setting up Pub/Sub subscriptions for real-time events")
-	
+
 	// Create a subscription for Cloud Asset Inventory feed
 	subName := "corkscrew-asset-changes"
-	
+
 	// This would create the actual subscription
 	log.Printf("📡 Created Pub/Sub subscription: %s", subName)
-	
+
 	return nil
 }
 
 func (ect *EnhancedChangeTracker) monitorCloudLogging(ctx context.Context) {
 	log.Printf("👀 Starting Cloud Logging monitor")
-	
+
 	// This would continuously monitor Cloud Logging for audit events
 	for {
 		select {
@@ -526,7 +526,7 @@ func (ect *EnhancedChangeTracker) monitorCloudLogging(ctx context.Context) {
 
 func (ect *EnhancedChangeTracker) monitorPubSubEvents(ctx context.Context) {
 	log.Printf("👀 Starting Pub/Sub event monitor")
-	
+
 	// This would continuously process Pub/Sub messages
 	for {
 		select {

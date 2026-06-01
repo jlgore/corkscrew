@@ -26,14 +26,14 @@ type CorrelationRule struct {
 }
 
 type CrossProviderRule struct {
-	Name         string
-	Description  string
-	ProviderA    string
-	ProviderB    string
+	Name          string
+	Description   string
+	ProviderA     string
+	ProviderB     string
 	ResourceTypeA string
 	ResourceTypeB string
-	Matcher      func(resourceA, resourceB models.Resource) bool
-	Confidence   float64
+	Matcher       func(resourceA, resourceB models.Resource) bool
+	Confidence    float64
 }
 
 func NewCorrelationEngine(config SmartDiscoveryConfig) *CorrelationEngine {
@@ -42,7 +42,7 @@ func NewCorrelationEngine(config SmartDiscoveryConfig) *CorrelationEngine {
 		correlationRules:   make([]CorrelationRule, 0),
 		crossProviderRules: make([]CrossProviderRule, 0),
 	}
-	
+
 	ce.initializeBuiltInRules()
 	return ce
 }
@@ -137,27 +137,27 @@ func (ce *CorrelationEngine) initializeBuiltInRules() {
 
 func (ce *CorrelationEngine) FindCorrelations(ctx context.Context, resources []models.Resource) ([]models.ResourceCorrelation, error) {
 	var correlations []models.ResourceCorrelation
-	
+
 	// Same-provider correlations
 	sameProviderCorr := ce.findSameProviderCorrelations(resources)
 	correlations = append(correlations, sameProviderCorr...)
-	
+
 	// Cross-provider correlations (if enabled)
 	if ce.config.EnableCrossProviderCorre {
 		crossProviderCorr := ce.findCrossProviderCorrelations(resources)
 		correlations = append(correlations, crossProviderCorr...)
 	}
-	
+
 	return correlations, nil
 }
 
 func (ce *CorrelationEngine) findSameProviderCorrelations(resources []models.Resource) []models.ResourceCorrelation {
 	var correlations []models.ResourceCorrelation
-	
+
 	for _, rule := range ce.correlationRules {
 		sources := ce.filterResourcesByType(resources, rule.SourceType)
 		targets := ce.filterResourcesByType(resources, rule.TargetType)
-		
+
 		for _, source := range sources {
 			for _, target := range targets {
 				if rule.Matcher(source, target) {
@@ -180,17 +180,17 @@ func (ce *CorrelationEngine) findSameProviderCorrelations(resources []models.Res
 			}
 		}
 	}
-	
+
 	return correlations
 }
 
 func (ce *CorrelationEngine) findCrossProviderCorrelations(resources []models.Resource) []models.ResourceCorrelation {
 	var correlations []models.ResourceCorrelation
-	
+
 	for _, rule := range ce.crossProviderRules {
 		resourcesA := ce.filterResourcesByProviderAndType(resources, rule.ProviderA, rule.ResourceTypeA)
 		resourcesB := ce.filterResourcesByProviderAndType(resources, rule.ProviderB, rule.ResourceTypeB)
-		
+
 		for _, resourceA := range resourcesA {
 			for _, resourceB := range resourcesB {
 				if rule.Matcher(resourceA, resourceB) {
@@ -202,12 +202,12 @@ func (ce *CorrelationEngine) findCrossProviderCorrelations(resources []models.Re
 						Description: rule.Description,
 						Confidence:  rule.Confidence,
 						Metadata: map[string]interface{}{
-							"rule":          rule.Name,
+							"rule":           rule.Name,
 							"cross_provider": true,
-							"provider_a":    rule.ProviderA,
-							"provider_b":    rule.ProviderB,
-							"type_a":        rule.ResourceTypeA,
-							"type_b":        rule.ResourceTypeB,
+							"provider_a":     rule.ProviderA,
+							"provider_b":     rule.ProviderB,
+							"type_a":         rule.ResourceTypeA,
+							"type_b":         rule.ResourceTypeB,
 						},
 					}
 					correlations = append(correlations, correlation)
@@ -215,7 +215,7 @@ func (ce *CorrelationEngine) findCrossProviderCorrelations(resources []models.Re
 			}
 		}
 	}
-	
+
 	return correlations
 }
 
@@ -332,7 +332,7 @@ func (ce *CorrelationEngine) matchCrossCloudDatabases(resourceA, resourceB model
 	// Match databases across cloud providers by name similarity and configuration
 	nameA := ce.getResourceName(resourceA)
 	nameB := ce.getResourceName(resourceB)
-	
+
 	// Check for similar naming patterns
 	if ce.calculateNameSimilarity(nameA, nameB) > 0.7 {
 		// Additional checks for database configuration similarity
@@ -347,7 +347,7 @@ func (ce *CorrelationEngine) matchCrossCloudStorage(resourceA, resourceB models.
 	// Match storage across providers by naming and access patterns
 	nameA := ce.getResourceName(resourceA)
 	nameB := ce.getResourceName(resourceB)
-	
+
 	if ce.calculateNameSimilarity(nameA, nameB) > 0.8 {
 		return true
 	}
@@ -379,30 +379,30 @@ func (ce *CorrelationEngine) calculateNameSimilarity(name1, name2 string) float6
 	// In production, you might want to use more sophisticated algorithms
 	name1 = strings.ToLower(name1)
 	name2 = strings.ToLower(name2)
-	
+
 	if name1 == name2 {
 		return 1.0
 	}
-	
+
 	// Simple substring matching for now
 	if strings.Contains(name1, name2) || strings.Contains(name2, name1) {
 		return 0.8
 	}
-	
+
 	// Check for common prefixes/suffixes
 	if len(name1) > 3 && len(name2) > 3 {
 		if name1[:3] == name2[:3] {
 			return 0.6
 		}
 	}
-	
+
 	return 0.0
 }
 
 func (ce *CorrelationEngine) compareDatabaseConfigs(resourceA, resourceB models.Resource) float64 {
 	score := 0.0
 	checks := 0
-	
+
 	// Compare engine types
 	if engineA, okA := resourceA.Metadata["engine"].(string); okA {
 		if engineB, okB := resourceB.Metadata["engine"].(string); okB {
@@ -412,7 +412,7 @@ func (ce *CorrelationEngine) compareDatabaseConfigs(resourceA, resourceB models.
 			}
 		}
 	}
-	
+
 	// Compare instance sizes/tiers
 	if sizeA, okA := resourceA.Metadata["instance_class"].(string); okA {
 		if sizeB, okB := resourceB.Metadata["sku"].(string); okB {
@@ -422,11 +422,11 @@ func (ce *CorrelationEngine) compareDatabaseConfigs(resourceA, resourceB models.
 			}
 		}
 	}
-	
+
 	if checks == 0 {
 		return 0.0
 	}
-	
+
 	return score / float64(checks)
 }
 
@@ -435,7 +435,7 @@ func (ce *CorrelationEngine) compareInstanceSizes(sizeA, sizeB string) bool {
 	// In practice, you'd want a more sophisticated mapping
 	sizeA = strings.ToLower(sizeA)
 	sizeB = strings.ToLower(sizeB)
-	
+
 	// Look for similar size indicators
 	if strings.Contains(sizeA, "small") && strings.Contains(sizeB, "small") {
 		return true
@@ -446,6 +446,6 @@ func (ce *CorrelationEngine) compareInstanceSizes(sizeA, sizeB string) bool {
 	if strings.Contains(sizeA, "large") && strings.Contains(sizeB, "large") {
 		return true
 	}
-	
+
 	return false
 }

@@ -227,7 +227,7 @@ type RelationshipPath struct {
 func (rv *RelationshipVerifier) TraceRelationshipPath(ctx context.Context, startResourceID, endResourceID string, maxDepth int) ([]RelationshipPath, error) {
 	// This is a simplified implementation
 	// In a real implementation, you would use a graph traversal algorithm
-	
+
 	// First, check if there's a direct relationship
 	directQuery := `
 		SELECT 
@@ -338,7 +338,7 @@ func (rv *RelationshipVerifier) ValidateRelationshipIntegrity(ctx context.Contex
 			return nil, fmt.Errorf("failed to scan orphaned relationship: %w", err)
 		}
 
-		orphanedRelationships = append(orphanedRelationships, 
+		orphanedRelationships = append(orphanedRelationships,
 			fmt.Sprintf("Relationship %s: from=%s, to=%s", relID, fromID, toID))
 	}
 
@@ -356,7 +356,7 @@ func (rv *RelationshipVerifier) GetRelationshipGraph(ctx context.Context, resour
 			placeholders[i] = "?"
 			args = append(args, resourceTypes[i])
 		}
-		
+
 		query = fmt.Sprintf(`
 			SELECT DISTINCT r.from_resource_id, r.to_resource_id
 			FROM aws_relationships r
@@ -364,7 +364,7 @@ func (rv *RelationshipVerifier) GetRelationshipGraph(ctx context.Context, resour
 			JOIN aws_resources tr ON r.to_resource_id = tr.id
 			WHERE fr.type IN (%s) OR tr.type IN (%s)
 		`, strings.Join(placeholders, ","), strings.Join(placeholders, ","))
-		
+
 		// Duplicate args for the second IN clause
 		args = append(args, args...)
 	} else {

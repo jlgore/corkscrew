@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	
+
 	"github.com/jlgore/corkscrew/test/harness/automation"
 )
 
@@ -82,7 +82,7 @@ func ExampleIntegrationTest(t *testing.T) {
 
 	// 8. Verify database contents using database helper
 	t.Log("Verifying database contents...")
-	
+
 	// Get database statistics
 	stats, err := dbHelper.GetDatabaseStats()
 	require.NoError(t, err, "Failed to get database stats")
@@ -94,7 +94,7 @@ func ExampleIntegrationTest(t *testing.T) {
 	// Get resources by test ID tag
 	resources, err := dbHelper.GetResourcesByTag("TestID", testCtx.TestID)
 	require.NoError(t, err, "Failed to get resources by tag")
-	
+
 	// Use resource matcher to find our bucket
 	bucketFound := matcher.MatchResourceByTag(resources, "TestID", testCtx.TestID)
 	require.True(t, bucketFound, "Should find bucket with test ID tag")
@@ -109,10 +109,10 @@ func ExampleIntegrationTest(t *testing.T) {
 	// 10. Generate and compare mock data
 	t.Log("Comparing with mock data...")
 	mockBucketData := mockGen.GenerateS3BucketMock(bucketName)
-	
+
 	// Verify mock data structure
 	assertHelper.AssertJSONStructure(mockBucketData, []string{"Name", "Tags", "Region"})
-	
+
 	t.Log("Integration test completed successfully!")
 	t.Logf("Test results summary:")
 	t.Logf("  - Infrastructure deployed: ✅")
@@ -165,11 +165,11 @@ func ExampleComplexScenarioWithUtilities(t *testing.T) {
 	t.Run("ResourceCountValidation", func(t *testing.T) {
 		// Expected resource counts for complex scenario
 		expectedCounts := map[string]int{
-			"Bucket":          1,
-			"Instance":        1,
-			"VPC":            1,
-			"Subnet":         2,
-			"SecurityGroup":  1,
+			"Bucket":        1,
+			"Instance":      1,
+			"VPC":           1,
+			"Subnet":        2,
+			"SecurityGroup": 1,
 		}
 
 		for resourceType, expectedCount := range expectedCounts {
@@ -178,9 +178,9 @@ func ExampleComplexScenarioWithUtilities(t *testing.T) {
 				t.Logf("Warning: Could not get count for %s: %v", resourceType, err)
 				continue
 			}
-			
+
 			if actualCount != expectedCount {
-				t.Logf("Resource count mismatch for %s: expected %d, got %d", 
+				t.Logf("Resource count mismatch for %s: expected %d, got %d",
 					resourceType, expectedCount, actualCount)
 			}
 		}
@@ -219,41 +219,41 @@ func ExampleComplexScenarioWithUtilities(t *testing.T) {
 // ExampleUtilityIntegration shows how to integrate utilities with existing test patterns
 func ExampleUtilityIntegration(t *testing.T) {
 	// This function demonstrates how to retrofit existing tests with utilities
-	
+
 	testCtx := NewTestContext(t, "utility-integration")
 	assertHelper := NewAssertionHelper(t, testCtx)
-	
+
 	// Example: Convert existing assertions to use utilities
-	
+
 	// Instead of:
 	// assert.Equal(t, expectedCount, actualCount, "Resource count mismatch")
-	
+
 	// Use:
 	// assertHelper.AssertResourceCount(dbHelper, resourceType, expectedCount)
-	
+
 	// Example: Use mock data for testing
 	mockGen := NewMockDataGenerator(testCtx.TestID, "aws", "us-east-1")
 	bucketData := mockGen.GenerateS3BucketMock("test-bucket")
-	
+
 	// Verify the mock data has expected structure
 	assertHelper.AssertJSONStructure(bucketData, []string{"Name", "Tags", "Region"})
-	
+
 	t.Log("Utility integration example completed")
 }
 
 // UtilityTestSuite provides a template for creating test suites with utilities
 type UtilityTestSuite struct {
-	TestCtx       *TestContext
-	DbHelper      *DatabaseHelper
-	AssertHelper  *AssertionHelper
-	MockGen       *MockDataGenerator
-	Matcher       *ResourceMatcher
+	TestCtx      *TestContext
+	DbHelper     *DatabaseHelper
+	AssertHelper *AssertionHelper
+	MockGen      *MockDataGenerator
+	Matcher      *ResourceMatcher
 }
 
 // NewUtilityTestSuite creates a new test suite with all utilities configured
 func NewUtilityTestSuite(t *testing.T, testID string) (*UtilityTestSuite, error) {
 	testCtx := NewTestContext(t, testID)
-	
+
 	err := SetupTestDatabase(testCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup database: %w", err)
@@ -293,7 +293,7 @@ func ExampleTestSuiteUsage(t *testing.T) {
 	// All utilities are now available through the suite
 	t.Log("Test suite created successfully")
 	t.Logf("Test ID: %s", suite.TestCtx.TestID)
-	
+
 	// Example usage of suite utilities
 	stats, err := suite.DbHelper.GetDatabaseStats()
 	require.NoError(t, err)
@@ -301,6 +301,6 @@ func ExampleTestSuiteUsage(t *testing.T) {
 
 	mockData := suite.MockGen.GenerateS3BucketMock("example-bucket")
 	suite.AssertHelper.AssertJSONStructure(mockData, []string{"Name", "Tags"})
-	
+
 	t.Log("Test suite usage example completed")
 }

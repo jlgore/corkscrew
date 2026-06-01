@@ -40,22 +40,22 @@ const (
 type AzureChangeTracker struct {
 	*BaseChangeTracker
 	resourceGraphClient *armresourcegraph.Client
-	credential         azcore.TokenCredential
-	subscriptionIDs    []string
-	tenantID          string
-	config            *AzureChangeTrackerConfig
+	credential          azcore.TokenCredential
+	subscriptionIDs     []string
+	tenantID            string
+	config              *AzureChangeTrackerConfig
 }
 
 // AzureChangeTrackerConfig provides Azure-specific configuration
 type AzureChangeTrackerConfig struct {
-	SubscriptionIDs      []string      `json:"subscription_ids"`
-	TenantID            string        `json:"tenant_id"`
-	QueryInterval       time.Duration `json:"query_interval"`
-	ChangeRetention     time.Duration `json:"change_retention"`
-	EnableRealTime      bool          `json:"enable_real_time"`
-	EventGridEndpoint   string        `json:"event_grid_endpoint,omitempty"`
-	ActivityLogEnabled  bool          `json:"activity_log_enabled"`
-	StorageConfig       StorageConfig `json:"storage_config"`
+	SubscriptionIDs    []string      `json:"subscription_ids"`
+	TenantID           string        `json:"tenant_id"`
+	QueryInterval      time.Duration `json:"query_interval"`
+	ChangeRetention    time.Duration `json:"change_retention"`
+	EnableRealTime     bool          `json:"enable_real_time"`
+	EventGridEndpoint  string        `json:"event_grid_endpoint,omitempty"`
+	ActivityLogEnabled bool          `json:"activity_log_enabled"`
+	StorageConfig      StorageConfig `json:"storage_config"`
 }
 
 // StorageConfig defines storage configuration
@@ -66,17 +66,17 @@ type StorageConfig struct {
 
 // AzureChangeEvent represents a change event from Azure Resource Graph
 type AzureChangeEvent struct {
-	ResourceID      string                 `json:"resourceId"`
-	ResourceType    string                 `json:"resourceType"`
-	ChangeType      string                 `json:"changeType"`
-	Timestamp       time.Time              `json:"timestamp"`
-	Properties      map[string]interface{} `json:"properties"`
-	PreviousValue   interface{}            `json:"previousValue,omitempty"`
-	NewValue        interface{}            `json:"newValue,omitempty"`
-	SubscriptionID  string                 `json:"subscriptionId"`
-	ResourceGroup   string                 `json:"resourceGroup"`
-	Location        string                 `json:"location"`
-	Tags            map[string]string      `json:"tags,omitempty"`
+	ResourceID     string                 `json:"resourceId"`
+	ResourceType   string                 `json:"resourceType"`
+	ChangeType     string                 `json:"changeType"`
+	Timestamp      time.Time              `json:"timestamp"`
+	Properties     map[string]interface{} `json:"properties"`
+	PreviousValue  interface{}            `json:"previousValue,omitempty"`
+	NewValue       interface{}            `json:"newValue,omitempty"`
+	SubscriptionID string                 `json:"subscriptionId"`
+	ResourceGroup  string                 `json:"resourceGroup"`
+	Location       string                 `json:"location"`
+	Tags           map[string]string      `json:"tags,omitempty"`
 }
 
 // NewAzureChangeTracker creates a new Azure change tracker
@@ -114,17 +114,17 @@ func NewAzureChangeTracker(ctx context.Context, config *AzureChangeTrackerConfig
 
 	// Create base change tracker configuration
 	baseConfig := &ChangeTrackerConfig{
-		Provider:               "azure",
+		Provider:                 "azure",
 		EnableRealTimeMonitoring: config.EnableRealTime,
-		ChangeRetention:        config.ChangeRetention,
-		DriftCheckInterval:     1 * time.Hour,
-		AlertingEnabled:        true,
-		AnalyticsEnabled:       true,
-		CacheEnabled:           true,
-		CacheTTL:               5 * time.Minute,
-		MaxConcurrentStreams:   100,
-		BatchSize:              1000,
-		MaxQueryTimeRange:      30 * 24 * time.Hour,
+		ChangeRetention:          config.ChangeRetention,
+		DriftCheckInterval:       1 * time.Hour,
+		AlertingEnabled:          true,
+		AnalyticsEnabled:         true,
+		CacheEnabled:             true,
+		CacheTTL:                 5 * time.Minute,
+		MaxConcurrentStreams:     100,
+		BatchSize:                1000,
+		MaxQueryTimeRange:        30 * 24 * time.Hour,
 	}
 
 	baseTracker := NewBaseChangeTracker("azure", storage, baseConfig)
@@ -132,10 +132,10 @@ func NewAzureChangeTracker(ctx context.Context, config *AzureChangeTrackerConfig
 	return &AzureChangeTracker{
 		BaseChangeTracker:   baseTracker,
 		resourceGraphClient: resourceGraphClient,
-		credential:         credential,
-		subscriptionIDs:    config.SubscriptionIDs,
-		tenantID:          config.TenantID,
-		config:            config,
+		credential:          credential,
+		subscriptionIDs:     config.SubscriptionIDs,
+		tenantID:            config.TenantID,
+		config:              config,
 	}, nil
 }
 
@@ -232,12 +232,12 @@ func (act *AzureChangeTracker) DetectDrift(ctx context.Context, baseline *DriftB
 	log.Printf("Starting drift detection for baseline: %s", baseline.ID)
 
 	report := &DriftReport{
-		ID:              fmt.Sprintf("drift_%s_%d", baseline.ID, time.Now().Unix()),
-		BaselineID:      baseline.ID,
-		GeneratedAt:     time.Now(),
-		TotalResources:  len(baseline.Resources),
+		ID:               fmt.Sprintf("drift_%s_%d", baseline.ID, time.Now().Unix()),
+		BaselineID:       baseline.ID,
+		GeneratedAt:      time.Now(),
+		TotalResources:   len(baseline.Resources),
 		DriftedResources: 0,
-		DriftItems:      []*DriftItem{},
+		DriftItems:       []*DriftItem{},
 		Summary: &DriftSummary{
 			DriftByType:    make(map[string]int),
 			DriftByService: make(map[string]int),
@@ -256,15 +256,15 @@ func (act *AzureChangeTracker) DetectDrift(ctx context.Context, baseline *DriftB
 			// Resource was deleted
 			report.DriftedResources++
 			report.DriftItems = append(report.DriftItems, &DriftItem{
-				ResourceID:      resourceID,
-				ResourceType:    baselineState.Properties["resourceType"].(string),
-				DriftType:       "DELETED",
-				Severity:        SeverityHigh,
-				Description:     "Resource was deleted since baseline",
-				DetectedAt:      time.Now(),
-				BaselineValue:   "EXISTS",
-				CurrentValue:    "DELETED",
-				Field:           "existence",
+				ResourceID:    resourceID,
+				ResourceType:  baselineState.Properties["resourceType"].(string),
+				DriftType:     "DELETED",
+				Severity:      SeverityHigh,
+				Description:   "Resource was deleted since baseline",
+				DetectedAt:    time.Now(),
+				BaselineValue: "EXISTS",
+				CurrentValue:  "DELETED",
+				Field:         "existence",
 			})
 			continue
 		}
@@ -649,25 +649,25 @@ func (act *AzureChangeTracker) compareResourceStates(baseline, current *Resource
 	for key, baselineValue := range baseline.Properties {
 		if currentValue, exists := current.Properties[key]; !exists {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["resourceType"].(string),
-				DriftType:      "MISSING_PROPERTY",
-				Severity:       SeverityMedium,
-				Description:    fmt.Sprintf("Property '%s' missing from current state", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   nil,
-				Field:          key,
+				ResourceType:  baseline.Properties["resourceType"].(string),
+				DriftType:     "MISSING_PROPERTY",
+				Severity:      SeverityMedium,
+				Description:   fmt.Sprintf("Property '%s' missing from current state", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  nil,
+				Field:         key,
 			})
 		} else if !act.compareValues(baselineValue, currentValue) {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["resourceType"].(string),
-				DriftType:      "PROPERTY_CHANGE",
-				Severity:       SeverityMedium,
-				Description:    fmt.Sprintf("Property '%s' value changed", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   currentValue,
-				Field:          key,
+				ResourceType:  baseline.Properties["resourceType"].(string),
+				DriftType:     "PROPERTY_CHANGE",
+				Severity:      SeverityMedium,
+				Description:   fmt.Sprintf("Property '%s' value changed", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  currentValue,
+				Field:         key,
 			})
 		}
 	}
@@ -676,25 +676,25 @@ func (act *AzureChangeTracker) compareResourceStates(baseline, current *Resource
 	for key, baselineValue := range baseline.Tags {
 		if currentValue, exists := current.Tags[key]; !exists {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["resourceType"].(string),
-				DriftType:      "MISSING_TAG",
-				Severity:       SeverityLow,
-				Description:    fmt.Sprintf("Tag '%s' missing from current state", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   nil,
-				Field:          fmt.Sprintf("tags.%s", key),
+				ResourceType:  baseline.Properties["resourceType"].(string),
+				DriftType:     "MISSING_TAG",
+				Severity:      SeverityLow,
+				Description:   fmt.Sprintf("Tag '%s' missing from current state", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  nil,
+				Field:         fmt.Sprintf("tags.%s", key),
 			})
 		} else if baselineValue != currentValue {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["resourceType"].(string),
-				DriftType:      "TAG_CHANGE",
-				Severity:       SeverityLow,
-				Description:    fmt.Sprintf("Tag '%s' value changed", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   currentValue,
-				Field:          fmt.Sprintf("tags.%s", key),
+				ResourceType:  baseline.Properties["resourceType"].(string),
+				DriftType:     "TAG_CHANGE",
+				Severity:      SeverityLow,
+				Description:   fmt.Sprintf("Tag '%s' value changed", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  currentValue,
+				Field:         fmt.Sprintf("tags.%s", key),
 			})
 		}
 	}

@@ -5,29 +5,29 @@ import "github.com/charmbracelet/bubbles/key"
 // KeyBindings defines all keyboard shortcuts for the TUI
 type KeyBindings struct {
 	// Global navigation
-	Quit           key.Binding
-	Help           key.Binding
-	Back           key.Binding
-	Refresh        key.Binding
-	Search         key.Binding
-	Filter         key.Binding
+	Quit    key.Binding
+	Help    key.Binding
+	Back    key.Binding
+	Refresh key.Binding
+	Search  key.Binding
+	Filter  key.Binding
 
 	// Standard navigation
-	Up             key.Binding
-	Down           key.Binding
-	Left           key.Binding
-	Right          key.Binding
-	PageUp         key.Binding
-	PageDown       key.Binding
-	Home           key.Binding
-	End            key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Left     key.Binding
+	Right    key.Binding
+	PageUp   key.Binding
+	PageDown key.Binding
+	Home     key.Binding
+	End      key.Binding
 
 	// Selection and actions
-	Select         key.Binding
-	Edit           key.Binding
-	Delete         key.Binding
-	Export         key.Binding
-	Copy           key.Binding
+	Select key.Binding
+	Edit   key.Binding
+	Delete key.Binding
+	Export key.Binding
+	Copy   key.Binding
 
 	// View switching (quick access)
 	MainMenu       key.Binding
@@ -39,33 +39,33 @@ type KeyBindings struct {
 	ComplianceView key.Binding
 
 	// Tab navigation
-	NextTab        key.Binding
-	PrevTab        key.Binding
+	NextTab key.Binding
+	PrevTab key.Binding
 
 	// Scan specific
-	StartScan      key.Binding
-	StopScan       key.Binding
-	QuickScan      key.Binding
+	StartScan key.Binding
+	StopScan  key.Binding
+	QuickScan key.Binding
 
 	// Results specific
-	ShowDetails    key.Binding
-	ToggleMode     key.Binding
+	ShowDetails key.Binding
+	ToggleMode  key.Binding
 
 	// Input handling
-	Submit         key.Binding
-	Cancel         key.Binding
-	Clear          key.Binding
+	Submit key.Binding
+	Cancel key.Binding
+	Clear  key.Binding
 }
 
 // DefaultKeyBindings returns the default key bindings
 var DefaultKeyBindings = KeyBindings{
 	// Global navigation
-	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-	Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-	Refresh:  key.NewBinding(key.WithKeys("r", "f5"), key.WithHelp("r", "refresh")),
-	Search:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
-	Filter:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+	Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	Back:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+	Refresh: key.NewBinding(key.WithKeys("r", "f5"), key.WithHelp("r", "refresh")),
+	Search:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+	Filter:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 
 	// Standard navigation (vim-style + arrow keys)
 	Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
@@ -120,10 +120,10 @@ func (k KeyBindings) ShortHelp() []key.Binding {
 // FullHelp returns keybindings for the expanded help view
 func (k KeyBindings) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right}, // Navigation
-		{k.Select, k.Back, k.Help, k.Quit}, // Basic actions
+		{k.Up, k.Down, k.Left, k.Right},                       // Navigation
+		{k.Select, k.Back, k.Help, k.Quit},                    // Basic actions
 		{k.MainMenu, k.ScanView, k.ResultsView, k.ConfigView}, // Views
-		{k.Search, k.Filter, k.Refresh, k.Export}, // Actions
+		{k.Search, k.Filter, k.Refresh, k.Export},             // Actions
 	}
 }
 

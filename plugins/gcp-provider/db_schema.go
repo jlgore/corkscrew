@@ -7,10 +7,10 @@ import (
 
 // DBSchema represents the complete database schema for GCP resources
 type DBSchema struct {
-	CoreTables     map[string]string
-	ServiceTables  map[string]string
-	Views          map[string]string
-	Indexes        []string
+	CoreTables    map[string]string
+	ServiceTables map[string]string
+	Views         map[string]string
+	Indexes       []string
 }
 
 // NewGCPDBSchema creates a new GCP database schema
@@ -21,19 +21,19 @@ func NewGCPDBSchema() *DBSchema {
 		Views:         make(map[string]string),
 		Indexes:       []string{},
 	}
-	
+
 	// Define core tables
 	schema.defineCoreSchema()
-	
+
 	// Define service-specific tables
 	schema.defineServiceSchemas()
-	
+
 	// Define views
 	schema.defineViews()
-	
+
 	// Define indexes
 	schema.defineIndexes()
-	
+
 	return schema
 }
 
@@ -533,18 +533,18 @@ func (schema *DBSchema) defineIndexes() {
 		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_scan ON gcp_resources(scan_id);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_org ON gcp_resources(org_id);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_folder ON gcp_resources(folder_id);",
-		
+
 		// Relationships table indexes
 		"CREATE INDEX IF NOT EXISTS idx_gcp_relationships_source ON gcp_relationships(source_id);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_relationships_target ON gcp_relationships(target_id);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_relationships_type ON gcp_relationships(relationship_type);",
-		
+
 		// Service-specific indexes
 		"CREATE INDEX IF NOT EXISTS idx_gcp_compute_instances_zone ON gcp_compute_instances(zone);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_compute_instances_status ON gcp_compute_instances(status);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_storage_buckets_location ON gcp_storage_buckets(location);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_bigquery_datasets_location ON gcp_bigquery_datasets(location);",
-		
+
 		// Change tracking indexes
 		"CREATE INDEX IF NOT EXISTS idx_gcp_resource_changes_resource ON gcp_resource_changes(resource_id);",
 		"CREATE INDEX IF NOT EXISTS idx_gcp_resource_changes_time ON gcp_resource_changes(change_time);",
@@ -555,32 +555,32 @@ func (schema *DBSchema) defineIndexes() {
 // GenerateAllDDL generates all DDL statements
 func (schema *DBSchema) GenerateAllDDL() []string {
 	var ddlStatements []string
-	
+
 	// Add core tables
 	for _, ddl := range schema.CoreTables {
 		ddlStatements = append(ddlStatements, ddl)
 	}
-	
+
 	// Add service tables
 	for _, ddl := range schema.ServiceTables {
 		ddlStatements = append(ddlStatements, ddl)
 	}
-	
+
 	// Add views
 	for _, ddl := range schema.Views {
 		ddlStatements = append(ddlStatements, ddl)
 	}
-	
+
 	// Add indexes
 	ddlStatements = append(ddlStatements, schema.Indexes...)
-	
+
 	return ddlStatements
 }
 
 // GetTableName returns the table name for a service and resource type
 func GetTableName(service, resourceType string) string {
-	return fmt.Sprintf("gcp_%s_%s", 
-		strings.ToLower(service), 
+	return fmt.Sprintf("gcp_%s_%s",
+		strings.ToLower(service),
 		pluralizeResourceType(strings.ToLower(resourceType)))
 }
 
@@ -601,17 +601,17 @@ func pluralizeResourceType(resourceType string) string {
 		"service":      "services",
 		"cluster":      "clusters",
 	}
-	
+
 	if plural, exists := specialCases[resourceType]; exists {
 		return plural
 	}
-	
+
 	// Default pluralization
 	if strings.HasSuffix(resourceType, "y") {
 		return resourceType[:len(resourceType)-1] + "ies"
 	}
-	if strings.HasSuffix(resourceType, "s") || strings.HasSuffix(resourceType, "x") || 
-	   strings.HasSuffix(resourceType, "ch") || strings.HasSuffix(resourceType, "sh") {
+	if strings.HasSuffix(resourceType, "s") || strings.HasSuffix(resourceType, "x") ||
+		strings.HasSuffix(resourceType, "ch") || strings.HasSuffix(resourceType, "sh") {
 		return resourceType + "es"
 	}
 	return resourceType + "s"

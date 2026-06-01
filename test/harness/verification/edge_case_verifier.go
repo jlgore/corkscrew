@@ -29,55 +29,55 @@ func NewEdgeCaseVerifier(dbPath string) (*EdgeCaseVerifier, error) {
 
 // EdgeCaseVerificationResult contains detailed edge case verification results
 type EdgeCaseVerificationResult struct {
-	UnicodeSupport       UnicodeVerification    `json:"unicode_support"`
-	TagLimits           TagLimitVerification   `json:"tag_limits"`
-	LongNames           LongNameVerification   `json:"long_names"`
-	GlobalServices      GlobalServiceVerification `json:"global_services"`
-	CircularDependencies CircularDepVerification `json:"circular_dependencies"`
-	SpecialStates       SpecialStateVerification `json:"special_states"`
-	RawDataIntegrity    RawDataVerification    `json:"raw_data_integrity"`
-	CompressionAnalysis CompressionAnalysis    `json:"compression_analysis"`
+	UnicodeSupport       UnicodeVerification       `json:"unicode_support"`
+	TagLimits            TagLimitVerification      `json:"tag_limits"`
+	LongNames            LongNameVerification      `json:"long_names"`
+	GlobalServices       GlobalServiceVerification `json:"global_services"`
+	CircularDependencies CircularDepVerification   `json:"circular_dependencies"`
+	SpecialStates        SpecialStateVerification  `json:"special_states"`
+	RawDataIntegrity     RawDataVerification       `json:"raw_data_integrity"`
+	CompressionAnalysis  CompressionAnalysis       `json:"compression_analysis"`
 }
 
 // UnicodeVerification verifies Unicode character handling
 type UnicodeVerification struct {
-	UnicodeTagsFound     int      `json:"unicode_tags_found"`
-	EmojiTagsFound       int      `json:"emoji_tags_found"`
-	UnicodeInDescriptions int     `json:"unicode_in_descriptions"`
-	UnicodeCharsets      []string `json:"unicode_charsets"`
-	EncodingIssues       []string `json:"encoding_issues"`
+	UnicodeTagsFound      int      `json:"unicode_tags_found"`
+	EmojiTagsFound        int      `json:"emoji_tags_found"`
+	UnicodeInDescriptions int      `json:"unicode_in_descriptions"`
+	UnicodeCharsets       []string `json:"unicode_charsets"`
+	EncodingIssues        []string `json:"encoding_issues"`
 }
 
 // TagLimitVerification verifies tag limit handling
 type TagLimitVerification struct {
-	ResourcesWithMaxTags    int                    `json:"resources_with_max_tags"`
-	MaxTagsPerResource      int                    `json:"max_tags_per_resource"`
-	TagValueLengthStats     map[string]int         `json:"tag_value_length_stats"`
-	TagKeyPatterns          map[string]int         `json:"tag_key_patterns"`
-	TagLimitCompliance      bool                   `json:"tag_limit_compliance"`
+	ResourcesWithMaxTags int            `json:"resources_with_max_tags"`
+	MaxTagsPerResource   int            `json:"max_tags_per_resource"`
+	TagValueLengthStats  map[string]int `json:"tag_value_length_stats"`
+	TagKeyPatterns       map[string]int `json:"tag_key_patterns"`
+	TagLimitCompliance   bool           `json:"tag_limit_compliance"`
 }
 
 // LongNameVerification verifies long name handling
 type LongNameVerification struct {
-	LongestResourceName     int      `json:"longest_resource_name"`
-	ResourcesWithLongNames  int      `json:"resources_with_long_names"`
-	NameTruncationIssues    []string `json:"name_truncation_issues"`
-	SpecialCharacterNames   int      `json:"special_character_names"`
+	LongestResourceName    int      `json:"longest_resource_name"`
+	ResourcesWithLongNames int      `json:"resources_with_long_names"`
+	NameTruncationIssues   []string `json:"name_truncation_issues"`
+	SpecialCharacterNames  int      `json:"special_character_names"`
 }
 
 // GlobalServiceVerification verifies global vs regional service handling
 type GlobalServiceVerification struct {
-	GlobalServices         []string             `json:"global_services"`
-	RegionalServices       []string             `json:"regional_services"`
-	GlobalResourcesInRegions map[string]int     `json:"global_resources_in_regions"`
-	ServiceClassification  map[string]string   `json:"service_classification"`
+	GlobalServices           []string          `json:"global_services"`
+	RegionalServices         []string          `json:"regional_services"`
+	GlobalResourcesInRegions map[string]int    `json:"global_resources_in_regions"`
+	ServiceClassification    map[string]string `json:"service_classification"`
 }
 
 // CircularDepVerification verifies circular dependency detection
 type CircularDepVerification struct {
-	CircularDependenciesFound int                  `json:"circular_dependencies_found"`
-	CircularChains           []CircularChain      `json:"circular_chains"`
-	DependencyGraphHealth    bool                 `json:"dependency_graph_health"`
+	CircularDependenciesFound int             `json:"circular_dependencies_found"`
+	CircularChains            []CircularChain `json:"circular_chains"`
+	DependencyGraphHealth     bool            `json:"dependency_graph_health"`
 }
 
 // CircularChain represents a circular dependency chain
@@ -89,30 +89,30 @@ type CircularChain struct {
 
 // SpecialStateVerification verifies handling of resources in special states
 type SpecialStateVerification struct {
-	StoppedInstances        int      `json:"stopped_instances"`
-	TerminatedInstances     int      `json:"terminated_instances"`
-	FailedResources         int      `json:"failed_resources"`
-	PendingResources        int      `json:"pending_resources"`
-	StateTransitionIssues   []string `json:"state_transition_issues"`
+	StoppedInstances      int      `json:"stopped_instances"`
+	TerminatedInstances   int      `json:"terminated_instances"`
+	FailedResources       int      `json:"failed_resources"`
+	PendingResources      int      `json:"pending_resources"`
+	StateTransitionIssues []string `json:"state_transition_issues"`
 }
 
 // RawDataVerification verifies raw data integrity and completeness
 type RawDataVerification struct {
-	ResourcesWithRawData    int                `json:"resources_with_raw_data"`
-	RawDataValidJSON        int                `json:"raw_data_valid_json"`
-	RawDataSizeStats        map[string]int64   `json:"raw_data_size_stats"`
-	MissingFields           []string           `json:"missing_fields"`
-	DataConsistencyIssues   []string           `json:"data_consistency_issues"`
-	UnicodeInRawData        int                `json:"unicode_in_raw_data"`
+	ResourcesWithRawData  int              `json:"resources_with_raw_data"`
+	RawDataValidJSON      int              `json:"raw_data_valid_json"`
+	RawDataSizeStats      map[string]int64 `json:"raw_data_size_stats"`
+	MissingFields         []string         `json:"missing_fields"`
+	DataConsistencyIssues []string         `json:"data_consistency_issues"`
+	UnicodeInRawData      int              `json:"unicode_in_raw_data"`
 }
 
 // CompressionAnalysis analyzes raw data compression potential
 type CompressionAnalysis struct {
-	TotalRawDataSize        int64              `json:"total_raw_data_size"`
-	EstimatedUncompressed   int64              `json:"estimated_uncompressed"`
-	CompressionRatio        float64            `json:"compression_ratio"`
-	RepetitiveFields        map[string]int     `json:"repetitive_fields"`
-	CompressionPotential    float64            `json:"compression_potential"`
+	TotalRawDataSize      int64          `json:"total_raw_data_size"`
+	EstimatedUncompressed int64          `json:"estimated_uncompressed"`
+	CompressionRatio      float64        `json:"compression_ratio"`
+	RepetitiveFields      map[string]int `json:"repetitive_fields"`
+	CompressionPotential  float64        `json:"compression_potential"`
 }
 
 // VerifyEdgeCases performs comprehensive edge case verification
@@ -181,8 +181,8 @@ func (ecv *EdgeCaseVerifier) VerifyEdgeCases(ctx context.Context, testID string)
 // verifyUnicodeSupport checks Unicode character handling
 func (ecv *EdgeCaseVerifier) verifyUnicodeSupport(ctx context.Context, testID string) (*UnicodeVerification, error) {
 	result := &UnicodeVerification{
-		UnicodeCharsets:  []string{},
-		EncodingIssues:   []string{},
+		UnicodeCharsets: []string{},
+		EncodingIssues:  []string{},
 	}
 
 	// Query for resources with Unicode in tags or names
@@ -230,7 +230,7 @@ func (ecv *EdgeCaseVerifier) verifyUnicodeSupport(ctx context.Context, testID st
 
 			// Validate UTF-8 encoding
 			if !utf8.ValidString(tags.String) {
-				result.EncodingIssues = append(result.EncodingIssues, 
+				result.EncodingIssues = append(result.EncodingIssues,
 					fmt.Sprintf("Invalid UTF-8 in tags for resource %s", id.String))
 			}
 		}
@@ -409,7 +409,7 @@ func (ecv *EdgeCaseVerifier) verifyLongNames(ctx context.Context, testID string)
 					if rawNameStr, ok := rawName.(string); ok && name.Valid {
 						if len(rawNameStr) != len(name.String) {
 							result.NameTruncationIssues = append(result.NameTruncationIssues,
-								fmt.Sprintf("Name truncation detected for %s: raw=%d, stored=%d", 
+								fmt.Sprintf("Name truncation detected for %s: raw=%d, stored=%d",
 									id.String, len(rawNameStr), len(name.String)))
 						}
 					}
@@ -424,10 +424,10 @@ func (ecv *EdgeCaseVerifier) verifyLongNames(ctx context.Context, testID string)
 // verifyGlobalServices checks global vs regional service classification
 func (ecv *EdgeCaseVerifier) verifyGlobalServices(ctx context.Context, testID string) (*GlobalServiceVerification, error) {
 	result := &GlobalServiceVerification{
-		GlobalServices:         []string{},
-		RegionalServices:       []string{},
+		GlobalServices:           []string{},
+		RegionalServices:         []string{},
 		GlobalResourcesInRegions: make(map[string]int),
-		ServiceClassification:  make(map[string]string),
+		ServiceClassification:    make(map[string]string),
 	}
 
 	// Known global services
@@ -480,11 +480,11 @@ func (ecv *EdgeCaseVerifier) verifyGlobalServices(ctx context.Context, testID st
 	// Classify services based on their regional distribution
 	for serviceName, regions := range serviceRegions {
 		isGlobal := globalServices[serviceName]
-		
+
 		if isGlobal {
 			result.GlobalServices = append(result.GlobalServices, serviceName)
 			result.ServiceClassification[serviceName] = "global"
-			
+
 			// Count global resources appearing in each region
 			for regionName, count := range regions {
 				result.GlobalResourcesInRegions[regionName] += count
@@ -524,7 +524,7 @@ func (ecv *EdgeCaseVerifier) verifyCircularDependencies(ctx context.Context, tes
 	defer rows.Close()
 
 	relationships := make(map[string][]string)
-	
+
 	for rows.Next() {
 		var fromID, toID, relType, fromType, toType sql.NullString
 
@@ -681,7 +681,7 @@ func (ecv *EdgeCaseVerifier) verifyRawDataIntegrity(ctx context.Context, testID 
 	defer rows.Close()
 
 	unicodePattern := regexp.MustCompile(`[^\x00-\x7F]`)
-	
+
 	for rows.Next() {
 		var id, resourceType, name, arn sql.NullString
 		var rawData sql.NullString
@@ -694,7 +694,7 @@ func (ecv *EdgeCaseVerifier) verifyRawDataIntegrity(ctx context.Context, testID 
 		// Count resources with raw data
 		if rawData.Valid && rawData.String != "" {
 			result.ResourcesWithRawData++
-			
+
 			// Track size statistics
 			sizeCategory := "small"
 			if rawDataSize > 10000 {
@@ -731,7 +731,7 @@ func (ecv *EdgeCaseVerifier) verifyRawDataIntegrity(ctx context.Context, testID 
 						if rawNameStr, ok := rawName.(string); ok {
 							if rawNameStr != name.String && !strings.Contains(rawNameStr, name.String) {
 								result.DataConsistencyIssues = append(result.DataConsistencyIssues,
-									fmt.Sprintf("Name inconsistency for %s: structured='%s', raw='%s'", 
+									fmt.Sprintf("Name inconsistency for %s: structured='%s', raw='%s'",
 										id.String, name.String, rawNameStr))
 							}
 						}
@@ -840,9 +840,9 @@ func (ecv *EdgeCaseVerifier) analyzeMapRepetition(data map[string]interface{}, p
 		if prefix != "" {
 			fullKey = prefix + "." + key
 		}
-		
+
 		fieldFreq[fullKey]++
-		
+
 		switch v := value.(type) {
 		case map[string]interface{}:
 			ecv.analyzeMapRepetition(v, fullKey, fieldFreq, valueFreq)

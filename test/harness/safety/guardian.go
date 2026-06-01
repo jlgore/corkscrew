@@ -228,7 +228,7 @@ func (g *Guardian) checkServiceQuotas() SafetyCheck {
 	// - S3: Bucket limits
 	// - EC2: Instance limits
 	// - Lambda: Function limits
-	
+
 	check.Status = CheckPassed
 	check.Message = "Service quotas sufficient for testing"
 	return check
@@ -251,7 +251,7 @@ func (g *Guardian) checkRegionCapacity() SafetyCheck {
 // CreateCostAlert sets up CloudWatch alarm for cost monitoring
 func (g *Guardian) CreateCostAlert(testID string, threshold float64) error {
 	alarmName := fmt.Sprintf("corkscrew-test-cost-%s", testID)
-	
+
 	input := &cloudwatch.PutMetricAlarmInput{
 		AlarmName:          aws.String(alarmName),
 		AlarmDescription:   aws.String(fmt.Sprintf("Cost alert for Corkscrew test %s", testID)),
@@ -292,7 +292,7 @@ func (g *Guardian) CreateCostAlert(testID string, threshold float64) error {
 // CleanupCostAlert removes the cost alert after test completion
 func (g *Guardian) CleanupCostAlert(testID string) error {
 	alarmName := fmt.Sprintf("corkscrew-test-cost-%s", testID)
-	
+
 	input := &cloudwatch.DeleteAlarmsInput{
 		AlarmNames: []string{alarmName},
 	}
@@ -318,7 +318,7 @@ type TimeoutGuard struct {
 // NewTimeoutGuard creates a new timeout guard
 func NewTimeoutGuard(timeout time.Duration, onTimeout func()) *TimeoutGuard {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	
+
 	return &TimeoutGuard{
 		ctx:       ctx,
 		cancel:    cancel,
@@ -381,7 +381,7 @@ func (ec *EmergencyCleanup) CleanupTestResources(ctx context.Context, testIDPatt
 
 	// This would integrate with the existing AWS cleanup functionality
 	// but with broader permissions for emergency scenarios
-	
+
 	// Cleanup S3 buckets
 	if err := ec.cleanupS3Buckets(ctx, testIDPattern); err != nil {
 		fmt.Printf("⚠️ S3 cleanup warning: %v\n", err)
@@ -432,11 +432,11 @@ func (ec *EmergencyCleanup) cleanupCloudWatchAlarms(ctx context.Context, pattern
 
 // SafetyReport provides a comprehensive safety summary
 type SafetyReport struct {
-	TestID        string        `json:"test_id"`
-	Timestamp     time.Time     `json:"timestamp"`
-	SafetyChecks  []SafetyCheck `json:"safety_checks"`
-	OverallStatus CheckStatus   `json:"overall_status"`
-	Recommendations []string    `json:"recommendations"`
+	TestID          string        `json:"test_id"`
+	Timestamp       time.Time     `json:"timestamp"`
+	SafetyChecks    []SafetyCheck `json:"safety_checks"`
+	OverallStatus   CheckStatus   `json:"overall_status"`
+	Recommendations []string      `json:"recommendations"`
 }
 
 // GenerateSafetyReport creates a comprehensive safety report
@@ -461,7 +461,7 @@ func (g *Guardian) GenerateSafetyReport(testID string, checks []SafetyCheck) *Sa
 
 	// Generate recommendations
 	if report.OverallStatus != CheckPassed {
-		report.Recommendations = append(report.Recommendations, 
+		report.Recommendations = append(report.Recommendations,
 			"Review failed safety checks before proceeding")
 	}
 

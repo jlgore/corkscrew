@@ -17,86 +17,86 @@ import (
 
 // CertificateAnalyzer handles SSL/TLS certificate and CA chain analysis
 type CertificateAnalyzer struct {
-	db               DatabaseInterface
-	logger           *log.Logger
+	db                DatabaseInterface
+	logger            *log.Logger
 	correlationThresh float64
 }
 
 // NewCertificateAnalyzer creates a new certificate analyzer
 func NewCertificateAnalyzer(db DatabaseInterface, logger *log.Logger) *CertificateAnalyzer {
 	return &CertificateAnalyzer{
-		db:               db,
-		logger:           logger,
+		db:                db,
+		logger:            logger,
 		correlationThresh: 0.80,
 	}
 }
 
 // Certificate represents a parsed certificate
 type Certificate struct {
-	ID             string                 `json:"id"`
-	Name           string                 `json:"name"`
-	Provider       string                 `json:"provider"`
-	Region         string                 `json:"region"`
-	AccountID      string                 `json:"account_id"`
-	ResourceID     string                 `json:"resource_id"`
-	CertificateData *x509.Certificate     `json:"-"`
-	SerialNumber   string                 `json:"serial_number"`
-	Subject        string                 `json:"subject"`
-	Issuer         string                 `json:"issuer"`
-	CommonName     string                 `json:"common_name"`
-	SANs           []string               `json:"sans"`
-	Thumbprint     string                 `json:"thumbprint"`
-	ThumbprintSHA1 string                 `json:"thumbprint_sha1"`
-	NotBefore      time.Time              `json:"not_before"`
-	NotAfter       time.Time              `json:"not_after"`
-	KeyAlgorithm   string                 `json:"key_algorithm"`
-	KeySize        int                    `json:"key_size"`
-	SignatureAlgo  string                 `json:"signature_algorithm"`
-	IsCA           bool                   `json:"is_ca"`
-	IsSelfSigned   bool                   `json:"is_self_signed"`
-	Usage          []string               `json:"usage"`
-	RawPEM         string                 `json:"raw_pem"`
-	Metadata       map[string]interface{} `json:"metadata"`
+	ID              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Provider        string                 `json:"provider"`
+	Region          string                 `json:"region"`
+	AccountID       string                 `json:"account_id"`
+	ResourceID      string                 `json:"resource_id"`
+	CertificateData *x509.Certificate      `json:"-"`
+	SerialNumber    string                 `json:"serial_number"`
+	Subject         string                 `json:"subject"`
+	Issuer          string                 `json:"issuer"`
+	CommonName      string                 `json:"common_name"`
+	SANs            []string               `json:"sans"`
+	Thumbprint      string                 `json:"thumbprint"`
+	ThumbprintSHA1  string                 `json:"thumbprint_sha1"`
+	NotBefore       time.Time              `json:"not_before"`
+	NotAfter        time.Time              `json:"not_after"`
+	KeyAlgorithm    string                 `json:"key_algorithm"`
+	KeySize         int                    `json:"key_size"`
+	SignatureAlgo   string                 `json:"signature_algorithm"`
+	IsCA            bool                   `json:"is_ca"`
+	IsSelfSigned    bool                   `json:"is_self_signed"`
+	Usage           []string               `json:"usage"`
+	RawPEM          string                 `json:"raw_pem"`
+	Metadata        map[string]interface{} `json:"metadata"`
 }
 
 // CertificateChain represents a certificate chain
 type CertificateChain struct {
-	ID          string        `json:"id"`
-	RootCA      *Certificate  `json:"root_ca"`
+	ID           string        `json:"id"`
+	RootCA       *Certificate  `json:"root_ca"`
 	Intermediate []Certificate `json:"intermediate"`
-	LeafCert    *Certificate  `json:"leaf_cert"`
-	ChainDepth  int           `json:"chain_depth"`
-	IsValid     bool          `json:"is_valid"`
-	Issues      []string      `json:"issues"`
+	LeafCert     *Certificate  `json:"leaf_cert"`
+	ChainDepth   int           `json:"chain_depth"`
+	IsValid      bool          `json:"is_valid"`
+	Issues       []string      `json:"issues"`
 }
 
 // CertificateCorrelation represents correlation between certificates
 type CertificateCorrelation struct {
-	ID                  string                 `json:"id"`
-	SourceCertificate   Certificate            `json:"source_certificate"`
-	TargetCertificate   Certificate            `json:"target_certificate"`
-	CorrelationType     string                 `json:"correlation_type"`
-	ConfidenceScore     float64                `json:"confidence_score"`
-	MatchingAttributes  []string               `json:"matching_attributes"`
-	SharedSecrets       []SharedSecret         `json:"shared_secrets"`
-	ChainRelationship   string                 `json:"chain_relationship"`
-	SecurityAssessment  SecurityAssessment     `json:"security_assessment"`
-	Metadata            map[string]interface{} `json:"metadata"`
-	DetectedAt          time.Time              `json:"detected_at"`
+	ID                 string                 `json:"id"`
+	SourceCertificate  Certificate            `json:"source_certificate"`
+	TargetCertificate  Certificate            `json:"target_certificate"`
+	CorrelationType    string                 `json:"correlation_type"`
+	ConfidenceScore    float64                `json:"confidence_score"`
+	MatchingAttributes []string               `json:"matching_attributes"`
+	SharedSecrets      []SharedSecret         `json:"shared_secrets"`
+	ChainRelationship  string                 `json:"chain_relationship"`
+	SecurityAssessment SecurityAssessment     `json:"security_assessment"`
+	Metadata           map[string]interface{} `json:"metadata"`
+	DetectedAt         time.Time              `json:"detected_at"`
 }
 
 // SharedSecret represents a shared secret or credential
 type SharedSecret struct {
-	ID           string                 `json:"id"`
-	Type         string                 `json:"type"` // certificate, key, ca_bundle
-	Provider     string                 `json:"provider"`
-	Region       string                 `json:"region"`
-	AccountID    string                 `json:"account_id"`
-	ResourceID   string                 `json:"resource_id"`
-	SecretName   string                 `json:"secret_name"`
-	Hash         string                 `json:"hash"`
-	References   []string               `json:"references"`
-	Metadata     map[string]interface{} `json:"metadata"`
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"` // certificate, key, ca_bundle
+	Provider   string                 `json:"provider"`
+	Region     string                 `json:"region"`
+	AccountID  string                 `json:"account_id"`
+	ResourceID string                 `json:"resource_id"`
+	SecretName string                 `json:"secret_name"`
+	Hash       string                 `json:"hash"`
+	References []string               `json:"references"`
+	Metadata   map[string]interface{} `json:"metadata"`
 }
 
 // SecurityAssessment represents security assessment for certificate correlation
@@ -550,13 +550,13 @@ func (ca *CertificateAnalyzer) correlateByThumbprint(certificates []Certificate)
 					}
 
 					correlation := CertificateCorrelation{
-						ID:                fmt.Sprintf("cert-thumb-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
-						SourceCertificate: source,
-						TargetCertificate: target,
-						CorrelationType:   "thumbprint_match",
-						ConfidenceScore:   1.0,
+						ID:                 fmt.Sprintf("cert-thumb-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
+						SourceCertificate:  source,
+						TargetCertificate:  target,
+						CorrelationType:    "thumbprint_match",
+						ConfidenceScore:    1.0,
 						MatchingAttributes: []string{fmt.Sprintf("Matching thumbprint: %s", thumbprint)},
-						DetectedAt:        time.Now(),
+						DetectedAt:         time.Now(),
 					}
 
 					correlations = append(correlations, correlation)
@@ -592,13 +592,13 @@ func (ca *CertificateAnalyzer) correlateByIssuer(certificates []Certificate) []C
 					confidence := ca.calculateIssuerConfidence(source, target)
 					if confidence >= ca.correlationThresh {
 						correlation := CertificateCorrelation{
-							ID:                fmt.Sprintf("cert-issuer-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
-							SourceCertificate: source,
-							TargetCertificate: target,
-							CorrelationType:   "issuer_match",
-							ConfidenceScore:   confidence,
+							ID:                 fmt.Sprintf("cert-issuer-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
+							SourceCertificate:  source,
+							TargetCertificate:  target,
+							CorrelationType:    "issuer_match",
+							ConfidenceScore:    confidence,
 							MatchingAttributes: []string{fmt.Sprintf("Matching issuer: %s", issuer)},
-							DetectedAt:        time.Now(),
+							DetectedAt:         time.Now(),
 						}
 
 						correlations = append(correlations, correlation)
@@ -665,13 +665,13 @@ func (ca *CertificateAnalyzer) correlateBySubject(certificates []Certificate) []
 					}
 
 					correlation := CertificateCorrelation{
-						ID:                fmt.Sprintf("cert-subject-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
-						SourceCertificate: source,
-						TargetCertificate: target,
-						CorrelationType:   "subject_match",
-						ConfidenceScore:   0.85,
+						ID:                 fmt.Sprintf("cert-subject-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
+						SourceCertificate:  source,
+						TargetCertificate:  target,
+						CorrelationType:    "subject_match",
+						ConfidenceScore:    0.85,
 						MatchingAttributes: []string{fmt.Sprintf("Matching common name: %s", cn)},
-						DetectedAt:        time.Now(),
+						DetectedAt:         time.Now(),
 					}
 
 					correlations = append(correlations, correlation)
@@ -699,13 +699,13 @@ func (ca *CertificateAnalyzer) correlateBySAN(certificates []Certificate) []Cert
 				confidence := float64(len(matchingSANs)) / float64(len(source.SANs)+len(target.SANs)-len(matchingSANs))
 				if confidence >= ca.correlationThresh {
 					correlation := CertificateCorrelation{
-						ID:                fmt.Sprintf("cert-san-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
-						SourceCertificate: source,
-						TargetCertificate: target,
-						CorrelationType:   "san_match",
-						ConfidenceScore:   confidence,
+						ID:                 fmt.Sprintf("cert-san-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
+						SourceCertificate:  source,
+						TargetCertificate:  target,
+						CorrelationType:    "san_match",
+						ConfidenceScore:    confidence,
 						MatchingAttributes: []string{fmt.Sprintf("Matching SANs: %v", matchingSANs)},
-						DetectedAt:        time.Now(),
+						DetectedAt:         time.Now(),
 					}
 
 					correlations = append(correlations, correlation)
@@ -749,14 +749,14 @@ func (ca *CertificateAnalyzer) correlateByChain(certificates []Certificate) []Ce
 			chainRelationship := ca.analyzeChainRelationship(source, target)
 			if chainRelationship != "" {
 				correlation := CertificateCorrelation{
-					ID:                fmt.Sprintf("cert-chain-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
-					SourceCertificate: source,
-					TargetCertificate: target,
-					CorrelationType:   "chain_relationship",
-					ChainRelationship: chainRelationship,
-					ConfidenceScore:   0.9,
+					ID:                 fmt.Sprintf("cert-chain-%s-%s", generateCertHash(source.ID), generateCertHash(target.ID)),
+					SourceCertificate:  source,
+					TargetCertificate:  target,
+					CorrelationType:    "chain_relationship",
+					ChainRelationship:  chainRelationship,
+					ConfidenceScore:    0.9,
 					MatchingAttributes: []string{fmt.Sprintf("Chain relationship: %s", chainRelationship)},
-					DetectedAt:        time.Now(),
+					DetectedAt:         time.Now(),
 				}
 
 				correlations = append(correlations, correlation)
@@ -805,7 +805,7 @@ func (ca *CertificateAnalyzer) findSharedSecrets(correlation CertificateCorrelat
 // secretMatchesCertificate checks if a secret is related to a certificate
 func (ca *CertificateAnalyzer) secretMatchesCertificate(secret SharedSecret, cert Certificate) bool {
 	secretName := strings.ToLower(secret.SecretName)
-	
+
 	// Check common name
 	if cert.CommonName != "" && strings.Contains(secretName, strings.ToLower(cert.CommonName)) {
 		return true
@@ -946,9 +946,9 @@ func (ca *CertificateAnalyzer) PersistCertificateCorrelations(ctx context.Contex
 	for _, corr := range correlations {
 		evidenceJSON, _ := json.Marshal(corr.MatchingAttributes)
 		metadataJSON, _ := json.Marshal(map[string]interface{}{
-			"chain_relationship":   corr.ChainRelationship,
-			"shared_secrets":       corr.SharedSecrets,
-			"security_assessment":  corr.SecurityAssessment,
+			"chain_relationship":  corr.ChainRelationship,
+			"shared_secrets":      corr.SharedSecrets,
+			"security_assessment": corr.SecurityAssessment,
 		})
 
 		_, err := stmt.Exec(

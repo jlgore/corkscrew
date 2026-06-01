@@ -6,11 +6,11 @@ import (
 
 // DiscoveryResult contains the raw results from discovery sources
 type DiscoveryResult struct {
-	Provider      string                 `json:"provider"`
-	DiscoveredAt  time.Time              `json:"discovered_at"`
-	Sources       map[string]interface{} `json:"sources"`        // Source name -> raw data
-	Metadata      map[string]interface{} `json:"metadata"`       // Provider-specific metadata
-	Errors        []DiscoveryError       `json:"errors,omitempty"`
+	Provider     string                 `json:"provider"`
+	DiscoveredAt time.Time              `json:"discovered_at"`
+	Sources      map[string]interface{} `json:"sources"`  // Source name -> raw data
+	Metadata     map[string]interface{} `json:"metadata"` // Provider-specific metadata
+	Errors       []DiscoveryError       `json:"errors,omitempty"`
 }
 
 // DiscoveryError represents an error during discovery
@@ -44,13 +44,13 @@ type ServiceInfo struct {
 
 // ResourceInfo represents a discovered resource type
 type ResourceInfo struct {
-	Name         string                 `json:"name"`
-	Service      string                 `json:"service"`
-	DisplayName  string                 `json:"display_name"`
-	Description  string                 `json:"description"`
-	Identifiers  []string               `json:"identifiers"`
-	Attributes   []AttributeInfo        `json:"attributes"`
-	Metadata     map[string]interface{} `json:"metadata"`
+	Name        string                 `json:"name"`
+	Service     string                 `json:"service"`
+	DisplayName string                 `json:"display_name"`
+	Description string                 `json:"description"`
+	Identifiers []string               `json:"identifiers"`
+	Attributes  []AttributeInfo        `json:"attributes"`
+	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 // AttributeInfo describes a resource attribute
@@ -75,18 +75,18 @@ type OperationInfo struct {
 type RelationshipInfo struct {
 	SourceResource string `json:"source_resource"`
 	TargetResource string `json:"target_resource"`
-	Type           string `json:"type"` // references, contains, depends_on
+	Type           string `json:"type"`        // references, contains, depends_on
 	Cardinality    string `json:"cardinality"` // one-to-one, one-to-many, many-to-many
 	Description    string `json:"description"`
 }
 
 // GenerationResult contains code generation results
 type GenerationResult struct {
-	Provider     string              `json:"provider"`
-	GeneratedAt  time.Time           `json:"generated_at"`
-	Files        []GeneratedFile     `json:"files"`
-	Stats        GenerationStats     `json:"stats"`
-	Errors       []string            `json:"errors,omitempty"`
+	Provider    string          `json:"provider"`
+	GeneratedAt time.Time       `json:"generated_at"`
+	Files       []GeneratedFile `json:"files"`
+	Stats       GenerationStats `json:"stats"`
+	Errors      []string        `json:"errors,omitempty"`
 }
 
 // GeneratedFile represents a generated code file
@@ -109,14 +109,14 @@ type GenerationStats struct {
 
 // PipelineStatus represents the current state of the discovery pipeline
 type PipelineStatus struct {
-	Provider        string                `json:"provider"`
-	CurrentPhase    string                `json:"current_phase"` // discovering, analyzing, generating, complete
-	Progress        float64               `json:"progress"`      // 0.0 to 1.0
-	StartedAt       time.Time             `json:"started_at"`
-	UpdatedAt       time.Time             `json:"updated_at"`
-	CompletedAt     *time.Time            `json:"completed_at,omitempty"`
-	PhaseDetails    map[string]PhaseInfo  `json:"phase_details"`
-	Errors          []string              `json:"errors,omitempty"`
+	Provider     string               `json:"provider"`
+	CurrentPhase string               `json:"current_phase"` // discovering, analyzing, generating, complete
+	Progress     float64              `json:"progress"`      // 0.0 to 1.0
+	StartedAt    time.Time            `json:"started_at"`
+	UpdatedAt    time.Time            `json:"updated_at"`
+	CompletedAt  *time.Time           `json:"completed_at,omitempty"`
+	PhaseDetails map[string]PhaseInfo `json:"phase_details"`
+	Errors       []string             `json:"errors,omitempty"`
 }
 
 // PhaseInfo contains details about a pipeline phase
@@ -131,10 +131,10 @@ type PhaseInfo struct {
 
 // CacheStrategy defines caching behavior
 type CacheStrategy struct {
-	Enabled    bool          `json:"enabled"`
-	TTL        time.Duration `json:"ttl"`
-	MaxSize    int64         `json:"max_size"` // bytes
-	EvictPolicy string       `json:"evict_policy"` // LRU, LFU, FIFO
+	Enabled     bool          `json:"enabled"`
+	TTL         time.Duration `json:"ttl"`
+	MaxSize     int64         `json:"max_size"`     // bytes
+	EvictPolicy string        `json:"evict_policy"` // LRU, LFU, FIFO
 }
 
 // SourceConfig is the interface for discovery source configuration

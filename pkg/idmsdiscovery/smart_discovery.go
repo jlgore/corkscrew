@@ -10,11 +10,11 @@ import (
 )
 
 type SmartDiscoveryEngine struct {
-	providers        map[string]CloudProvider
-	regionDetector   *RegionDetector
-	serviceDetector  *ServiceDetector
+	providers         map[string]CloudProvider
+	regionDetector    *RegionDetector
+	serviceDetector   *ServiceDetector
 	correlationEngine *CorrelationEngine
-	mutex            sync.RWMutex
+	mutex             sync.RWMutex
 }
 
 type CloudProvider interface {
@@ -25,23 +25,23 @@ type CloudProvider interface {
 }
 
 type SmartDiscoveryConfig struct {
-	EnableRegionDetection     bool
-	EnableServiceDetection    bool
-	EnableCrossProviderCorre  bool
-	ParallelDiscoveryWorkers  int
+	EnableRegionDetection    bool
+	EnableServiceDetection   bool
+	EnableCrossProviderCorre bool
+	ParallelDiscoveryWorkers int
 	DiscoveryTimeout         time.Duration
 	CacheExpiration          time.Duration
 }
 
 type DiscoveryResult struct {
-	Provider    string
-	Regions     []models.Region
-	Services    []models.Service
-	Resources   []models.Resource
+	Provider     string
+	Regions      []models.Region
+	Services     []models.Service
+	Resources    []models.Resource
 	Correlations []models.ResourceCorrelation
-	Metadata    map[string]interface{}
-	Duration    time.Duration
-	Errors      []error
+	Metadata     map[string]interface{}
+	Duration     time.Duration
+	Errors       []error
 }
 
 func NewSmartDiscoveryEngine(config SmartDiscoveryConfig) *SmartDiscoveryEngine {

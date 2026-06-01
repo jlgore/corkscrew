@@ -121,7 +121,7 @@ func listAvailableScenarios() {
 
 	fmt.Println("Available Test Scenarios:")
 	fmt.Println("========================")
-	
+
 	for name, info := range scenarioInfo {
 		fmt.Printf("\n%s:\n", name)
 		fmt.Printf("  Description: %s\n", info.Description)
@@ -159,7 +159,7 @@ func outputText(result *harness.TestResult) {
 	fmt.Printf("Region: %s\n", result.Region)
 	fmt.Printf("Duration: %s\n", result.Duration)
 	fmt.Printf("Success: %t\n", result.Success)
-	
+
 	if result.Error != nil {
 		fmt.Printf("Error: %v\n", result.Error)
 		fmt.Printf("Failed Phase: %s\n", result.Phase)

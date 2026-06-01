@@ -33,10 +33,10 @@ func NewResourceScanner(cf *ClientFactory) *ResourceScanner {
 		clientFactory: cf,
 		scanners:      make(map[string]ServiceScanner),
 	}
-	
+
 	// Register service-specific scanners
 	rs.registerScanners()
-	
+
 	return rs
 }
 
@@ -65,19 +65,19 @@ func (rs *ResourceScanner) ScanService(ctx context.Context, service string) ([]*
 		// Fall back to API scanning on error
 		log.Printf("Asset Inventory failed for service %s, falling back to API: %v", service, err)
 	}
-	
+
 	// Use service-specific scanner
 	scanner, ok := rs.scanners[service]
 	if !ok {
 		return nil, fmt.Errorf("no scanner available for service: %s", service)
 	}
-	
+
 	return scanner.Scan(ctx)
 }
 
 // ScanAllServices scans resources across all enabled services
 func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceRef, error) {
-	// Try Asset Inventory first if available  
+	// Try Asset Inventory first if available
 	if rs.assetInventory != nil {
 		resources, err := rs.assetInventory.QueryAllAssets(ctx)
 		if err == nil {
@@ -86,16 +86,16 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 		// Fall back to API scanning on error
 		log.Printf("Asset Inventory failed, falling back to API scanning: %v", err)
 	}
-	
+
 	// Scan all services concurrently
 	var wg sync.WaitGroup
 	resultChan := make(chan scanServiceResult, len(rs.scanners))
-	
+
 	for serviceName, scanner := range rs.scanners {
 		wg.Add(1)
 		go func(name string, s ServiceScanner) {
 			defer wg.Done()
-			
+
 			resources, err := s.Scan(ctx)
 			resultChan <- scanServiceResult{
 				service:   name,
@@ -104,12 +104,12 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 			}
 		}(serviceName, scanner)
 	}
-	
+
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
-	
+
 	// Collect results
 	var allResources []*pb.ResourceRef
 	for result := range resultChan {
@@ -119,21 +119,21 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 		}
 		allResources = append(allResources, result.resources...)
 	}
-	
+
 	return allResources, nil
 }
 
 // StreamScanResources streams resources as they are discovered
 func (rs *ResourceScanner) StreamScanResources(ctx context.Context, services []string, resourceChan chan<- *pb.Resource) error {
 	defer close(resourceChan)
-	
+
 	for _, service := range services {
 		refs, err := rs.ScanService(ctx, service)
 		if err != nil {
 			log.Printf("Error scanning service %s: %v", service, err)
 			continue
 		}
-		
+
 		for _, ref := range refs {
 			resource := convertRefToResource(ref)
 			select {
@@ -143,7 +143,7 @@ func (rs *ResourceScanner) StreamScanResources(ctx context.Context, services []s
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -153,7 +153,7 @@ func (rs *ResourceScanner) DescribeResource(ctx context.Context, ref *pb.Resourc
 	if !ok {
 		return nil, fmt.Errorf("no scanner available for service: %s", ref.Service)
 	}
-	
+
 	return scanner.DescribeResource(ctx, ref.Id)
 }
 
@@ -171,10 +171,10 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create compute client: %w", err)
 	}
-	
+
 	var resources []*pb.ResourceRef
 	projectIDs := cs.clientFactory.GetProjectIDs()
-	
+
 	for _, projectID := range projectIDs {
 		// List instances across all zones
 		req := client.Instances.AggregatedList(projectID)
@@ -183,8 +183,8 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 				if instanceList.Instances != nil {
 					for _, instance := range instanceList.Instances {
 						ref := &pb.ResourceRef{
-							Id:      fmt.Sprintf("projects/%s/zones/%s/instances/%s", 
-								    projectID, extractZoneFromURL(zone), instance.Name),
+							Id: fmt.Sprintf("projects/%s/zones/%s/instances/%s",
+								projectID, extractZoneFromURL(zone), instance.Name),
 							Name:    instance.Name,
 							Type:    "compute.googleapis.com/Instance",
 							Service: "compute",
@@ -196,12 +196,12 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 								"project_id":   projectID,
 							},
 						}
-						
+
 						// Add labels
 						for k, v := range instance.Labels {
 							ref.BasicAttributes["label_"+k] = v
 						}
-						
+
 						resources = append(resources, ref)
 					}
 				}
@@ -211,7 +211,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			log.Printf("Failed to list instances for project %s: %v", projectID, err)
 			continue
 		}
-		
+
 		// Also scan disks
 		req2 := client.Disks.AggregatedList(projectID)
 		if err := req2.Pages(ctx, func(page *compute.DiskAggregatedList) error {
@@ -219,8 +219,8 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 				if diskList.Disks != nil {
 					for _, disk := range diskList.Disks {
 						ref := &pb.ResourceRef{
-							Id:      fmt.Sprintf("projects/%s/zones/%s/disks/%s", 
-								    projectID, extractZoneFromURL(zone), disk.Name),
+							Id: fmt.Sprintf("projects/%s/zones/%s/disks/%s",
+								projectID, extractZoneFromURL(zone), disk.Name),
 							Name:    disk.Name,
 							Type:    "compute.googleapis.com/Disk",
 							Service: "compute",
@@ -233,12 +233,12 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 								"project_id": projectID,
 							},
 						}
-						
+
 						// Add labels
 						for k, v := range disk.Labels {
 							ref.BasicAttributes["label_"+k] = v
 						}
-						
+
 						resources = append(resources, ref)
 					}
 				}
@@ -248,7 +248,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			log.Printf("Failed to list disks for project %s: %v", projectID, err)
 			continue
 		}
-		
+
 		// Scan networks
 		req3 := client.Networks.List(projectID)
 		if err := req3.Pages(ctx, func(page *compute.NetworkList) error {
@@ -264,11 +264,11 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 						"project_id": projectID,
 					},
 				}
-				
+
 				if network.Description != "" {
 					ref.BasicAttributes["description"] = network.Description
 				}
-				
+
 				resources = append(resources, ref)
 			}
 			return nil
@@ -276,7 +276,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			log.Printf("Failed to list networks for project %s: %v", projectID, err)
 			continue
 		}
-		
+
 		// Scan subnetworks
 		req4 := client.Subnetworks.AggregatedList(projectID)
 		if err := req4.Pages(ctx, func(page *compute.SubnetworkAggregatedList) error {
@@ -284,24 +284,24 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 				if subnetList.Subnetworks != nil {
 					for _, subnet := range subnetList.Subnetworks {
 						ref := &pb.ResourceRef{
-							Id:      fmt.Sprintf("projects/%s/regions/%s/subnetworks/%s", 
-								    projectID, extractRegionFromURL(region), subnet.Name),
+							Id: fmt.Sprintf("projects/%s/regions/%s/subnetworks/%s",
+								projectID, extractRegionFromURL(region), subnet.Name),
 							Name:    subnet.Name,
 							Type:    "compute.googleapis.com/Subnetwork",
 							Service: "compute",
 							Region:  extractRegionFromURL(region),
 							BasicAttributes: map[string]string{
-								"cidr_range":  subnet.IpCidrRange,
-								"network":     extractLastSegment(subnet.Network),
-								"self_link":   subnet.SelfLink,
-								"project_id":  projectID,
+								"cidr_range": subnet.IpCidrRange,
+								"network":    extractLastSegment(subnet.Network),
+								"self_link":  subnet.SelfLink,
+								"project_id": projectID,
 							},
 						}
-						
+
 						if subnet.Description != "" {
 							ref.BasicAttributes["description"] = subnet.Description
 						}
-						
+
 						resources = append(resources, ref)
 					}
 				}
@@ -312,7 +312,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			continue
 		}
 	}
-	
+
 	return resources, nil
 }
 
@@ -323,25 +323,25 @@ func (cs *ComputeScanner) DescribeResource(ctx context.Context, resourceID strin
 	if len(parts) < 6 {
 		return nil, fmt.Errorf("invalid resource ID format")
 	}
-	
+
 	projectID := parts[1]
 	resourceType := parts[4] // "instances", "disks", etc.
-	
+
 	client, err := cs.clientFactory.GetComputeClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create compute client: %w", err)
 	}
-	
+
 	switch resourceType {
 	case "instances":
 		zone := parts[3]
 		instanceName := parts[5]
-		
+
 		instance, err := client.Instances.Get(projectID, zone, instanceName).Context(ctx).Do()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get instance: %w", err)
 		}
-		
+
 		resource := &pb.Resource{
 			Provider:     "gcp",
 			Service:      "compute",
@@ -352,28 +352,28 @@ func (cs *ComputeScanner) DescribeResource(ctx context.Context, resourceID strin
 			Tags:         make(map[string]string),
 			DiscoveredAt: timestamppb.Now(),
 		}
-		
+
 		// Convert labels to tags
 		for k, v := range instance.Labels {
 			resource.Tags[k] = v
 		}
-		
+
 		// Store raw data
 		if rawData, err := json.Marshal(instance); err == nil {
 			resource.RawData = string(rawData)
 		}
-		
+
 		return resource, nil
-		
+
 	case "disks":
 		zone := parts[3]
 		diskName := parts[5]
-		
+
 		disk, err := client.Disks.Get(projectID, zone, diskName).Context(ctx).Do()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get disk: %w", err)
 		}
-		
+
 		resource := &pb.Resource{
 			Provider:     "gcp",
 			Service:      "compute",
@@ -384,19 +384,19 @@ func (cs *ComputeScanner) DescribeResource(ctx context.Context, resourceID strin
 			Tags:         make(map[string]string),
 			DiscoveredAt: timestamppb.Now(),
 		}
-		
+
 		// Convert labels to tags
 		for k, v := range disk.Labels {
 			resource.Tags[k] = v
 		}
-		
+
 		// Store raw data
 		if rawData, err := json.Marshal(disk); err == nil {
 			resource.RawData = string(rawData)
 		}
-		
+
 		return resource, nil
-		
+
 	default:
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
@@ -416,10 +416,10 @@ func (ss *StorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
-	
+
 	var resources []*pb.ResourceRef
 	projectIDs := ss.clientFactory.GetProjectIDs()
-	
+
 	for _, projectID := range projectIDs {
 		// List all buckets
 		req := client.Buckets.List(projectID)
@@ -438,12 +438,12 @@ func (ss *StorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 						"project_id":    projectID,
 					},
 				}
-				
+
 				// Add labels
 				for k, v := range bucket.Labels {
 					ref.BasicAttributes["label_"+k] = v
 				}
-				
+
 				resources = append(resources, ref)
 			}
 			return nil
@@ -452,7 +452,7 @@ func (ss *StorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			continue
 		}
 	}
-	
+
 	return resources, nil
 }
 
@@ -463,20 +463,20 @@ func (ss *StorageScanner) DescribeResource(ctx context.Context, resourceID strin
 	if len(parts) < 4 {
 		return nil, fmt.Errorf("invalid resource ID format")
 	}
-	
+
 	_ = parts[1] // projectID not used in this context
 	bucketName := parts[3]
-	
+
 	client, err := ss.clientFactory.GetStorageClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
-	
+
 	bucket, err := client.Buckets.Get(bucketName).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bucket: %w", err)
 	}
-	
+
 	resource := &pb.Resource{
 		Provider:     "gcp",
 		Service:      "storage",
@@ -487,17 +487,17 @@ func (ss *StorageScanner) DescribeResource(ctx context.Context, resourceID strin
 		Tags:         make(map[string]string),
 		DiscoveredAt: timestamppb.Now(),
 	}
-	
+
 	// Convert labels to tags
 	for k, v := range bucket.Labels {
 		resource.Tags[k] = v
 	}
-	
+
 	// Store raw data
 	if rawData, err := json.Marshal(bucket); err == nil {
 		resource.RawData = string(rawData)
 	}
-	
+
 	return resource, nil
 }
 
@@ -515,10 +515,10 @@ func (cs *ContainerScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container client: %w", err)
 	}
-	
+
 	var resources []*pb.ResourceRef
 	projectIDs := cs.clientFactory.GetProjectIDs()
-	
+
 	for _, projectID := range projectIDs {
 		// List all clusters
 		parent := fmt.Sprintf("projects/%s/locations/-", projectID)
@@ -527,36 +527,36 @@ func (cs *ContainerScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 			log.Printf("Failed to list clusters for project %s: %v", projectID, err)
 			continue
 		}
-		
+
 		for _, cluster := range resp.Clusters {
 			ref := &pb.ResourceRef{
-				Id:      fmt.Sprintf("projects/%s/locations/%s/clusters/%s", 
-					    projectID, cluster.Location, cluster.Name),
+				Id: fmt.Sprintf("projects/%s/locations/%s/clusters/%s",
+					projectID, cluster.Location, cluster.Name),
 				Name:    cluster.Name,
 				Type:    "container.googleapis.com/Cluster",
 				Service: "container",
 				Region:  cluster.Location,
 				BasicAttributes: map[string]string{
-					"status":         cluster.Status,
-					"cluster_ipv4":   cluster.ClusterIpv4Cidr,
-					"current_nodes":  fmt.Sprintf("%d", cluster.CurrentNodeCount),
-					"self_link":      cluster.SelfLink,
-					"project_id":     projectID,
+					"status":        cluster.Status,
+					"cluster_ipv4":  cluster.ClusterIpv4Cidr,
+					"current_nodes": fmt.Sprintf("%d", cluster.CurrentNodeCount),
+					"self_link":     cluster.SelfLink,
+					"project_id":    projectID,
 				},
 			}
-			
+
 			// Add labels
 			for k, v := range cluster.ResourceLabels {
 				ref.BasicAttributes["label_"+k] = v
 			}
-			
+
 			resources = append(resources, ref)
-			
+
 			// Also list node pools for this cluster
 			for _, nodePool := range cluster.NodePools {
 				npRef := &pb.ResourceRef{
-					Id:      fmt.Sprintf("projects/%s/locations/%s/clusters/%s/nodePools/%s", 
-						    projectID, cluster.Location, cluster.Name, nodePool.Name),
+					Id: fmt.Sprintf("projects/%s/locations/%s/clusters/%s/nodePools/%s",
+						projectID, cluster.Location, cluster.Name, nodePool.Name),
 					Name:    nodePool.Name,
 					Type:    "container.googleapis.com/NodePool",
 					Service: "container",
@@ -569,16 +569,16 @@ func (cs *ContainerScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 						"project_id":   projectID,
 					},
 				}
-				
+
 				if nodePool.Config != nil && nodePool.Config.MachineType != "" {
 					npRef.BasicAttributes["machine_type"] = nodePool.Config.MachineType
 				}
-				
+
 				resources = append(resources, npRef)
 			}
 		}
 	}
-	
+
 	return resources, nil
 }
 
@@ -589,22 +589,22 @@ func (cs *ContainerScanner) DescribeResource(ctx context.Context, resourceID str
 	if len(parts) < 6 {
 		return nil, fmt.Errorf("invalid resource ID format")
 	}
-	
+
 	projectID := parts[1]
 	location := parts[3]
 	clusterName := parts[5]
-	
+
 	client, err := cs.clientFactory.GetContainerClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container client: %w", err)
 	}
-	
+
 	name := fmt.Sprintf("projects/%s/locations/%s/clusters/%s", projectID, location, clusterName)
 	cluster, err := client.Projects.Locations.Clusters.Get(name).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cluster: %w", err)
 	}
-	
+
 	resource := &pb.Resource{
 		Provider:     "gcp",
 		Service:      "container",
@@ -615,17 +615,17 @@ func (cs *ContainerScanner) DescribeResource(ctx context.Context, resourceID str
 		Tags:         make(map[string]string),
 		DiscoveredAt: timestamppb.Now(),
 	}
-	
+
 	// Convert labels to tags
 	for k, v := range cluster.ResourceLabels {
 		resource.Tags[k] = v
 	}
-	
+
 	// Store raw data
 	if rawData, err := json.Marshal(cluster); err == nil {
 		resource.RawData = string(rawData)
 	}
-	
+
 	return resource, nil
 }
 
@@ -660,7 +660,7 @@ func convertRefToResource(ref *pb.ResourceRef) *pb.Resource {
 		Tags:         make(map[string]string),
 		DiscoveredAt: timestamppb.Now(),
 	}
-	
+
 	// Extract labels as tags
 	if ref.BasicAttributes != nil {
 		for k, v := range ref.BasicAttributes {
@@ -669,13 +669,13 @@ func convertRefToResource(ref *pb.ResourceRef) *pb.Resource {
 				resource.Tags[labelName] = v
 			}
 		}
-		
+
 		// Store raw resource data if available
 		if rawData, ok := ref.BasicAttributes["resource_data"]; ok {
 			resource.RawData = rawData
 		}
 	}
-	
+
 	return resource
 }
 
@@ -684,7 +684,7 @@ func mapServiceToAssetTypes(service string) []string {
 	serviceToAssetTypes := map[string][]string{
 		"compute": {
 			"compute.googleapis.com/Instance",
-			"compute.googleapis.com/Disk", 
+			"compute.googleapis.com/Disk",
 			"compute.googleapis.com/Network",
 			"compute.googleapis.com/Subnetwork",
 			"compute.googleapis.com/Firewall",
@@ -700,11 +700,11 @@ func mapServiceToAssetTypes(service string) []string {
 			"container.googleapis.com/NodePool",
 		},
 	}
-	
+
 	if types, ok := serviceToAssetTypes[service]; ok {
 		return types
 	}
-	
+
 	return []string{fmt.Sprintf("%s.googleapis.com/*", service)}
 }
 

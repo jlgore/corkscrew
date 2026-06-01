@@ -12,19 +12,19 @@ import (
 // StatusBarModel represents the status bar at the bottom of the screen
 type StatusBarModel struct {
 	// Status information
-	scanStatus     *types.ScanStatus
-	resourceCount  int
-	errorCount     int
-	currentTime    time.Time
+	scanStatus      *types.ScanStatus
+	resourceCount   int
+	errorCount      int
+	currentTime     time.Time
 	activeProviders []string
-	statusMessage  string
-	statusLevel    types.StatusLevel
+	statusMessage   string
+	statusLevel     types.StatusLevel
 
 	// Display state
-	width          int
-	showTime       bool
-	showProviders  bool
-	showProgress   bool
+	width         int
+	showTime      bool
+	showProviders bool
+	showProgress  bool
 }
 
 // NewStatusBarModel creates a new status bar model
@@ -189,18 +189,18 @@ func (m StatusBarModel) renderScanProgress() string {
 
 	// Progress bar
 	progressBar := m.renderProgressBar(m.scanStatus.Progress, 20)
-	
+
 	// Progress text
 	progressText := fmt.Sprintf("%.0f%%", m.scanStatus.Progress*100)
-	
+
 	// Current operation
 	operation := m.scanStatus.Operation
 	if len(operation) > 25 {
 		operation = operation[:22] + "..."
 	}
 
-	return fmt.Sprintf("%s %s %s", 
-		progressBar, 
+	return fmt.Sprintf("%s %s %s",
+		progressBar,
 		styles.InfoStyle.Render(progressText),
 		styles.SubtitleStyle.Render(operation),
 	)
@@ -256,19 +256,19 @@ func joinProviders(providers []string) string {
 	if len(providers) == 0 {
 		return "none"
 	}
-	
+
 	var styledProviders []string
 	for _, provider := range providers {
 		styled := styles.ProviderStyle(provider).Render(provider)
 		styledProviders = append(styledProviders, styled)
 	}
-	
+
 	if len(styledProviders) <= 3 {
 		return joinParts(styledProviders, ", ")
 	}
-	
-	return fmt.Sprintf("%s +%d more", 
-		joinParts(styledProviders[:2], ", "), 
+
+	return fmt.Sprintf("%s +%d more",
+		joinParts(styledProviders[:2], ", "),
 		len(styledProviders)-2)
 }
 

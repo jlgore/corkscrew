@@ -108,14 +108,14 @@ func (g *ResourceGraphSchemaGenerator) generateSchemaForResourceType(ctx context
 // generateTableName creates a consistent table name
 func (g *ResourceGraphSchemaGenerator) generateTableName(serviceName, resourceTypeName string) string {
 	// Convert to snake_case and ensure uniqueness
-	tableName := fmt.Sprintf("azure_%s_%s", 
+	tableName := fmt.Sprintf("azure_%s_%s",
 		strings.ToLower(strings.ReplaceAll(serviceName, "-", "_")),
 		strings.ToLower(strings.ReplaceAll(resourceTypeName, "-", "_")))
-	
+
 	// Remove any invalid characters
 	tableName = strings.ReplaceAll(tableName, ".", "_")
 	tableName = strings.ReplaceAll(tableName, "/", "_")
-	
+
 	return tableName
 }
 
@@ -124,10 +124,10 @@ func (g *ResourceGraphSchemaGenerator) generateDuckDBSchema(tableName string, re
 	var columns []string
 
 	// Standard Azure resource columns
-	columns = append(columns, 
+	columns = append(columns,
 		"id VARCHAR PRIMARY KEY",
 		"name VARCHAR NOT NULL",
-		"type VARCHAR NOT NULL", 
+		"type VARCHAR NOT NULL",
 		"location VARCHAR",
 		"resource_group VARCHAR",
 		"subscription_id VARCHAR",
@@ -143,13 +143,13 @@ func (g *ResourceGraphSchemaGenerator) generateDuckDBSchema(tableName string, re
 		if propDef.Required {
 			nullable = "NOT NULL"
 		}
-		
+
 		columns = append(columns, fmt.Sprintf("%s %s %s", columnName, columnType, nullable))
 	}
 
 	// Build CREATE TABLE statement
-	sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n  %s\n);", 
-		tableName, 
+	sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n  %s\n);",
+		tableName,
 		strings.Join(columns, ",\n  "))
 
 	// Add indexes
@@ -168,12 +168,12 @@ func (g *ResourceGraphSchemaGenerator) sanitizeColumnName(name string) string {
 	sanitized = strings.ReplaceAll(sanitized, "-", "_")
 	sanitized = strings.ReplaceAll(sanitized, " ", "_")
 	sanitized = strings.ToLower(sanitized)
-	
+
 	// Ensure it doesn't start with a number
 	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
 		sanitized = "prop_" + sanitized
 	}
-	
+
 	return sanitized
 }
 
@@ -212,7 +212,7 @@ func (g *ResourceGraphSchemaGenerator) generateIndexes(tableName string, resourc
 		if g.shouldIndex(propName, propDef) {
 			columnName := g.sanitizeColumnName(propName)
 			indexName := fmt.Sprintf("idx_%s_%s", tableName, columnName)
-			indexes = append(indexes, 
+			indexes = append(indexes,
 				fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s(%s);", indexName, tableName, columnName))
 		}
 	}

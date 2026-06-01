@@ -243,13 +243,13 @@ func (g *GRPCProviderAnalyzer) convertAnalysisResponseToResult(response *pb.Anal
 	// Convert resources
 	for _, protoResource := range response.Resources {
 		resource := ResourceInfo{
-			Name:         protoResource.Name,
-			Service:      protoResource.Service,
-			DisplayName:  protoResource.DisplayName,
-			Description:  protoResource.Description,
-			Identifiers:  protoResource.Identifiers,
-			Attributes:   []AttributeInfo{},
-			Metadata:     make(map[string]interface{}),
+			Name:        protoResource.Name,
+			Service:     protoResource.Service,
+			DisplayName: protoResource.DisplayName,
+			Description: protoResource.Description,
+			Identifiers: protoResource.Identifiers,
+			Attributes:  []AttributeInfo{},
+			Metadata:    make(map[string]interface{}),
 		}
 
 		// Convert attributes
@@ -301,12 +301,12 @@ func (g *GRPCProviderAnalyzer) convertAnalysisResponseToResult(response *pb.Anal
 func (g *GRPCProviderGenerator) convertAnalysisResultToGenerateRequest(analysis *AnalysisResult, options GenerationOptions) (*pb.GenerateFromAnalysisRequest, error) {
 	// Convert AnalysisResult back to AnalysisResponse format for the gRPC call
 	analysisResponse := &pb.AnalysisResponse{
-		Success:   true,
-		Services:  []*pb.ServiceAnalysis{},
-		Resources: []*pb.ResourceAnalysis{},
+		Success:    true,
+		Services:   []*pb.ServiceAnalysis{},
+		Resources:  []*pb.ResourceAnalysis{},
 		Operations: []*pb.OperationAnalysis{},
-		Metadata:  make(map[string]string),
-		Warnings:  analysis.Warnings,
+		Metadata:   make(map[string]string),
+		Warnings:   analysis.Warnings,
 	}
 
 	// Convert services

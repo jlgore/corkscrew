@@ -10,17 +10,17 @@ import (
 func NewBaseChangeTracker(provider string, storage ChangeStorage, config *ChangeTrackerConfig) *BaseChangeTracker {
 	if config == nil {
 		config = &ChangeTrackerConfig{
-			Provider:               provider,
+			Provider:                 provider,
 			EnableRealTimeMonitoring: true,
-			ChangeRetention:        365 * 24 * time.Hour, // 1 year
-			DriftCheckInterval:     1 * time.Hour,
-			AlertingEnabled:        true,
-			AnalyticsEnabled:       true,
-			CacheEnabled:           true,
-			CacheTTL:               5 * time.Minute,
-			MaxConcurrentStreams:   100,
-			BatchSize:              1000,
-			MaxQueryTimeRange:      30 * 24 * time.Hour, // 30 days
+			ChangeRetention:          365 * 24 * time.Hour, // 1 year
+			DriftCheckInterval:       1 * time.Hour,
+			AlertingEnabled:          true,
+			AnalyticsEnabled:         true,
+			CacheEnabled:             true,
+			CacheTTL:                 5 * time.Minute,
+			MaxConcurrentStreams:     100,
+			BatchSize:                1000,
+			MaxQueryTimeRange:        30 * 24 * time.Hour, // 30 days
 		}
 	}
 
@@ -115,8 +115,8 @@ func (bct *BaseChangeTracker) CalculateResourceChecksum(state *ResourceState) st
 func (bct *BaseChangeTracker) AnalyzeChangeImpact(change *ChangeEvent) *ImpactAssessment {
 	assessment := &ImpactAssessment{
 		SecurityImpact:     bct.analyzeSecurityImpact(change),
-		CostImpact:        bct.analyzeCostImpact(change),
-		PerformanceImpact: bct.analyzePerformanceImpact(change),
+		CostImpact:         bct.analyzeCostImpact(change),
+		PerformanceImpact:  bct.analyzePerformanceImpact(change),
 		AvailabilityImpact: bct.analyzeAvailabilityImpact(change),
 	}
 

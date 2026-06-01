@@ -97,10 +97,10 @@ func showHelp() {
 
 func listServices() {
 	services := GetGCPServiceDefinitions()
-	
+
 	fmt.Println("Available GCP services for scanner generation:")
 	fmt.Println()
-	
+
 	for name, service := range services {
 		fmt.Printf("  %s (%s)\n", name, service.ClientType)
 		for _, resource := range service.ResourceTypes {
@@ -114,7 +114,7 @@ func listServices() {
 		}
 		fmt.Println()
 	}
-	
+
 	fmt.Println("Use 'all' to generate scanners for all services.")
 }
 
@@ -186,7 +186,7 @@ func GetGCPServiceDefinitions() map[string]*GCPServiceInfo {
 // GenerateGCPServiceScanner generates a scanner for a specific GCP service
 func GenerateGCPServiceScanner(serviceName string, outputDir string) error {
 	fmt.Printf("Generating simple scanner template for service: %s\n", serviceName)
-	
+
 	// Create a simple scanner template
 	template := `package main
 
@@ -293,13 +293,13 @@ func (s *` + strings.Title(serviceName) + `Scanner) DescribeResource(ctx context
 // GenerateAllGCPScanners generates scanners for all defined GCP services
 func GenerateAllGCPScanners(outputDir string) error {
 	services := []string{"compute", "storage", "container", "bigquery", "cloudsql"}
-	
+
 	for _, service := range services {
 		if err := GenerateGCPServiceScanner(service, outputDir); err != nil {
 			return fmt.Errorf("failed to generate scanner for %s: %w", service, err)
 		}
 	}
-	
+
 	// Generate registry
 	return generateGCPScannerRegistry(services, outputDir)
 }

@@ -64,7 +64,7 @@ func (ic *InformerCache) SetupInformers(ctx context.Context, resourceTypes []str
 
 		// Create informer
 		informer := ic.informerFactory.ForResource(gvr).Informer()
-		
+
 		// Store informer
 		key := fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource)
 		ic.resourceInformers[key] = informer
@@ -188,7 +188,7 @@ func (ic *InformerCache) GetCachedResources(resourceType string) ([]*pb.Resource
 
 	// Get all objects from the informer's store
 	objects := informer.GetStore().List()
-	
+
 	var resources []*pb.Resource
 	for _, obj := range objects {
 		unstructuredObj, ok := obj.(*unstructured.Unstructured)

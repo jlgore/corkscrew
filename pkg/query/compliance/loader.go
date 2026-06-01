@@ -21,69 +21,69 @@ var defaultPacks embed.FS
 
 // PackLoader manages discovery, loading, and caching of query packs
 type PackLoader struct {
-	mu                 sync.RWMutex
-	registry           *PackRegistry
-	searchPaths        []string
-	cache              map[string]*CachedPack
-	dependencyGraph    map[string][]string // pack -> dependencies
-	loadedPacks        map[string]*QueryPack
-	manifestCache      map[string]*PackManifest
-	sqlCache           map[string]string // file path -> SQL content
+	mu                  sync.RWMutex
+	registry            *PackRegistry
+	searchPaths         []string
+	cache               map[string]*CachedPack
+	dependencyGraph     map[string][]string // pack -> dependencies
+	loadedPacks         map[string]*QueryPack
+	manifestCache       map[string]*PackManifest
+	sqlCache            map[string]string // file path -> SQL content
 	enableEmbeddedPacks bool
-	cacheExpiry        time.Duration
-	maxRetries         int
-	retryDelay         time.Duration
+	cacheExpiry         time.Duration
+	maxRetries          int
+	retryDelay          time.Duration
 }
 
 // CachedPack represents a cached pack with metadata
 type CachedPack struct {
-	Pack       *QueryPack
-	LoadedAt   time.Time
-	ModTime    time.Time
-	FileHash   string
-	FilePath   string
+	Pack         *QueryPack
+	LoadedAt     time.Time
+	ModTime      time.Time
+	FileHash     string
+	FilePath     string
 	Dependencies []string
 }
 
 // PackManifest represents the manifest.yaml file in a pack directory
 type PackManifest struct {
-	APIVersion   string                 `yaml:"apiVersion"`
-	Kind         string                 `yaml:"kind"`
-	Metadata     PackMetadata           `yaml:"metadata"`
-	Spec         PackSpec               `yaml:"spec"`
-	LoadedFrom   string                 `yaml:"-"`
-	LoadedAt     time.Time              `yaml:"-"`
+	APIVersion string       `yaml:"apiVersion"`
+	Kind       string       `yaml:"kind"`
+	Metadata   PackMetadata `yaml:"metadata"`
+	Spec       PackSpec     `yaml:"spec"`
+	LoadedFrom string       `yaml:"-"`
+	LoadedAt   time.Time    `yaml:"-"`
 }
 
 // PackSpec defines the specification for a query pack
 type PackSpec struct {
-	Queries     []QuerySpec     `yaml:"queries"`
-	Parameters  []PackParameter `yaml:"parameters,omitempty"`
-	Includes    []string        `yaml:"includes,omitempty"`
-	DependsOn   []PackDependency `yaml:"depends_on,omitempty"`
-	Resources   []string        `yaml:"resources,omitempty"`
+	Queries    []QuerySpec      `yaml:"queries"`
+	Parameters []PackParameter  `yaml:"parameters,omitempty"`
+	Includes   []string         `yaml:"includes,omitempty"`
+	DependsOn  []PackDependency `yaml:"depends_on,omitempty"`
+	Resources  []string         `yaml:"resources,omitempty"`
 }
 
 // QuerySpec defines a query specification in the manifest
 type QuerySpec struct {
-	ID              string               `yaml:"id"`
-	Title           string               `yaml:"title"`
-	Description     string               `yaml:"description"`
-	Objective       string               `yaml:"objective,omitempty"`
-	Severity        string               `yaml:"severity"`
-	Category        string               `yaml:"category"`
-	ControlFamily   string               `yaml:"control_family,omitempty"`
-	NISTCSF         string               `yaml:"nist_csf,omitempty"`
-	Tags            []string             `yaml:"tags,omitempty"`
-	QueryFile       string               `yaml:"query_file"`
-	Parameters      []string             `yaml:"parameters,omitempty"`
-	DependsOn       []string             `yaml:"depends_on,omitempty"`
-	Threats         []string             `yaml:"threats,omitempty"`
-	ControlMappings ControlMappings      `yaml:"control_mappings,omitempty"`
-	TestRequirements []TestRequirement   `yaml:"test_requirements,omitempty"`
-	Remediation     RemediationInfo      `yaml:"remediation,omitempty"`
-	References      []Reference          `yaml:"references,omitempty"`
-	Enabled         bool                 `yaml:"enabled"`
+	ID               string            `yaml:"id"`
+	Title            string            `yaml:"title"`
+	Description      string            `yaml:"description"`
+	Objective        string            `yaml:"objective,omitempty"`
+	Severity         string            `yaml:"severity"`
+	Category         string            `yaml:"category"`
+	ControlFamily    string            `yaml:"control_family,omitempty"`
+	NISTCSF          string            `yaml:"nist_csf,omitempty"`
+	Tags             []string          `yaml:"tags,omitempty"`
+	QueryFile        string            `yaml:"query_file"`
+	Parameters       []string          `yaml:"parameters,omitempty"`
+	DependsOn        []string          `yaml:"depends_on,omitempty"`
+	Threats          []string          `yaml:"threats,omitempty"`
+	ControlMappings  ControlMappings   `yaml:"control_mappings,omitempty"`
+	TestRequirements []TestRequirement `yaml:"test_requirements,omitempty"`
+	Remediation      RemediationInfo   `yaml:"remediation,omitempty"`
+	References       []Reference       `yaml:"references,omitempty"`
+	Enabled          bool              `yaml:"enabled"`
 }
 
 // PackDependency represents a dependency on another pack
@@ -135,23 +135,23 @@ func (e DependencyError) Error() string {
 // NewPackLoader creates a new pack loader with default configuration
 func NewPackLoader() *PackLoader {
 	homeDir, _ := os.UserHomeDir()
-	
+
 	return &PackLoader{
-		registry:           NewPackRegistry(),
+		registry: NewPackRegistry(),
 		searchPaths: []string{
 			filepath.Join(homeDir, ".corkscrew", "query-packs"),
 			"/etc/corkscrew/query-packs",
 			"./query-packs",
 		},
-		cache:              make(map[string]*CachedPack),
-		dependencyGraph:    make(map[string][]string),
-		loadedPacks:        make(map[string]*QueryPack),
-		manifestCache:      make(map[string]*PackManifest),
-		sqlCache:           make(map[string]string),
+		cache:               make(map[string]*CachedPack),
+		dependencyGraph:     make(map[string][]string),
+		loadedPacks:         make(map[string]*QueryPack),
+		manifestCache:       make(map[string]*PackManifest),
+		sqlCache:            make(map[string]string),
 		enableEmbeddedPacks: true,
-		cacheExpiry:        30 * time.Minute,
-		maxRetries:         3,
-		retryDelay:         time.Second,
+		cacheExpiry:         30 * time.Minute,
+		maxRetries:          3,
+		retryDelay:          time.Second,
 	}
 }
 
@@ -188,7 +188,7 @@ func (l *PackLoader) DiscoverPacks(ctx context.Context) ([]string, error) {
 			// Log error but continue with other paths
 			continue
 		}
-		
+
 		for _, pack := range packs {
 			if !discovered[pack] {
 				allPacks = append(allPacks, pack)
@@ -406,24 +406,24 @@ func (l *PackLoader) manifestToPack(ctx context.Context, manifest *PackManifest,
 	baseDir := filepath.Dir(manifestPath)
 	for _, querySpec := range manifest.Spec.Queries {
 		query := ComplianceQuery{
-			ID:              querySpec.ID,
-			Title:           querySpec.Title,
-			Description:     querySpec.Description,
-			Objective:       querySpec.Objective,
-			Severity:        querySpec.Severity,
-			Category:        querySpec.Category,
-			ControlFamily:   querySpec.ControlFamily,
-			NISTCSF:         querySpec.NISTCSF,
-			Tags:            querySpec.Tags,
-			QueryFile:       querySpec.QueryFile,
-			Parameters:      querySpec.Parameters,
-			DependsOn:       querySpec.DependsOn,
-			Threats:         querySpec.Threats,
-			ControlMappings: querySpec.ControlMappings,
+			ID:               querySpec.ID,
+			Title:            querySpec.Title,
+			Description:      querySpec.Description,
+			Objective:        querySpec.Objective,
+			Severity:         querySpec.Severity,
+			Category:         querySpec.Category,
+			ControlFamily:    querySpec.ControlFamily,
+			NISTCSF:          querySpec.NISTCSF,
+			Tags:             querySpec.Tags,
+			QueryFile:        querySpec.QueryFile,
+			Parameters:       querySpec.Parameters,
+			DependsOn:        querySpec.DependsOn,
+			Threats:          querySpec.Threats,
+			ControlMappings:  querySpec.ControlMappings,
 			TestRequirements: querySpec.TestRequirements,
-			Remediation:     querySpec.Remediation,
-			References:      querySpec.References,
-			Enabled:         querySpec.Enabled,
+			Remediation:      querySpec.Remediation,
+			References:       querySpec.References,
+			Enabled:          querySpec.Enabled,
 		}
 
 		// Load SQL content
@@ -594,7 +594,7 @@ func (l *PackLoader) isCacheValid(namespace string) bool {
 			if !info.ModTime().Equal(cached.ModTime) {
 				return false
 			}
-			
+
 			// Also check file hash for more accurate change detection
 			if data, err := os.ReadFile(cached.FilePath); err == nil {
 				hash := sha256.Sum256(data)
@@ -627,7 +627,7 @@ func (l *PackLoader) InvalidateCache(namespace string) {
 		delete(l.loadedPacks, namespace)
 		delete(l.manifestCache, namespace)
 		delete(l.dependencyGraph, namespace)
-		
+
 		// Clear SQL cache entries for this pack
 		for path := range l.sqlCache {
 			if strings.Contains(path, namespace) {

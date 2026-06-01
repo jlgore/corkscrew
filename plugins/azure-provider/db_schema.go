@@ -9,16 +9,16 @@ import (
 type AzureDuckDBSchemas struct {
 	// Main resources table schema
 	AzureResourcesTable string
-	
+
 	// Relationships table schema
 	AzureRelationshipsTable string
-	
+
 	// Scan metadata table schema
 	ScanMetadataTable string
-	
+
 	// API action metadata table schema
 	APIActionMetadataTable string
-	
+
 	// Service-specific table generation
 	ServiceTables map[string]string
 }
@@ -28,7 +28,7 @@ func GenerateAzureDuckDBSchemas() *AzureDuckDBSchemas {
 	schemas := &AzureDuckDBSchemas{
 		ServiceTables: make(map[string]string),
 	}
-	
+
 	// Main Azure resources table - unified storage for all Azure resources
 	schemas.AzureResourcesTable = `
 CREATE TABLE IF NOT EXISTS azure_resources (
@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS azure_api_action_metadata (
 
 	// Generate service-specific tables for common Azure services
 	schemas.generateServiceSpecificTables()
-	
+
 	return schemas
 }
 
@@ -451,12 +451,12 @@ func (s *AzureDuckDBSchemas) GetAllCreateTableSQL() []string {
 		s.ScanMetadataTable,
 		s.APIActionMetadataTable,
 	}
-	
+
 	// Add service-specific tables
 	for _, sql := range s.ServiceTables {
 		sqls = append(sqls, sql)
 	}
-	
+
 	return sqls
 }
 
@@ -469,10 +469,10 @@ func GenerateResourceInsertSQL(resource map[string]interface{}) (string, []inter
 		"tags", "properties", "raw_data", "provisioning_state", "power_state",
 		"created_time", "changed_time", "etag", "api_version",
 	}
-	
+
 	placeholders := make([]string, len(columns))
 	values := make([]interface{}, len(columns))
-	
+
 	for i := range columns {
 		placeholders[i] = "?"
 		if val, exists := resource[columns[i]]; exists {
@@ -481,13 +481,13 @@ func GenerateResourceInsertSQL(resource map[string]interface{}) (string, []inter
 			values[i] = nil
 		}
 	}
-	
+
 	sql := fmt.Sprintf(
 		"INSERT INTO azure_resources (%s) VALUES (%s)",
 		strings.Join(columns, ", "),
 		strings.Join(placeholders, ", "),
 	)
-	
+
 	return sql, values
 }
 
@@ -497,7 +497,7 @@ func GenerateRelationshipInsertSQL(fromID, toID, relationType string, properties
 		(from_id, to_id, relationship_type, relationship_subtype, properties, 
 		 from_resource_type, to_resource_type, direction) 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	
+
 	values := []interface{}{
 		fromID,
 		toID,
@@ -508,7 +508,7 @@ func GenerateRelationshipInsertSQL(fromID, toID, relationType string, properties
 		properties["to_type"],
 		properties["direction"],
 	}
-	
+
 	return sql, values
 }
 
@@ -520,7 +520,7 @@ func GenerateScanMetadataInsertSQL(scanID string, scanData map[string]interface{
 		 scan_start_time, scan_end_time, duration_ms, initiated_by, scan_reason,
 		 error_messages, warnings, metadata, status) 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	
+
 	values := []interface{}{
 		scanID,
 		scanData["scan_type"],
@@ -543,17 +543,17 @@ func GenerateScanMetadataInsertSQL(scanID string, scanData map[string]interface{
 		scanData["metadata"],
 		scanData["status"],
 	}
-	
+
 	return sql, values
 }
 
 // ExtractRelationshipsFromResource extracts relationships from an Azure resource
 func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[string]interface{} {
 	relationships := []map[string]interface{}{}
-	
+
 	resourceID := resource["id"].(string)
 	resourceType := resource["type"].(string)
-	
+
 	// Extract parent relationship
 	if parentID, exists := resource["parent_id"]; exists && parentID != nil && parentID != "" {
 		relationships = append(relationships, map[string]interface{}{
@@ -568,7 +568,7 @@ func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[str
 			},
 		})
 	}
-	
+
 	// Extract managed_by relationship
 	if managedBy, exists := resource["managed_by"]; exists && managedBy != nil && managedBy != "" {
 		relationships = append(relationships, map[string]interface{}{
@@ -583,7 +583,7 @@ func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[str
 			},
 		})
 	}
-	
+
 	// Extract resource-specific relationships
 	if properties, exists := resource["properties"].(map[string]interface{}); exists {
 		// Virtual Machine relationships
@@ -610,7 +610,7 @@ func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[str
 					}
 				}
 			}
-			
+
 			// Availability Set
 			if availSet, exists := properties["availabilitySet"].(map[string]interface{}); exists {
 				if availSetID, exists := availSet["id"].(string); exists {
@@ -628,7 +628,7 @@ func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[str
 				}
 			}
 		}
-		
+
 		// Storage Account relationships
 		if strings.Contains(resourceType, "Microsoft.Storage/storageAccounts") {
 			// Private endpoints
@@ -656,7 +656,7 @@ func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[str
 				}
 			}
 		}
-		
+
 		// Virtual Network relationships
 		if strings.Contains(resourceType, "Microsoft.Network/virtualNetworks") {
 			// Peerings
@@ -685,7 +685,7 @@ func ExtractRelationshipsFromResource(resource map[string]interface{}) []map[str
 			}
 		}
 	}
-	
+
 	return relationships
 }
 

@@ -14,10 +14,10 @@ import (
 
 // CleanupVerifier handles AWS resource cleanup verification and manual cleanup
 type CleanupVerifier struct {
-	cfg    aws.Config
+	cfg      aws.Config
 	s3Client *s3.Client
-	region string
-	testID string
+	region   string
+	testID   string
 }
 
 // NewCleanupVerifier creates a new cleanup verifier
@@ -37,46 +37,46 @@ func NewCleanupVerifier(ctx context.Context, region, testID string) (*CleanupVer
 
 // CleanupResult contains the results of cleanup verification
 type CleanupResult struct {
-	PulumiSuccess    bool                   `json:"pulumi_success"`
-	AWSVerified      bool                   `json:"aws_verified"`
-	ResourcesFound   []RemainingResource    `json:"resources_found"`
-	ManualCleanup    []ManualCleanupAction  `json:"manual_cleanup"`
-	CleanupDuration  time.Duration          `json:"cleanup_duration"`
-	Errors           []string               `json:"errors"`
+	PulumiSuccess   bool                  `json:"pulumi_success"`
+	AWSVerified     bool                  `json:"aws_verified"`
+	ResourcesFound  []RemainingResource   `json:"resources_found"`
+	ManualCleanup   []ManualCleanupAction `json:"manual_cleanup"`
+	CleanupDuration time.Duration         `json:"cleanup_duration"`
+	Errors          []string              `json:"errors"`
 }
 
 type RemainingResource struct {
-	Service      string    `json:"service"`
-	Type         string    `json:"type"`
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	ARN          string    `json:"arn"`
-	CreatedTime  time.Time `json:"created_time"`
-	TestID       string    `json:"test_id"`
+	Service     string    `json:"service"`
+	Type        string    `json:"type"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ARN         string    `json:"arn"`
+	CreatedTime time.Time `json:"created_time"`
+	TestID      string    `json:"test_id"`
 }
 
 type ManualCleanupAction struct {
-	Resource    RemainingResource `json:"resource"`
-	Action      string           `json:"action"`
-	Success     bool             `json:"success"`
-	Error       string           `json:"error,omitempty"`
-	Duration    time.Duration    `json:"duration"`
+	Resource RemainingResource `json:"resource"`
+	Action   string            `json:"action"`
+	Success  bool              `json:"success"`
+	Error    string            `json:"error,omitempty"`
+	Duration time.Duration     `json:"duration"`
 }
 
 // VerifyAndCleanup verifies that resources were actually deleted and performs manual cleanup if needed
 func (cv *CleanupVerifier) VerifyAndCleanup(ctx context.Context, expectedResources map[string]interface{}, pulumiSuccess bool) (*CleanupResult, error) {
 	start := time.Now()
-	
+
 	result := &CleanupResult{
-		PulumiSuccess:   pulumiSuccess,
-		ResourcesFound:  []RemainingResource{},
-		ManualCleanup:   []ManualCleanupAction{},
-		Errors:          []string{},
+		PulumiSuccess:  pulumiSuccess,
+		ResourcesFound: []RemainingResource{},
+		ManualCleanup:  []ManualCleanupAction{},
+		Errors:         []string{},
 	}
 
 	// Extract expected resources for verification
 	testResources := cv.extractTestResources(expectedResources)
-	
+
 	// Wait a moment for AWS eventual consistency
 	fmt.Println("⏳ Waiting 10s for AWS eventual consistency...")
 	time.Sleep(10 * time.Second)
@@ -88,7 +88,7 @@ func (cv *CleanupVerifier) VerifyAndCleanup(ctx context.Context, expectedResourc
 			result.Errors = append(result.Errors, fmt.Sprintf("Error checking %s: %v", resource.ID, err))
 			continue
 		}
-		
+
 		if remaining != nil {
 			result.ResourcesFound = append(result.ResourcesFound, *remaining)
 			fmt.Printf("⚠️  Found remaining resource: %s (%s)\n", remaining.Name, remaining.Type)
@@ -98,11 +98,11 @@ func (cv *CleanupVerifier) VerifyAndCleanup(ctx context.Context, expectedResourc
 	// If resources remain, attempt manual cleanup
 	if len(result.ResourcesFound) > 0 {
 		fmt.Printf("🧹 Attempting manual cleanup of %d remaining resources...\n", len(result.ResourcesFound))
-		
+
 		for _, resource := range result.ResourcesFound {
 			action := cv.performManualCleanup(ctx, resource)
 			result.ManualCleanup = append(result.ManualCleanup, action)
-			
+
 			if action.Success {
 				fmt.Printf("✅ Manually cleaned up: %s\n", resource.Name)
 			} else {
@@ -113,7 +113,7 @@ func (cv *CleanupVerifier) VerifyAndCleanup(ctx context.Context, expectedResourc
 		// Re-verify after manual cleanup
 		fmt.Println("🔍 Re-verifying cleanup after manual actions...")
 		time.Sleep(5 * time.Second)
-		
+
 		finalCheck := []RemainingResource{}
 		for _, resource := range result.ResourcesFound {
 			remaining, err := cv.checkResourceExists(ctx, resource)
@@ -344,7 +344,7 @@ func (cv *CleanupVerifier) GetCleanupSummary(result *CleanupResult) string {
 	summary += fmt.Sprintf("- Pulumi Success: %t\n", result.PulumiSuccess)
 	summary += fmt.Sprintf("- AWS Verified: %t\n", result.AWSVerified)
 	summary += fmt.Sprintf("- Duration: %v\n", result.CleanupDuration)
-	
+
 	if len(result.ResourcesFound) > 0 {
 		summary += fmt.Sprintf("- Remaining Resources: %d\n", len(result.ResourcesFound))
 		for _, resource := range result.ResourcesFound {

@@ -11,10 +11,10 @@ import (
 type AnalysisPipeline interface {
 	// AddStage adds an analysis stage to the pipeline
 	AddStage(name string, stage AnalysisStage)
-	
+
 	// Execute runs the pipeline with the given input
 	Execute(ctx context.Context, input interface{}) (interface{}, error)
-	
+
 	// GetStages returns all registered stages
 	GetStages() []string
 }
@@ -23,10 +23,10 @@ type AnalysisPipeline interface {
 type AnalysisStage interface {
 	// Name returns the stage name
 	Name() string
-	
+
 	// Process executes the stage logic
 	Process(ctx context.Context, input interface{}) (interface{}, error)
-	
+
 	// Validate checks if the input is valid for this stage
 	Validate(input interface{}) error
 }
@@ -41,10 +41,10 @@ type PipelineConfig struct {
 
 // defaultPipeline implements AnalysisPipeline
 type defaultPipeline struct {
-	stages  map[string]AnalysisStage
-	order   []string
-	config  PipelineConfig
-	mu      sync.RWMutex
+	stages map[string]AnalysisStage
+	order  []string
+	config PipelineConfig
+	mu     sync.RWMutex
 }
 
 // NewAnalysisPipeline creates a new analysis pipeline
@@ -55,7 +55,7 @@ func NewAnalysisPipeline(config PipelineConfig) AnalysisPipeline {
 	if config.StageTimeout <= 0 {
 		config.StageTimeout = 5 * time.Minute
 	}
-	
+
 	return &defaultPipeline{
 		stages: make(map[string]AnalysisStage),
 		order:  []string{},
@@ -67,7 +67,7 @@ func NewAnalysisPipeline(config PipelineConfig) AnalysisPipeline {
 func (p *defaultPipeline) AddStage(name string, stage AnalysisStage) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	p.stages[name] = stage
 	p.order = append(p.order, name)
 }
@@ -78,24 +78,24 @@ func (p *defaultPipeline) Execute(ctx context.Context, input interface{}) (inter
 	stageOrder := make([]string, len(p.order))
 	copy(stageOrder, p.order)
 	p.mu.RUnlock()
-	
+
 	// Execute stages in order
 	current := input
 	for i, stageName := range stageOrder {
 		p.mu.RLock()
 		stage, exists := p.stages[stageName]
 		p.mu.RUnlock()
-		
+
 		if !exists {
 			continue
 		}
-		
+
 		// Report progress
 		if p.config.ProgressHandler != nil {
 			progress := float64(i) / float64(len(stageOrder))
 			p.config.ProgressHandler(stageName, progress)
 		}
-		
+
 		// Validate input
 		if err := stage.Validate(current); err != nil {
 			if p.config.ContinueOnError {
@@ -103,11 +103,11 @@ func (p *defaultPipeline) Execute(ctx context.Context, input interface{}) (inter
 			}
 			return nil, fmt.Errorf("stage %s validation failed: %w", stageName, err)
 		}
-		
+
 		// Create stage context with timeout
 		stageCtx, cancel := context.WithTimeout(ctx, p.config.StageTimeout)
 		defer cancel()
-		
+
 		// Process stage
 		output, err := stage.Process(stageCtx, current)
 		if err != nil {
@@ -116,15 +116,15 @@ func (p *defaultPipeline) Execute(ctx context.Context, input interface{}) (inter
 			}
 			return nil, fmt.Errorf("stage %s failed: %w", stageName, err)
 		}
-		
+
 		current = output
 	}
-	
+
 	// Report completion
 	if p.config.ProgressHandler != nil {
 		p.config.ProgressHandler("complete", 1.0)
 	}
-	
+
 	return current, nil
 }
 
@@ -132,7 +132,7 @@ func (p *defaultPipeline) Execute(ctx context.Context, input interface{}) (inter
 func (p *defaultPipeline) GetStages() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	stages := make([]string, len(p.order))
 	copy(stages, p.order)
 	return stages
@@ -232,7 +232,7 @@ func (a *AggregationStage) Process(ctx context.Context, input interface{}) (inte
 		// Try to convert single input to slice
 		inputs = []interface{}{input}
 	}
-	
+
 	return a.aggregator(inputs)
 }
 
@@ -264,28 +264,28 @@ func (p *ParallelStage) Name() string {
 func (p *ParallelStage) Process(ctx context.Context, input interface{}) (interface{}, error) {
 	results := make([]interface{}, len(p.stages))
 	errors := make([]error, len(p.stages))
-	
+
 	var wg sync.WaitGroup
 	for i, stage := range p.stages {
 		wg.Add(1)
 		go func(idx int, s AnalysisStage) {
 			defer wg.Done()
-			
+
 			result, err := s.Process(ctx, input)
 			results[idx] = result
 			errors[idx] = err
 		}(i, stage)
 	}
-	
+
 	wg.Wait()
-	
+
 	// Check for errors
 	for i, err := range errors {
 		if err != nil {
 			return nil, fmt.Errorf("parallel stage %s failed: %w", p.stages[i].Name(), err)
 		}
 	}
-	
+
 	return results, nil
 }
 

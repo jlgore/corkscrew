@@ -223,19 +223,19 @@ func (v *RawDataValidator) initializeAWSTypes() {
 
 // ValidationResult contains the results of raw data validation
 type ValidationResult struct {
-	ResourceType       string
-	ResourceID         string
-	Valid              bool
-	Errors             []string
-	Warnings           []string
-	MissingFields      []string
-	ExtraFields        []string
-	DataSize           int
-	FieldCount         int
-	PulumiFieldCount   int
-	UnmarshalSuccess   bool
-	UnmarshalError     string
-	FieldComparison    map[string]FieldComparisonResult
+	ResourceType     string
+	ResourceID       string
+	Valid            bool
+	Errors           []string
+	Warnings         []string
+	MissingFields    []string
+	ExtraFields      []string
+	DataSize         int
+	FieldCount       int
+	PulumiFieldCount int
+	UnmarshalSuccess bool
+	UnmarshalError   string
+	FieldComparison  map[string]FieldComparisonResult
 }
 
 // FieldComparisonResult contains comparison between Pulumi and raw data fields
@@ -483,12 +483,12 @@ func contains(slice []string, item string) bool {
 // ValidateAll validates raw data for all resources
 func (v *RawDataValidator) ValidateAll(resources []map[string]interface{}) []ValidationResult {
 	results := make([]ValidationResult, 0, len(resources))
-	
+
 	for _, resource := range resources {
 		resourceType, _ := resource["ResourceType"].(string)
 		resourceID, _ := resource["ResourceID"].(string)
 		rawData, _ := resource["raw_data"].(map[string]interface{})
-		
+
 		// Extract Pulumi data (all fields except raw_data)
 		pulumiData := make(map[string]interface{})
 		for k, v := range resource {
@@ -496,53 +496,53 @@ func (v *RawDataValidator) ValidateAll(resources []map[string]interface{}) []Val
 				pulumiData[k] = v
 			}
 		}
-		
+
 		result := v.ValidateResource(resourceType, resourceID, rawData, pulumiData)
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
 // GenerateReport generates a validation report
 func (v *RawDataValidator) GenerateReport(results []ValidationResult) string {
 	var report strings.Builder
-	
+
 	report.WriteString("Raw Data Validation Report\n")
 	report.WriteString("==========================\n\n")
-	
+
 	totalResources := len(results)
 	validResources := 0
 	totalDataSize := 0
 	resourceTypeStats := make(map[string]int)
 	commonMissingFields := make(map[string]int)
-	
+
 	for _, result := range results {
 		if result.Valid {
 			validResources++
 		}
 		totalDataSize += result.DataSize
 		resourceTypeStats[result.ResourceType]++
-		
+
 		for _, field := range result.MissingFields {
 			commonMissingFields[field]++
 		}
 	}
-	
+
 	// Summary
 	report.WriteString("Summary:\n")
 	report.WriteString(fmt.Sprintf("- Total Resources: %d\n", totalResources))
 	report.WriteString(fmt.Sprintf("- Valid Resources: %d (%.1f%%)\n", validResources, float64(validResources)/float64(totalResources)*100))
 	report.WriteString(fmt.Sprintf("- Total Raw Data Size: %.2f MB\n", float64(totalDataSize)/1024/1024))
 	report.WriteString(fmt.Sprintf("- Average Data Size per Resource: %.2f KB\n\n", float64(totalDataSize)/float64(totalResources)/1024))
-	
+
 	// Resource Type Distribution
 	report.WriteString("Resource Type Distribution:\n")
 	for resType, count := range resourceTypeStats {
 		report.WriteString(fmt.Sprintf("- %s: %d\n", resType, count))
 	}
 	report.WriteString("\n")
-	
+
 	// Common Missing Fields
 	if len(commonMissingFields) > 0 {
 		report.WriteString("Common Missing Fields:\n")
@@ -553,39 +553,39 @@ func (v *RawDataValidator) GenerateReport(results []ValidationResult) string {
 		}
 		report.WriteString("\n")
 	}
-	
+
 	// Detailed Issues
 	report.WriteString("Detailed Issues:\n")
 	for _, result := range results {
 		if !result.Valid || len(result.Errors) > 0 || len(result.Warnings) > 0 {
 			report.WriteString(fmt.Sprintf("\n%s - %s:\n", result.ResourceType, result.ResourceID))
-			
+
 			if len(result.Errors) > 0 {
 				report.WriteString("  Errors:\n")
 				for _, err := range result.Errors {
 					report.WriteString(fmt.Sprintf("  - %s\n", err))
 				}
 			}
-			
+
 			if len(result.Warnings) > 0 {
 				report.WriteString("  Warnings:\n")
 				for _, warn := range result.Warnings {
 					report.WriteString(fmt.Sprintf("  - %s\n", warn))
 				}
 			}
-			
+
 			if len(result.MissingFields) > 0 {
 				report.WriteString(fmt.Sprintf("  Missing Fields: %s\n", strings.Join(result.MissingFields, ", ")))
 			}
 		}
 	}
-	
+
 	// Field Comparison Summary
 	report.WriteString("\n\nField Comparison Summary:\n")
 	fieldsOnlyInPulumi := 0
 	fieldsOnlyInRaw := 0
 	fieldsMismatch := 0
-	
+
 	for _, result := range results {
 		for _, comparison := range result.FieldComparison {
 			if comparison.InPulumi && !comparison.InRawData {
@@ -597,10 +597,10 @@ func (v *RawDataValidator) GenerateReport(results []ValidationResult) string {
 			}
 		}
 	}
-	
+
 	report.WriteString(fmt.Sprintf("- Fields only in Pulumi: %d\n", fieldsOnlyInPulumi))
 	report.WriteString(fmt.Sprintf("- Fields only in Raw Data: %d\n", fieldsOnlyInRaw))
 	report.WriteString(fmt.Sprintf("- Fields with mismatched values: %d\n", fieldsMismatch))
-	
+
 	return report.String()
 }

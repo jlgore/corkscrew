@@ -17,16 +17,16 @@ type ComplianceExecutor struct {
 
 // ComplianceResult represents a standardized compliance check result
 type ComplianceResult struct {
-	ResourceID   string `json:"resource_id"`
-	ResourceName string `json:"resource_name"`
-	ResourceType string `json:"resource_type"`
-	Region       string `json:"region,omitempty"`
-	ControlID    string `json:"control_id"`
-	ControlName  string `json:"control_name"`
-	Status       string `json:"status"` // PASS, FAIL, WARNING, ERROR
-	Severity     string `json:"severity"` // CRITICAL, HIGH, MEDIUM, LOW, INFO
-	Details      string `json:"details"`
-	Remediation  *string `json:"remediation,omitempty"` // NULL if passing
+	ResourceID   string    `json:"resource_id"`
+	ResourceName string    `json:"resource_name"`
+	ResourceType string    `json:"resource_type"`
+	Region       string    `json:"region,omitempty"`
+	ControlID    string    `json:"control_id"`
+	ControlName  string    `json:"control_name"`
+	Status       string    `json:"status"`   // PASS, FAIL, WARNING, ERROR
+	Severity     string    `json:"severity"` // CRITICAL, HIGH, MEDIUM, LOW, INFO
+	Details      string    `json:"details"`
+	Remediation  *string   `json:"remediation,omitempty"` // NULL if passing
 	Timestamp    time.Time `json:"timestamp"`
 }
 
@@ -82,11 +82,11 @@ type DryRunResult struct {
 
 // ExecutionOptions configures query execution behavior
 type ExecutionOptions struct {
-	DryRun           bool                   `json:"dry_run"`
-	Timeout          time.Duration          `json:"timeout"`
-	Parameters       map[string]interface{} `json:"parameters"`
-	ContinueOnError  bool                   `json:"continue_on_error"`
-	MaxConcurrency   int                    `json:"max_concurrency"`
+	DryRun          bool                   `json:"dry_run"`
+	Timeout         time.Duration          `json:"timeout"`
+	Parameters      map[string]interface{} `json:"parameters"`
+	ContinueOnError bool                   `json:"continue_on_error"`
+	MaxConcurrency  int                    `json:"max_concurrency"`
 }
 
 // NewComplianceExecutor creates a new compliance query executor
@@ -333,7 +333,7 @@ func (e *ComplianceExecutor) dryRunPack(ctx context.Context, pack *QueryPack, op
 		// Report each query validation
 		for i, validation := range dryRunResult.Queries {
 			message := fmt.Sprintf("Query %s validation passed", validation.QueryID)
-			
+
 			if !validation.IsValid {
 				message = fmt.Sprintf("Query %s validation failed: %s", validation.QueryID, validation.Error.Error())
 			}
@@ -370,14 +370,14 @@ func (e *ComplianceExecutor) dryRunPack(ctx context.Context, pack *QueryPack, op
 // validateQueryColumns validates that a query returns required compliance columns
 func (e *ComplianceExecutor) validateQueryColumns(sqlQuery string) error {
 	requiredColumns := []string{
-		"resource_id", "resource_name", "resource_type", "control_id", 
+		"resource_id", "resource_name", "resource_type", "control_id",
 		"control_name", "status", "severity", "details",
 	}
 
 	// Simple validation - check if query contains the required column names
 	// This is a basic check; real validation would parse the SQL AST
 	upperSQL := strings.ToUpper(sqlQuery)
-	
+
 	for _, column := range requiredColumns {
 		if !strings.Contains(upperSQL, strings.ToUpper(column)) {
 			return fmt.Errorf("query must return required column: %s", column)
@@ -401,7 +401,7 @@ func (e *ComplianceExecutor) substituteParameters(sqlQuery string, queryParams [
 	// Handle each required parameter
 	for _, paramName := range queryParams {
 		placeholder := ":" + paramName
-		
+
 		if !strings.Contains(result, placeholder) {
 			continue // Parameter not used in this query
 		}
@@ -439,7 +439,7 @@ func (e *ComplianceExecutor) substituteParameters(sqlQuery string, queryParams [
 func (e *ComplianceExecutor) validatePackParameters(pack *QueryPack, providedParams map[string]interface{}) error {
 	// Collect all required parameters from pack and queries
 	requiredParams := make(map[string]*PackParameter)
-	
+
 	// Add pack-level parameters
 	for _, param := range pack.Parameters {
 		if param.Required {
@@ -458,7 +458,7 @@ func (e *ComplianceExecutor) validatePackParameters(pack *QueryPack, providedPar
 					break
 				}
 			}
-			
+
 			if paramDef != nil && paramDef.Required {
 				requiredParams[paramName] = paramDef
 			}
@@ -569,7 +569,7 @@ func (e *ComplianceExecutor) convertToComplianceResults(result *query.QueryResul
 // categorizeError categorizes an error for better reporting
 func (e *ComplianceExecutor) categorizeError(err error) string {
 	errMsg := err.Error()
-	
+
 	if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded") {
 		return "timeout"
 	}
@@ -579,7 +579,7 @@ func (e *ComplianceExecutor) categorizeError(err error) string {
 	if strings.Contains(errMsg, "syntax") || strings.Contains(errMsg, "SQL") {
 		return "syntax"
 	}
-	
+
 	return "execution"
 }
 

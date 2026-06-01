@@ -11,9 +11,9 @@ import (
 
 // PrivilegeEscalationAnalyzer analyzes privilege escalation paths across clouds
 type PrivilegeEscalationAnalyzer struct {
-	db               DatabaseInterface
-	logger           *log.Logger
-	riskThreshold    float64
+	db            DatabaseInterface
+	logger        *log.Logger
+	riskThreshold float64
 }
 
 // NewPrivilegeEscalationAnalyzer creates a new privilege escalation analyzer
@@ -27,49 +27,49 @@ func NewPrivilegeEscalationAnalyzer(db DatabaseInterface, logger *log.Logger) *P
 
 // EscalationPath represents a privilege escalation path
 type EscalationPath struct {
-	ID                 string                 `json:"id"`
-	RelationshipID     string                 `json:"relationship_id"`
-	RelationshipType   string                 `json:"relationship_type"`
-	PathType           string                 `json:"path_type"`
-	EscalationSteps    []EscalationStep       `json:"escalation_steps"`
-	EntryPoint         string                 `json:"entry_point"`
-	TargetPrivilege    string                 `json:"target_privilege"`
-	StepCount          int                    `json:"step_count"`
-	ComplexityScore    float64                `json:"complexity_score"`
-	FeasibilityScore   float64                `json:"feasibility_score"`
-	RiskLevel          string                 `json:"risk_level"`
-	RiskScore          float64                `json:"risk_score"`
-	ImpactScore        float64                `json:"impact_score"`
-	LikelihoodScore    float64                `json:"likelihood_score"`
-	AttackVectors      []AttackVector         `json:"attack_vectors"`
-	Prerequisites      []string               `json:"prerequisites"`
-	Indicators         []string               `json:"indicators"`
-	SourceProvider     string                 `json:"source_provider"`
-	TargetProvider     string                 `json:"target_provider"`
-	SourceAccountID    string                 `json:"source_account_id"`
-	TargetAccountID    string                 `json:"target_account_id"`
-	AffectedResources  []string               `json:"affected_resources"`
-	Mitigations        []Mitigation           `json:"mitigations"`
-	Controls           []SecurityControl      `json:"controls"`
-	DetectionMethods   []DetectionMethod      `json:"detection_methods"`
-	ResponseProcedures []ResponseProcedure    `json:"response_procedures"`
+	ID                   string                `json:"id"`
+	RelationshipID       string                `json:"relationship_id"`
+	RelationshipType     string                `json:"relationship_type"`
+	PathType             string                `json:"path_type"`
+	EscalationSteps      []EscalationStep      `json:"escalation_steps"`
+	EntryPoint           string                `json:"entry_point"`
+	TargetPrivilege      string                `json:"target_privilege"`
+	StepCount            int                   `json:"step_count"`
+	ComplexityScore      float64               `json:"complexity_score"`
+	FeasibilityScore     float64               `json:"feasibility_score"`
+	RiskLevel            string                `json:"risk_level"`
+	RiskScore            float64               `json:"risk_score"`
+	ImpactScore          float64               `json:"impact_score"`
+	LikelihoodScore      float64               `json:"likelihood_score"`
+	AttackVectors        []AttackVector        `json:"attack_vectors"`
+	Prerequisites        []string              `json:"prerequisites"`
+	Indicators           []string              `json:"indicators"`
+	SourceProvider       string                `json:"source_provider"`
+	TargetProvider       string                `json:"target_provider"`
+	SourceAccountID      string                `json:"source_account_id"`
+	TargetAccountID      string                `json:"target_account_id"`
+	AffectedResources    []string              `json:"affected_resources"`
+	Mitigations          []Mitigation          `json:"mitigations"`
+	Controls             []SecurityControl     `json:"controls"`
+	DetectionMethods     []DetectionMethod     `json:"detection_methods"`
+	ResponseProcedures   []ResponseProcedure   `json:"response_procedures"`
 	ComplianceViolations []ComplianceViolation `json:"compliance_violations"`
-	FrameworkMappings  []FrameworkMapping     `json:"framework_mappings"`
-	DetectedAt         time.Time              `json:"detected_at"`
+	FrameworkMappings    []FrameworkMapping    `json:"framework_mappings"`
+	DetectedAt           time.Time             `json:"detected_at"`
 }
 
 // EscalationStep represents a single step in an escalation path
 type EscalationStep struct {
-	StepNumber     int                    `json:"step_number"`
-	Action         string                 `json:"action"`
-	Description    string                 `json:"description"`
-	Resource       string                 `json:"resource"`
-	Permission     string                 `json:"permission"`
-	Method         string                 `json:"method"`
-	Prerequisites  []string               `json:"prerequisites"`
-	Indicators     []string               `json:"indicators"`
-	RiskScore      float64                `json:"risk_score"`
-	Metadata       map[string]interface{} `json:"metadata"`
+	StepNumber    int                    `json:"step_number"`
+	Action        string                 `json:"action"`
+	Description   string                 `json:"description"`
+	Resource      string                 `json:"resource"`
+	Permission    string                 `json:"permission"`
+	Method        string                 `json:"method"`
+	Prerequisites []string               `json:"prerequisites"`
+	Indicators    []string               `json:"indicators"`
+	RiskScore     float64                `json:"risk_score"`
+	Metadata      map[string]interface{} `json:"metadata"`
 }
 
 // AttackVector represents a potential attack vector
@@ -87,14 +87,14 @@ type AttackVector struct {
 
 // Mitigation represents a security mitigation
 type Mitigation struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Type         string   `json:"type"` // preventive, detective, corrective
-	Priority     string   `json:"priority"`
-	Effort       string   `json:"effort"` // low, medium, high
-	Effectiveness float64 `json:"effectiveness"`
-	Implementation string `json:"implementation"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Type           string  `json:"type"` // preventive, detective, corrective
+	Priority       string  `json:"priority"`
+	Effort         string  `json:"effort"` // low, medium, high
+	Effectiveness  float64 `json:"effectiveness"`
+	Implementation string  `json:"implementation"`
 }
 
 // SecurityControl represents a security control
@@ -121,13 +121,13 @@ type DetectionMethod struct {
 
 // ResponseProcedure represents an incident response procedure
 type ResponseProcedure struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Phase       string   `json:"phase"` // preparation, identification, containment, eradication, recovery
-	Steps       []string `json:"steps"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Phase        string   `json:"phase"` // preparation, identification, containment, eradication, recovery
+	Steps        []string `json:"steps"`
 	Stakeholders []string `json:"stakeholders"`
-	Timeline    string   `json:"timeline"`
+	Timeline     string   `json:"timeline"`
 }
 
 // ComplianceViolation represents a compliance violation
@@ -248,34 +248,34 @@ func (pea *PrivilegeEscalationAnalyzer) generateOIDCEscalationPaths(relationship
 	// Basic OIDC token escalation path
 	steps := []EscalationStep{
 		{
-			StepNumber:  1,
-			Action:      "obtain_oidc_token",
-			Description: "Obtain OIDC token from identity provider",
-			Resource:    "OIDC Identity Provider",
-			Permission:  "authenticate",
-			Method:      "OIDC authentication flow",
+			StepNumber:    1,
+			Action:        "obtain_oidc_token",
+			Description:   "Obtain OIDC token from identity provider",
+			Resource:      "OIDC Identity Provider",
+			Permission:    "authenticate",
+			Method:        "OIDC authentication flow",
 			Prerequisites: []string{"Valid credentials", "Network access to IdP"},
 			Indicators:    []string{"Authentication logs", "Token issuance events"},
 			RiskScore:     0.3,
 		},
 		{
-			StepNumber:  2,
-			Action:      "assume_cross_cloud_role",
-			Description: "Use OIDC token to assume role in target cloud",
-			Resource:    "Cross-cloud IAM role",
-			Permission:  "sts:AssumeRoleWithWebIdentity",
-			Method:      "STS AssumeRoleWithWebIdentity",
+			StepNumber:    2,
+			Action:        "assume_cross_cloud_role",
+			Description:   "Use OIDC token to assume role in target cloud",
+			Resource:      "Cross-cloud IAM role",
+			Permission:    "sts:AssumeRoleWithWebIdentity",
+			Method:        "STS AssumeRoleWithWebIdentity",
 			Prerequisites: []string{"Valid OIDC token", "Trust relationship configured"},
 			Indicators:    []string{"AssumeRole API calls", "Cross-cloud authentication"},
 			RiskScore:     0.6,
 		},
 		{
-			StepNumber:  3,
-			Action:      "escalate_privileges",
-			Description: "Use assumed role to gain additional privileges",
-			Resource:    "Target cloud resources",
-			Permission:  "elevated_permissions",
-			Method:      "Role permissions exploitation",
+			StepNumber:    3,
+			Action:        "escalate_privileges",
+			Description:   "Use assumed role to gain additional privileges",
+			Resource:      "Target cloud resources",
+			Permission:    "elevated_permissions",
+			Method:        "Role permissions exploitation",
 			Prerequisites: []string{"Assumed role", "Permissive role policies"},
 			Indicators:    []string{"Unusual API activity", "Resource access patterns"},
 			RiskScore:     0.9,
@@ -326,34 +326,34 @@ func (pea *PrivilegeEscalationAnalyzer) generateSAMLEscalationPaths(relationship
 
 	steps := []EscalationStep{
 		{
-			StepNumber:  1,
-			Action:      "obtain_saml_assertion",
-			Description: "Obtain SAML assertion from identity provider",
-			Resource:    "SAML Identity Provider",
-			Permission:  "authenticate",
-			Method:      "SAML authentication flow",
+			StepNumber:    1,
+			Action:        "obtain_saml_assertion",
+			Description:   "Obtain SAML assertion from identity provider",
+			Resource:      "SAML Identity Provider",
+			Permission:    "authenticate",
+			Method:        "SAML authentication flow",
 			Prerequisites: []string{"Valid credentials", "Access to SAML IdP"},
 			Indicators:    []string{"SAML authentication logs", "Assertion generation"},
 			RiskScore:     0.3,
 		},
 		{
-			StepNumber:  2,
-			Action:      "assume_saml_role",
-			Description: "Use SAML assertion to assume role in target cloud",
-			Resource:    "Cross-cloud IAM role",
-			Permission:  "sts:AssumeRoleWithSAML",
-			Method:      "STS AssumeRoleWithSAML",
+			StepNumber:    2,
+			Action:        "assume_saml_role",
+			Description:   "Use SAML assertion to assume role in target cloud",
+			Resource:      "Cross-cloud IAM role",
+			Permission:    "sts:AssumeRoleWithSAML",
+			Method:        "STS AssumeRoleWithSAML",
 			Prerequisites: []string{"Valid SAML assertion", "SAML provider configured"},
 			Indicators:    []string{"AssumeRoleWithSAML calls", "SAML token validation"},
 			RiskScore:     0.6,
 		},
 		{
-			StepNumber:  3,
-			Action:      "lateral_movement",
-			Description: "Move laterally across cloud resources",
-			Resource:    "Multi-cloud infrastructure",
-			Permission:  "cross_resource_access",
-			Method:      "Credential reuse and privilege abuse",
+			StepNumber:    3,
+			Action:        "lateral_movement",
+			Description:   "Move laterally across cloud resources",
+			Resource:      "Multi-cloud infrastructure",
+			Permission:    "cross_resource_access",
+			Method:        "Credential reuse and privilege abuse",
 			Prerequisites: []string{"Elevated permissions", "Network connectivity"},
 			Indicators:    []string{"Cross-resource access", "Unusual activity patterns"},
 			RiskScore:     0.8,
@@ -402,34 +402,34 @@ func (pea *PrivilegeEscalationAnalyzer) generateTrustPolicyEscalationPaths(relat
 
 	steps := []EscalationStep{
 		{
-			StepNumber:  1,
-			Action:      "compromise_trusted_principal",
-			Description: "Compromise credentials of trusted principal",
-			Resource:    "Trusted principal identity",
-			Permission:  "identity_access",
-			Method:      "Credential theft or social engineering",
+			StepNumber:    1,
+			Action:        "compromise_trusted_principal",
+			Description:   "Compromise credentials of trusted principal",
+			Resource:      "Trusted principal identity",
+			Permission:    "identity_access",
+			Method:        "Credential theft or social engineering",
 			Prerequisites: []string{"Target identification", "Attack vector"},
 			Indicators:    []string{"Unusual login patterns", "Failed authentication attempts"},
 			RiskScore:     0.7,
 		},
 		{
-			StepNumber:  2,
-			Action:      "assume_trusted_role",
-			Description: "Assume role using compromised principal",
-			Resource:    "Cross-account IAM role",
-			Permission:  "sts:AssumeRole",
-			Method:      "Role assumption with valid credentials",
+			StepNumber:    2,
+			Action:        "assume_trusted_role",
+			Description:   "Assume role using compromised principal",
+			Resource:      "Cross-account IAM role",
+			Permission:    "sts:AssumeRole",
+			Method:        "Role assumption with valid credentials",
 			Prerequisites: []string{"Valid credentials", "Trust relationship"},
 			Indicators:    []string{"Cross-account role assumption", "API activity"},
 			RiskScore:     0.8,
 		},
 		{
-			StepNumber:  3,
-			Action:      "privilege_abuse",
-			Description: "Abuse elevated privileges for unauthorized access",
-			Resource:    "Target account resources",
-			Permission:  "broad_permissions",
-			Method:      "Permission exploitation",
+			StepNumber:    3,
+			Action:        "privilege_abuse",
+			Description:   "Abuse elevated privileges for unauthorized access",
+			Resource:      "Target account resources",
+			Permission:    "broad_permissions",
+			Method:        "Permission exploitation",
 			Prerequisites: []string{"Elevated role", "Knowledge of target resources"},
 			Indicators:    []string{"Resource enumeration", "Data access", "Configuration changes"},
 			RiskScore:     0.9,
@@ -522,12 +522,12 @@ func (pea *PrivilegeEscalationAnalyzer) generateRoleEscalationPaths(relationship
 		steps := []EscalationStep{}
 		for i, roleArn := range assumptionChain {
 			step := EscalationStep{
-				StepNumber:  i + 1,
-				Action:      "assume_role",
-				Description: fmt.Sprintf("Assume role: %s", roleArn),
-				Resource:    roleArn,
-				Permission:  "sts:AssumeRole",
-				Method:      "Role chaining",
+				StepNumber:    i + 1,
+				Action:        "assume_role",
+				Description:   fmt.Sprintf("Assume role: %s", roleArn),
+				Resource:      roleArn,
+				Permission:    "sts:AssumeRole",
+				Method:        "Role chaining",
 				Prerequisites: []string{"Previous role credentials", "Trust relationship"},
 				Indicators:    []string{"AssumeRole API calls", "Role chaining activity"},
 				RiskScore:     0.3 + float64(i)*0.2, // Increasing risk with each hop
@@ -552,7 +552,7 @@ func (pea *PrivilegeEscalationAnalyzer) generateRoleEscalationPaths(relationship
 		}
 
 		// Calculate metrics
-		path.ComplexityScore = float64(len(assumptionChain)) / 10.0 // Normalize by max expected chain length
+		path.ComplexityScore = float64(len(assumptionChain)) / 10.0         // Normalize by max expected chain length
 		path.FeasibilityScore = 1.0 - (float64(len(assumptionChain))-2)*0.1 // Lower feasibility with longer chains
 		path.ImpactScore = baseRiskScore
 		path.LikelihoodScore = path.FeasibilityScore * 0.8 // Reduce likelihood based on feasibility
@@ -620,34 +620,34 @@ func (pea *PrivilegeEscalationAnalyzer) generatePolicyEscalationPaths(relationsh
 
 	steps := []EscalationStep{
 		{
-			StepNumber:  1,
-			Action:      "identify_similar_policies",
-			Description: "Identify similar policies across cloud providers",
-			Resource:    "IAM policies",
-			Permission:  "policy_enumeration",
-			Method:      "Policy analysis and comparison",
+			StepNumber:    1,
+			Action:        "identify_similar_policies",
+			Description:   "Identify similar policies across cloud providers",
+			Resource:      "IAM policies",
+			Permission:    "policy_enumeration",
+			Method:        "Policy analysis and comparison",
 			Prerequisites: []string{"Access to policy documents", "Analysis tools"},
 			Indicators:    []string{"Policy enumeration activity", "Cross-cloud analysis"},
 			RiskScore:     0.2,
 		},
 		{
-			StepNumber:  2,
-			Action:      "exploit_policy_similarity",
-			Description: "Exploit similar policy patterns for unauthorized access",
-			Resource:    "Cross-cloud resources",
-			Permission:  "elevated_access",
-			Method:      "Policy exploitation",
+			StepNumber:    2,
+			Action:        "exploit_policy_similarity",
+			Description:   "Exploit similar policy patterns for unauthorized access",
+			Resource:      "Cross-cloud resources",
+			Permission:    "elevated_access",
+			Method:        "Policy exploitation",
 			Prerequisites: []string{"Understanding of policy patterns", "Valid credentials"},
 			Indicators:    []string{"Unusual access patterns", "Cross-cloud resource access"},
 			RiskScore:     0.7,
 		},
 		{
-			StepNumber:  3,
-			Action:      "privilege_expansion",
-			Description: "Expand privileges using policy similarities",
-			Resource:    "Target cloud resources",
-			Permission:  "administrative_access",
-			Method:      "Permission expansion",
+			StepNumber:    3,
+			Action:        "privilege_expansion",
+			Description:   "Expand privileges using policy similarities",
+			Resource:      "Target cloud resources",
+			Permission:    "administrative_access",
+			Method:        "Permission expansion",
 			Prerequisites: []string{"Initial access", "Policy knowledge"},
 			Indicators:    []string{"Permission escalation", "Administrative actions"},
 			RiskScore:     0.8,
@@ -731,34 +731,34 @@ func (pea *PrivilegeEscalationAnalyzer) generateCertificateEscalationPaths(relat
 
 	steps := []EscalationStep{
 		{
-			StepNumber:  1,
-			Action:      "compromise_certificate",
-			Description: "Compromise shared certificate or private key",
-			Resource:    "SSL/TLS certificate",
-			Permission:  "certificate_access",
-			Method:      "Certificate theft or key compromise",
+			StepNumber:    1,
+			Action:        "compromise_certificate",
+			Description:   "Compromise shared certificate or private key",
+			Resource:      "SSL/TLS certificate",
+			Permission:    "certificate_access",
+			Method:        "Certificate theft or key compromise",
 			Prerequisites: []string{"Access to certificate store", "Extraction capabilities"},
 			Indicators:    []string{"Certificate access logs", "Key store access"},
 			RiskScore:     0.6,
 		},
 		{
-			StepNumber:  2,
-			Action:      "impersonate_service",
-			Description: "Impersonate service using compromised certificate",
-			Resource:    "Target service",
-			Permission:  "service_impersonation",
-			Method:      "Certificate-based authentication",
+			StepNumber:    2,
+			Action:        "impersonate_service",
+			Description:   "Impersonate service using compromised certificate",
+			Resource:      "Target service",
+			Permission:    "service_impersonation",
+			Method:        "Certificate-based authentication",
 			Prerequisites: []string{"Valid certificate", "Network access"},
 			Indicators:    []string{"Unusual certificate usage", "Service impersonation"},
 			RiskScore:     0.8,
 		},
 		{
-			StepNumber:  3,
-			Action:      "access_resources",
-			Description: "Access protected resources using impersonated service",
-			Resource:    "Protected resources",
-			Permission:  "resource_access",
-			Method:      "Authenticated access",
+			StepNumber:    3,
+			Action:        "access_resources",
+			Description:   "Access protected resources using impersonated service",
+			Resource:      "Protected resources",
+			Permission:    "resource_access",
+			Method:        "Authenticated access",
 			Prerequisites: []string{"Service credentials", "Resource permissions"},
 			Indicators:    []string{"Resource access", "Data exfiltration"},
 			RiskScore:     0.9,
@@ -851,10 +851,10 @@ func (pea *PrivilegeEscalationAnalyzer) calculateComplexityScore(path Escalation
 func (pea *PrivilegeEscalationAnalyzer) calculateFeasibilityScore(path EscalationPath) float64 {
 	// Base feasibility on path type and complexity
 	feasibility := 0.8 // Base feasibility
-	
+
 	// Reduce feasibility for complex paths
 	feasibility -= path.ComplexityScore * 0.3
-	
+
 	// Adjust based on path type
 	switch path.PathType {
 	case "oidc_federation_escalation":
@@ -870,7 +870,7 @@ func (pea *PrivilegeEscalationAnalyzer) calculateFeasibilityScore(path Escalatio
 	case "certificate_based_escalation":
 		feasibility *= 0.4 // Certificate attacks are complex
 	}
-	
+
 	if feasibility < 0.0 {
 		feasibility = 0.0
 	}
@@ -879,23 +879,23 @@ func (pea *PrivilegeEscalationAnalyzer) calculateFeasibilityScore(path Escalatio
 
 func (pea *PrivilegeEscalationAnalyzer) calculateLikelihoodScore(path EscalationPath, conditions []interface{}) float64 {
 	likelihood := path.FeasibilityScore
-	
+
 	// Reduce likelihood if there are strong conditions
 	if len(conditions) > 0 {
 		likelihood *= 0.8
 	}
-	
+
 	// Adjust for cross-cloud scenarios (less likely but higher impact)
 	if path.SourceProvider != path.TargetProvider {
 		likelihood *= 0.7
 	}
-	
+
 	return likelihood
 }
 
 func (pea *PrivilegeEscalationAnalyzer) identifyAttackVectors(path EscalationPath) []AttackVector {
 	var vectors []AttackVector
-	
+
 	// Common attack vectors based on path type
 	switch path.PathType {
 	case "oidc_federation_escalation":
@@ -919,28 +919,28 @@ func (pea *PrivilegeEscalationAnalyzer) identifyAttackVectors(path EscalationPat
 			RiskScore:   0.9,
 		})
 	}
-	
+
 	return vectors
 }
 
 func (pea *PrivilegeEscalationAnalyzer) identifyMitigations(path EscalationPath) []Mitigation {
 	return []Mitigation{
 		{
-			ID:           "M1026",
-			Name:         "Privileged Account Management",
-			Description:  "Manage the creation, modification, use, and permissions associated to privileged accounts",
-			Type:         "preventive",
-			Priority:     "high",
-			Effort:       "medium",
+			ID:            "M1026",
+			Name:          "Privileged Account Management",
+			Description:   "Manage the creation, modification, use, and permissions associated to privileged accounts",
+			Type:          "preventive",
+			Priority:      "high",
+			Effort:        "medium",
 			Effectiveness: 0.8,
 		},
 		{
-			ID:           "M1018",
-			Name:         "User Account Management",
-			Description:  "Manage the creation, modification, use, and permissions associated to user accounts",
-			Type:         "preventive",
-			Priority:     "high",
-			Effort:       "low",
+			ID:            "M1018",
+			Name:          "User Account Management",
+			Description:   "Manage the creation, modification, use, and permissions associated to user accounts",
+			Type:          "preventive",
+			Priority:      "high",
+			Effort:        "low",
 			Effectiveness: 0.7,
 		},
 	}
@@ -995,13 +995,13 @@ func (pea *PrivilegeEscalationAnalyzer) identifyDetectionMethods(path Escalation
 func (pea *PrivilegeEscalationAnalyzer) identifyResponseProcedures(path EscalationPath) []ResponseProcedure {
 	return []ResponseProcedure{
 		{
-			ID:          "RP-001",
-			Name:        "Identity Compromise Response",
-			Description: "Response procedures for compromised identities",
-			Phase:       "containment",
-			Steps:       []string{"Disable compromised accounts", "Revoke tokens", "Reset credentials"},
+			ID:           "RP-001",
+			Name:         "Identity Compromise Response",
+			Description:  "Response procedures for compromised identities",
+			Phase:        "containment",
+			Steps:        []string{"Disable compromised accounts", "Revoke tokens", "Reset credentials"},
 			Stakeholders: []string{"Security Team", "Cloud Administrators"},
-			Timeline:    "< 1 hour",
+			Timeline:     "< 1 hour",
 		},
 	}
 }
@@ -1114,7 +1114,7 @@ func (pea *PrivilegeEscalationAnalyzer) PersistEscalationPaths(ctx context.Conte
 		responseProceduresJSON, _ := json.Marshal(path.ResponseProcedures)
 		complianceViolationsJSON, _ := json.Marshal(path.ComplianceViolations)
 		frameworkMappingsJSON, _ := json.Marshal(path.FrameworkMappings)
-		
+
 		metadata := map[string]interface{}{
 			"source_provider": path.SourceProvider,
 			"target_provider": path.TargetProvider,

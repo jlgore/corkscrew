@@ -25,7 +25,7 @@ func NewRelationshipExtractor() *RelationshipExtractor {
 	re := &RelationshipExtractor{
 		patterns: make(map[string][]RelationshipPattern),
 	}
-	
+
 	re.definePatterns()
 	return re
 }
@@ -48,7 +48,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Instance to Network relationships
 	re.patterns["compute.googleapis.com/Instance"] = append(
 		re.patterns["compute.googleapis.com/Instance"],
@@ -78,7 +78,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Instance to Subnetwork relationships
 	re.patterns["compute.googleapis.com/Instance"] = append(
 		re.patterns["compute.googleapis.com/Instance"],
@@ -106,7 +106,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Subnetwork to Network relationships
 	re.patterns["compute.googleapis.com/Subnetwork"] = append(
 		re.patterns["compute.googleapis.com/Subnetwork"],
@@ -125,7 +125,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Disk to Snapshot relationships
 	re.patterns["compute.googleapis.com/Disk"] = append(
 		re.patterns["compute.googleapis.com/Disk"],
@@ -140,7 +140,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Cluster to Node Pool relationships
 	re.patterns["container.googleapis.com/Cluster"] = append(
 		re.patterns["container.googleapis.com/Cluster"],
@@ -157,7 +157,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Container Node Pool to Compute Network relationships
 	re.patterns["container.googleapis.com/Cluster"] = append(
 		re.patterns["container.googleapis.com/Cluster"],
@@ -178,7 +178,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Container Cluster to Subnetwork relationships
 	re.patterns["container.googleapis.com/Cluster"] = append(
 		re.patterns["container.googleapis.com/Cluster"],
@@ -199,7 +199,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Topic to Subscription relationships (Pub/Sub)
 	re.patterns["pubsub.googleapis.com/Topic"] = append(
 		re.patterns["pubsub.googleapis.com/Topic"],
@@ -214,7 +214,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Cloud SQL Instance to Database relationships
 	re.patterns["sqladmin.googleapis.com/Instance"] = append(
 		re.patterns["sqladmin.googleapis.com/Instance"],
@@ -230,7 +230,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// BigQuery Dataset to Table relationships
 	re.patterns["bigqueryadmin.googleapis.com/Dataset"] = append(
 		re.patterns["bigqueryadmin.googleapis.com/Dataset"],
@@ -243,7 +243,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// Cloud Run Service to Revision relationships
 	re.patterns["run.googleapis.com/Service"] = append(
 		re.patterns["run.googleapis.com/Service"],
@@ -256,7 +256,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// App Engine Application to Service relationships
 	re.patterns["appengine.googleapis.com/Application"] = append(
 		re.patterns["appengine.googleapis.com/Application"],
@@ -269,7 +269,7 @@ func (re *RelationshipExtractor) definePatterns() {
 			},
 		},
 	)
-	
+
 	// App Engine Service to Version relationships
 	re.patterns["appengine.googleapis.com/Service"] = append(
 		re.patterns["appengine.googleapis.com/Service"],
@@ -287,32 +287,32 @@ func (re *RelationshipExtractor) definePatterns() {
 // ExtractRelationships finds all relationships between the given resources
 func (re *RelationshipExtractor) ExtractRelationships(resources []*pb.ResourceRef) []*pb.Relationship {
 	var relationships []*pb.Relationship
-	
+
 	// Create a map for faster lookups by type
 	resourcesByType := make(map[string][]*pb.ResourceRef)
 	for _, resource := range resources {
 		resourcesByType[resource.Type] = append(resourcesByType[resource.Type], resource)
 	}
-	
+
 	// Check each resource against patterns
 	for _, source := range resources {
 		patterns, ok := re.patterns[source.Type]
 		if !ok {
 			continue
 		}
-		
+
 		for _, pattern := range patterns {
 			// Get all potential targets of the right type
 			targets, ok := resourcesByType[pattern.TargetType]
 			if !ok {
 				continue
 			}
-			
+
 			for _, target := range targets {
 				if pattern.Extractor(source, target) {
 					rel := &pb.Relationship{
-						TargetId: target.Id,
-						RelationshipType:     pattern.RelationType,
+						TargetId:         target.Id,
+						RelationshipType: pattern.RelationType,
 						Properties: map[string]string{
 							"source_id":   source.Id,
 							"source_type": source.Type,
@@ -326,28 +326,28 @@ func (re *RelationshipExtractor) ExtractRelationships(resources []*pb.ResourceRe
 			}
 		}
 	}
-	
+
 	return relationships
 }
 
 // ExtractIAMRelationships extracts IAM-based relationships
 func (re *RelationshipExtractor) ExtractIAMRelationships(resources []*pb.ResourceRef, iamPolicies map[string]*IAMPolicy) []*pb.Relationship {
 	var relationships []*pb.Relationship
-	
+
 	for resourceID, policy := range iamPolicies {
 		for _, binding := range policy.Bindings {
 			for _, member := range binding.Members {
 				// Extract service account relationships
 				if strings.HasPrefix(member, "serviceAccount:") {
 					saEmail := strings.TrimPrefix(member, "serviceAccount:")
-					
+
 					// Find the service account resource
 					for _, resource := range resources {
 						if resource.Type == "iam.googleapis.com/ServiceAccount" &&
-						   (resource.Name == saEmail || strings.Contains(resource.Id, saEmail)) {
+							(resource.Name == saEmail || strings.Contains(resource.Id, saEmail)) {
 							rel := &pb.Relationship{
-								TargetId: resourceID,
-								RelationshipType:     "has_access_to",
+								TargetId:         resourceID,
+								RelationshipType: "has_access_to",
 								Properties: map[string]string{
 									"source_id":   resource.Id,
 									"source_type": resource.Type,
@@ -359,15 +359,15 @@ func (re *RelationshipExtractor) ExtractIAMRelationships(resources []*pb.Resourc
 						}
 					}
 				}
-				
+
 				// Extract user and group relationships
 				if strings.HasPrefix(member, "user:") || strings.HasPrefix(member, "group:") {
 					rel := &pb.Relationship{
-						TargetId: resourceID,
-						RelationshipType:     "has_access_to",
+						TargetId:         resourceID,
+						RelationshipType: "has_access_to",
 						Properties: map[string]string{
 							"source_identity": member,
-							"role":           binding.Role,
+							"role":            binding.Role,
 						},
 					}
 					relationships = append(relationships, rel)
@@ -375,7 +375,7 @@ func (re *RelationshipExtractor) ExtractIAMRelationships(resources []*pb.Resourc
 			}
 		}
 	}
-	
+
 	return relationships
 }
 
@@ -385,20 +385,20 @@ func (re *RelationshipExtractor) ExtractIAMRelationships(resources []*pb.Resourc
 func (re *RelationshipExtractor) isSameProject(resource1, resource2 *pb.ResourceRef) bool {
 	project1, ok1 := resource1.BasicAttributes["project_id"]
 	project2, ok2 := resource2.BasicAttributes["project_id"]
-	
+
 	if !ok1 || !ok2 {
 		// Try to extract from resource ID
 		project1 = re.extractProjectFromID(resource1.Id)
 		project2 = re.extractProjectFromID(resource2.Id)
 	}
-	
+
 	return project1 != "" && project1 == project2
 }
 
 // isSameZoneAndProject checks if two resources are in the same zone and project
 func (re *RelationshipExtractor) isSameZoneAndProject(resource1, resource2 *pb.ResourceRef) bool {
-	return re.isSameProject(resource1, resource2) && 
-		   re.extractZoneFromRegion(resource1.Region) == re.extractZoneFromRegion(resource2.Region)
+	return re.isSameProject(resource1, resource2) &&
+		re.extractZoneFromRegion(resource1.Region) == re.extractZoneFromRegion(resource2.Region)
 }
 
 // extractProjectFromID extracts project ID from resource ID
@@ -426,12 +426,12 @@ func (re *RelationshipExtractor) extractZoneFromRegion(region string) string {
 // extractLabels extracts labels from resource data
 func (re *RelationshipExtractor) extractLabels(data string) map[string]string {
 	labels := make(map[string]string)
-	
+
 	var resourceData map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &resourceData); err != nil {
 		return labels
 	}
-	
+
 	// Check for labels field
 	if labelsData, ok := resourceData["labels"]; ok {
 		if labelsMap, ok := labelsData.(map[string]interface{}); ok {
@@ -442,21 +442,21 @@ func (re *RelationshipExtractor) extractLabels(data string) map[string]string {
 			}
 		}
 	}
-	
+
 	return labels
 }
 
 // findResourcesByLabel finds resources that have a specific label
 func (re *RelationshipExtractor) findResourcesByLabel(resources []*pb.ResourceRef, labelKey, labelValue string) []*pb.ResourceRef {
 	var matches []*pb.ResourceRef
-	
+
 	for _, resource := range resources {
 		// Check basic attributes for labels
 		if labelVal, ok := resource.BasicAttributes["label_"+labelKey]; ok && labelVal == labelValue {
 			matches = append(matches, resource)
 			continue
 		}
-		
+
 		// Check resource data for labels
 		if data, ok := resource.BasicAttributes["resource_data"]; ok {
 			labels := re.extractLabels(data)
@@ -465,32 +465,32 @@ func (re *RelationshipExtractor) findResourcesByLabel(resources []*pb.ResourceRe
 			}
 		}
 	}
-	
+
 	return matches
 }
 
 // ExtractLabelBasedRelationships finds relationships based on matching labels
 func (re *RelationshipExtractor) ExtractLabelBasedRelationships(resources []*pb.ResourceRef) []*pb.Relationship {
 	var relationships []*pb.Relationship
-	
+
 	// Common label patterns for relationships
 	labelPatterns := []string{
 		"app",
-		"component", 
+		"component",
 		"tier",
 		"environment",
 		"version",
 		"cluster",
 		"service",
 	}
-	
+
 	for _, labelKey := range labelPatterns {
 		// Group resources by label value
 		labelGroups := make(map[string][]*pb.ResourceRef)
-		
+
 		for _, resource := range resources {
 			var labelValue string
-			
+
 			// Check basic attributes
 			if val, ok := resource.BasicAttributes["label_"+labelKey]; ok {
 				labelValue = val
@@ -501,33 +501,33 @@ func (re *RelationshipExtractor) ExtractLabelBasedRelationships(resources []*pb.
 					labelValue = val
 				}
 			}
-			
+
 			if labelValue != "" {
 				labelGroups[labelValue] = append(labelGroups[labelValue], resource)
 			}
 		}
-		
+
 		// Create relationships within each group
 		for labelValue, groupResources := range labelGroups {
 			if len(groupResources) <= 1 {
 				continue
 			}
-			
+
 			// Create relationships between resources in the same group
 			for i, source := range groupResources {
 				for j, target := range groupResources {
 					if i != j {
 						rel := &pb.Relationship{
-							TargetId: target.Id,
-							RelationshipType:     "related_by_label",
+							TargetId:         target.Id,
+							RelationshipType: "related_by_label",
 							Properties: map[string]string{
-								"source_id":    source.Id,
-								"source_type":  source.Type,
-								"source_name":  source.Name,
-								"target_type":  target.Type,
-								"target_name":  target.Name,
-								"label_key":    labelKey,
-								"label_value":  labelValue,
+								"source_id":   source.Id,
+								"source_type": source.Type,
+								"source_name": source.Name,
+								"target_type": target.Type,
+								"target_name": target.Name,
+								"label_key":   labelKey,
+								"label_value": labelValue,
 							},
 						}
 						relationships = append(relationships, rel)
@@ -536,6 +536,6 @@ func (re *RelationshipExtractor) ExtractLabelBasedRelationships(resources []*pb.
 			}
 		}
 	}
-	
+
 	return relationships
 }

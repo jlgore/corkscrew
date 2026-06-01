@@ -12,10 +12,10 @@ import (
 
 // CrossCloudOrchestrator manages cross-cloud scanning and correlation
 type CrossCloudOrchestrator struct {
-	providers map[string]Provider
-	db        DatabaseInterface
+	providers   map[string]Provider
+	db          DatabaseInterface
 	correlators []Correlator
-	mu        sync.RWMutex
+	mu          sync.RWMutex
 }
 
 // Provider represents a cloud provider interface for cross-cloud operations
@@ -73,21 +73,21 @@ type ScanResult struct {
 
 // CrossCloudCorrelation represents a correlation between resources across clouds
 type CrossCloudCorrelation struct {
-	ID                   string                 `json:"id"`
-	SourceResourceID     string                 `json:"source_resource_id"`
-	TargetResourceID     string                 `json:"target_resource_id"`
-	SourceProvider       string                 `json:"source_provider"`
-	TargetProvider       string                 `json:"target_provider"`
-	CorrelationType      string                 `json:"correlation_type"`
-	CorrelationSubtype   string                 `json:"correlation_subtype"`
-	CorrelationMethod    string                 `json:"correlation_method"`
-	ConfidenceScore      float64                `json:"confidence_score"`
-	Evidence             map[string]interface{} `json:"evidence"`
-	MatchingAttributes   map[string]interface{} `json:"matching_attributes"`
-	Description          string                 `json:"description"`
-	Status               string                 `json:"status"`
-	Verified             bool                   `json:"verified"`
-	DiscoveredAt         time.Time              `json:"discovered_at"`
+	ID                 string                 `json:"id"`
+	SourceResourceID   string                 `json:"source_resource_id"`
+	TargetResourceID   string                 `json:"target_resource_id"`
+	SourceProvider     string                 `json:"source_provider"`
+	TargetProvider     string                 `json:"target_provider"`
+	CorrelationType    string                 `json:"correlation_type"`
+	CorrelationSubtype string                 `json:"correlation_subtype"`
+	CorrelationMethod  string                 `json:"correlation_method"`
+	ConfidenceScore    float64                `json:"confidence_score"`
+	Evidence           map[string]interface{} `json:"evidence"`
+	MatchingAttributes map[string]interface{} `json:"matching_attributes"`
+	Description        string                 `json:"description"`
+	Status             string                 `json:"status"`
+	Verified           bool                   `json:"verified"`
+	DiscoveredAt       time.Time              `json:"discovered_at"`
 }
 
 // NetworkInfo represents network information extracted from resources
@@ -129,7 +129,7 @@ func (o *CrossCloudOrchestrator) RegisterCorrelator(correlator Correlator) {
 func (o *CrossCloudOrchestrator) GetProviders() []string {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	
+
 	providers := make([]string, 0, len(o.providers))
 	for name := range o.providers {
 		providers = append(providers, name)
@@ -157,10 +157,10 @@ func (o *CrossCloudOrchestrator) ScanAllProviders(ctx context.Context, config Sc
 
 	// Create a channel for results
 	resultChan := make(chan *ProviderScanResult, len(providersToScan))
-	
+
 	// Create a wait group for parallel scanning
 	var wg sync.WaitGroup
-	
+
 	// Scan each provider in parallel
 	for _, providerName := range providersToScan {
 		provider, exists := o.providers[providerName]
@@ -168,11 +168,11 @@ func (o *CrossCloudOrchestrator) ScanAllProviders(ctx context.Context, config Sc
 			result.Errors = append(result.Errors, fmt.Errorf("provider %s not registered", providerName))
 			continue
 		}
-		
+
 		wg.Add(1)
 		go func(pName string, p Provider) {
 			defer wg.Done()
-			
+
 			scanResult, err := p.ScanResources(ctx, config)
 			resultChan <- &ProviderScanResult{
 				Provider: pName,
@@ -181,34 +181,34 @@ func (o *CrossCloudOrchestrator) ScanAllProviders(ctx context.Context, config Sc
 			}
 		}(providerName, provider)
 	}
-	
+
 	// Wait for all scans to complete
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
-	
+
 	// Collect results
 	for providerResult := range resultChan {
 		if providerResult.Error != nil {
-			result.Errors = append(result.Errors, 
+			result.Errors = append(result.Errors,
 				fmt.Errorf("provider %s: %w", providerResult.Provider, providerResult.Error))
 		} else {
 			result.Results[providerResult.Provider] = providerResult.Result
 			result.TotalResources += providerResult.Result.ResourceCount
 		}
 	}
-	
+
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
-	
+
 	return result, nil
 }
 
 // CorrelateResources finds correlations between resources across clouds
 func (o *CrossCloudOrchestrator) CorrelateResources(ctx context.Context) (*CorrelationResult, error) {
 	startTime := time.Now()
-	
+
 	// Get all resources from all providers
 	allResources := make([]*models.Resource, 0)
 	for providerName := range o.providers {
@@ -218,7 +218,7 @@ func (o *CrossCloudOrchestrator) CorrelateResources(ctx context.Context) (*Corre
 		}
 		allResources = append(allResources, resources...)
 	}
-	
+
 	// Run all correlators
 	allCorrelations := make([]*CrossCloudCorrelation, 0)
 	for _, correlator := range o.correlators {
@@ -228,12 +228,12 @@ func (o *CrossCloudOrchestrator) CorrelateResources(ctx context.Context) (*Corre
 		}
 		allCorrelations = append(allCorrelations, correlations...)
 	}
-	
+
 	// Store correlations
 	if err := o.db.StoreCorrelations(allCorrelations); err != nil {
 		return nil, fmt.Errorf("failed to store correlations: %w", err)
 	}
-	
+
 	return &CorrelationResult{
 		TotalResources:    len(allResources),
 		TotalCorrelations: len(allCorrelations),
@@ -246,16 +246,16 @@ func (o *CrossCloudOrchestrator) CorrelateResources(ctx context.Context) (*Corre
 func (o *CrossCloudOrchestrator) ExtractNetworkInformation(ctx context.Context) error {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	
+
 	for providerName, provider := range o.providers {
 		resources, err := o.db.GetResourcesByProvider(providerName)
 		if err != nil {
 			return fmt.Errorf("failed to get resources for provider %s: %w", providerName, err)
 		}
-		
+
 		var allIPs []*models.IPAddress
 		var allDNS []*models.DNSRecord
-		
+
 		for _, resource := range resources {
 			// Extract IP addresses
 			ips, err := provider.ExtractIPAddresses(resource)
@@ -263,7 +263,7 @@ func (o *CrossCloudOrchestrator) ExtractNetworkInformation(ctx context.Context) 
 				continue // Skip resources that can't be processed
 			}
 			allIPs = append(allIPs, ips...)
-			
+
 			// Extract DNS records
 			dns, err := provider.ExtractDNSRecords(resource)
 			if err != nil {
@@ -271,21 +271,21 @@ func (o *CrossCloudOrchestrator) ExtractNetworkInformation(ctx context.Context) 
 			}
 			allDNS = append(allDNS, dns...)
 		}
-		
+
 		// Store extracted information
 		if len(allIPs) > 0 {
 			if err := o.db.StoreIPAddresses(allIPs); err != nil {
 				return fmt.Errorf("failed to store IP addresses for provider %s: %w", providerName, err)
 			}
 		}
-		
+
 		if len(allDNS) > 0 {
 			if err := o.db.StoreDNSRecords(allDNS); err != nil {
 				return fmt.Errorf("failed to store DNS records for provider %s: %w", providerName, err)
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -293,12 +293,12 @@ func (o *CrossCloudOrchestrator) ExtractNetworkInformation(ctx context.Context) 
 
 // CrossCloudScanResult represents the result of scanning all providers
 type CrossCloudScanResult struct {
-	StartTime      time.Time                `json:"start_time"`
-	EndTime        time.Time                `json:"end_time"`
-	Duration       time.Duration            `json:"duration"`
-	Results        map[string]*ScanResult   `json:"results"`
-	TotalResources int                      `json:"total_resources"`
-	Errors         []error                  `json:"errors"`
+	StartTime      time.Time              `json:"start_time"`
+	EndTime        time.Time              `json:"end_time"`
+	Duration       time.Duration          `json:"duration"`
+	Results        map[string]*ScanResult `json:"results"`
+	TotalResources int                    `json:"total_resources"`
+	Errors         []error                `json:"errors"`
 }
 
 // ProviderScanResult represents the result of scanning a single provider

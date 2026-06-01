@@ -27,10 +27,10 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create compute client: %w", err)
 	}
-	
+
 	var resources []*pb.ResourceRef
 	projectIDs := ecs.clientFactory.GetProjectIDs()
-	
+
 	for _, projectID := range projectIDs {
 		// Scan instances
 		instanceRefs, err := ecs.scanInstances(ctx, client, projectID)
@@ -39,7 +39,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, instanceRefs...)
 		}
-		
+
 		// Scan disks
 		diskRefs, err := ecs.scanDisks(ctx, client, projectID)
 		if err != nil {
@@ -47,7 +47,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, diskRefs...)
 		}
-		
+
 		// Scan networks
 		networkRefs, err := ecs.scanNetworks(ctx, client, projectID)
 		if err != nil {
@@ -55,7 +55,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, networkRefs...)
 		}
-		
+
 		// Scan subnetworks
 		subnetRefs, err := ecs.scanSubnetworks(ctx, client, projectID)
 		if err != nil {
@@ -63,7 +63,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, subnetRefs...)
 		}
-		
+
 		// Scan firewall rules
 		firewallRefs, err := ecs.scanFirewallRules(ctx, client, projectID)
 		if err != nil {
@@ -71,7 +71,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, firewallRefs...)
 		}
-		
+
 		// Scan addresses
 		addressRefs, err := ecs.scanAddresses(ctx, client, projectID)
 		if err != nil {
@@ -79,7 +79,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, addressRefs...)
 		}
-		
+
 		// Scan snapshots
 		snapshotRefs, err := ecs.scanSnapshots(ctx, client, projectID)
 		if err != nil {
@@ -87,7 +87,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		} else {
 			resources = append(resources, snapshotRefs...)
 		}
-		
+
 		// Scan images
 		imageRefs, err := ecs.scanImages(ctx, client, projectID)
 		if err != nil {
@@ -96,36 +96,36 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 			resources = append(resources, imageRefs...)
 		}
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanInstances(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Instances.AggregatedList(projectID)
 	if err := req.Pages(ctx, func(page *compute.InstanceAggregatedList) error {
 		for zone, instanceList := range page.Items {
 			if instanceList.Instances != nil {
 				for _, instance := range instanceList.Instances {
 					ref := &pb.ResourceRef{
-						Id:      fmt.Sprintf("projects/%s/zones/%s/instances/%s", 
-							    projectID, extractZoneFromURL(zone), instance.Name),
+						Id: fmt.Sprintf("projects/%s/zones/%s/instances/%s",
+							projectID, extractZoneFromURL(zone), instance.Name),
 						Name:    instance.Name,
 						Type:    "compute.googleapis.com/Instance",
 						Service: "compute",
 						Region:  extractZoneFromURL(zone),
 						BasicAttributes: map[string]string{
-							"machine_type":    extractLastSegment(instance.MachineType),
-							"status":          instance.Status,
-							"self_link":       instance.SelfLink,
-							"project_id":      projectID,
+							"machine_type":       extractLastSegment(instance.MachineType),
+							"status":             instance.Status,
+							"self_link":          instance.SelfLink,
+							"project_id":         projectID,
 							"creation_timestamp": instance.CreationTimestamp,
-							"cpu_platform":    instance.CpuPlatform,
-							"can_ip_forward":  fmt.Sprintf("%t", instance.CanIpForward),
+							"cpu_platform":       instance.CpuPlatform,
+							"can_ip_forward":     fmt.Sprintf("%t", instance.CanIpForward),
 						},
 					}
-					
+
 					// Add network interfaces info
 					if len(instance.NetworkInterfaces) > 0 {
 						ref.BasicAttributes["network"] = extractLastSegment(instance.NetworkInterfaces[0].Network)
@@ -134,17 +134,17 @@ func (ecs *EnhancedComputeScanner) scanInstances(ctx context.Context, client *co
 							ref.BasicAttributes["external_ip"] = instance.NetworkInterfaces[0].AccessConfigs[0].NatIP
 						}
 					}
-					
+
 					// Add service accounts info
 					if len(instance.ServiceAccounts) > 0 {
 						ref.BasicAttributes["service_account"] = instance.ServiceAccounts[0].Email
 					}
-					
+
 					// Add labels
 					for k, v := range instance.Labels {
 						ref.BasicAttributes["label_"+k] = v
 					}
-					
+
 					resources = append(resources, ref)
 				}
 			}
@@ -153,40 +153,40 @@ func (ecs *EnhancedComputeScanner) scanInstances(ctx context.Context, client *co
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanDisks(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Disks.AggregatedList(projectID)
 	if err := req.Pages(ctx, func(page *compute.DiskAggregatedList) error {
 		for zone, diskList := range page.Items {
 			if diskList.Disks != nil {
 				for _, disk := range diskList.Disks {
 					ref := &pb.ResourceRef{
-						Id:      fmt.Sprintf("projects/%s/zones/%s/disks/%s", 
-							    projectID, extractZoneFromURL(zone), disk.Name),
+						Id: fmt.Sprintf("projects/%s/zones/%s/disks/%s",
+							projectID, extractZoneFromURL(zone), disk.Name),
 						Name:    disk.Name,
 						Type:    "compute.googleapis.com/Disk",
 						Service: "compute",
 						Region:  extractZoneFromURL(zone),
 						BasicAttributes: map[string]string{
-							"size_gb":       fmt.Sprintf("%d", disk.SizeGb),
-							"type":          extractLastSegment(disk.Type),
-							"status":        disk.Status,
-							"self_link":     disk.SelfLink,
-							"project_id":    projectID,
+							"size_gb":            fmt.Sprintf("%d", disk.SizeGb),
+							"type":               extractLastSegment(disk.Type),
+							"status":             disk.Status,
+							"self_link":          disk.SelfLink,
+							"project_id":         projectID,
 							"creation_timestamp": disk.CreationTimestamp,
 						},
 					}
-					
+
 					// Add attached users
 					if len(disk.Users) > 0 {
 						ref.BasicAttributes["attached_to"] = strings.Join(disk.Users, ",")
 					}
-					
+
 					// Add source info
 					if disk.SourceImage != "" {
 						ref.BasicAttributes["source_image"] = extractLastSegment(disk.SourceImage)
@@ -194,12 +194,12 @@ func (ecs *EnhancedComputeScanner) scanDisks(ctx context.Context, client *comput
 					if disk.SourceSnapshot != "" {
 						ref.BasicAttributes["source_snapshot"] = extractLastSegment(disk.SourceSnapshot)
 					}
-					
+
 					// Add labels
 					for k, v := range disk.Labels {
 						ref.BasicAttributes["label_"+k] = v
 					}
-					
+
 					resources = append(resources, ref)
 				}
 			}
@@ -208,13 +208,13 @@ func (ecs *EnhancedComputeScanner) scanDisks(ctx context.Context, client *comput
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanNetworks(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Networks.List(projectID)
 	if err := req.Pages(ctx, func(page *compute.NetworkList) error {
 		for _, network := range page.Items {
@@ -225,65 +225,65 @@ func (ecs *EnhancedComputeScanner) scanNetworks(ctx context.Context, client *com
 				Service: "compute",
 				Region:  "global",
 				BasicAttributes: map[string]string{
-					"self_link":          network.SelfLink,
-					"project_id":         projectID,
+					"self_link":           network.SelfLink,
+					"project_id":          projectID,
 					"auto_create_subnets": fmt.Sprintf("%t", network.AutoCreateSubnetworks),
-					"routing_mode":       network.RoutingConfig.RoutingMode,
-					"creation_timestamp": network.CreationTimestamp,
+					"routing_mode":        network.RoutingConfig.RoutingMode,
+					"creation_timestamp":  network.CreationTimestamp,
 				},
 			}
-			
+
 			if network.Description != "" {
 				ref.BasicAttributes["description"] = network.Description
 			}
-			
+
 			if network.IPv4Range != "" {
 				ref.BasicAttributes["ipv4_range"] = network.IPv4Range
 			}
-			
+
 			resources = append(resources, ref)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanSubnetworks(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Subnetworks.AggregatedList(projectID)
 	if err := req.Pages(ctx, func(page *compute.SubnetworkAggregatedList) error {
 		for region, subnetList := range page.Items {
 			if subnetList.Subnetworks != nil {
 				for _, subnet := range subnetList.Subnetworks {
 					ref := &pb.ResourceRef{
-						Id:      fmt.Sprintf("projects/%s/regions/%s/subnetworks/%s", 
-							    projectID, extractRegionFromURL(region), subnet.Name),
+						Id: fmt.Sprintf("projects/%s/regions/%s/subnetworks/%s",
+							projectID, extractRegionFromURL(region), subnet.Name),
 						Name:    subnet.Name,
 						Type:    "compute.googleapis.com/Subnetwork",
 						Service: "compute",
 						Region:  extractRegionFromURL(region),
 						BasicAttributes: map[string]string{
-							"cidr_range":         subnet.IpCidrRange,
-							"network":            extractLastSegment(subnet.Network),
-							"self_link":          subnet.SelfLink,
-							"project_id":         projectID,
+							"cidr_range":               subnet.IpCidrRange,
+							"network":                  extractLastSegment(subnet.Network),
+							"self_link":                subnet.SelfLink,
+							"project_id":               projectID,
 							"private_ip_google_access": fmt.Sprintf("%t", subnet.PrivateIpGoogleAccess),
-							"creation_timestamp": subnet.CreationTimestamp,
+							"creation_timestamp":       subnet.CreationTimestamp,
 						},
 					}
-					
+
 					if subnet.Description != "" {
 						ref.BasicAttributes["description"] = subnet.Description
 					}
-					
+
 					if subnet.GatewayAddress != "" {
 						ref.BasicAttributes["gateway_address"] = subnet.GatewayAddress
 					}
-					
+
 					resources = append(resources, ref)
 				}
 			}
@@ -292,13 +292,13 @@ func (ecs *EnhancedComputeScanner) scanSubnetworks(ctx context.Context, client *
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanFirewallRules(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Firewalls.List(projectID)
 	if err := req.Pages(ctx, func(page *compute.FirewallList) error {
 		for _, firewall := range page.Items {
@@ -317,11 +317,11 @@ func (ecs *EnhancedComputeScanner) scanFirewallRules(ctx context.Context, client
 					"creation_timestamp": firewall.CreationTimestamp,
 				},
 			}
-			
+
 			if firewall.Description != "" {
 				ref.BasicAttributes["description"] = firewall.Description
 			}
-			
+
 			// Add source/target info
 			if len(firewall.SourceRanges) > 0 {
 				ref.BasicAttributes["source_ranges"] = strings.Join(firewall.SourceRanges, ",")
@@ -329,7 +329,7 @@ func (ecs *EnhancedComputeScanner) scanFirewallRules(ctx context.Context, client
 			if len(firewall.TargetTags) > 0 {
 				ref.BasicAttributes["target_tags"] = strings.Join(firewall.TargetTags, ",")
 			}
-			
+
 			// Add allowed/denied protocols
 			if len(firewall.Allowed) > 0 {
 				var protocols []string
@@ -338,28 +338,28 @@ func (ecs *EnhancedComputeScanner) scanFirewallRules(ctx context.Context, client
 				}
 				ref.BasicAttributes["allowed_protocols"] = strings.Join(protocols, ",")
 			}
-			
+
 			resources = append(resources, ref)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanAddresses(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Addresses.AggregatedList(projectID)
 	if err := req.Pages(ctx, func(page *compute.AddressAggregatedList) error {
 		for region, addressList := range page.Items {
 			if addressList.Addresses != nil {
 				for _, address := range addressList.Addresses {
 					ref := &pb.ResourceRef{
-						Id:      fmt.Sprintf("projects/%s/regions/%s/addresses/%s", 
-							    projectID, extractRegionFromURL(region), address.Name),
+						Id: fmt.Sprintf("projects/%s/regions/%s/addresses/%s",
+							projectID, extractRegionFromURL(region), address.Name),
 						Name:    address.Name,
 						Type:    "compute.googleapis.com/Address",
 						Service: "compute",
@@ -373,15 +373,15 @@ func (ecs *EnhancedComputeScanner) scanAddresses(ctx context.Context, client *co
 							"creation_timestamp": address.CreationTimestamp,
 						},
 					}
-					
+
 					if address.Description != "" {
 						ref.BasicAttributes["description"] = address.Description
 					}
-					
+
 					if address.Users != nil && len(address.Users) > 0 {
 						ref.BasicAttributes["used_by"] = strings.Join(address.Users, ",")
 					}
-					
+
 					resources = append(resources, ref)
 				}
 			}
@@ -390,13 +390,13 @@ func (ecs *EnhancedComputeScanner) scanAddresses(ctx context.Context, client *co
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanSnapshots(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Snapshots.List(projectID)
 	if err := req.Pages(ctx, func(page *compute.SnapshotList) error {
 		for _, snapshot := range page.Items {
@@ -416,29 +416,29 @@ func (ecs *EnhancedComputeScanner) scanSnapshots(ctx context.Context, client *co
 					"creation_timestamp": snapshot.CreationTimestamp,
 				},
 			}
-			
+
 			if snapshot.Description != "" {
 				ref.BasicAttributes["description"] = snapshot.Description
 			}
-			
+
 			// Add labels
 			for k, v := range snapshot.Labels {
 				ref.BasicAttributes["label_"+k] = v
 			}
-			
+
 			resources = append(resources, ref)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
 func (ecs *EnhancedComputeScanner) scanImages(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	
+
 	req := client.Images.List(projectID)
 	if err := req.Pages(ctx, func(page *compute.ImageList) error {
 		for _, image := range page.Items {
@@ -457,31 +457,31 @@ func (ecs *EnhancedComputeScanner) scanImages(ctx context.Context, client *compu
 					"creation_timestamp": image.CreationTimestamp,
 				},
 			}
-			
+
 			if image.Description != "" {
 				ref.BasicAttributes["description"] = image.Description
 			}
-			
+
 			if image.Family != "" {
 				ref.BasicAttributes["family"] = image.Family
 			}
-			
+
 			if image.SourceDisk != "" {
 				ref.BasicAttributes["source_disk"] = extractLastSegment(image.SourceDisk)
 			}
-			
+
 			// Add labels
 			for k, v := range image.Labels {
 				ref.BasicAttributes["label_"+k] = v
 			}
-			
+
 			resources = append(resources, ref)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	
+
 	return resources, nil
 }
 
@@ -505,10 +505,10 @@ func (ess *EnhancedStorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
-	
+
 	var resources []*pb.ResourceRef
 	projectIDs := ess.clientFactory.GetProjectIDs()
-	
+
 	for _, projectID := range projectIDs {
 		// List all buckets with enhanced metadata
 		req := client.Buckets.List(projectID)
@@ -521,27 +521,27 @@ func (ess *EnhancedStorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 					Service: "storage",
 					Region:  bucket.Location,
 					BasicAttributes: map[string]string{
-						"storage_class":      bucket.StorageClass,
-						"location_type":      bucket.LocationType,
-						"self_link":          bucket.SelfLink,
-						"project_id":         projectID,
-						"time_created":       bucket.TimeCreated,
-						"updated":            bucket.Updated,
-						"metageneration":     fmt.Sprintf("%d", bucket.Metageneration),
-						"project_number":     fmt.Sprintf("%d", bucket.ProjectNumber),
+						"storage_class":  bucket.StorageClass,
+						"location_type":  bucket.LocationType,
+						"self_link":      bucket.SelfLink,
+						"project_id":     projectID,
+						"time_created":   bucket.TimeCreated,
+						"updated":        bucket.Updated,
+						"metageneration": fmt.Sprintf("%d", bucket.Metageneration),
+						"project_number": fmt.Sprintf("%d", bucket.ProjectNumber),
 					},
 				}
-				
+
 				// Add versioning info
 				if bucket.Versioning != nil {
 					ref.BasicAttributes["versioning_enabled"] = fmt.Sprintf("%t", bucket.Versioning.Enabled)
 				}
-				
+
 				// Add encryption info
 				if bucket.Encryption != nil && bucket.Encryption.DefaultKmsKeyName != "" {
 					ref.BasicAttributes["kms_key"] = bucket.Encryption.DefaultKmsKeyName
 				}
-				
+
 				// Add website config
 				if bucket.Website != nil {
 					if bucket.Website.MainPageSuffix != "" {
@@ -551,35 +551,35 @@ func (ess *EnhancedStorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 						ref.BasicAttributes["website_404_page"] = bucket.Website.NotFoundPage
 					}
 				}
-				
+
 				// Add CORS info
 				if len(bucket.Cors) > 0 {
 					ref.BasicAttributes["cors_enabled"] = "true"
 				}
-				
+
 				// Add lifecycle management
 				if bucket.Lifecycle != nil && len(bucket.Lifecycle.Rule) > 0 {
 					ref.BasicAttributes["lifecycle_rules"] = fmt.Sprintf("%d", len(bucket.Lifecycle.Rule))
 				}
-				
+
 				// Add IAM configuration
 				if bucket.IamConfiguration != nil {
 					if bucket.IamConfiguration.UniformBucketLevelAccess != nil {
-						ref.BasicAttributes["uniform_bucket_level_access"] = fmt.Sprintf("%t", 
+						ref.BasicAttributes["uniform_bucket_level_access"] = fmt.Sprintf("%t",
 							bucket.IamConfiguration.UniformBucketLevelAccess.Enabled)
 					}
 				}
-				
+
 				// Add logging
 				if bucket.Logging != nil && bucket.Logging.LogBucket != "" {
 					ref.BasicAttributes["access_logging_bucket"] = bucket.Logging.LogBucket
 				}
-				
+
 				// Add labels
 				for k, v := range bucket.Labels {
 					ref.BasicAttributes["label_"+k] = v
 				}
-				
+
 				resources = append(resources, ref)
 			}
 			return nil
@@ -588,7 +588,7 @@ func (ess *EnhancedStorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 			continue
 		}
 	}
-	
+
 	return resources, nil
 }
 
@@ -598,19 +598,19 @@ func (ess *EnhancedStorageScanner) DescribeResource(ctx context.Context, resourc
 	if len(parts) < 4 {
 		return nil, fmt.Errorf("invalid resource ID format")
 	}
-	
+
 	bucketName := parts[3]
-	
+
 	client, err := ess.clientFactory.GetStorageClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
-	
+
 	bucket, err := client.Buckets.Get(bucketName).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bucket: %w", err)
 	}
-	
+
 	resource := &pb.Resource{
 		Provider:     "gcp",
 		Service:      "storage",
@@ -621,34 +621,34 @@ func (ess *EnhancedStorageScanner) DescribeResource(ctx context.Context, resourc
 		Tags:         bucket.Labels,
 		DiscoveredAt: timestamppb.Now(),
 	}
-	
+
 	// Store comprehensive bucket metadata
 	metadata := map[string]string{
-		"storage_class":      bucket.StorageClass,
-		"location_type":      bucket.LocationType,
-		"time_created":       bucket.TimeCreated,
-		"updated":            bucket.Updated,
-		"metageneration":     fmt.Sprintf("%d", bucket.Metageneration),
-		"project_number":     fmt.Sprintf("%d", bucket.ProjectNumber),
+		"storage_class":  bucket.StorageClass,
+		"location_type":  bucket.LocationType,
+		"time_created":   bucket.TimeCreated,
+		"updated":        bucket.Updated,
+		"metageneration": fmt.Sprintf("%d", bucket.Metageneration),
+		"project_number": fmt.Sprintf("%d", bucket.ProjectNumber),
 	}
-	
+
 	// Add versioning info
 	if bucket.Versioning != nil {
 		metadata["versioning_enabled"] = fmt.Sprintf("%t", bucket.Versioning.Enabled)
 	}
-	
+
 	// Add encryption info
 	if bucket.Encryption != nil && bucket.Encryption.DefaultKmsKeyName != "" {
 		metadata["kms_key"] = bucket.Encryption.DefaultKmsKeyName
 	}
-	
+
 	// Note: Metadata field not available in pb.Resource, storing in RawData
-	
+
 	// Store raw data
 	if rawData, err := json.Marshal(bucket); err == nil {
 		resource.RawData = string(rawData)
 	}
-	
+
 	return resource, nil
 }
 

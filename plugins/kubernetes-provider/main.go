@@ -53,46 +53,46 @@ func main() {
 
 func runBasicTests() {
 	log.Printf("🧪 Running Kubernetes Provider Tests...")
-	
+
 	// Test basic provider functionality
 	_ = NewKubernetesProvider()
-	
+
 	// Add test implementation here
 	log.Printf("✅ Tests completed successfully!")
 }
 
 func runDiscoveryDemo() {
 	log.Printf("🔍 Running Kubernetes API Discovery Demo...")
-	
+
 	_ = NewKubernetesProvider()
 	// Demo API discovery functionality
-	
+
 	log.Printf("✅ Discovery demo completed!")
 }
 
 func runSchemaDemo() {
 	log.Printf("📊 Running Schema Generation Demo...")
-	
+
 	_ = NewKubernetesProvider()
 	// Demo schema generation
-	
+
 	log.Printf("✅ Schema demo completed!")
 }
 
 func runMultiClusterTest() {
 	log.Printf("🌐 Testing Multi-Cluster Support...")
-	
+
 	_ = NewKubernetesProvider()
 	// Test multi-cluster functionality
-	
+
 	log.Printf("✅ Multi-cluster test completed!")
 }
 
 func runHelmTest() {
 	log.Printf("⎈ Testing Helm Release Discovery...")
-	
+
 	_ = NewKubernetesProvider()
 	// Test Helm release discovery
-	
+
 	log.Printf("✅ Helm test completed!")
 }

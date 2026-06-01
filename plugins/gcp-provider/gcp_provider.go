@@ -21,13 +21,13 @@ import (
 type GCPProvider struct {
 	mu          sync.RWMutex
 	initialized bool
-	
+
 	// Configuration
 	projectIDs []string
 	orgID      string
 	folderID   string
 	scope      string // "projects", "folders", or "organizations"
-	
+
 	// Core components
 	assetInventory  *AssetInventoryClient
 	discovery       *ServiceDiscovery
@@ -36,13 +36,13 @@ type GCPProvider struct {
 	schemaGen       *GCPSchemaGenerator
 	clientFactory   *ClientFactory
 	relationships   *RelationshipExtractor
-	
+
 	// Service Account Management (Phase 3) - TODO: implement
 	// serviceAccountIntegration *ServiceAccountIntegration
-	
+
 	// Caching
 	cache *MultiLevelCache
-	
+
 	// Performance components
 	rateLimiter    *rate.Limiter
 	maxConcurrency int
@@ -62,9 +62,9 @@ func NewGCPProvider() *GCPProvider {
 func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest) (*pb.InitializeResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	log.Printf("Initializing GCP Provider")
-	
+
 	// Initialize client factory with ADC
 	p.clientFactory = NewClientFactory()
 	if err := p.clientFactory.Initialize(ctx); err != nil {
@@ -73,7 +73,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 			Error:   fmt.Sprintf("failed to initialize credentials: %v", err),
 		}, nil
 	}
-	
+
 	// Determine scope and discover accessible resources
 	if err := p.discoverScope(ctx, req.Config); err != nil {
 		return &pb.InitializeResponse{
@@ -81,26 +81,26 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 			Error:   fmt.Sprintf("failed to discover scope: %v", err),
 		}, nil
 	}
-	
+
 	// Initialize components
 	p.discovery = NewServiceDiscovery(p.clientFactory)
 	p.scanner = NewResourceScanner(p.clientFactory)
 	p.schemaGen = NewSchemaGenerator()
 	p.relationships = NewRelationshipExtractor()
-	
+
 	// Initialize enhanced scanner for comprehensive results
 	p.enhancedScanner = NewEnhancedResourceScanner(p.clientFactory)
 	if p.enhancedScanner != nil {
 		log.Printf("✅ Enhanced resource scanner initialized with functional scanners")
 	}
-	
+
 	// Initialize Service Account Integration (Phase 3) - TODO: Implement
 	// if saIntegration, err := NewServiceAccountIntegration(p); err != nil {
 	//	log.Printf("⚠️  Service Account Integration not available: %v", err)
 	// } else {
 	//	p.serviceAccountIntegration = saIntegration
 	// }
-	
+
 	// Initialize Cloud Asset Inventory
 	var assetInventoryEnabled bool
 	assetClient, err := NewAssetInventoryClient(ctx)
@@ -110,7 +110,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	} else {
 		// Configure Asset Inventory scope
 		assetClient.SetScope(p.scope, p.projectIDs, p.orgID, p.folderID)
-		
+
 		// Test Asset Inventory connectivity
 		if assetClient.IsHealthy(ctx) {
 			log.Printf("Cloud Asset Inventory initialized successfully")
@@ -121,16 +121,16 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 			log.Printf("Cloud Asset Inventory test failed, will use API scanning")
 		}
 	}
-	
+
 	p.initialized = true
-	
+
 	// Build metadata for response
 	metadata := map[string]string{
 		"asset_inventory": fmt.Sprintf("%t", assetInventoryEnabled),
 		"scope":           p.scope,
 		"max_concurrency": fmt.Sprintf("%d", p.maxConcurrency),
 	}
-	
+
 	// Add scope-specific metadata
 	switch p.scope {
 	case "organizations":
@@ -143,7 +143,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 			metadata["project_ids"] = strings.Join(p.projectIDs, ",")
 		}
 	}
-	
+
 	return &pb.InitializeResponse{
 		Success:  true,
 		Version:  "1.0.0",
@@ -157,7 +157,7 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 	if scope, ok := config["scope"]; ok {
 		p.scope = scope
 	}
-	
+
 	// Check for organization ID
 	if orgID, ok := config["org_id"]; ok && orgID != "" {
 		p.orgID = orgID
@@ -165,7 +165,7 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 		log.Printf("Using organization scope: %s", orgID)
 		return nil
 	}
-	
+
 	// Check for folder ID
 	if folderID, ok := config["folder_id"]; ok && folderID != "" {
 		p.folderID = folderID
@@ -173,7 +173,7 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 		log.Printf("Using folder scope: %s", folderID)
 		return nil
 	}
-	
+
 	// Check for explicit project IDs
 	if projectIDs, ok := config["project_ids"]; ok && projectIDs != "" {
 		p.projectIDs = strings.Split(projectIDs, ",")
@@ -181,10 +181,10 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 		log.Printf("Using explicit projects: %v", p.projectIDs)
 		return nil
 	}
-	
+
 	// Try to discover accessible resources
 	log.Printf("Discovering accessible GCP resources...")
-	
+
 	// First, try to list organizations
 	if orgs, err := p.discoverOrganizations(ctx); err == nil && len(orgs) > 0 {
 		// Use the first accessible organization
@@ -193,13 +193,13 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 		log.Printf("Discovered organization: %s", p.orgID)
 		return nil
 	}
-	
+
 	// Next, try to list accessible projects
 	projects, err := p.discoverProjects(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to discover projects: %w", err)
 	}
-	
+
 	if len(projects) == 0 {
 		// Try to get project from metadata or environment
 		if projectID := p.detectDefaultProject(); projectID != "" {
@@ -208,11 +208,11 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 			return fmt.Errorf("no accessible projects found")
 		}
 	}
-	
+
 	p.projectIDs = projects
 	p.scope = "projects"
 	log.Printf("Discovered %d accessible projects", len(p.projectIDs))
-	
+
 	return nil
 }
 
@@ -223,12 +223,12 @@ func (p *GCPProvider) discoverOrganizations(ctx context.Context) ([]string, erro
 		return nil, err
 	}
 	defer client.Close()
-	
+
 	var orgs []string
-	
+
 	// Search for organizations
 	it := client.SearchOrganizations(ctx, &resourcemanagerpb.SearchOrganizationsRequest{})
-	
+
 	for {
 		org, err := it.Next()
 		if err == iterator.Done {
@@ -241,13 +241,13 @@ func (p *GCPProvider) discoverOrganizations(ctx context.Context) ([]string, erro
 			}
 			return nil, err
 		}
-		
+
 		// Extract org ID from name (organizations/123456)
 		if parts := strings.Split(org.Name, "/"); len(parts) == 2 {
 			orgs = append(orgs, parts[1])
 		}
 	}
-	
+
 	return orgs, nil
 }
 
@@ -258,12 +258,12 @@ func (p *GCPProvider) discoverProjects(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	defer client.Close()
-	
+
 	var projects []string
-	
+
 	// List all projects the user has access to
 	it := client.ListProjects(ctx, &resourcemanagerpb.ListProjectsRequest{})
-	
+
 	for {
 		project, err := it.Next()
 		if err == iterator.Done {
@@ -272,13 +272,13 @@ func (p *GCPProvider) discoverProjects(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to list projects: %w", err)
 		}
-		
+
 		// Only include active projects
 		if project.State == resourcemanagerpb.Project_ACTIVE {
 			projects = append(projects, project.ProjectId)
 		}
 	}
-	
+
 	return projects, nil
 }
 
@@ -288,14 +288,14 @@ func (p *GCPProvider) detectDefaultProject() string {
 	if projectIDs := p.clientFactory.GetProjectIDs(); len(projectIDs) > 0 {
 		return projectIDs[0]
 	}
-	
+
 	// Try from metadata service (when running on GCE/GKE)
 	if metadata.OnGCE() {
 		if projectID, err := metadata.ProjectID(); err == nil {
 			return projectID
 		}
 	}
-	
+
 	return ""
 }
 
@@ -303,7 +303,7 @@ func (p *GCPProvider) detectDefaultProject() string {
 func (p *GCPProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.ProviderInfoResponse, error) {
 	return &pb.ProviderInfoResponse{
 		Name:        "gcp",
-		Version:     "1.0.0", 
+		Version:     "1.0.0",
 		Description: "Google Cloud Platform provider plugin with Cloud Asset Inventory integration",
 		Capabilities: map[string]string{
 			"discovery":          "true",
@@ -333,7 +333,7 @@ func (p *GCPProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 	if !p.initialized {
 		return nil, fmt.Errorf("provider not initialized")
 	}
-	
+
 	// Check cache unless force refresh is requested
 	cacheKey := fmt.Sprintf("discovered_services_%s", p.scope)
 	if !req.ForceRefresh {
@@ -347,7 +347,7 @@ func (p *GCPProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 			}
 		}
 	}
-	
+
 	// Discover services dynamically using enhanced library analysis
 	services, err := p.discovery.DiscoverServicesWithLibraryAnalysis(ctx, p.projectIDs)
 	if err != nil {
@@ -357,7 +357,7 @@ func (p *GCPProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 			return nil, fmt.Errorf("failed to discover GCP services: %w", err)
 		}
 	}
-	
+
 	// Filter services based on include/exclude lists
 	filteredServices := make([]*pb.ServiceInfo, 0)
 	for _, service := range services {
@@ -365,18 +365,18 @@ func (p *GCPProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 		if p.isServiceExcluded(service.Name, req.ExcludeServices) {
 			continue
 		}
-		
+
 		// Include only if in include list (if specified)
 		if len(req.IncludeServices) > 0 && !p.isServiceIncluded(service.Name, req.IncludeServices) {
 			continue
 		}
-		
+
 		filteredServices = append(filteredServices, service)
 	}
-	
+
 	// Cache the results
 	p.cache.GetServiceCache().Set(cacheKey, filteredServices)
-	
+
 	return &pb.DiscoverServicesResponse{
 		Services:     filteredServices,
 		DiscoveredAt: timestamppb.Now(),
@@ -389,14 +389,14 @@ func (p *GCPProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 	if !p.initialized {
 		return nil, fmt.Errorf("provider not initialized")
 	}
-	
+
 	// Apply rate limiting
 	if err := p.rateLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit exceeded: %w", err)
 	}
-	
+
 	var resources []*pb.ResourceRef
-	
+
 	// Use Cloud Asset Inventory if available
 	if p.assetInventory != nil {
 		if req.Service != "" {
@@ -441,7 +441,7 @@ func (p *GCPProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 			}
 		}
 	}
-	
+
 	return &pb.ListResourcesResponse{
 		Resources: resources,
 		Metadata: map[string]string{
@@ -458,7 +458,7 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	if !p.initialized {
 		return nil, fmt.Errorf("provider not initialized")
 	}
-	
+
 	startTime := time.Now()
 	var allResources []*pb.Resource
 	var errors []string
@@ -466,7 +466,7 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		ResourceCounts: make(map[string]int32),
 		ServiceCounts:  make(map[string]int32),
 	}
-	
+
 	// Use enhanced scanner for comprehensive results if available
 	if p.enhancedScanner != nil && (len(req.Services) == 0 || len(req.Services) > 3) {
 		log.Printf("🚀 Using enhanced scanner for comprehensive batch scan")
@@ -518,7 +518,7 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 			}
 		}
 	}
-	
+
 	// Extract relationships if we have multiple resources
 	if len(allResources) > 1 {
 		// Convert Resources to ResourceRefs for relationship extraction
@@ -537,23 +537,23 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 				refs[i].BasicAttributes["resource_data"] = resource.RawData
 			}
 		}
-		
+
 		relationships := p.relationships.ExtractRelationships(refs)
 		log.Printf("Extracted %d relationships between resources", len(relationships))
-		
+
 		// Add relationships to resources
 		p.attachRelationshipsToResources(allResources, relationships)
 	}
-	
+
 	// Calculate statistics
 	stats.TotalResources = int32(len(allResources))
 	stats.DurationMs = time.Since(startTime).Milliseconds()
-	
+
 	for _, resource := range allResources {
 		stats.ResourceCounts[resource.Type]++
 		stats.ServiceCounts[resource.Service]++
 	}
-	
+
 	return &pb.BatchScanResponse{
 		Resources: allResources,
 		Stats:     stats,
@@ -566,11 +566,11 @@ func (p *GCPProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 	if !p.initialized {
 		return fmt.Errorf("provider not initialized")
 	}
-	
+
 	ctx := stream.Context()
 	resourceChan := make(chan *pb.Resource, 100)
 	errChan := make(chan error, 1)
-	
+
 	// Start async scanning
 	go func() {
 		defer close(resourceChan)
@@ -579,7 +579,7 @@ func (p *GCPProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 			errChan <- err
 		}
 	}()
-	
+
 	// Stream resources as they come in
 	for {
 		select {
@@ -603,7 +603,7 @@ func (p *GCPProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest)
 	if !p.initialized {
 		return nil, fmt.Errorf("provider not initialized")
 	}
-	
+
 	return p.schemaGen.GenerateSchemas(req.Services), nil
 }
 
@@ -612,14 +612,14 @@ func (p *GCPProvider) DescribeResource(ctx context.Context, req *pb.DescribeReso
 	if !p.initialized {
 		return nil, fmt.Errorf("provider not initialized")
 	}
-	
+
 	resourceRef := req.ResourceRef
 	if resourceRef == nil {
 		return &pb.DescribeResourceResponse{
 			Error: "resource_ref is required",
 		}, nil
 	}
-	
+
 	// Get detailed resource information
 	resource, err := p.scanner.DescribeResource(ctx, resourceRef)
 	if err != nil {
@@ -627,7 +627,7 @@ func (p *GCPProvider) DescribeResource(ctx context.Context, req *pb.DescribeReso
 			Error: fmt.Sprintf("failed to describe resource: %v", err),
 		}, nil
 	}
-	
+
 	return &pb.DescribeResourceResponse{
 		Resource: resource,
 	}, nil
@@ -693,7 +693,7 @@ func (p *GCPProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.Analyze
 	}
 
 	startTime := time.Now()
-	
+
 	// Get the service mapping from discovery if available
 	var analysisData map[string]interface{}
 	var analysisErrors []string
@@ -704,13 +704,13 @@ func (p *GCPProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.Analyze
 		if hierarchyAnalyzer != nil {
 			// Generate relationship analysis
 			relationships := hierarchyAnalyzer.GenerateHierarchyRelationships()
-			
+
 			analysisData = map[string]interface{}{
-				"analysis_type":      "gcp_client_library_analysis",
+				"analysis_type":       "gcp_client_library_analysis",
 				"total_relationships": len(relationships),
-				"relationships":      relationships,
-				"scope":             p.scope,
-				"analyzed_projects": p.projectIDs,
+				"relationships":       relationships,
+				"scope":               p.scope,
+				"analyzed_projects":   p.projectIDs,
 			}
 
 			// Add service mappings if available (simplified for now)
@@ -726,8 +726,8 @@ func (p *GCPProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.Analyze
 	if analysisData == nil {
 		analysisData = map[string]interface{}{
 			"analysis_type": "basic_gcp_analysis",
-			"scope":        p.scope,
-			"provider":     "gcp",
+			"scope":         p.scope,
+			"provider":      "gcp",
 		}
 	}
 
@@ -739,8 +739,8 @@ func (p *GCPProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.Analyze
 		Warnings: []string{}, // Could add warnings here
 		Metadata: map[string]string{
 			"analyzer_version": "1.0.0",
-			"analysis_time":   time.Now().Format(time.RFC3339),
-			"analysis_type":   "gcp_client_library_analysis",
+			"analysis_time":    time.Now().Format(time.RFC3339),
+			"analysis_type":    "gcp_client_library_analysis",
 		},
 	}, nil
 }
@@ -758,11 +758,11 @@ func (p *GCPProvider) GenerateFromAnalysis(ctx context.Context, req *pb.Generate
 	if p.discovery != nil && p.discovery.GetHierarchyAnalyzer() != nil {
 		// Generate scanner configurations (simplified for now)
 		file1 := &pb.GeneratedFile{
-			Path:     "scanners/gcp_scanner.json",
-			Content:  `{"provider": "gcp", "analysis_type": "client_library"}`,
-			Service:  "gcp",
+			Path:    "scanners/gcp_scanner.json",
+			Content: `{"provider": "gcp", "analysis_type": "client_library"}`,
+			Service: "gcp",
 			Metadata: map[string]string{
-				"type": "scanner_config",
+				"type":         "scanner_config",
 				"dependencies": "gcp-provider",
 			},
 		}
@@ -796,7 +796,7 @@ func (p *GCPProvider) mapServiceToAssetTypes(service string) []string {
 	serviceToAssetTypes := map[string][]string{
 		"compute": {
 			"compute.googleapis.com/Instance",
-			"compute.googleapis.com/Disk", 
+			"compute.googleapis.com/Disk",
 			"compute.googleapis.com/Network",
 			"compute.googleapis.com/Subnetwork",
 			"compute.googleapis.com/Firewall",
@@ -836,11 +836,11 @@ func (p *GCPProvider) mapServiceToAssetTypes(service string) []string {
 			"appengine.googleapis.com/Version",
 		},
 	}
-	
+
 	if types, ok := serviceToAssetTypes[service]; ok {
 		return types
 	}
-	
+
 	// Default: try to construct asset type
 	return []string{fmt.Sprintf("%s.googleapis.com/*", service)}
 }
@@ -881,7 +881,7 @@ func (p *GCPProvider) convertRefToResource(ref *pb.ResourceRef) *pb.Resource {
 		Tags:         make(map[string]string), // Note: GCP uses labels, but we'll store them as tags for consistency
 		DiscoveredAt: timestamppb.Now(),
 	}
-	
+
 	// Extract labels as tags
 	if ref.BasicAttributes != nil {
 		for k, v := range ref.BasicAttributes {
@@ -890,43 +890,43 @@ func (p *GCPProvider) convertRefToResource(ref *pb.ResourceRef) *pb.Resource {
 				resource.Tags[labelName] = v
 			}
 		}
-		
+
 		// Store raw resource data if available
 		if rawData, ok := ref.BasicAttributes["resource_data"]; ok {
 			resource.RawData = rawData
 		}
 	}
-	
+
 	return resource
 }
 
 func (p *GCPProvider) batchScanConcurrent(ctx context.Context, services []string) ([]*pb.Resource, []string) {
 	var allResources []*pb.Resource
 	var errors []string
-	
+
 	// Use semaphore for concurrency control
 	sem := make(chan struct{}, p.maxConcurrency)
 	resultChan := make(chan *serviceResult, len(services))
-	
+
 	var wg sync.WaitGroup
 	wg.Add(len(services))
-	
+
 	for _, service := range services {
 		go func(svc string) {
 			defer wg.Done()
-			
+
 			sem <- struct{}{}        // Acquire
 			defer func() { <-sem }() // Release
-			
+
 			result := &serviceResult{service: svc}
-			
+
 			// Apply rate limiting
 			if err := p.rateLimiter.Wait(ctx); err != nil {
 				result.err = fmt.Errorf("rate limit error: %w", err)
 				resultChan <- result
 				return
 			}
-			
+
 			// Scan service
 			refs, err := p.scanner.ScanService(ctx, svc)
 			if err != nil {
@@ -936,17 +936,17 @@ func (p *GCPProvider) batchScanConcurrent(ctx context.Context, services []string
 					result.resources = append(result.resources, p.convertRefToResource(ref))
 				}
 			}
-			
+
 			resultChan <- result
 		}(service)
 	}
-	
+
 	// Wait for all goroutines to complete
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
-	
+
 	// Collect results
 	for result := range resultChan {
 		if result.err != nil {
@@ -955,7 +955,7 @@ func (p *GCPProvider) batchScanConcurrent(ctx context.Context, services []string
 			allResources = append(allResources, result.resources...)
 		}
 	}
-	
+
 	return allResources, errors
 }
 
@@ -965,7 +965,7 @@ func (p *GCPProvider) attachRelationshipsToResources(resources []*pb.Resource, r
 	for _, resource := range resources {
 		resourceMap[resource.Id] = resource
 	}
-	
+
 	// Attach relationships to resources
 	for _, rel := range relationships {
 		// Find source resource (relationships are stored on the source)
@@ -1011,9 +1011,9 @@ func (p *GCPProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfo
 			}
 
 			return &pb.ServiceInfoResponse{
-				ServiceName: service.Name,
-				Version:     "v1", // Default version
-				SupportedResources: supportedResources,
+				ServiceName:         service.Name,
+				Version:             "v1", // Default version
+				SupportedResources:  supportedResources,
 				RequiredPermissions: service.RequiredPermissions,
 				Capabilities: map[string]string{
 					"provider":     "gcp",
@@ -1110,10 +1110,10 @@ func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 			}
 			resourceRefs = append(resourceRefs, ref)
 		}
-		
+
 		// Extract all relationships
 		allRelationships := p.relationships.ExtractRelationships(resourceRefs)
-		
+
 		// Map relationships back to resources
 		relationshipMap := make(map[string][]*pb.Relationship)
 		for _, rel := range allRelationships {
@@ -1121,7 +1121,7 @@ func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 				relationshipMap[sourceID] = append(relationshipMap[sourceID], rel)
 			}
 		}
-		
+
 		// Assign relationships to resources
 		for _, resource := range resources {
 			if rels, ok := relationshipMap[resource.Id]; ok {
@@ -1207,7 +1207,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 			if err != nil {
 				return fmt.Errorf("scanner failed: %w", err)
 			}
-			
+
 			// Stream each resource
 			for _, ref := range resourceRefs {
 				resource := &pb.Resource{
@@ -1220,7 +1220,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 					Tags:         ref.BasicAttributes,
 					DiscoveredAt: timestamppb.Now(),
 				}
-				
+
 				// Enrich with relationships if requested
 				if req.IncludeRelationships && p.relationships != nil {
 					allRels := p.relationships.ExtractRelationships([]*pb.ResourceRef{ref})
@@ -1244,14 +1244,14 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 //	if !p.initialized {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
-//	
+//
 //	if p.serviceAccountIntegration == nil {
 //		return &pb.AutoSetupResponse{
 //			Success: false,
 //			Error:   "Service account integration not available",
 //		}, nil
 //	}
-//	
+//
 //	return p.serviceAccountIntegration.AutoSetupServiceAccount(ctx, req)
 // }
 
@@ -1260,14 +1260,14 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 //	if !p.initialized {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
-//	
+//
 //	if p.serviceAccountIntegration == nil {
 //		return &pb.ValidateSetupResponse{
 //			Valid: false,
 //			Error: "Service account integration not available",
 //		}, nil
 //	}
-//	
+//
 //	return p.serviceAccountIntegration.ValidateServiceAccountSetup(ctx, req)
 // }
 
@@ -1276,14 +1276,14 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 //	if !p.initialized {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
-//	
+//
 //	if p.serviceAccountIntegration == nil {
 //		return &pb.GenerateScriptResponse{
 //			Success: false,
 //			Error:   "Service account integration not available",
 //		}, nil
 //	}
-//	
+//
 //	return p.serviceAccountIntegration.GenerateServiceAccountScript(ctx, req)
 // }
 
@@ -1292,14 +1292,14 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 //	if !p.initialized {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
-//	
+//
 //	if p.serviceAccountIntegration == nil {
 //		return &pb.RecommendationsResponse{
 //			Success: false,
 //			Error:   "Service account integration not available",
 //		}, nil
 //	}
-//	
+//
 //	return p.serviceAccountIntegration.GetServiceAccountRecommendations(ctx, req)
 // }
 
@@ -1308,13 +1308,13 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 //	if !p.initialized {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
-//	
+//
 //	if p.serviceAccountIntegration == nil {
 //		return &pb.ServiceAccountStatus{
 //			Configured: false,
 //			Error:      "Service account integration not available",
 //		}, nil
 //	}
-//	
+//
 //	return p.serviceAccountIntegration.GetServiceAccountStatus(ctx)
 // }

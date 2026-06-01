@@ -160,7 +160,7 @@ func (s *ResourceScanner) convertUnstructuredList(list *unstructured.Unstructure
 func (s *ResourceScanner) convertToResource(obj *unstructured.Unstructured, kind string) *pb.Resource {
 	// Extract metadata
 	metadata := obj.Object["metadata"].(map[string]interface{})
-	
+
 	// Build resource ID
 	namespace := ""
 	if ns, ok := metadata["namespace"].(string); ok {
@@ -204,23 +204,23 @@ func (s *ResourceScanner) convertToResource(obj *unstructured.Unstructured, kind
 		}
 	}
 
-    // Store the full object as raw data (JSON string)
-    // For Secrets, scrub data and stringData fields to avoid storing values
-    if kind == "Secret" {
-        if scrubbed := obj.DeepCopy(); scrubbed != nil {
-            m := scrubbed.UnstructuredContent()
-            // Remove potentially sensitive fields
-            delete(m, "data")
-            delete(m, "stringData")
-            if rawBytes, err := scrubbed.MarshalJSON(); err == nil {
-                resource.RawData = string(rawBytes)
-            }
-        }
-    } else {
-        if rawBytes, err := obj.MarshalJSON(); err == nil {
-            resource.RawData = string(rawBytes)
-        }
-    }
+	// Store the full object as raw data (JSON string)
+	// For Secrets, scrub data and stringData fields to avoid storing values
+	if kind == "Secret" {
+		if scrubbed := obj.DeepCopy(); scrubbed != nil {
+			m := scrubbed.UnstructuredContent()
+			// Remove potentially sensitive fields
+			delete(m, "data")
+			delete(m, "stringData")
+			if rawBytes, err := scrubbed.MarshalJSON(); err == nil {
+				resource.RawData = string(rawBytes)
+			}
+		}
+	} else {
+		if rawBytes, err := obj.MarshalJSON(); err == nil {
+			resource.RawData = string(rawBytes)
+		}
+	}
 
 	return resource
 }
@@ -329,18 +329,18 @@ func (s *ResourceScanner) streamResourceType(ctx context.Context, resourceType s
 
 // getResourceDefinition gets the resource definition for a given resource type name
 func (s *ResourceScanner) getResourceDefinition(ctx context.Context, resourceType string) (*ResourceDefinition, error) {
-    // Normalize input for matching
-    rt := strings.ToLower(strings.TrimSpace(resourceType))
+	// Normalize input for matching
+	rt := strings.ToLower(strings.TrimSpace(resourceType))
 
-    // Common resource mappings (by plural name)
-    commonResources := map[string]*ResourceDefinition{
-        "pods": {
-            Group:      "",
-            Version:    "v1",
-            Kind:       "Pod",
-            Name:       "pods",
-            Namespaced: true,
-        },
+	// Common resource mappings (by plural name)
+	commonResources := map[string]*ResourceDefinition{
+		"pods": {
+			Group:      "",
+			Version:    "v1",
+			Kind:       "Pod",
+			Name:       "pods",
+			Namespaced: true,
+		},
 		"services": {
 			Group:      "",
 			Version:    "v1",
@@ -376,96 +376,96 @@ func (s *ResourceScanner) getResourceDefinition(ctx context.Context, resourceTyp
 			Name:       "serviceaccounts",
 			Namespaced: true,
 		},
-        "namespaces": {
-            Group:      "",
-            Version:    "v1",
-            Kind:       "Namespace",
-            Name:       "namespaces",
-            Namespaced: false,
-        },
-        "nodes": {
-            Group:      "",
-            Version:    "v1",
-            Kind:       "Node",
-            Name:       "nodes",
-            Namespaced: false,
-        },
-        "persistentvolumeclaims": {
-            Group:      "",
-            Version:    "v1",
-            Kind:       "PersistentVolumeClaim",
-            Name:       "persistentvolumeclaims",
-            Namespaced: true,
-        },
-        "persistentvolumes": {
-            Group:      "",
-            Version:    "v1",
-            Kind:       "PersistentVolume",
-            Name:       "persistentvolumes",
-            Namespaced: false,
-        },
-        "ingresses": {
-            Group:      "networking.k8s.io",
-            Version:    "v1",
-            Kind:       "Ingress",
-            Name:       "ingresses",
-            Namespaced: true,
-        },
-        "networkpolicies": {
-            Group:      "networking.k8s.io",
-            Version:    "v1",
-            Kind:       "NetworkPolicy",
-            Name:       "networkpolicies",
-            Namespaced: true,
-        },
-        "roles": {
-            Group:      "rbac.authorization.k8s.io",
-            Version:    "v1",
-            Kind:       "Role",
-            Name:       "roles",
-            Namespaced: true,
-        },
-        "rolebindings": {
-            Group:      "rbac.authorization.k8s.io",
-            Version:    "v1",
-            Kind:       "RoleBinding",
-            Name:       "rolebindings",
-            Namespaced: true,
-        },
-        "clusterroles": {
-            Group:      "rbac.authorization.k8s.io",
-            Version:    "v1",
-            Kind:       "ClusterRole",
-            Name:       "clusterroles",
-            Namespaced: false,
-        },
-        "clusterrolebindings": {
-            Group:      "rbac.authorization.k8s.io",
-            Version:    "v1",
-            Kind:       "ClusterRoleBinding",
-            Name:       "clusterrolebindings",
-            Namespaced: false,
-        },
-    }
+		"namespaces": {
+			Group:      "",
+			Version:    "v1",
+			Kind:       "Namespace",
+			Name:       "namespaces",
+			Namespaced: false,
+		},
+		"nodes": {
+			Group:      "",
+			Version:    "v1",
+			Kind:       "Node",
+			Name:       "nodes",
+			Namespaced: false,
+		},
+		"persistentvolumeclaims": {
+			Group:      "",
+			Version:    "v1",
+			Kind:       "PersistentVolumeClaim",
+			Name:       "persistentvolumeclaims",
+			Namespaced: true,
+		},
+		"persistentvolumes": {
+			Group:      "",
+			Version:    "v1",
+			Kind:       "PersistentVolume",
+			Name:       "persistentvolumes",
+			Namespaced: false,
+		},
+		"ingresses": {
+			Group:      "networking.k8s.io",
+			Version:    "v1",
+			Kind:       "Ingress",
+			Name:       "ingresses",
+			Namespaced: true,
+		},
+		"networkpolicies": {
+			Group:      "networking.k8s.io",
+			Version:    "v1",
+			Kind:       "NetworkPolicy",
+			Name:       "networkpolicies",
+			Namespaced: true,
+		},
+		"roles": {
+			Group:      "rbac.authorization.k8s.io",
+			Version:    "v1",
+			Kind:       "Role",
+			Name:       "roles",
+			Namespaced: true,
+		},
+		"rolebindings": {
+			Group:      "rbac.authorization.k8s.io",
+			Version:    "v1",
+			Kind:       "RoleBinding",
+			Name:       "rolebindings",
+			Namespaced: true,
+		},
+		"clusterroles": {
+			Group:      "rbac.authorization.k8s.io",
+			Version:    "v1",
+			Kind:       "ClusterRole",
+			Name:       "clusterroles",
+			Namespaced: false,
+		},
+		"clusterrolebindings": {
+			Group:      "rbac.authorization.k8s.io",
+			Version:    "v1",
+			Kind:       "ClusterRoleBinding",
+			Name:       "clusterrolebindings",
+			Namespaced: false,
+		},
+	}
 
-    if def, ok := commonResources[rt]; ok {
-        return def, nil
-    }
+	if def, ok := commonResources[rt]; ok {
+		return def, nil
+	}
 
-    // For unknown resources, try to discover. Match by plural name or Kind.
-    if s.discovery != nil {
-        allResources, err := s.discovery.DiscoverAllResources(ctx)
-        if err != nil {
-            return nil, err
-        }
-        for _, res := range allResources {
-            if strings.EqualFold(res.Name, rt) || strings.EqualFold(res.Kind, resourceType) {
-                return res, nil
-            }
-        }
-    }
+	// For unknown resources, try to discover. Match by plural name or Kind.
+	if s.discovery != nil {
+		allResources, err := s.discovery.DiscoverAllResources(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, res := range allResources {
+			if strings.EqualFold(res.Name, rt) || strings.EqualFold(res.Kind, resourceType) {
+				return res, nil
+			}
+		}
+	}
 
-    return nil, fmt.Errorf("resource type %s not found", resourceType)
+	return nil, fmt.Errorf("resource type %s not found", resourceType)
 }
 
 // ScanWithLabelSelector scans resources matching label selectors

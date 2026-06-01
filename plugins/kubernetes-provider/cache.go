@@ -13,9 +13,9 @@ type CacheEntry struct {
 
 // MultiLevelCache implements a multi-level cache for Kubernetes resources
 type MultiLevelCache struct {
-	mu    sync.RWMutex
-	data  map[string]CacheEntry
-	ttl   time.Duration
+	mu   sync.RWMutex
+	data map[string]CacheEntry
+	ttl  time.Duration
 }
 
 // NewMultiLevelCache creates a new multi-level cache
@@ -24,10 +24,10 @@ func NewMultiLevelCache(ttl time.Duration) *MultiLevelCache {
 		data: make(map[string]CacheEntry),
 		ttl:  ttl,
 	}
-	
+
 	// Start cleanup goroutine
 	go cache.cleanupExpired()
-	
+
 	return cache
 }
 
@@ -35,16 +35,16 @@ func NewMultiLevelCache(ttl time.Duration) *MultiLevelCache {
 func (c *MultiLevelCache) Get(key string) (interface{}, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	entry, exists := c.data[key]
 	if !exists {
 		return nil, false
 	}
-	
+
 	if time.Now().After(entry.ExpiresAt) {
 		return nil, false
 	}
-	
+
 	return entry.Data, true
 }
 
@@ -52,11 +52,11 @@ func (c *MultiLevelCache) Get(key string) (interface{}, bool) {
 func (c *MultiLevelCache) Set(key string, value interface{}, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	if ttl == 0 {
 		ttl = c.ttl
 	}
-	
+
 	c.data[key] = CacheEntry{
 		Data:      value,
 		ExpiresAt: time.Now().Add(ttl),
@@ -67,7 +67,7 @@ func (c *MultiLevelCache) Set(key string, value interface{}, ttl time.Duration) 
 func (c *MultiLevelCache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	delete(c.data, key)
 }
 
@@ -75,7 +75,7 @@ func (c *MultiLevelCache) Delete(key string) {
 func (c *MultiLevelCache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.data = make(map[string]CacheEntry)
 }
 
@@ -83,7 +83,7 @@ func (c *MultiLevelCache) Clear() {
 func (c *MultiLevelCache) cleanupExpired() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		c.mu.Lock()
 		now := time.Now()

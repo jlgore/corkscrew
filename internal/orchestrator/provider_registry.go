@@ -164,7 +164,7 @@ func (r *ProviderOrchestratorRegistry) GetProviderInfo() map[string]ProviderInfo
 // ProviderInfo contains information about a registered provider
 type ProviderInfo struct {
 	Name         string `json:"name"`
-	Type         string `json:"type"`          // "gRPC", "local", etc.
+	Type         string `json:"type"` // "gRPC", "local", etc.
 	HasAnalyzer  bool   `json:"has_analyzer"`
 	HasGenerator bool   `json:"has_generator"`
 }

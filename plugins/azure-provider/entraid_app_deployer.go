@@ -172,13 +172,13 @@ type RoleAssignmentResult struct {
 func (d *EntraIDAppDeployer) getRootManagementGroup(ctx context.Context) (*string, error) {
 	// List all management groups
 	pager := d.managementGroupClient.NewListPager(nil)
-	
+
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list management groups: %w", err)
 		}
-		
+
 		for _, mg := range page.Value {
 			if mg.Properties != nil {
 				// Use the first management group found as root
@@ -188,6 +188,6 @@ func (d *EntraIDAppDeployer) getRootManagementGroup(ctx context.Context) (*strin
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("root management group not found")
 }

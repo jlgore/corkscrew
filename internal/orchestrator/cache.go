@@ -12,50 +12,50 @@ import (
 type Cache interface {
 	// Get retrieves a value from the cache
 	Get(ctx context.Context, key string) (interface{}, error)
-	
+
 	// Set stores a value in the cache with TTL
 	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error
-	
+
 	// Delete removes a value from the cache
 	Delete(ctx context.Context, key string) error
-	
+
 	// Clear removes all values from the cache
 	Clear(ctx context.Context) error
-	
+
 	// Stats returns cache statistics
 	Stats() CacheStats
 }
 
 // CacheStats contains cache statistics
 type CacheStats struct {
-	Hits       int64     `json:"hits"`
-	Misses     int64     `json:"misses"`
-	Sets       int64     `json:"sets"`
-	Deletes    int64     `json:"deletes"`
-	Evictions  int64     `json:"evictions"`
-	Size       int64     `json:"size"`        // Current size in bytes
-	MaxSize    int64     `json:"max_size"`    // Maximum size in bytes
-	Items      int       `json:"items"`       // Number of items
-	LastEvict  time.Time `json:"last_evict"`
+	Hits      int64     `json:"hits"`
+	Misses    int64     `json:"misses"`
+	Sets      int64     `json:"sets"`
+	Deletes   int64     `json:"deletes"`
+	Evictions int64     `json:"evictions"`
+	Size      int64     `json:"size"`     // Current size in bytes
+	MaxSize   int64     `json:"max_size"` // Maximum size in bytes
+	Items     int       `json:"items"`    // Number of items
+	LastEvict time.Time `json:"last_evict"`
 }
 
 // cacheEntry represents a single cache entry
 type cacheEntry struct {
-	Value      interface{}
-	ExpiresAt  time.Time
-	Size       int64
-	AccessedAt time.Time
+	Value       interface{}
+	ExpiresAt   time.Time
+	Size        int64
+	AccessedAt  time.Time
 	AccessCount int64
 }
 
 // MemoryCache implements an in-memory cache with TTL and size limits
 type MemoryCache struct {
-	entries    map[string]*cacheEntry
-	maxSize    int64
+	entries     map[string]*cacheEntry
+	maxSize     int64
 	evictPolicy string // LRU, LFU, FIFO
-	stats      CacheStats
-	mu         sync.RWMutex
-	
+	stats       CacheStats
+	mu          sync.RWMutex
+
 	// For FIFO eviction
 	insertOrder []string
 }
@@ -65,7 +65,7 @@ func NewMemoryCache(maxSize int64, evictPolicy string) *MemoryCache {
 	if evictPolicy == "" {
 		evictPolicy = "LRU"
 	}
-	
+
 	return &MemoryCache{
 		entries:     make(map[string]*cacheEntry),
 		maxSize:     maxSize,
@@ -79,14 +79,14 @@ func (m *MemoryCache) Get(ctx context.Context, key string) (interface{}, error) 
 	m.mu.RLock()
 	entry, exists := m.entries[key]
 	m.mu.RUnlock()
-	
+
 	if !exists {
 		m.mu.Lock()
 		m.stats.Misses++
 		m.mu.Unlock()
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
-	
+
 	// Check if expired
 	if time.Now().After(entry.ExpiresAt) {
 		m.mu.Lock()
@@ -98,14 +98,14 @@ func (m *MemoryCache) Get(ctx context.Context, key string) (interface{}, error) 
 		m.mu.Unlock()
 		return nil, fmt.Errorf("key expired: %s", key)
 	}
-	
+
 	// Update access info
 	m.mu.Lock()
 	entry.AccessedAt = time.Now()
 	entry.AccessCount++
 	m.stats.Hits++
 	m.mu.Unlock()
-	
+
 	return entry.Value, nil
 }
 
@@ -117,10 +117,10 @@ func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, tt
 		return fmt.Errorf("failed to calculate size: %w", err)
 	}
 	size := int64(len(data))
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Check if we need to evict
 	if m.maxSize > 0 {
 		// Account for replacing existing entry
@@ -128,16 +128,16 @@ func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, tt
 		if existing, exists := m.entries[key]; exists {
 			existingSize = existing.Size
 		}
-		
+
 		requiredSpace := size - existingSize
 		availableSpace := m.maxSize - m.stats.Size
-		
+
 		if requiredSpace > availableSpace {
 			// Need to evict
 			m.evict(requiredSpace - availableSpace)
 		}
 	}
-	
+
 	// Create new entry
 	entry := &cacheEntry{
 		Value:       value,
@@ -146,7 +146,7 @@ func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, tt
 		AccessedAt:  time.Now(),
 		AccessCount: 0,
 	}
-	
+
 	// Update size accounting
 	if existing, exists := m.entries[key]; exists {
 		m.stats.Size -= existing.Size
@@ -154,12 +154,12 @@ func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, tt
 	} else {
 		m.stats.Items++
 	}
-	
+
 	m.entries[key] = entry
 	m.insertOrder = append(m.insertOrder, key)
 	m.stats.Size += size
 	m.stats.Sets++
-	
+
 	return nil
 }
 
@@ -167,18 +167,18 @@ func (m *MemoryCache) Set(ctx context.Context, key string, value interface{}, tt
 func (m *MemoryCache) Delete(ctx context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	entry, exists := m.entries[key]
 	if !exists {
 		return fmt.Errorf("key not found: %s", key)
 	}
-	
+
 	delete(m.entries, key)
 	m.removeFromOrder(key)
 	m.stats.Size -= entry.Size
 	m.stats.Items--
 	m.stats.Deletes++
-	
+
 	return nil
 }
 
@@ -186,12 +186,12 @@ func (m *MemoryCache) Delete(ctx context.Context, key string) error {
 func (m *MemoryCache) Clear(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.entries = make(map[string]*cacheEntry)
 	m.insertOrder = []string{}
 	m.stats.Size = 0
 	m.stats.Items = 0
-	
+
 	return nil
 }
 
@@ -199,7 +199,7 @@ func (m *MemoryCache) Clear(ctx context.Context) error {
 func (m *MemoryCache) Stats() CacheStats {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	stats := m.stats
 	stats.MaxSize = m.maxSize
 	return stats
@@ -217,7 +217,7 @@ func (m *MemoryCache) evict(requiredSpace int64) {
 	default:
 		m.evictLRU(requiredSpace) // Default to LRU
 	}
-	
+
 	m.stats.LastEvict = time.Now()
 }
 
@@ -229,7 +229,7 @@ func (m *MemoryCache) evictLRU(requiredSpace int64) {
 		accessedAt time.Time
 		size       int64
 	}
-	
+
 	entries := []entryInfo{}
 	for key, entry := range m.entries {
 		entries = append(entries, entryInfo{
@@ -238,7 +238,7 @@ func (m *MemoryCache) evictLRU(requiredSpace int64) {
 			size:       entry.Size,
 		})
 	}
-	
+
 	// Sort by access time (oldest first)
 	for i := 0; i < len(entries)-1; i++ {
 		for j := i + 1; j < len(entries); j++ {
@@ -247,14 +247,14 @@ func (m *MemoryCache) evictLRU(requiredSpace int64) {
 			}
 		}
 	}
-	
+
 	// Evict until we have enough space
 	freedSpace := int64(0)
 	for _, info := range entries {
 		if freedSpace >= requiredSpace {
 			break
 		}
-		
+
 		delete(m.entries, info.key)
 		m.removeFromOrder(info.key)
 		freedSpace += info.size
@@ -272,7 +272,7 @@ func (m *MemoryCache) evictLFU(requiredSpace int64) {
 		accessCount int64
 		size        int64
 	}
-	
+
 	entries := []entryInfo{}
 	for key, entry := range m.entries {
 		entries = append(entries, entryInfo{
@@ -281,7 +281,7 @@ func (m *MemoryCache) evictLFU(requiredSpace int64) {
 			size:        entry.Size,
 		})
 	}
-	
+
 	// Sort by access count (lowest first)
 	for i := 0; i < len(entries)-1; i++ {
 		for j := i + 1; j < len(entries); j++ {
@@ -290,14 +290,14 @@ func (m *MemoryCache) evictLFU(requiredSpace int64) {
 			}
 		}
 	}
-	
+
 	// Evict until we have enough space
 	freedSpace := int64(0)
 	for _, info := range entries {
 		if freedSpace >= requiredSpace {
 			break
 		}
-		
+
 		delete(m.entries, info.key)
 		m.removeFromOrder(info.key)
 		freedSpace += info.size
@@ -311,18 +311,18 @@ func (m *MemoryCache) evictLFU(requiredSpace int64) {
 func (m *MemoryCache) evictFIFO(requiredSpace int64) {
 	freedSpace := int64(0)
 	toRemove := []string{}
-	
+
 	for _, key := range m.insertOrder {
 		if freedSpace >= requiredSpace {
 			break
 		}
-		
+
 		if entry, exists := m.entries[key]; exists {
 			freedSpace += entry.Size
 			toRemove = append(toRemove, key)
 		}
 	}
-	
+
 	// Remove entries
 	for _, key := range toRemove {
 		if entry, exists := m.entries[key]; exists {
@@ -332,7 +332,7 @@ func (m *MemoryCache) evictFIFO(requiredSpace int64) {
 			m.stats.Evictions++
 		}
 	}
-	
+
 	// Update insert order
 	if len(toRemove) > 0 {
 		m.insertOrder = m.insertOrder[len(toRemove):]

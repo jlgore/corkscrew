@@ -26,17 +26,17 @@ type FormatterOptions struct {
 	// CSV options
 	CSVDelimiter rune
 	CSVQuote     rune
-	
+
 	// JSON options
 	JSONPretty bool
 	JSONIndent string
-	
+
 	// Table options
 	TableMaxWidth    int
 	TableMinColWidth int
 	TableMaxColWidth int
 	TablePadding     int
-	
+
 	// Common options
 	NullValue      string
 	EmptyValue     string
@@ -52,7 +52,7 @@ func getTerminalWidth() int {
 			return width
 		}
 	}
-	
+
 	// Check TERM environment for common cases
 	if term := os.Getenv("TERM"); term != "" {
 		// If we're in a known wide terminal, use a wider default
@@ -307,7 +307,7 @@ func NewTableFormatter(opts *FormatterOptions) *TableFormatter {
 // calculateColumnWidths determines optimal column widths based on content and constraints
 func (f *TableFormatter) calculateColumnWidths(columns []ColumnInfo, rows []map[string]interface{}) map[string]int {
 	widths := make(map[string]int)
-	
+
 	// Initialize with header widths
 	for _, col := range columns {
 		widths[col.Name] = len(col.Name)
@@ -338,7 +338,7 @@ func (f *TableFormatter) calculateColumnWidths(columns []ColumnInfo, rows []map[
 	separators := len(columns) - 1
 	totalPadding := len(columns) * f.Options.TablePadding * 2
 	totalAvailable := f.Options.TableMaxWidth - separators - totalPadding
-	
+
 	if totalUsed > totalAvailable && totalAvailable > 0 {
 		ratio := float64(totalAvailable) / float64(totalUsed)
 		for name, width := range widths {
@@ -368,7 +368,7 @@ func (f *TableFormatter) Format(result *QueryResult, writer io.Writer) error {
 	// Write header
 	headerParts := make([]string, len(result.Columns))
 	separatorParts := make([]string, len(result.Columns))
-	
+
 	for i, col := range result.Columns {
 		width := widths[col.Name]
 		headerParts[i] = padOrTruncate(col.Name, width)
@@ -400,7 +400,7 @@ func (f *TableFormatter) FormatStream(resultChan <-chan Row, columns []ColumnInf
 	// Write header
 	headerParts := make([]string, len(columns))
 	separatorParts := make([]string, len(columns))
-	
+
 	for i, col := range columns {
 		width := f.Options.TableMaxColWidth
 		if len(col.Name) > width {

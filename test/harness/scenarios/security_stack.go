@@ -67,8 +67,8 @@ func (s *SecurityStackScenario) DefineResources(ctx *pulumi.Context, testID stri
 
 	// Create KMS alias
 	kmsAlias, err := kms.NewAlias(ctx, "test-kms-alias", &kms.AliasArgs{
-		Name:         pulumi.String(fmt.Sprintf("alias/corkscrew-test-%s", testID)),
-		TargetKeyId:  kmsKey.KeyId,
+		Name:        pulumi.String(fmt.Sprintf("alias/corkscrew-test-%s", testID)),
+		TargetKeyId: kmsKey.KeyId,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create KMS alias: %w", err)

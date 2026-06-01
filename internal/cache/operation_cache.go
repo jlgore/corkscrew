@@ -22,8 +22,8 @@ type CacheEntry struct {
 type OperationCache struct {
 	mu          sync.RWMutex
 	entries     map[string]*CacheEntry
-	maxSize     int64      // Maximum cache size in bytes
-	currentSize int64      // Current cache size in bytes
+	maxSize     int64 // Maximum cache size in bytes
+	currentSize int64 // Current cache size in bytes
 	ttl         time.Duration
 	hitCount    int64
 	missCount   int64
@@ -47,7 +47,7 @@ func (c *OperationCache) generateKey(service, operation string, params interface
 		"operation": operation,
 		"params":    params,
 	}
-	
+
 	jsonData, _ := json.Marshal(data)
 	hash := sha256.Sum256(jsonData)
 	return fmt.Sprintf("%s:%s:%x", service, operation, hash)
@@ -56,22 +56,22 @@ func (c *OperationCache) generateKey(service, operation string, params interface
 // Get retrieves a value from the cache
 func (c *OperationCache) Get(ctx context.Context, service, operation string, params interface{}) (interface{}, bool) {
 	key := c.generateKey(service, operation, params)
-	
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	entry, exists := c.entries[key]
 	if !exists {
 		c.missCount++
 		return nil, false
 	}
-	
+
 	// Check if entry has expired
 	if time.Now().After(entry.Expiration) {
 		c.missCount++
 		return nil, false
 	}
-	
+
 	c.hitCount++
 	return entry.Value, true
 }
@@ -79,22 +79,22 @@ func (c *OperationCache) Get(ctx context.Context, service, operation string, par
 // Set stores a value in the cache
 func (c *OperationCache) Set(ctx context.Context, service, operation string, params, value interface{}) error {
 	key := c.generateKey(service, operation, params)
-	
+
 	// Calculate size of the value
 	jsonData, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("failed to marshal value: %w", err)
 	}
 	size := int64(len(jsonData))
-	
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	// Check if we need to evict entries to make room
 	if c.currentSize+size > c.maxSize {
 		c.evictOldestEntries(size)
 	}
-	
+
 	// Create new entry
 	entry := &CacheEntry{
 		Key:        key,
@@ -103,15 +103,15 @@ func (c *OperationCache) Set(ctx context.Context, service, operation string, par
 		Expiration: time.Now().Add(c.ttl),
 		Size:       size,
 	}
-	
+
 	// Update existing entry if it exists
 	if oldEntry, exists := c.entries[key]; exists {
 		c.currentSize -= oldEntry.Size
 	}
-	
+
 	c.entries[key] = entry
 	c.currentSize += size
-	
+
 	return nil
 }
 
@@ -121,7 +121,7 @@ func (c *OperationCache) evictOldestEntries(requiredSize int64) {
 	for c.currentSize+requiredSize > c.maxSize && len(c.entries) > 0 {
 		var oldestKey string
 		var oldestTime time.Time
-		
+
 		// Find the oldest entry
 		for key, entry := range c.entries {
 			if oldestKey == "" || entry.Timestamp.Before(oldestTime) {
@@ -129,7 +129,7 @@ func (c *OperationCache) evictOldestEntries(requiredSize int64) {
 				oldestTime = entry.Timestamp
 			}
 		}
-		
+
 		// Remove the oldest entry
 		if oldestKey != "" {
 			if entry, exists := c.entries[oldestKey]; exists {
@@ -145,7 +145,7 @@ func (c *OperationCache) evictOldestEntries(requiredSize int64) {
 func (c *OperationCache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.entries = make(map[string]*CacheEntry)
 	c.currentSize = 0
 }
@@ -154,7 +154,7 @@ func (c *OperationCache) Clear() {
 func (c *OperationCache) Stats() CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	var validEntries int
 	now := time.Now()
 	for _, entry := range c.entries {
@@ -162,12 +162,12 @@ func (c *OperationCache) Stats() CacheStats {
 			validEntries++
 		}
 	}
-	
+
 	hitRate := float64(0)
 	if c.hitCount+c.missCount > 0 {
 		hitRate = float64(c.hitCount) / float64(c.hitCount+c.missCount) * 100
 	}
-	
+
 	return CacheStats{
 		TotalEntries:  len(c.entries),
 		ValidEntries:  validEntries,
@@ -196,7 +196,7 @@ type CacheStats struct {
 func (c *OperationCache) Cleanup() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	now := time.Now()
 	for key, entry := range c.entries {
 		if now.After(entry.Expiration) {
@@ -211,7 +211,7 @@ func (c *OperationCache) StartCleanupRoutine(ctx context.Context, interval time.
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -241,24 +241,24 @@ func (m *CacheManager) GetCache(operationType string) *OperationCache {
 	m.mu.RLock()
 	cache, exists := m.caches[operationType]
 	m.mu.RUnlock()
-	
+
 	if exists {
 		return cache
 	}
-	
+
 	// Create a new cache with default settings
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Check again in case another goroutine created it
 	if cache, exists := m.caches[operationType]; exists {
 		return cache
 	}
-	
+
 	// Create cache with operation-specific settings
 	var maxSize int64
 	var ttl time.Duration
-	
+
 	switch operationType {
 	case "list":
 		maxSize = 100 // 100MB for list operations
@@ -273,10 +273,10 @@ func (m *CacheManager) GetCache(operationType string) *OperationCache {
 		maxSize = 50 // Default 50MB
 		ttl = 5 * time.Minute
 	}
-	
+
 	cache = NewOperationCache(maxSize, ttl)
 	m.caches[operationType] = cache
-	
+
 	return cache
 }
 
@@ -284,7 +284,7 @@ func (m *CacheManager) GetCache(operationType string) *OperationCache {
 func (m *CacheManager) ClearAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	for _, cache := range m.caches {
 		cache.Clear()
 	}
@@ -294,11 +294,11 @@ func (m *CacheManager) ClearAll() {
 func (m *CacheManager) GetStats() map[string]CacheStats {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	stats := make(map[string]CacheStats)
 	for name, cache := range m.caches {
 		stats[name] = cache.Stats()
 	}
-	
+
 	return stats
 }

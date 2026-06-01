@@ -276,7 +276,7 @@ for _, projectID := range projectIDs {
 				},
 				{
 					Name:               "NodePool",
-					TypeName:           "NodePool", 
+					TypeName:           "NodePool",
 					AssetInventoryType: "container.googleapis.com/NodePool",
 					IsRegional:         true,
 					ListCode: `
@@ -366,7 +366,7 @@ for _, projectID := range projectIDs {
 	}
 }`,
 					IDField:     "Id",
-					NameField:   "Id", 
+					NameField:   "Id",
 					LabelsField: "Labels",
 				},
 				{

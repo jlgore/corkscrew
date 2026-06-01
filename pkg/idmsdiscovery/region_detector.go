@@ -18,11 +18,11 @@ type RegionDetector struct {
 }
 
 type RegionPerformance struct {
-	Latency         time.Duration
-	ResourceCount   int
-	ServiceCount    int
-	LastUpdated     time.Time
-	ErrorRate       float64
+	Latency       time.Duration
+	ResourceCount int
+	ServiceCount  int
+	LastUpdated   time.Time
+	ErrorRate     float64
 }
 
 type RegionPriority struct {
@@ -98,10 +98,10 @@ type RegionPerformanceData struct {
 
 func (rd *RegionDetector) measureRegionPerformance(ctx context.Context, provider CloudProvider, region models.Region) RegionPerformance {
 	start := time.Now()
-	
+
 	services, err := provider.GetServices(ctx, region.Name)
 	latency := time.Since(start)
-	
+
 	errorRate := 0.0
 	if err != nil {
 		errorRate = 1.0
@@ -119,7 +119,7 @@ func (rd *RegionDetector) measureRegionPerformance(ctx context.Context, provider
 
 func (rd *RegionDetector) prioritizeRegions(regions []models.Region) []models.Region {
 	priorities := make([]RegionPriority, len(regions))
-	
+
 	for i, region := range regions {
 		priorities[i] = RegionPriority{
 			Region: region,
@@ -136,7 +136,7 @@ func (rd *RegionDetector) prioritizeRegions(regions []models.Region) []models.Re
 	for i, priority := range priorities {
 		region := priority.Region
 		region.Metadata = map[string]interface{}{
-			"priority_score": priority.Score,
+			"priority_score":  priority.Score,
 			"priority_reason": priority.Reason,
 		}
 		optimizedRegions[i] = region
@@ -183,27 +183,27 @@ func (rd *RegionDetector) calculateRegionScore(region models.Region) float64 {
 func (rd *RegionDetector) getRegionalPreferenceScore(region models.Region) float64 {
 	// Boost commonly used regions
 	commonRegions := map[string]float64{
-		"us-east-1":      0.2, // AWS primary
-		"us-west-2":      0.15,
-		"eu-west-1":      0.15,
-		"eastus":         0.2, // Azure primary
-		"westus2":        0.15,
-		"westeurope":     0.15,
-		"us-central1":    0.2, // GCP primary
-		"us-west1":       0.15,
-		"europe-west1":   0.15,
+		"us-east-1":    0.2, // AWS primary
+		"us-west-2":    0.15,
+		"eu-west-1":    0.15,
+		"eastus":       0.2, // Azure primary
+		"westus2":      0.15,
+		"westeurope":   0.15,
+		"us-central1":  0.2, // GCP primary
+		"us-west1":     0.15,
+		"europe-west1": 0.15,
 	}
-	
+
 	if boost, exists := commonRegions[region.Name]; exists {
 		return boost
 	}
-	
+
 	return 0
 }
 
 func (rd *RegionDetector) getScoreReason(region models.Region) string {
 	score := rd.calculateRegionScore(region)
-	
+
 	if score > 0.8 {
 		return "High priority: Low latency, active region"
 	} else if score > 0.6 {

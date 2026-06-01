@@ -76,10 +76,10 @@ func TestProviderIntegration(t *testing.T) {
 			t.Logf("Failed to create emergency cleanup: %v", err)
 			return
 		}
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		
+
 		if err := emergencyCleanup.CleanupTestResources(ctx, *testID); err != nil {
 			t.Logf("Emergency cleanup failed: %v", err)
 		}
@@ -133,11 +133,11 @@ func TestProviderIntegration(t *testing.T) {
 
 	t.Logf("✅ Integration test completed successfully")
 	t.Logf("   Duration: %v", result.Duration)
-	t.Logf("   Resources: %d deployed, %d scanned, %d verified", 
-		result.Metrics.ResourcesDeployed, 
-		result.Metrics.ResourcesScanned, 
+	t.Logf("   Resources: %d deployed, %d scanned, %d verified",
+		result.Metrics.ResourcesDeployed,
+		result.Metrics.ResourcesScanned,
 		result.Metrics.ResourcesVerified)
-	
+
 	if result.VerificationResult != nil {
 		t.Logf("   Success rate: %.1f%%", result.VerificationResult.GetSuccessRate())
 	}
@@ -152,18 +152,18 @@ func TestEmergencyCleanup(t *testing.T) {
 	flag.Parse()
 
 	ctx := context.Background()
-	
+
 	emergencyCleanup, err := safety.NewEmergencyCleanup(*region)
 	require.NoError(t, err, "Failed to create emergency cleanup")
 
 	// Test pattern for cleanup (should not match any real resources in test)
 	testPattern := "emergency-cleanup-test-nonexistent"
-	
+
 	t.Logf("🚨 Testing emergency cleanup with pattern: %s", testPattern)
-	
+
 	err = emergencyCleanup.CleanupTestResources(ctx, testPattern)
 	require.NoError(t, err, "Emergency cleanup test failed")
-	
+
 	t.Logf("✅ Emergency cleanup test completed")
 }
 
@@ -177,7 +177,7 @@ func BenchmarkTestExecution(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		testID := fmt.Sprintf("bench-%d-%d", time.Now().Unix(), i)
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
@@ -233,7 +233,7 @@ func generateTestReports(result *TestResult) error {
 
 	// Generate GitHub PR comment format
 	prComment := generator.GeneratePRComment(result)
-	
+
 	// Save PR comment to file for CI/CD
 	prCommentFile := filepath.Join(reportsDir, "pr_comment.md")
 	if err := os.WriteFile(prCommentFile, []byte(prComment), 0644); err != nil {
@@ -252,7 +252,7 @@ func generateTestReports(result *TestResult) error {
 // Example usage test
 func ExampleTestProviderIntegration() {
 	// This example shows how to run the integration test programmatically
-	
+
 	// Set test parameters
 	*provider = "aws"
 	*scenario = "simple-s3"
@@ -264,7 +264,7 @@ func ExampleTestProviderIntegration() {
 	// Run in a test context
 	// Note: In practice, this would be called by the testing framework
 	// TestProviderIntegration(t)
-	
+
 	fmt.Println("Example integration test configuration complete")
 	// Output: Example integration test configuration complete
 }

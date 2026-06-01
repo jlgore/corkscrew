@@ -891,7 +891,7 @@ func (p *AzureProvider) batchScanWithResourceGraph(ctx context.Context, req *pb.
 			for k := range ref.BasicAttributes {
 				keys = append(keys, k)
 			}
-			log.Printf("DEBUG Resource %d: Name=%s, Type=%s, BasicAttributes keys=%v", 
+			log.Printf("DEBUG Resource %d: Name=%s, Type=%s, BasicAttributes keys=%v",
 				i, ref.Name, ref.Type, keys)
 			if rawData, ok := ref.BasicAttributes["raw_data"]; ok {
 				log.Printf("  raw_data length: %d", len(rawData))
@@ -943,7 +943,7 @@ func (p *AzureProvider) batchScanWithResourceGraph(ctx context.Context, req *pb.
 				log.Printf("DEBUG: Using properties for %s: %d bytes", ref.Name, len(props))
 			} else {
 				log.Printf("DEBUG: No raw_data or properties for %s (type: %s)", ref.Name, ref.Type)
-				
+
 				// For resources without metadata, especially storage accounts, fetch full details
 				if strings.Contains(strings.ToLower(ref.Type), "storage") || resource.RawData == "" {
 					log.Printf("DEBUG: Fetching full details for %s via DescribeResource", ref.Name)

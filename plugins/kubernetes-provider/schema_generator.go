@@ -18,10 +18,10 @@ func NewK8sSchemaGenerator() *K8sSchemaGenerator {
 // GenerateTableSchema generates a DuckDB table schema for a Kubernetes resource
 func (g *K8sSchemaGenerator) GenerateTableSchema(resource *ResourceDefinition) *pb.Schema {
 	tableName := g.getTableName(resource)
-	
+
 	// Generate CREATE TABLE SQL
 	sql := g.generateCreateTableSQL(tableName, resource)
-	
+
 	return &pb.Schema{
 		Name:         tableName,
 		Service:      "kubernetes",
@@ -42,20 +42,20 @@ func (g *K8sSchemaGenerator) getTableName(resource *ResourceDefinition) string {
 	if group == "" {
 		group = "core"
 	}
-	
+
 	// Replace dots with underscores and convert to lowercase
 	group = strings.ReplaceAll(strings.ToLower(group), ".", "_")
 	name := strings.ToLower(resource.Name)
-	
+
 	return fmt.Sprintf("k8s_%s_%s", group, name)
 }
 
 // generateCreateTableSQL generates the CREATE TABLE SQL for a Kubernetes resource
 func (g *K8sSchemaGenerator) generateCreateTableSQL(tableName string, resource *ResourceDefinition) string {
 	var sql strings.Builder
-	
+
 	sql.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", tableName))
-	
+
 	// Standard columns for all Kubernetes resources
 	sql.WriteString("    uid VARCHAR PRIMARY KEY,\n")
 	sql.WriteString("    name VARCHAR NOT NULL,\n")
@@ -74,66 +74,66 @@ func (g *K8sSchemaGenerator) generateCreateTableSQL(tableName string, resource *
 	sql.WriteString("    status JSON,\n")
 	sql.WriteString("    raw_manifest JSON,\n")
 	sql.WriteString("    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n")
-	
+
 	// Resource-specific columns based on resource type
 	sql.WriteString(g.getResourceSpecificColumns(resource))
-	
+
 	// Remove trailing comma and newline
 	sqlStr := sql.String()
 	if strings.HasSuffix(sqlStr, ",\n") {
 		sqlStr = strings.TrimSuffix(sqlStr, ",\n") + "\n"
 	}
-	
+
 	sqlStr += ");\n"
-	
+
 	// Add indexes
 	sqlStr += g.generateIndexes(tableName)
-	
+
 	return sqlStr
 }
 
 // getResourceSpecificColumns returns additional column definitions for specific resource types
 func (g *K8sSchemaGenerator) getResourceSpecificColumns(resource *ResourceDefinition) string {
 	var columns strings.Builder
-	
+
 	switch resource.Kind {
 	case "Pod":
 		columns.WriteString("    node_name VARCHAR,\n")
 		columns.WriteString("    phase VARCHAR,\n")
 		columns.WriteString("    pod_ip VARCHAR,\n")
 		columns.WriteString("    host_ip VARCHAR,\n")
-		
+
 	case "Service":
 		columns.WriteString("    cluster_ip VARCHAR,\n")
 		columns.WriteString("    service_type VARCHAR,\n")
 		columns.WriteString("    external_ips JSON,\n")
 		columns.WriteString("    load_balancer_ip VARCHAR,\n")
-		
+
 	case "Node":
 		columns.WriteString("    provider_id VARCHAR,\n")
 		columns.WriteString("    pod_cidr VARCHAR,\n")
 		columns.WriteString("    unschedulable BOOLEAN,\n")
-		
+
 	case "PersistentVolume":
 		columns.WriteString("    storage_class VARCHAR,\n")
 		columns.WriteString("    capacity VARCHAR,\n")
 		columns.WriteString("    access_modes JSON,\n")
 		columns.WriteString("    reclaim_policy VARCHAR,\n")
 	}
-	
+
 	return columns.String()
 }
 
 // generateIndexes returns index creation SQL for the table
 func (g *K8sSchemaGenerator) generateIndexes(tableName string) string {
 	var indexes strings.Builder
-	
+
 	// Standard indexes
 	indexes.WriteString(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_name ON %s(name);\n", tableName, tableName))
 	indexes.WriteString(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_namespace ON %s(namespace);\n", tableName, tableName))
 	indexes.WriteString(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_created ON %s(creation_timestamp);\n", tableName, tableName))
 	indexes.WriteString(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_kind ON %s(kind);\n", tableName, tableName))
-	
+
 	return indexes.String()
 }
 
@@ -175,15 +175,15 @@ CREATE INDEX IF NOT EXISTS idx_k8s_rel_cluster ON k8s_relationships(cluster_name
 // GenerateSchemas generates all schemas for the given resources
 func (g *K8sSchemaGenerator) GenerateSchemas(resources []*ResourceDefinition) []*pb.Schema {
 	var schemas []*pb.Schema
-	
+
 	// Generate schema for each resource type
 	for _, resource := range resources {
 		schema := g.GenerateTableSchema(resource)
 		schemas = append(schemas, schema)
 	}
-	
+
 	// Add relationships table
 	schemas = append(schemas, g.GenerateRelationshipTableSchema())
-	
+
 	return schemas
 }

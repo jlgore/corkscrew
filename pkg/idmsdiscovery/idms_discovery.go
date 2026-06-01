@@ -9,33 +9,33 @@ import (
 )
 
 type IDMSDiscovery struct {
-	smartEngine    *SmartDiscoveryEngine
-	awsProvider    CloudProvider
-	gcpProvider    CloudProvider
-	azureProvider  CloudProvider
-	k8sProvider    CloudProvider
-	mutex          sync.RWMutex
-	lastDiscovery  time.Time
+	smartEngine   *SmartDiscoveryEngine
+	awsProvider   CloudProvider
+	gcpProvider   CloudProvider
+	azureProvider CloudProvider
+	k8sProvider   CloudProvider
+	mutex         sync.RWMutex
+	lastDiscovery time.Time
 }
 
 type IDMSService struct {
-	Provider    string    `json:"provider"`
-	ServiceType string    `json:"service_type"`
-	Name        string    `json:"name"`
-	Region      string    `json:"region"`
-	Endpoint    string    `json:"endpoint"`
-	Status      string    `json:"status"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	DiscoveredAt time.Time `json:"discovered_at"`
+	Provider     string                 `json:"provider"`
+	ServiceType  string                 `json:"service_type"`
+	Name         string                 `json:"name"`
+	Region       string                 `json:"region"`
+	Endpoint     string                 `json:"endpoint"`
+	Status       string                 `json:"status"`
+	Metadata     map[string]interface{} `json:"metadata"`
+	DiscoveredAt time.Time              `json:"discovered_at"`
 }
 
 type IDMSDiscoveryResult struct {
-	Services     []IDMSService `json:"services"`
-	TotalFound   int          `json:"total_found"`
+	Services     []IDMSService  `json:"services"`
+	TotalFound   int            `json:"total_found"`
 	ByProvider   map[string]int `json:"by_provider"`
-	Duration     time.Duration `json:"duration"`
-	Errors       []string     `json:"errors"`
-	DiscoveredAt time.Time    `json:"discovered_at"`
+	Duration     time.Duration  `json:"duration"`
+	Errors       []string       `json:"errors"`
+	DiscoveredAt time.Time      `json:"discovered_at"`
 }
 
 func NewIDMSDiscovery() *IDMSDiscovery {
@@ -44,8 +44,8 @@ func NewIDMSDiscovery() *IDMSDiscovery {
 		EnableServiceDetection:   true,
 		EnableCrossProviderCorre: true,
 		ParallelDiscoveryWorkers: 4,
-		DiscoveryTimeout:        5 * time.Minute,
-		CacheExpiration:         30 * time.Minute,
+		DiscoveryTimeout:         5 * time.Minute,
+		CacheExpiration:          30 * time.Minute,
 	}
 
 	return &IDMSDiscovery{
@@ -156,9 +156,9 @@ func (id *IDMSDiscovery) DiscoverIDMSServices(ctx context.Context) (*IDMSDiscove
 
 func (id *IDMSDiscovery) discoverAWSIDMS(ctx context.Context) ([]IDMSService, error) {
 	log.Printf("🔍 Discovering AWS IAM and identity services...")
-	
+
 	services := make([]IDMSService, 0)
-	
+
 	// AWS IAM Services to discover
 	awsIDMSServices := []struct {
 		name        string
@@ -192,13 +192,13 @@ func (id *IDMSDiscovery) discoverAWSIDMS(ctx context.Context) ([]IDMSService, er
 			},
 			DiscoveredAt: time.Now(),
 		}
-		
+
 		// For regional services, we would discover across regions
 		if awsService.name == "directory-service" {
 			service.Region = "us-east-1" // Example region
 			service.Metadata["scope"] = "regional"
 		}
-		
+
 		services = append(services, service)
 	}
 
@@ -208,9 +208,9 @@ func (id *IDMSDiscovery) discoverAWSIDMS(ctx context.Context) ([]IDMSService, er
 
 func (id *IDMSDiscovery) discoverGCPIDMS(ctx context.Context) ([]IDMSService, error) {
 	log.Printf("🔍 Discovering GCP IAM and identity services...")
-	
+
 	services := make([]IDMSService, 0)
-	
+
 	// GCP IAM Services to discover
 	gcpIDMSServices := []struct {
 		name        string
@@ -244,13 +244,13 @@ func (id *IDMSDiscovery) discoverGCPIDMS(ctx context.Context) ([]IDMSService, er
 			},
 			DiscoveredAt: time.Now(),
 		}
-		
+
 		// Some services are regional
 		if gcpService.name == "clouddirectory" || gcpService.name == "certificateauthority" {
 			service.Region = "us-central1" // Example region
 			service.Metadata["scope"] = "regional"
 		}
-		
+
 		services = append(services, service)
 	}
 
@@ -260,9 +260,9 @@ func (id *IDMSDiscovery) discoverGCPIDMS(ctx context.Context) ([]IDMSService, er
 
 func (id *IDMSDiscovery) discoverAzureIDMS(ctx context.Context) ([]IDMSService, error) {
 	log.Printf("🔍 Discovering Azure identity and access management services...")
-	
+
 	services := make([]IDMSService, 0)
-	
+
 	// Azure Identity Services to discover
 	azureIDMSServices := []struct {
 		name        string
@@ -298,13 +298,13 @@ func (id *IDMSDiscovery) discoverAzureIDMS(ctx context.Context) ([]IDMSService, 
 			},
 			DiscoveredAt: time.Now(),
 		}
-		
+
 		// Some services are regional
 		if azureService.name == "keyvault" || azureService.name == "domainsservices" {
 			service.Region = "eastus" // Example region
 			service.Metadata["scope"] = "regional"
 		}
-		
+
 		services = append(services, service)
 	}
 
@@ -314,9 +314,9 @@ func (id *IDMSDiscovery) discoverAzureIDMS(ctx context.Context) ([]IDMSService, 
 
 func (id *IDMSDiscovery) discoverK8sIDMS(ctx context.Context) ([]IDMSService, error) {
 	log.Printf("🔍 Discovering Kubernetes RBAC and identity services...")
-	
+
 	services := make([]IDMSService, 0)
-	
+
 	// Kubernetes Identity and RBAC services to discover
 	k8sIDMSServices := []struct {
 		name        string
@@ -353,14 +353,14 @@ func (id *IDMSDiscovery) discoverK8sIDMS(ctx context.Context) ([]IDMSService, er
 			},
 			DiscoveredAt: time.Now(),
 		}
-		
+
 		// Some resources are namespace-scoped
-		if k8sService.name == "roles" || k8sService.name == "rolebindings" || 
-		   k8sService.name == "secrets" || k8sService.name == "configmaps" {
+		if k8sService.name == "roles" || k8sService.name == "rolebindings" ||
+			k8sService.name == "secrets" || k8sService.name == "configmaps" {
 			service.Region = "namespace-scoped"
 			service.Metadata["scope"] = "namespace"
 		}
-		
+
 		services = append(services, service)
 	}
 

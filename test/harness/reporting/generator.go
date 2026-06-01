@@ -182,7 +182,7 @@ func (r *ReportGenerator) generateMarkdownReport(result *harness.TestResult, fil
 				if !check.Match {
 					status = "❌"
 				}
-				md.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %s |\n", 
+				md.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %s |\n",
 					check.ResourceID, check.Attribute, check.Expected, check.Actual, status))
 			}
 		}
@@ -195,11 +195,11 @@ func (r *ReportGenerator) generateMarkdownReport(result *harness.TestResult, fil
 		md.WriteString(fmt.Sprintf("- **Pulumi Success:** %s\n", statusIcon(cr.PulumiSuccess)))
 		md.WriteString(fmt.Sprintf("- **AWS Verified:** %s\n", statusIcon(cr.AWSVerified)))
 		md.WriteString(fmt.Sprintf("- **Cleanup Duration:** %v\n", cr.CleanupDuration.Round(time.Millisecond)))
-		
+
 		if len(cr.ResourcesFound) > 0 {
 			md.WriteString(fmt.Sprintf("- **⚠️ Remaining Resources:** %d\n", len(cr.ResourcesFound)))
 		}
-		
+
 		if len(cr.ManualCleanup) > 0 {
 			successful := 0
 			for _, action := range cr.ManualCleanup {
@@ -344,13 +344,13 @@ func (r *ReportGenerator) GeneratePRComment(result *harness.TestResult) string {
 	comment.WriteString("\n**Metrics:**\n")
 	comment.WriteString(fmt.Sprintf("- Deployment: %v\n", result.DeploymentDuration.Round(time.Millisecond)))
 	comment.WriteString(fmt.Sprintf("- Scan: %v\n", result.Metrics.ScanDuration.Round(time.Millisecond)))
-	comment.WriteString(fmt.Sprintf("- Resources: %d deployed, %d scanned, %d verified\n", 
+	comment.WriteString(fmt.Sprintf("- Resources: %d deployed, %d scanned, %d verified\n",
 		result.Metrics.ResourcesDeployed, result.Metrics.ResourcesScanned, result.Metrics.ResourcesVerified))
 
 	// Verification summary
 	if result.VerificationResult != nil {
 		vr := result.VerificationResult
-		comment.WriteString(fmt.Sprintf("- Success Rate: %.1f%% (%d/%d resources found)\n", 
+		comment.WriteString(fmt.Sprintf("- Success Rate: %.1f%% (%d/%d resources found)\n",
 			vr.GetSuccessRate(), vr.TotalFound, vr.TotalExpected))
 	}
 

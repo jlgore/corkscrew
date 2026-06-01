@@ -70,7 +70,7 @@ func (s *PerformanceScaledScenario) DefineResources(ctx *pulumi.Context, testID 
 	s3Count := s.resourceCount / 2
 	ec2Count := (s.resourceCount * 3) / 10
 	sgCount := s.resourceCount / 5
-	
+
 	// Ensure minimum counts
 	if s3Count == 0 && s.resourceCount > 0 {
 		s3Count = 1
@@ -160,7 +160,7 @@ func (s *PerformanceScaledScenario) DefineResources(ctx *pulumi.Context, testID 
 			Description: pulumi.String(fmt.Sprintf("Performance test security group %d", i)),
 			VpcId:       vpc.ID(),
 			Tags:        sgTags,
-			
+
 			// Add some ingress rules for variety
 			Ingress: ec2.SecurityGroupIngressArray{
 				&ec2.SecurityGroupIngressArgs{
@@ -202,11 +202,11 @@ func (s *PerformanceScaledScenario) DefineResources(ctx *pulumi.Context, testID 
 		}
 
 		instance, err := ec2.NewInstance(ctx, fmt.Sprintf("perf-instance-%d", i), &ec2.InstanceArgs{
-			Ami:                    pulumi.String("ami-0c55b159cbfafe1f0"), // Amazon Linux 2
-			InstanceType:           pulumi.String(instanceType),
-			SubnetId:               subnet.ID(),
-			VpcSecurityGroupIds:    securityGroupIds,
-			Tags:                   instanceTags,
+			Ami:                 pulumi.String("ami-0c55b159cbfafe1f0"), // Amazon Linux 2
+			InstanceType:        pulumi.String(instanceType),
+			SubnetId:            subnet.ID(),
+			VpcSecurityGroupIds: securityGroupIds,
+			Tags:                instanceTags,
 			UserData: pulumi.String(fmt.Sprintf(`#!/bin/bash
 echo "Performance test instance %d" > /tmp/instance-info.txt
 echo "Test ID: %s" >> /tmp/instance-info.txt
@@ -310,10 +310,10 @@ echo "Instance index: %d" >> /tmp/instance-info.txt
 		},
 		"totalResources": s3Count + ec2Count + sgCount + 2,
 		"resourceDistribution": map[string]int{
-			"s3":             s3Count,
-			"ec2_instances":  ec2Count,
+			"s3":              s3Count,
+			"ec2_instances":   ec2Count,
 			"security_groups": sgCount,
-			"vpc_subnet":     2,
+			"vpc_subnet":      2,
 		},
 	}
 

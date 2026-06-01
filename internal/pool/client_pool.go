@@ -24,13 +24,13 @@ func (k ClientKey) String() string {
 
 // PooledClient represents a pooled AWS client
 type PooledClient struct {
-	Client      interface{}
-	Key         ClientKey
-	Config      aws.Config
-	CreatedAt   time.Time
-	LastUsedAt  time.Time
-	UseCount    int64
-	mu          sync.Mutex
+	Client     interface{}
+	Key        ClientKey
+	Config     aws.Config
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	UseCount   int64
+	mu         sync.Mutex
 }
 
 // Use marks the client as used

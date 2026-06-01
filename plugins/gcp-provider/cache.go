@@ -32,12 +32,12 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 			return data, true
 		}
 	}
-	
+
 	// Clean up expired entry
 	if _, exists := c.ttl[key]; exists && time.Now().After(c.ttl[key]) {
 		go c.Delete(key)
 	}
-	
+
 	return nil, false
 }
 
@@ -119,16 +119,16 @@ type MultiLevelCache struct {
 // NewMultiLevelCache creates a new multi-level cache
 func NewMultiLevelCache() *MultiLevelCache {
 	mlc := &MultiLevelCache{
-		serviceCache:   NewCache(24 * time.Hour),  // Services change rarely
+		serviceCache:   NewCache(24 * time.Hour),   // Services change rarely
 		resourceCache:  NewCache(15 * time.Minute), // Resources can change
 		operationCache: NewCache(5 * time.Minute),  // Operations are short-lived
 	}
-	
+
 	// Start cleanup timers
 	mlc.serviceCache.StartCleanupTimer(1 * time.Hour)
 	mlc.resourceCache.StartCleanupTimer(5 * time.Minute)
 	mlc.operationCache.StartCleanupTimer(1 * time.Minute)
-	
+
 	return mlc
 }
 

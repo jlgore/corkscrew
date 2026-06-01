@@ -163,7 +163,7 @@ func (e *Executor) WaitForResults() []Result {
 func (e *Executor) Shutdown() {
 	// Cancel context to stop workers
 	e.cancel()
-	
+
 	// Only close taskQueue if it's not already closed
 	select {
 	case <-e.taskQueue:
@@ -171,10 +171,10 @@ func (e *Executor) Shutdown() {
 	default:
 		close(e.taskQueue)
 	}
-	
+
 	// Wait for workers to finish
 	e.wg.Wait()
-	
+
 	// Only close resultQueue if it's not already closed
 	select {
 	case <-e.resultQueue:

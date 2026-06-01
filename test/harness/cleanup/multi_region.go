@@ -24,44 +24,44 @@ type MultiRegionCleanup struct {
 
 // RegionCleanupResult contains cleanup results for a specific region
 type RegionCleanupResult struct {
-	Region           string                 `json:"region"`
-	StartTime        time.Time              `json:"start_time"`
-	EndTime          time.Time              `json:"end_time"`
-	Duration         time.Duration          `json:"duration"`
-	ResourcesCleaned map[string]int         `json:"resources_cleaned"`
-	Errors           []string               `json:"errors"`
-	Success          bool                   `json:"success"`
+	Region           string         `json:"region"`
+	StartTime        time.Time      `json:"start_time"`
+	EndTime          time.Time      `json:"end_time"`
+	Duration         time.Duration  `json:"duration"`
+	ResourcesCleaned map[string]int `json:"resources_cleaned"`
+	Errors           []string       `json:"errors"`
+	Success          bool           `json:"success"`
 }
 
 // MultiRegionCleanupResult aggregates results from all regions
 type MultiRegionCleanupResult struct {
-	TestID        string                 `json:"test_id"`
-	StartTime     time.Time              `json:"start_time"`
-	EndTime       time.Time              `json:"end_time"`
-	Duration      time.Duration          `json:"duration"`
-	RegionResults []RegionCleanupResult  `json:"region_results"`
-	GlobalResults GlobalCleanupResult    `json:"global_results"`
-	Summary       CleanupSummary         `json:"summary"`
+	TestID        string                `json:"test_id"`
+	StartTime     time.Time             `json:"start_time"`
+	EndTime       time.Time             `json:"end_time"`
+	Duration      time.Duration         `json:"duration"`
+	RegionResults []RegionCleanupResult `json:"region_results"`
+	GlobalResults GlobalCleanupResult   `json:"global_results"`
+	Summary       CleanupSummary        `json:"summary"`
 }
 
 // GlobalCleanupResult contains results for global services (IAM, CloudFront)
 type GlobalCleanupResult struct {
-	StartTime        time.Time              `json:"start_time"`
-	EndTime          time.Time              `json:"end_time"`
-	Duration         time.Duration          `json:"duration"`
-	ResourcesCleaned map[string]int         `json:"resources_cleaned"`
-	Errors           []string               `json:"errors"`
-	Success          bool                   `json:"success"`
+	StartTime        time.Time      `json:"start_time"`
+	EndTime          time.Time      `json:"end_time"`
+	Duration         time.Duration  `json:"duration"`
+	ResourcesCleaned map[string]int `json:"resources_cleaned"`
+	Errors           []string       `json:"errors"`
+	Success          bool           `json:"success"`
 }
 
 // CleanupSummary provides aggregated cleanup statistics
 type CleanupSummary struct {
-	TotalRegions         int            `json:"total_regions"`
-	SuccessfulRegions    int            `json:"successful_regions"`
-	FailedRegions        int            `json:"failed_regions"`
+	TotalRegions          int            `json:"total_regions"`
+	SuccessfulRegions     int            `json:"successful_regions"`
+	FailedRegions         int            `json:"failed_regions"`
 	TotalResourcesCleaned map[string]int `json:"total_resources_cleaned"`
-	TotalErrors          int            `json:"total_errors"`
-	OverallSuccess       bool           `json:"overall_success"`
+	TotalErrors           int            `json:"total_errors"`
+	OverallSuccess        bool           `json:"overall_success"`
 }
 
 // NewMultiRegionCleanup creates a new multi-region cleanup manager
@@ -135,7 +135,7 @@ func (mrc *MultiRegionCleanup) ExecuteCleanup(ctx context.Context) (*MultiRegion
 // cleanupRegionalResources cleans up resources in all regions concurrently
 func (mrc *MultiRegionCleanup) cleanupRegionalResources(ctx context.Context) ([]RegionCleanupResult, error) {
 	results := make([]RegionCleanupResult, len(mrc.regions))
-	
+
 	// Create semaphore for concurrency control
 	semaphore := make(chan struct{}, mrc.concurrency)
 	var wg sync.WaitGroup
@@ -146,19 +146,19 @@ func (mrc *MultiRegionCleanup) cleanupRegionalResources(ctx context.Context) ([]
 		wg.Add(1)
 		go func(index int, region string) {
 			defer wg.Done()
-			
+
 			// Acquire semaphore
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
 			fmt.Printf("🧹 Cleaning region: %s\n", region)
-			
+
 			result := mrc.cleanupSingleRegion(ctx, region)
-			
+
 			mu.Lock()
 			results[index] = *result
 			mu.Unlock()
-			
+
 			status := "✅"
 			if !result.Success {
 				status = "❌"
@@ -245,7 +245,7 @@ func (mrc *MultiRegionCleanup) cleanupEC2Instances(ctx context.Context, client *
 				Values: []string{mrc.testID},
 			},
 			{
-				Name: aws.String("instance-state-name"),
+				Name:   aws.String("instance-state-name"),
 				Values: []string{"running", "stopped", "pending"},
 			},
 		},
@@ -318,7 +318,7 @@ func (mrc *MultiRegionCleanup) cleanupVPCPeeringConnections(ctx context.Context,
 		}
 
 		if _, err := client.DeleteVpcPeeringConnection(ctx, deleteInput); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete VPC peering connection %s: %v", 
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete VPC peering connection %s: %v",
 				*connection.VpcPeeringConnectionId, err))
 		} else {
 			result.ResourcesCleaned["VPCPeeringConnections"]++
@@ -360,7 +360,7 @@ func (mrc *MultiRegionCleanup) cleanupSecurityGroups(ctx context.Context, client
 		}
 
 		if _, err := client.DeleteSecurityGroup(ctx, deleteInput); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete security group %s: %v", 
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete security group %s: %v",
 				*sg.GroupId, err))
 		} else {
 			result.ResourcesCleaned["SecurityGroups"]++
@@ -397,7 +397,7 @@ func (mrc *MultiRegionCleanup) cleanupSubnets(ctx context.Context, client *ec2.C
 		}
 
 		if _, err := client.DeleteSubnet(ctx, deleteInput); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete subnet %s: %v", 
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete subnet %s: %v",
 				*subnet.SubnetId, err))
 		} else {
 			result.ResourcesCleaned["Subnets"]++
@@ -439,7 +439,7 @@ func (mrc *MultiRegionCleanup) cleanupVPCs(ctx context.Context, client *ec2.Clie
 		}
 
 		if _, err := client.DeleteVpc(ctx, deleteInput); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete VPC %s: %v", 
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to delete VPC %s: %v",
 				*vpc.VpcId, err))
 		} else {
 			result.ResourcesCleaned["VPCs"]++
@@ -461,7 +461,7 @@ func (mrc *MultiRegionCleanup) cleanupS3Resources(ctx context.Context, cfg aws.C
 
 	for _, bucket := range listOutput.Buckets {
 		bucketName := *bucket.Name
-		
+
 		// Check if this is a test bucket
 		if !mrc.isTestBucket(bucketName) {
 			continue
@@ -629,7 +629,7 @@ func (mrc *MultiRegionCleanup) cleanupIAMResources(ctx context.Context, cfg aws.
 func (mrc *MultiRegionCleanup) cleanupIAMRoles(ctx context.Context, client *iam.Client, result *GlobalCleanupResult) error {
 	// List all roles
 	listInput := &iam.ListRolesInput{}
-	
+
 	for {
 		listOutput, err := client.ListRoles(ctx, listInput)
 		if err != nil {
@@ -638,7 +638,7 @@ func (mrc *MultiRegionCleanup) cleanupIAMRoles(ctx context.Context, client *iam.
 
 		for _, role := range listOutput.Roles {
 			roleName := *role.RoleName
-			
+
 			// Check if this is a test role
 			if !mrc.isTestRole(roleName) {
 				continue
@@ -704,10 +704,10 @@ func (mrc *MultiRegionCleanup) cleanupIAMRoles(ctx context.Context, client *iam.
 				for _, profile := range listProfilesOutput.InstanceProfiles {
 					_, err := client.RemoveRoleFromInstanceProfile(ctx, &iam.RemoveRoleFromInstanceProfileInput{
 						InstanceProfileName: profile.InstanceProfileName,
-						RoleName:           &roleName,
+						RoleName:            &roleName,
 					})
 					if err != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("Failed to remove role from instance profile %s: %v", 
+						result.Errors = append(result.Errors, fmt.Sprintf("Failed to remove role from instance profile %s: %v",
 							*profile.InstanceProfileName, err))
 					}
 				}
@@ -767,10 +767,10 @@ func (mrc *MultiRegionCleanup) cleanupCloudFrontResources(ctx context.Context, c
 
 	for _, distribution := range listOutput.DistributionList.Items {
 		distributionId := *distribution.Id
-		
+
 		// Get distribution tags
 		tagsOutput, err := cfClient.ListTagsForResource(ctx, &cloudfront.ListTagsForResourceInput{
-			Resource: aws.String(fmt.Sprintf("arn:aws:cloudfront::%s:distribution/%s", 
+			Resource: aws.String(fmt.Sprintf("arn:aws:cloudfront::%s:distribution/%s",
 				mrc.getAccountID(ctx), distributionId)),
 		})
 		if err != nil {
@@ -801,11 +801,11 @@ func (mrc *MultiRegionCleanup) cleanupCloudFrontResources(ctx context.Context, c
 		if *getOutput.Distribution.DistributionConfig.Enabled {
 			// Disable the distribution
 			getOutput.Distribution.DistributionConfig.Enabled = aws.Bool(false)
-			
+
 			_, err = cfClient.UpdateDistribution(ctx, &cloudfront.UpdateDistributionInput{
 				Id:                 &distributionId,
 				DistributionConfig: getOutput.Distribution.DistributionConfig,
-				IfMatch:           getOutput.ETag,
+				IfMatch:            getOutput.ETag,
 			})
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("Failed to disable distribution %s: %v", distributionId, err))

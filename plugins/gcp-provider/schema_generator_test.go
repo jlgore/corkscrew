@@ -9,16 +9,16 @@ import (
 
 // Sample GCP protobuf-style struct to test the schema generator
 type Instance struct {
-	Name         string               `json:"name" protobuf:"bytes,1,opt,name=name"`
-	MachineType  string               `json:"machineType" protobuf:"bytes,2,opt,name=machine_type"`
-	Zone         string               `json:"zone" protobuf:"bytes,3,opt,name=zone"`
-	ProjectId    string               `json:"projectId" protobuf:"bytes,4,opt,name=project_id"`
+	Name              string              `json:"name" protobuf:"bytes,1,opt,name=name"`
+	MachineType       string              `json:"machineType" protobuf:"bytes,2,opt,name=machine_type"`
+	Zone              string              `json:"zone" protobuf:"bytes,3,opt,name=zone"`
+	ProjectId         string              `json:"projectId" protobuf:"bytes,4,opt,name=project_id"`
 	NetworkInterfaces []*NetworkInterface `json:"networkInterfaces" protobuf:"bytes,5,rep,name=network_interfaces"`
-	Disks        []*AttachedDisk      `json:"disks" protobuf:"bytes,6,rep,name=disks"`
-	Labels       map[string]string    `json:"labels" protobuf:"bytes,7,rep,name=labels"`
-	Status       string               `json:"status" protobuf:"bytes,8,opt,name=status"`
-	CreationTimestamp string          `json:"creationTimestamp" protobuf:"bytes,9,opt,name=creation_timestamp"`
-	SelfLink     string               `json:"selfLink" protobuf:"bytes,10,opt,name=self_link"`
+	Disks             []*AttachedDisk     `json:"disks" protobuf:"bytes,6,rep,name=disks"`
+	Labels            map[string]string   `json:"labels" protobuf:"bytes,7,rep,name=labels"`
+	Status            string              `json:"status" protobuf:"bytes,8,opt,name=status"`
+	CreationTimestamp string              `json:"creationTimestamp" protobuf:"bytes,9,opt,name=creation_timestamp"`
+	SelfLink          string              `json:"selfLink" protobuf:"bytes,10,opt,name=self_link"`
 }
 
 type NetworkInterface struct {
@@ -59,7 +59,7 @@ func TestGCPSchemaGenerator(t *testing.T) {
 
 	// Test generating schemas for multiple services
 	response := generator.GenerateSchemas([]string{"compute", "storage"})
-	
+
 	if len(response.Schemas) == 0 {
 		t.Error("Expected schemas to be generated")
 	}
@@ -147,7 +147,7 @@ func TestCrossResourceViews(t *testing.T) {
 	// Check for specific views
 	expectedViews := []string{
 		"gcp_compute_summary",
-		"gcp_project_distribution", 
+		"gcp_project_distribution",
 		"gcp_cost_optimization",
 		"gcp_security_analysis",
 		"gcp_iam_bindings",
@@ -162,7 +162,7 @@ func TestCrossResourceViews(t *testing.T) {
 
 func TestSchemaCompliance(t *testing.T) {
 	generator := NewGCPSchemaGenerator()
-	
+
 	// Generate a schema and verify it meets GCP requirements
 	instance := &Instance{}
 	schema := generator.GenerateSchemaFromProtoType("Instance", instance)
@@ -179,7 +179,7 @@ func TestSchemaCompliance(t *testing.T) {
 	// Verify the schema contains required GCP columns
 	requiredColumns := []string{
 		"project_id",
-		"zone", 
+		"zone",
 		"region",
 		"labels",
 		"discovered_at",
@@ -230,14 +230,14 @@ func containsColumn(sql, column string) bool {
 }
 
 func containsPattern(text, pattern string) bool {
-	return len(pattern) > 0 && 
-		   (containsSubstring(text, pattern) || 
-		    matchesRegexPattern(text, pattern))
+	return len(pattern) > 0 &&
+		(containsSubstring(text, pattern) ||
+			matchesRegexPattern(text, pattern))
 }
 
 func containsSubstring(text, substring string) bool {
-	return len(substring) > 0 && 
-		   findInString(text, substring) != -1
+	return len(substring) > 0 &&
+		findInString(text, substring) != -1
 }
 
 func findInString(text, substring string) int {
@@ -272,12 +272,12 @@ func ExampleGCPSchemaGenerator() {
 
 	// Define a GCP resource type
 	type CloudSQLInstance struct {
-		Name         string            `json:"name" protobuf:"bytes,1,opt,name=name"`
-		ProjectId    string            `json:"projectId" protobuf:"bytes,2,opt,name=project_id"`
-		Region       string            `json:"region" protobuf:"bytes,3,opt,name=region"`
-		DatabaseVersion string         `json:"databaseVersion" protobuf:"bytes,4,opt,name=database_version"`
-		Settings     map[string]string `json:"settings" protobuf:"bytes,5,rep,name=settings"`
-		Labels       map[string]string `json:"labels" protobuf:"bytes,6,rep,name=labels"`
+		Name            string            `json:"name" protobuf:"bytes,1,opt,name=name"`
+		ProjectId       string            `json:"projectId" protobuf:"bytes,2,opt,name=project_id"`
+		Region          string            `json:"region" protobuf:"bytes,3,opt,name=region"`
+		DatabaseVersion string            `json:"databaseVersion" protobuf:"bytes,4,opt,name=database_version"`
+		Settings        map[string]string `json:"settings" protobuf:"bytes,5,rep,name=settings"`
+		Labels          map[string]string `json:"labels" protobuf:"bytes,6,rep,name=labels"`
 	}
 
 	// Generate schema

@@ -158,7 +158,7 @@ func TestCrossRegion(t *testing.T) {
 
 	// Log cleanup details by region
 	for _, regionResult := range cleanupResult.RegionResults {
-		t.Logf("  Region %s: %v (%d resources)", regionResult.Region, regionResult.Success, 
+		t.Logf("  Region %s: %v (%d resources)", regionResult.Region, regionResult.Success,
 			sumResourceCounts(regionResult.ResourcesCleaned))
 	}
 
@@ -228,7 +228,7 @@ func TestPerformanceBenchmark(t *testing.T) {
 
 	// Assert performance requirements
 	require.LessOrEqual(t, report.Summary.FailedTests, 0, "Performance benchmark failures detected")
-	require.GreaterOrEqual(t, float64(report.Summary.SuccessfulTests)/float64(report.Summary.TotalTests)*100, 95.0, 
+	require.GreaterOrEqual(t, float64(report.Summary.SuccessfulTests)/float64(report.Summary.TotalTests)*100, 95.0,
 		"Performance benchmark success rate below 95%")
 
 	t.Logf("✅ Performance benchmark completed successfully")
@@ -312,7 +312,7 @@ func TestRegressionAnalysis(t *testing.T) {
 	}
 
 	// Assert no major regressions
-	require.NotEqual(t, "major_regression", string(regressionReport.OverallStatus), 
+	require.NotEqual(t, "major_regression", string(regressionReport.OverallStatus),
 		"Major performance regressions detected")
 
 	t.Logf("✅ Regression analysis completed successfully")
@@ -321,7 +321,7 @@ func TestRegressionAnalysis(t *testing.T) {
 // BenchmarkResourceScaling benchmarks performance across different resource counts
 func BenchmarkResourceScaling(b *testing.B) {
 	resourceCounts := []int{1, 5, 10, 25, 50}
-	
+
 	for _, count := range resourceCounts {
 		b.Run(fmt.Sprintf("Resources_%d", count), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {

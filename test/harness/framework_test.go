@@ -113,18 +113,18 @@ func (tf *TestFramework) SetMaxWorkers(maxWorkers int) {
 // RunMatrix executes all test combinations in the matrix
 func (tf *TestFramework) RunMatrix(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Generate all test combinations
 	combinations := tf.generateTestCombinations()
-	
+
 	t.Logf("Generated %d test combinations", len(combinations))
-	
+
 	if tf.parallel && len(combinations) > 1 {
 		tf.runParallel(t, ctx, combinations)
 	} else {
 		tf.runSequential(t, ctx, combinations)
 	}
-	
+
 	// Generate comprehensive report
 	tf.generateReport(t)
 }
@@ -132,17 +132,17 @@ func (tf *TestFramework) RunMatrix(t *testing.T) {
 // RunSpecific runs a specific test configuration
 func (tf *TestFramework) RunSpecific(t *testing.T, provider, region, scenario, configName string) {
 	ctx := context.Background()
-	
+
 	testConfig := tf.matrix.Configs[configName]
 	testConfig.Provider = provider
 	testConfig.Region = region
 	testConfig.Scenario = scenario
-	
+
 	testName := fmt.Sprintf("%s-%s-%s-%s", provider, region, scenario, configName)
 	result := tf.runSingleTest(ctx, testName, testConfig)
-	
+
 	tf.storeResult(testName, result)
-	
+
 	// Assert test passed
 	if !result.Success {
 		t.Errorf("Test %s failed: %v", testName, result.Error)
@@ -153,23 +153,23 @@ func (tf *TestFramework) RunSpecific(t *testing.T, provider, region, scenario, c
 func (tf *TestFramework) runParallel(t *testing.T, ctx context.Context, combinations []testCombination) {
 	semaphore := make(chan struct{}, tf.maxWorkers)
 	var wg sync.WaitGroup
-	
+
 	for _, combo := range combinations {
 		wg.Add(1)
 		go func(combo testCombination) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire
+			semaphore <- struct{}{}        // Acquire
 			defer func() { <-semaphore }() // Release
-			
+
 			result := tf.runSingleTest(ctx, combo.name, combo.config)
 			tf.storeResult(combo.name, result)
-			
+
 			if !result.Success {
 				t.Errorf("Test %s failed: %v", combo.name, result.Error)
 			}
 		}(combo)
 	}
-	
+
 	wg.Wait()
 }
 
@@ -179,7 +179,7 @@ func (tf *TestFramework) runSequential(t *testing.T, ctx context.Context, combin
 		t.Run(combo.name, func(t *testing.T) {
 			result := tf.runSingleTest(ctx, combo.name, combo.config)
 			tf.storeResult(combo.name, result)
-			
+
 			require.True(t, result.Success, "Test failed: %v", result.Error)
 		})
 	}
@@ -188,7 +188,7 @@ func (tf *TestFramework) runSequential(t *testing.T, ctx context.Context, combin
 // runSingleTest executes a single test configuration
 func (tf *TestFramework) runSingleTest(ctx context.Context, testName string, config TestConfiguration) *TestResult {
 	testID := fmt.Sprintf("%s-%d", testName, time.Now().Unix())
-	
+
 	orchestratorConfig := OrchestratorConfig{
 		Provider:      config.Provider,
 		Region:        config.Region,
@@ -200,11 +200,11 @@ func (tf *TestFramework) runSingleTest(ctx context.Context, testName string, con
 		Timeout:       config.TestTimeout,
 		CleanupDelay:  config.CleanupDelay,
 	}
-	
+
 	// Create test context with timeout
 	testCtx, cancel := context.WithTimeout(ctx, config.TestTimeout)
 	defer cancel()
-	
+
 	orchestrator, err := NewTestOrchestrator(testCtx, orchestratorConfig)
 	if err != nil {
 		return &TestResult{
@@ -219,13 +219,13 @@ func (tf *TestFramework) runSingleTest(ctx context.Context, testName string, con
 			Error:        fmt.Errorf("failed to create orchestrator: %w", err),
 		}
 	}
-	
+
 	result, err := orchestrator.RunTest(testCtx)
 	if err != nil && result.Error == nil {
 		result.Error = err
 		result.Success = false
 	}
-	
+
 	return result
 }
 
@@ -238,7 +238,7 @@ type testCombination struct {
 // generateTestCombinations creates all possible test combinations
 func (tf *TestFramework) generateTestCombinations() []testCombination {
 	var combinations []testCombination
-	
+
 	for _, provider := range tf.matrix.Providers {
 		for _, region := range tf.matrix.Regions {
 			for _, scenario := range tf.matrix.Scenarios {
@@ -248,14 +248,14 @@ func (tf *TestFramework) generateTestCombinations() []testCombination {
 					config.Provider = provider
 					config.Region = region
 					config.Scenario = scenario
-					
+
 					// Add region-specific tags
 					if config.Tags == nil {
 						config.Tags = make(map[string]string)
 					}
 					config.Tags["Region"] = region
 					config.Tags["ConfigType"] = configName
-					
+
 					name := fmt.Sprintf("%s-%s-%s-%s", provider, region, scenario, configName)
 					combinations = append(combinations, testCombination{
 						name:   name,
@@ -265,7 +265,7 @@ func (tf *TestFramework) generateTestCombinations() []testCombination {
 			}
 		}
 	}
-	
+
 	return combinations
 }
 
@@ -280,7 +280,7 @@ func (tf *TestFramework) storeResult(testName string, result *TestResult) {
 func (tf *TestFramework) GetResults() map[string]*TestResult {
 	tf.resultsMutex.RLock()
 	defer tf.resultsMutex.RUnlock()
-	
+
 	// Return a copy to avoid race conditions
 	results := make(map[string]*TestResult)
 	for k, v := range tf.results {
@@ -292,39 +292,39 @@ func (tf *TestFramework) GetResults() map[string]*TestResult {
 // generateReport creates a comprehensive test report
 func (tf *TestFramework) generateReport(t *testing.T) {
 	results := tf.GetResults()
-	
+
 	// Calculate summary statistics
 	var (
-		totalTests     = len(results)
-		passedTests    = 0
-		failedTests    = 0
-		totalDuration  time.Duration
-		scenarioStats  = make(map[string]*ScenarioStats)
-		regionStats    = make(map[string]*RegionStats)
-		configStats    = make(map[string]*ConfigStats)
+		totalTests    = len(results)
+		passedTests   = 0
+		failedTests   = 0
+		totalDuration time.Duration
+		scenarioStats = make(map[string]*ScenarioStats)
+		regionStats   = make(map[string]*RegionStats)
+		configStats   = make(map[string]*ConfigStats)
 	)
-	
+
 	for testName, result := range results {
 		totalDuration += result.Duration
-		
+
 		if result.Success {
 			passedTests++
 		} else {
 			failedTests++
 		}
-		
+
 		// Update scenario statistics
 		if scenarioStats[result.ScenarioName] == nil {
 			scenarioStats[result.ScenarioName] = &ScenarioStats{}
 		}
 		scenarioStats[result.ScenarioName].Update(result)
-		
+
 		// Update region statistics
 		if regionStats[result.Region] == nil {
 			regionStats[result.Region] = &RegionStats{}
 		}
 		regionStats[result.Region].Update(result)
-		
+
 		// Extract config type from test name
 		configType := extractConfigType(testName)
 		if configStats[configType] == nil {
@@ -332,7 +332,7 @@ func (tf *TestFramework) generateReport(t *testing.T) {
 		}
 		configStats[configType].Update(result)
 	}
-	
+
 	// Generate detailed report
 	report := TestMatrixReport{
 		Summary: TestSummary{
@@ -348,13 +348,13 @@ func (tf *TestFramework) generateReport(t *testing.T) {
 		ConfigStats:   configStats,
 		Results:       results,
 	}
-	
+
 	// Save report to file
 	reportFile := fmt.Sprintf("test_matrix_report_%d.json", time.Now().Unix())
 	if err := tf.saveReport(reportFile, report); err != nil {
 		t.Logf("Warning: Failed to save report: %v", err)
 	}
-	
+
 	// Print summary to test output
 	tf.printReportSummary(t, report)
 }
@@ -365,12 +365,12 @@ func (tf *TestFramework) saveReport(filename string, report TestMatrixReport) er
 	if err != nil {
 		return err
 	}
-	
+
 	resultsDir := "results"
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(filepath.Join(resultsDir, filename), data, 0644)
 }
 
@@ -384,19 +384,19 @@ func (tf *TestFramework) printReportSummary(t *testing.T, report TestMatrixRepor
 	t.Logf("Failed: %d", report.Summary.FailedTests)
 	t.Logf("Total Duration: %v", report.Summary.TotalDuration)
 	t.Logf("Average Duration: %v", report.Summary.AverageDuration)
-	
+
 	t.Logf("\n📊 SCENARIO BREAKDOWN:")
 	for scenario, stats := range report.ScenarioStats {
-		t.Logf("- %s: %d/%d passed (%.1f%%), avg: %v", 
+		t.Logf("- %s: %d/%d passed (%.1f%%), avg: %v",
 			scenario, stats.Passed, stats.Total, stats.SuccessRate, stats.AverageDuration)
 	}
-	
+
 	t.Logf("\n🌍 REGION BREAKDOWN:")
 	for region, stats := range report.RegionStats {
-		t.Logf("- %s: %d/%d passed (%.1f%%), avg: %v", 
+		t.Logf("- %s: %d/%d passed (%.1f%%), avg: %v",
 			region, stats.Passed, stats.Total, stats.SuccessRate, stats.AverageDuration)
 	}
-	
+
 	if report.Summary.FailedTests > 0 {
 		t.Logf("\n❌ FAILED TESTS:")
 		for testName, result := range report.Results {
@@ -405,7 +405,7 @@ func (tf *TestFramework) printReportSummary(t *testing.T, report TestMatrixRepor
 			}
 		}
 	}
-	
+
 	t.Logf(strings.Repeat("=", 80))
 }
 
@@ -461,13 +461,13 @@ func (s *ScenarioStats) Update(result *TestResult) {
 	s.Total++
 	s.TotalDuration += result.Duration
 	s.AverageDuration = s.TotalDuration / time.Duration(s.Total)
-	
+
 	if result.Success {
 		s.Passed++
 	} else {
 		s.Failed++
 	}
-	
+
 	s.SuccessRate = float64(s.Passed) / float64(s.Total) * 100
 }
 
@@ -484,13 +484,13 @@ func (s *RegionStats) Update(result *TestResult) {
 	s.Total++
 	s.TotalDuration += result.Duration
 	s.AverageDuration = s.TotalDuration / time.Duration(s.Total)
-	
+
 	if result.Success {
 		s.Passed++
 	} else {
 		s.Failed++
 	}
-	
+
 	s.SuccessRate = float64(s.Passed) / float64(s.Total) * 100
 }
 
@@ -507,22 +507,22 @@ func (s *ConfigStats) Update(result *TestResult) {
 	s.Total++
 	s.TotalDuration += result.Duration
 	s.AverageDuration = s.TotalDuration / time.Duration(s.Total)
-	
+
 	if result.Success {
 		s.Passed++
 	} else {
 		s.Failed++
 	}
-	
+
 	s.SuccessRate = float64(s.Passed) / float64(s.Total) * 100
 }
 
 type TestMatrixReport struct {
-	Summary       TestSummary                `json:"summary"`
-	ScenarioStats map[string]*ScenarioStats  `json:"scenario_stats"`
-	RegionStats   map[string]*RegionStats    `json:"region_stats"`
-	ConfigStats   map[string]*ConfigStats    `json:"config_stats"`
-	Results       map[string]*TestResult     `json:"results"`
+	Summary       TestSummary               `json:"summary"`
+	ScenarioStats map[string]*ScenarioStats `json:"scenario_stats"`
+	RegionStats   map[string]*RegionStats   `json:"region_stats"`
+	ConfigStats   map[string]*ConfigStats   `json:"config_stats"`
+	Results       map[string]*TestResult    `json:"results"`
 }
 
 // Test functions for the framework
@@ -531,7 +531,7 @@ func TestFrameworkSimple(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Simple test matrix with just one scenario
 	matrix := TestMatrix{
 		Providers: []string{"aws"},
@@ -544,7 +544,7 @@ func TestFrameworkSimple(t *testing.T) {
 			},
 		},
 	}
-	
+
 	framework := NewTestFramework(matrix)
 	framework.SetParallel(false) // Run sequentially for simpler debugging
 	framework.RunMatrix(t)
@@ -554,7 +554,7 @@ func TestFrameworkRegions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Test across multiple regions
 	matrix := TestMatrix{
 		Providers: []string{"aws"},
@@ -567,7 +567,7 @@ func TestFrameworkRegions(t *testing.T) {
 			},
 		},
 	}
-	
+
 	framework := NewTestFramework(matrix)
 	framework.SetParallel(true)
 	framework.SetMaxWorkers(2)
@@ -578,7 +578,7 @@ func TestFrameworkConfigurations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Test different configurations
 	matrix := TestMatrix{
 		Providers: []string{"aws"},
@@ -595,7 +595,7 @@ func TestFrameworkConfigurations(t *testing.T) {
 			},
 		},
 	}
-	
+
 	framework := NewTestFramework(matrix)
 	framework.SetParallel(true)
 	framework.SetMaxWorkers(2)
@@ -607,9 +607,9 @@ func BenchmarkScenarios(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping benchmark in short mode")
 	}
-	
+
 	scenarioNames := scenarios.DefaultRegistry.List()
-	
+
 	for _, scenarioName := range scenarioNames {
 		b.Run(scenarioName, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
@@ -620,11 +620,11 @@ func BenchmarkScenarios(b *testing.B) {
 					TestTimeout:  10 * time.Minute,
 					CleanupDelay: 30 * time.Second,
 				}
-				
+
 				framework := NewTestFramework(TestMatrix{})
 				testName := fmt.Sprintf("bench-%s-%d", scenarioName, i)
 				ctx := context.Background()
-				
+
 				result := framework.runSingleTest(ctx, testName, testConfig)
 				if !result.Success {
 					b.Errorf("Benchmark test failed: %v", result.Error)

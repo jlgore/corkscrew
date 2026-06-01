@@ -28,90 +28,90 @@ var (
 
 // Enhanced analysis structures for comprehensive service catalog
 type ServiceCatalog struct {
-	Services      map[string]ServiceDefinition `json:"services"`
-	Relationships []ResourceRelationship       `json:"relationships"`
-	CommonPatterns map[string]Pattern         `json:"commonPatterns"`
-	GeneratedAt   time.Time                   `json:"generatedAt"`
-	SDKVersion    string                      `json:"sdkVersion"`
-	Summary       AnalysisSummary             `json:"summary"`
+	Services       map[string]ServiceDefinition `json:"services"`
+	Relationships  []ResourceRelationship       `json:"relationships"`
+	CommonPatterns map[string]Pattern           `json:"commonPatterns"`
+	GeneratedAt    time.Time                    `json:"generatedAt"`
+	SDKVersion     string                       `json:"sdkVersion"`
+	Summary        AnalysisSummary              `json:"summary"`
 }
 
 type ServiceDefinition struct {
-	Name        string                `json:"name"`
-	Namespace   string                `json:"namespace"`
-	Package     string                `json:"package"`
-	Version     string                `json:"version"`
-	Resources   []ResourceDefinition  `json:"resources"`
-	SharedTypes []TypeDefinition      `json:"sharedTypes"`
+	Name        string                 `json:"name"`
+	Namespace   string                 `json:"namespace"`
+	Package     string                 `json:"package"`
+	Version     string                 `json:"version"`
+	Resources   []ResourceDefinition   `json:"resources"`
+	SharedTypes []TypeDefinition       `json:"sharedTypes"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 type ResourceDefinition struct {
-	Type                 string                    `json:"type"`
-	ARMType             string                    `json:"armType"`
-	Operations          map[string]OperationDef   `json:"operations"`
-	Properties          []PropertyDef             `json:"properties"`
+	Type                  string                  `json:"type"`
+	ARMType               string                  `json:"armType"`
+	Operations            map[string]OperationDef `json:"operations"`
+	Properties            []PropertyDef           `json:"properties"`
 	RequiresResourceGroup bool                    `json:"requiresResourceGroup"`
-	SupportsListAll     bool                      `json:"supportsListAll"`
-	PaginationType      string                    `json:"paginationType"`
-	RelatedResources    []string                  `json:"relatedResources"`
-	ResourceGraphQuery  string                    `json:"resourceGraphQuery"`
-	CommonTags          []string                  `json:"commonTags"`
-	Metadata            map[string]interface{}    `json:"metadata"`
+	SupportsListAll       bool                    `json:"supportsListAll"`
+	PaginationType        string                  `json:"paginationType"`
+	RelatedResources      []string                `json:"relatedResources"`
+	ResourceGraphQuery    string                  `json:"resourceGraphQuery"`
+	CommonTags            []string                `json:"commonTags"`
+	Metadata              map[string]interface{}  `json:"metadata"`
 }
 
 type OperationDef struct {
-	Method              string              `json:"method"`
-	OperationType       string              `json:"operationType"` // list, get, create, update, delete
+	Method                string            `json:"method"`
+	OperationType         string            `json:"operationType"` // list, get, create, update, delete
 	SupportsResourceGroup bool              `json:"supportsResourceGroup"`
-	ResponseType        string              `json:"responseType"`
-	Parameters          []ParameterInfo     `json:"parameters"`
-	IsPaginated         bool                `json:"isPaginated"`
-	PaginationType      string              `json:"paginationType"` // token, offset, cursor
-	RequiresAuth        []string            `json:"requiresAuth"`   // permissions needed
-	RateLimits          map[string]int      `json:"rateLimits"`
-	ResourceGraphOptimal bool               `json:"resourceGraphOptimal"`
-	Metadata            map[string]string   `json:"metadata"`
+	ResponseType          string            `json:"responseType"`
+	Parameters            []ParameterInfo   `json:"parameters"`
+	IsPaginated           bool              `json:"isPaginated"`
+	PaginationType        string            `json:"paginationType"` // token, offset, cursor
+	RequiresAuth          []string          `json:"requiresAuth"`   // permissions needed
+	RateLimits            map[string]int    `json:"rateLimits"`
+	ResourceGraphOptimal  bool              `json:"resourceGraphOptimal"`
+	Metadata              map[string]string `json:"metadata"`
 }
 
 type PropertyDef struct {
-	Name        string      `json:"name"`
-	Path        string      `json:"path"`        // nested path like "properties.hardwareProfile.vmSize"
-	Type        string      `json:"type"`        // ARM type
-	DuckDBType  string      `json:"duckdbType"`  // mapped DuckDB type
-	Required    bool        `json:"required"`
-	Indexed     bool        `json:"indexed"`     // should be indexed in DuckDB
-	Compressed  bool        `json:"compressed"`  // should use compression
-	Description string      `json:"description"`
-	Examples    []interface{} `json:"examples"`
+	Name        string                 `json:"name"`
+	Path        string                 `json:"path"`       // nested path like "properties.hardwareProfile.vmSize"
+	Type        string                 `json:"type"`       // ARM type
+	DuckDBType  string                 `json:"duckdbType"` // mapped DuckDB type
+	Required    bool                   `json:"required"`
+	Indexed     bool                   `json:"indexed"`    // should be indexed in DuckDB
+	Compressed  bool                   `json:"compressed"` // should use compression
+	Description string                 `json:"description"`
+	Examples    []interface{}          `json:"examples"`
 	Constraints map[string]interface{} `json:"constraints"` // validation rules
 }
 
 type TypeDefinition struct {
-	Name        string                 `json:"name"`
-	Type        string                 `json:"type"` // struct, interface, enum
-	Fields      []FieldDefinition      `json:"fields"`
-	UsedBy      []string               `json:"usedBy"` // which resources use this type
-	Metadata    map[string]interface{} `json:"metadata"`
+	Name     string                 `json:"name"`
+	Type     string                 `json:"type"` // struct, interface, enum
+	Fields   []FieldDefinition      `json:"fields"`
+	UsedBy   []string               `json:"usedBy"` // which resources use this type
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 type FieldDefinition struct {
-	Name        string      `json:"name"`
-	Type        string      `json:"type"`
-	Description string      `json:"description"`
-	Required    bool        `json:"required"`
+	Name        string        `json:"name"`
+	Type        string        `json:"type"`
+	Description string        `json:"description"`
+	Required    bool          `json:"required"`
 	Examples    []interface{} `json:"examples"`
 }
 
 type ResourceRelationship struct {
-	SourceType      string            `json:"sourceType"`
-	TargetType      string            `json:"targetType"`
-	RelationType    string            `json:"relationType"` // depends_on, contains, references
-	Direction       string            `json:"direction"`    // unidirectional, bidirectional
-	PropertyPath    string            `json:"propertyPath"` // path in source that references target
-	Cardinality     string            `json:"cardinality"`  // one_to_one, one_to_many, many_to_many
-	Required        bool              `json:"required"`
-	Metadata        map[string]string `json:"metadata"`
+	SourceType   string            `json:"sourceType"`
+	TargetType   string            `json:"targetType"`
+	RelationType string            `json:"relationType"` // depends_on, contains, references
+	Direction    string            `json:"direction"`    // unidirectional, bidirectional
+	PropertyPath string            `json:"propertyPath"` // path in source that references target
+	Cardinality  string            `json:"cardinality"`  // one_to_one, one_to_many, many_to_many
+	Required     bool              `json:"required"`
+	Metadata     map[string]string `json:"metadata"`
 }
 
 type Pattern struct {
@@ -123,39 +123,39 @@ type Pattern struct {
 }
 
 type ParameterInfo struct {
-	Name        string      `json:"name"`
-	Type        string      `json:"type"`
-	Required    bool        `json:"required"`
-	Description string      `json:"description"`
-	DefaultValue interface{} `json:"defaultValue"`
-	Constraints map[string]interface{} `json:"constraints"`
+	Name         string                 `json:"name"`
+	Type         string                 `json:"type"`
+	Required     bool                   `json:"required"`
+	Description  string                 `json:"description"`
+	DefaultValue interface{}            `json:"defaultValue"`
+	Constraints  map[string]interface{} `json:"constraints"`
 }
 
 // Legacy structures for backward compatibility
 type ServiceAnalysis struct {
-	Name      string                    `json:"name"`
-	Namespace string                    `json:"namespace"`
-	Package   string                    `json:"package"`
-	Version   string                    `json:"version"`
-	Resources []ResourceAnalysis        `json:"resources"`
-	Metadata  map[string]interface{}    `json:"metadata"`
+	Name      string                 `json:"name"`
+	Namespace string                 `json:"namespace"`
+	Package   string                 `json:"package"`
+	Version   string                 `json:"version"`
+	Resources []ResourceAnalysis     `json:"resources"`
+	Metadata  map[string]interface{} `json:"metadata"`
 }
 
 type ResourceAnalysis struct {
-	Type       string                    `json:"type"`
-	ARMType    string                    `json:"armType"`
-	Operations map[string]OperationInfo  `json:"operations"`
-	Properties map[string]PropertyInfo   `json:"properties"`
-	Metadata   map[string]interface{}    `json:"metadata"`
+	Type       string                   `json:"type"`
+	ARMType    string                   `json:"armType"`
+	Operations map[string]OperationInfo `json:"operations"`
+	Properties map[string]PropertyInfo  `json:"properties"`
+	Metadata   map[string]interface{}   `json:"metadata"`
 }
 
 type OperationInfo struct {
-	Method                string              `json:"method"`
-	SupportsResourceGroup bool                `json:"supportsResourceGroup,omitempty"`
-	ResponseType          string              `json:"responseType,omitempty"`
-	Parameters            []ParameterInfo     `json:"parameters,omitempty"`
-	IsPaginated          bool                `json:"isPaginated,omitempty"`
-	Metadata             map[string]string   `json:"metadata,omitempty"`
+	Method                string            `json:"method"`
+	SupportsResourceGroup bool              `json:"supportsResourceGroup,omitempty"`
+	ResponseType          string            `json:"responseType,omitempty"`
+	Parameters            []ParameterInfo   `json:"parameters,omitempty"`
+	IsPaginated           bool              `json:"isPaginated,omitempty"`
+	Metadata              map[string]string `json:"metadata,omitempty"`
 }
 
 type PropertyInfo struct {
@@ -165,20 +165,20 @@ type PropertyInfo struct {
 }
 
 type AnalysisResult struct {
-	Timestamp   time.Time         `json:"timestamp"`
-	SDKVersion  string            `json:"sdkVersion"`
-	Services    []ServiceAnalysis `json:"services"`
-	Summary     AnalysisSummary   `json:"summary"`
+	Timestamp  time.Time         `json:"timestamp"`
+	SDKVersion string            `json:"sdkVersion"`
+	Services   []ServiceAnalysis `json:"services"`
+	Summary    AnalysisSummary   `json:"summary"`
 	// New comprehensive catalog
 	ServiceCatalog *ServiceCatalog `json:"serviceCatalog,omitempty"`
 }
 
 type AnalysisSummary struct {
-	TotalServices     int `json:"totalServices"`
-	TotalResources    int `json:"totalResources"`
-	TotalOperations   int `json:"totalOperations"`
+	TotalServices      int `json:"totalServices"`
+	TotalResources     int `json:"totalResources"`
+	TotalOperations    int `json:"totalOperations"`
 	TotalRelationships int `json:"totalRelationships"`
-	AnalysisTimeMs    int `json:"analysisTimeMs"`
+	AnalysisTimeMs     int `json:"analysisTimeMs"`
 }
 
 // Azure SDK analyzer
@@ -190,17 +190,17 @@ type AzureSDKAnalyzer struct {
 	serviceCatalog *ServiceCatalog
 	clientTypes    map[string]*ast.StructType
 	responseTypes  map[string]*ast.StructType
-	
+
 	// Enhanced analysis components
-	relationshipTracker map[string][]ResourceRelationship
-	patternMatcher      map[string]*regexp.Regexp
-	typeRegistry        map[string]TypeDefinition
+	relationshipTracker  map[string][]ResourceRelationship
+	patternMatcher       map[string]*regexp.Regexp
+	typeRegistry         map[string]TypeDefinition
 	resourceGraphQueries map[string]string
 }
 
 func main() {
 	flag.Parse()
-	
+
 	analyzer := &AzureSDKAnalyzer{
 		sdkPath:              *sdkPath,
 		verbose:              *verbose,
@@ -213,7 +213,7 @@ func main() {
 		typeRegistry:         make(map[string]TypeDefinition),
 		resourceGraphQueries: make(map[string]string),
 	}
-	
+
 	// Initialize comprehensive service catalog
 	analyzer.serviceCatalog = &ServiceCatalog{
 		Services:       make(map[string]ServiceDefinition),
@@ -221,25 +221,25 @@ func main() {
 		CommonPatterns: make(map[string]Pattern),
 		GeneratedAt:    time.Now(),
 	}
-	
+
 	// Initialize common patterns
 	analyzer.initializeCommonPatterns()
-	
+
 	log.Printf("🚀 Starting Azure SDK analysis")
 	startTime := time.Now()
-	
+
 	// Update or clone SDK if requested
 	if *updateSDK {
 		if err := analyzer.updateSDK(); err != nil {
 			log.Fatalf("Failed to update SDK: %v", err)
 		}
 	}
-	
+
 	// Verify SDK path exists
 	if _, err := os.Stat(*sdkPath); os.IsNotExist(err) {
 		log.Fatalf("SDK path does not exist: %s. Use -update flag to clone it.", *sdkPath)
 	}
-	
+
 	// Parse services filter
 	var targetServices []string
 	if *services != "" {
@@ -248,17 +248,17 @@ func main() {
 			targetServices[i] = strings.TrimSpace(s)
 		}
 	}
-	
+
 	// Analyze the SDK
 	result, err := analyzer.analyzeSDK(targetServices)
 	if err != nil {
 		log.Fatalf("Analysis failed: %v", err)
 	}
-	
+
 	// Calculate analysis time
 	analysisTime := time.Since(startTime)
 	result.Summary.AnalysisTimeMs = int(analysisTime.Milliseconds())
-	
+
 	// Generate comprehensive service catalog
 	if err := analyzer.generateServiceCatalog(result); err != nil {
 		log.Printf("Warning: Failed to generate comprehensive service catalog: %v", err)
@@ -266,16 +266,16 @@ func main() {
 		result.ServiceCatalog = analyzer.serviceCatalog
 		log.Printf("✅ Generated comprehensive service catalog with %d services", len(analyzer.serviceCatalog.Services))
 	}
-	
+
 	// Write results
 	if err := analyzer.writeResults(result, *outputFile); err != nil {
 		log.Fatalf("Failed to write results: %v", err)
 	}
-	
+
 	log.Printf("✅ Analysis complete in %v", analysisTime)
-	log.Printf("📊 Found %d services, %d resources, %d operations", 
-		result.Summary.TotalServices, 
-		result.Summary.TotalResources, 
+	log.Printf("📊 Found %d services, %d resources, %d operations",
+		result.Summary.TotalServices,
+		result.Summary.TotalResources,
 		result.Summary.TotalOperations)
 	log.Printf("📄 Results written to: %s", *outputFile)
 }
@@ -283,7 +283,7 @@ func main() {
 // updateSDK clones or updates the Azure SDK repository
 func (a *AzureSDKAnalyzer) updateSDK() error {
 	log.Printf("📥 Updating Azure SDK repository...")
-	
+
 	// Check if directory exists
 	if _, err := os.Stat(a.sdkPath); os.IsNotExist(err) {
 		// Clone repository
@@ -301,53 +301,53 @@ func (a *AzureSDKAnalyzer) updateSDK() error {
 			return fmt.Errorf("git pull failed: %v\nOutput: %s", err, output)
 		}
 	}
-	
+
 	return nil
 }
 
 // analyzeSDK performs comprehensive analysis of the Azure SDK
 func (a *AzureSDKAnalyzer) analyzeSDK(targetServices []string) (*AnalysisResult, error) {
 	log.Printf("🔍 Analyzing Azure SDK at: %s", a.sdkPath)
-	
+
 	// Find all resource manager services
 	resourceManagerPath := filepath.Join(a.sdkPath, "sdk", "resourcemanager")
 	if _, err := os.Stat(resourceManagerPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("resource manager path not found: %s", resourceManagerPath)
 	}
-	
+
 	// Discover services
 	services, err := a.discoverServices(resourceManagerPath, targetServices)
 	if err != nil {
 		return nil, fmt.Errorf("service discovery failed: %v", err)
 	}
-	
+
 	log.Printf("📋 Found %d services to analyze", len(services))
-	
+
 	// Analyze each service
 	for _, service := range services {
 		if a.verbose {
 			log.Printf("🔬 Analyzing service: %s", service.Name)
 		}
-		
+
 		if err := a.analyzeService(service); err != nil {
 			log.Printf("⚠️  Failed to analyze service %s: %v", service.Name, err)
 			continue
 		}
 	}
-	
+
 	// Convert to slice and sort
 	servicesList := make([]ServiceAnalysis, 0, len(a.serviceMap))
 	for _, service := range a.serviceMap {
 		servicesList = append(servicesList, *service)
 	}
-	
+
 	sort.Slice(servicesList, func(i, j int) bool {
 		return servicesList[i].Name < servicesList[j].Name
 	})
-	
+
 	// Calculate summary
 	summary := a.calculateSummary(servicesList)
-	
+
 	return &AnalysisResult{
 		Timestamp:  time.Now(),
 		SDKVersion: a.getSDKVersion(),
@@ -359,7 +359,7 @@ func (a *AzureSDKAnalyzer) analyzeSDK(targetServices []string) (*AnalysisResult,
 // discoverServices finds all available services in the resource manager
 func (a *AzureSDKAnalyzer) discoverServices(resourceManagerPath string, targetServices []string) ([]*ServiceAnalysis, error) {
 	var services []*ServiceAnalysis
-	
+
 	// Create target service map for filtering
 	targetMap := make(map[string]bool)
 	if len(targetServices) > 0 {
@@ -367,41 +367,41 @@ func (a *AzureSDKAnalyzer) discoverServices(resourceManagerPath string, targetSe
 			targetMap[service] = true
 		}
 	}
-	
+
 	// Walk through resource manager directory
 	err := filepath.Walk(resourceManagerPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// Skip non-directories
 		if !info.IsDir() {
 			return nil
 		}
-		
+
 		// Check if this is a service directory (contains arm* subdirectory)
 		serviceName := info.Name()
 		armDirs, err := filepath.Glob(filepath.Join(path, "arm*"))
 		if err != nil || len(armDirs) == 0 {
 			return nil
 		}
-		
+
 		// Skip if not in target services (when specified)
 		if len(targetServices) > 0 && !targetMap[serviceName] {
 			return nil
 		}
-		
+
 		// Skip if this is the resourcemanager directory itself
 		if path == resourceManagerPath {
 			return nil
 		}
-		
+
 		// Skip nested directories
 		relPath, _ := filepath.Rel(resourceManagerPath, path)
 		if strings.Contains(relPath, string(filepath.Separator)) {
 			return nil
 		}
-		
+
 		// Create service analysis
 		service := &ServiceAnalysis{
 			Name:      serviceName,
@@ -409,7 +409,7 @@ func (a *AzureSDKAnalyzer) discoverServices(resourceManagerPath string, targetSe
 			Resources: []ResourceAnalysis{},
 			Metadata:  make(map[string]interface{}),
 		}
-		
+
 		// Find package and version info
 		for _, armDir := range armDirs {
 			if pkg, version := a.extractPackageInfo(armDir); pkg != "" {
@@ -418,11 +418,11 @@ func (a *AzureSDKAnalyzer) discoverServices(resourceManagerPath string, targetSe
 				break
 			}
 		}
-		
+
 		services = append(services, service)
 		return nil
 	})
-	
+
 	return services, err
 }
 
@@ -433,31 +433,31 @@ func (a *AzureSDKAnalyzer) analyzeService(service *ServiceAnalysis) error {
 	if packagePath == "" {
 		return fmt.Errorf("package path not found for service: %s", service.Name)
 	}
-	
+
 	// Parse Go files in the package
 	packages, err := parser.ParseDir(a.fileSet, packagePath, nil, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("failed to parse package %s: %v", packagePath, err)
 	}
-	
+
 	// Store service in map for cross-referencing
 	a.serviceMap[service.Name] = service
-	
+
 	// Analyze each package
 	for packageName, pkg := range packages {
 		if a.verbose {
 			log.Printf("  📦 Analyzing package: %s", packageName)
 		}
-		
+
 		// First pass: collect client types and response types
 		a.collectTypes(pkg)
-		
+
 		// Second pass: analyze operations and extract resources
 		if err := a.analyzePackageOperations(service, pkg); err != nil {
 			log.Printf("⚠️  Failed to analyze operations in package %s: %v", packageName, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -471,18 +471,18 @@ func (a *AzureSDKAnalyzer) collectTypes(pkg *ast.Package) {
 					for _, spec := range node.Specs {
 						if typeSpec, ok := spec.(*ast.TypeSpec); ok {
 							typeName := typeSpec.Name.Name
-							
+
 							// Collect client types
 							if strings.HasSuffix(typeName, "Client") {
 								if structType, ok := typeSpec.Type.(*ast.StructType); ok {
 									a.clientTypes[typeName] = structType
 								}
 							}
-							
+
 							// Collect response types
-							if strings.HasSuffix(typeName, "Response") || 
-							   strings.HasSuffix(typeName, "Result") ||
-							   (strings.Contains(typeName, "Response") && !strings.HasPrefix(typeName, "HTTP")) {
+							if strings.HasSuffix(typeName, "Response") ||
+								strings.HasSuffix(typeName, "Result") ||
+								(strings.Contains(typeName, "Response") && !strings.HasPrefix(typeName, "HTTP")) {
 								if structType, ok := typeSpec.Type.(*ast.StructType); ok {
 									a.responseTypes[typeName] = structType
 								}
@@ -499,7 +499,7 @@ func (a *AzureSDKAnalyzer) collectTypes(pkg *ast.Package) {
 // analyzePackageOperations analyzes operations in a package and extracts resources
 func (a *AzureSDKAnalyzer) analyzePackageOperations(service *ServiceAnalysis, pkg *ast.Package) error {
 	resources := make(map[string]*ResourceAnalysis)
-	
+
 	for _, file := range pkg.Files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch node := n.(type) {
@@ -522,11 +522,11 @@ func (a *AzureSDKAnalyzer) analyzePackageOperations(service *ServiceAnalysis, pk
 								}
 								resources[resourceType] = resource
 							}
-							
+
 							// Add operation to resource
 							operationType := a.classifyOperation(node.Name.Name)
 							resource.Operations[operationType] = *operation
-							
+
 							// Extract properties from response type
 							a.extractPropertiesFromOperation(resource, node)
 						}
@@ -536,17 +536,17 @@ func (a *AzureSDKAnalyzer) analyzePackageOperations(service *ServiceAnalysis, pk
 			return true
 		})
 	}
-	
+
 	// Convert map to slice
 	for _, resource := range resources {
 		service.Resources = append(service.Resources, *resource)
 	}
-	
+
 	// Sort resources by type
 	sort.Slice(service.Resources, func(i, j int) bool {
 		return service.Resources[i].Type < service.Resources[j].Type
 	})
-	
+
 	return nil
 }
 
@@ -557,34 +557,34 @@ func (a *AzureSDKAnalyzer) analyzeOperation(funcDecl *ast.FuncDecl) *OperationIn
 		Parameters: []ParameterInfo{},
 		Metadata:   make(map[string]string),
 	}
-	
+
 	// Check if it's a paginated operation
-	operation.IsPaginated = strings.Contains(funcDecl.Name.Name, "Pager") || 
-							strings.Contains(funcDecl.Name.Name, "NewList")
-	
+	operation.IsPaginated = strings.Contains(funcDecl.Name.Name, "Pager") ||
+		strings.Contains(funcDecl.Name.Name, "NewList")
+
 	// Check if it supports resource groups
 	operation.SupportsResourceGroup = strings.Contains(funcDecl.Name.Name, "ByResourceGroup") ||
-									  a.hasResourceGroupParameter(funcDecl)
-	
+		a.hasResourceGroupParameter(funcDecl)
+
 	// Extract parameters
 	if funcDecl.Type.Params != nil {
 		for _, param := range funcDecl.Type.Params.List {
 			for _, name := range param.Names {
 				paramInfo := ParameterInfo{
-					Name: name.Name,
-					Type: a.extractTypeString(param.Type),
+					Name:     name.Name,
+					Type:     a.extractTypeString(param.Type),
 					Required: !strings.Contains(name.Name, "options") && name.Name != "ctx",
 				}
 				operation.Parameters = append(operation.Parameters, paramInfo)
 			}
 		}
 	}
-	
+
 	// Extract response type
 	if funcDecl.Type.Results != nil && len(funcDecl.Type.Results.List) > 0 {
 		operation.ResponseType = a.extractTypeString(funcDecl.Type.Results.List[0].Type)
 	}
-	
+
 	return operation
 }
 
@@ -592,7 +592,7 @@ func (a *AzureSDKAnalyzer) analyzeOperation(funcDecl *ast.FuncDecl) *OperationIn
 func (a *AzureSDKAnalyzer) extractResourceTypeFromOperation(operationName string) string {
 	// Remove common prefixes and suffixes
 	resourceType := operationName
-	
+
 	// Remove method prefixes
 	prefixes := []string{"New", "Begin", "Get", "List", "Create", "Update", "Delete"}
 	for _, prefix := range prefixes {
@@ -601,7 +601,7 @@ func (a *AzureSDKAnalyzer) extractResourceTypeFromOperation(operationName string
 			break
 		}
 	}
-	
+
 	// Remove method suffixes
 	suffixes := []string{"Pager", "Poller", "Response", "Result", "ByResourceGroup"}
 	for _, suffix := range suffixes {
@@ -610,7 +610,7 @@ func (a *AzureSDKAnalyzer) extractResourceTypeFromOperation(operationName string
 			break
 		}
 	}
-	
+
 	// Handle special cases
 	switch {
 	case strings.Contains(operationName, "VirtualMachine"):
@@ -630,12 +630,12 @@ func (a *AzureSDKAnalyzer) extractResourceTypeFromOperation(operationName string
 	case strings.Contains(operationName, "Subnet"):
 		return "subnets"
 	}
-	
+
 	// Convert to camelCase and pluralize if needed
 	if resourceType != "" && !strings.HasSuffix(resourceType, "s") {
 		resourceType = strings.ToLower(resourceType[:1]) + resourceType[1:] + "s"
 	}
-	
+
 	return resourceType
 }
 
@@ -682,28 +682,28 @@ func (a *AzureSDKAnalyzer) extractStructProperties(resource *ResourceAnalysis, s
 	if structType.Fields == nil {
 		return
 	}
-	
+
 	for _, field := range structType.Fields.List {
 		for _, name := range field.Names {
 			fieldName := name.Name
 			if prefix != "" {
 				fieldName = prefix + "." + fieldName
 			}
-			
+
 			// Skip unexported fields
 			if !ast.IsExported(name.Name) {
 				continue
 			}
-			
+
 			propertyInfo := PropertyInfo{
 				Type: a.extractTypeString(field.Type),
 			}
-			
+
 			// Extract description from comments
 			if field.Comment != nil {
 				propertyInfo.Description = strings.TrimSpace(field.Comment.Text())
 			}
-			
+
 			resource.Properties[fieldName] = propertyInfo
 		}
 	}
@@ -714,29 +714,29 @@ func (a *AzureSDKAnalyzer) extractStructProperties(resource *ResourceAnalysis, s
 func (a *AzureSDKAnalyzer) generateNamespace(serviceName string) string {
 	// Map common service names to their Microsoft namespaces
 	namespaceMap := map[string]string{
-		"compute":               "Microsoft.Compute",
-		"storage":               "Microsoft.Storage",
-		"network":               "Microsoft.Network",
-		"keyvault":              "Microsoft.KeyVault",
-		"resources":             "Microsoft.Resources",
-		"authorization":         "Microsoft.Authorization",
-		"managementgroups":      "Microsoft.Management",
-		"subscription":          "Microsoft.Subscription",
-		"sql":                   "Microsoft.Sql",
-		"web":                   "Microsoft.Web",
-		"containerservice":      "Microsoft.ContainerService",
-		"containerregistry":     "Microsoft.ContainerRegistry",
-		"applicationinsights":   "Microsoft.Insights",
-		"monitor":               "Microsoft.Insights",
-		"cosmos":                "Microsoft.DocumentDB",
-		"servicebus":            "Microsoft.ServiceBus",
-		"eventhub":              "Microsoft.EventHub",
+		"compute":             "Microsoft.Compute",
+		"storage":             "Microsoft.Storage",
+		"network":             "Microsoft.Network",
+		"keyvault":            "Microsoft.KeyVault",
+		"resources":           "Microsoft.Resources",
+		"authorization":       "Microsoft.Authorization",
+		"managementgroups":    "Microsoft.Management",
+		"subscription":        "Microsoft.Subscription",
+		"sql":                 "Microsoft.Sql",
+		"web":                 "Microsoft.Web",
+		"containerservice":    "Microsoft.ContainerService",
+		"containerregistry":   "Microsoft.ContainerRegistry",
+		"applicationinsights": "Microsoft.Insights",
+		"monitor":             "Microsoft.Insights",
+		"cosmos":              "Microsoft.DocumentDB",
+		"servicebus":          "Microsoft.ServiceBus",
+		"eventhub":            "Microsoft.EventHub",
 	}
-	
+
 	if namespace, exists := namespaceMap[serviceName]; exists {
 		return namespace
 	}
-	
+
 	// Default: capitalize first letter and add Microsoft prefix
 	return "Microsoft." + strings.Title(serviceName)
 }
@@ -751,21 +751,21 @@ func (a *AzureSDKAnalyzer) extractPackageInfo(armDir string) (string, string) {
 	if len(parts) == 0 {
 		return "", ""
 	}
-	
+
 	armPackage := parts[len(parts)-1]
-	
+
 	// Extract version from package name (e.g., armcompute -> v5)
 	versionRegex := regexp.MustCompile(`v(\d+)$`)
 	version := "v1" // default
 	if matches := versionRegex.FindStringSubmatch(armPackage); len(matches) > 1 {
 		version = "v" + matches[1]
 	}
-	
+
 	// Build full package path
 	packagePath := "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager"
 	relPath, _ := filepath.Rel(filepath.Join(a.sdkPath, "sdk", "resourcemanager"), armDir)
 	packagePath = packagePath + "/" + strings.ReplaceAll(relPath, string(filepath.Separator), "/")
-	
+
 	return packagePath, version
 }
 
@@ -776,7 +776,7 @@ func (a *AzureSDKAnalyzer) findServicePackagePath(serviceName string) string {
 	if err != nil || len(matches) == 0 {
 		return ""
 	}
-	
+
 	// Return the first match (usually there's only one)
 	return matches[0]
 }
@@ -808,7 +808,7 @@ func (a *AzureSDKAnalyzer) hasResourceGroupParameter(funcDecl *ast.FuncDecl) boo
 	if funcDecl.Type.Params == nil {
 		return false
 	}
-	
+
 	for _, param := range funcDecl.Type.Params.List {
 		for _, name := range param.Names {
 			if strings.Contains(strings.ToLower(name.Name), "resourcegroup") {
@@ -826,14 +826,14 @@ func (a *AzureSDKAnalyzer) getSDKVersion() string {
 	if output, err := cmd.Output(); err == nil {
 		return strings.TrimSpace(string(output))
 	}
-	
+
 	// Fallback to commit hash
 	cmd = exec.Command("git", "rev-parse", "--short", "HEAD")
 	cmd.Dir = a.sdkPath
 	if output, err := cmd.Output(); err == nil {
 		return "commit-" + strings.TrimSpace(string(output))
 	}
-	
+
 	return "unknown"
 }
 
@@ -841,14 +841,14 @@ func (a *AzureSDKAnalyzer) calculateSummary(services []ServiceAnalysis) Analysis
 	summary := AnalysisSummary{
 		TotalServices: len(services),
 	}
-	
+
 	for _, service := range services {
 		summary.TotalResources += len(service.Resources)
 		for _, resource := range service.Resources {
 			summary.TotalOperations += len(resource.Operations)
 		}
 	}
-	
+
 	return summary
 }
 
@@ -858,7 +858,7 @@ func (a *AzureSDKAnalyzer) writeResults(result *AnalysisResult, outputFile strin
 		return err
 	}
 	defer file.Close()
-	
+
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)
@@ -896,9 +896,9 @@ func (a *AzureSDKAnalyzer) initializeCommonPatterns() {
 			Validation:  map[string]string{"type": "azure_location"},
 		},
 	}
-	
+
 	a.serviceCatalog.CommonPatterns = patterns
-	
+
 	// Compile regex patterns
 	for name, pattern := range patterns {
 		if compiled, err := regexp.Compile(pattern.Regex); err == nil {
@@ -911,19 +911,19 @@ func (a *AzureSDKAnalyzer) initializeCommonPatterns() {
 func (a *AzureSDKAnalyzer) generateServiceCatalog(legacyResult *AnalysisResult) error {
 	a.serviceCatalog.SDKVersion = legacyResult.SDKVersion
 	a.serviceCatalog.GeneratedAt = legacyResult.Timestamp
-	
+
 	// Convert legacy services to new format
 	for _, legacyService := range legacyResult.Services {
 		serviceDef := a.convertLegacyService(legacyService)
 		a.serviceCatalog.Services[legacyService.Name] = serviceDef
 	}
-	
+
 	// Generate relationships between resources
 	a.generateResourceRelationships()
-	
+
 	// Generate Resource Graph queries
 	a.generateResourceGraphQueries()
-	
+
 	// Update summary
 	totalResources := 0
 	totalOperations := 0
@@ -933,7 +933,7 @@ func (a *AzureSDKAnalyzer) generateServiceCatalog(legacyResult *AnalysisResult) 
 			totalOperations += len(resource.Operations)
 		}
 	}
-	
+
 	a.serviceCatalog.Summary = AnalysisSummary{
 		TotalServices:      len(a.serviceCatalog.Services),
 		TotalResources:     totalResources,
@@ -941,7 +941,7 @@ func (a *AzureSDKAnalyzer) generateServiceCatalog(legacyResult *AnalysisResult) 
 		TotalRelationships: len(a.serviceCatalog.Relationships),
 		AnalysisTimeMs:     legacyResult.Summary.AnalysisTimeMs,
 	}
-	
+
 	return nil
 }
 
@@ -956,13 +956,13 @@ func (a *AzureSDKAnalyzer) convertLegacyService(legacy ServiceAnalysis) ServiceD
 		SharedTypes: []TypeDefinition{},
 		Metadata:    legacy.Metadata,
 	}
-	
+
 	// Convert resources
 	for _, legacyResource := range legacy.Resources {
 		resourceDef := a.convertLegacyResource(legacyResource, legacy.Name)
 		serviceDef.Resources = append(serviceDef.Resources, resourceDef)
 	}
-	
+
 	return serviceDef
 }
 
@@ -970,35 +970,35 @@ func (a *AzureSDKAnalyzer) convertLegacyService(legacy ServiceAnalysis) ServiceD
 func (a *AzureSDKAnalyzer) convertLegacyResource(legacy ResourceAnalysis, serviceName string) ResourceDefinition {
 	resourceDef := ResourceDefinition{
 		Type:                  legacy.Type,
-		ARMType:              legacy.ARMType,
-		Operations:           make(map[string]OperationDef),
-		Properties:           []PropertyDef{},
+		ARMType:               legacy.ARMType,
+		Operations:            make(map[string]OperationDef),
+		Properties:            []PropertyDef{},
 		RequiresResourceGroup: a.determineResourceGroupRequirement(legacy),
-		SupportsListAll:      a.determineListAllSupport(legacy),
-		PaginationType:       a.determinePaginationType(legacy),
-		RelatedResources:     []string{},
-		CommonTags:          a.getCommonTags(legacy.ARMType),
-		Metadata:            legacy.Metadata,
+		SupportsListAll:       a.determineListAllSupport(legacy),
+		PaginationType:        a.determinePaginationType(legacy),
+		RelatedResources:      []string{},
+		CommonTags:            a.getCommonTags(legacy.ARMType),
+		Metadata:              legacy.Metadata,
 	}
-	
+
 	// Convert operations
 	for opName, legacyOp := range legacy.Operations {
 		opDef := OperationDef{
-			Method:               legacyOp.Method,
-			OperationType:        a.classifyOperationType(opName, legacyOp.Method),
+			Method:                legacyOp.Method,
+			OperationType:         a.classifyOperationType(opName, legacyOp.Method),
 			SupportsResourceGroup: legacyOp.SupportsResourceGroup,
-			ResponseType:         legacyOp.ResponseType,
-			Parameters:           legacyOp.Parameters,
-			IsPaginated:          legacyOp.IsPaginated,
-			PaginationType:       a.determinePaginationType(legacy),
-			RequiresAuth:         a.getRequiredPermissions(legacy.ARMType, opName),
-			RateLimits:          a.getOperationRateLimits(legacy.ARMType, opName),
-			ResourceGraphOptimal: a.isResourceGraphOptimal(legacy.ARMType, opName),
-			Metadata:            legacyOp.Metadata,
+			ResponseType:          legacyOp.ResponseType,
+			Parameters:            legacyOp.Parameters,
+			IsPaginated:           legacyOp.IsPaginated,
+			PaginationType:        a.determinePaginationType(legacy),
+			RequiresAuth:          a.getRequiredPermissions(legacy.ARMType, opName),
+			RateLimits:            a.getOperationRateLimits(legacy.ARMType, opName),
+			ResourceGraphOptimal:  a.isResourceGraphOptimal(legacy.ARMType, opName),
+			Metadata:              legacyOp.Metadata,
 		}
 		resourceDef.Operations[opName] = opDef
 	}
-	
+
 	// Convert properties with enhanced metadata
 	for propName, legacyProp := range legacy.Properties {
 		propertyDef := PropertyDef{
@@ -1013,16 +1013,16 @@ func (a *AzureSDKAnalyzer) convertLegacyResource(legacy ResourceAnalysis, servic
 			Examples:    []interface{}{},
 			Constraints: make(map[string]interface{}),
 		}
-		
+
 		// Apply pattern validation
 		a.applyPatternValidation(&propertyDef)
-		
+
 		resourceDef.Properties = append(resourceDef.Properties, propertyDef)
 	}
-	
+
 	// Generate optimal Resource Graph query
 	resourceDef.ResourceGraphQuery = a.generateResourceGraphQuery(legacy.ARMType)
-	
+
 	return resourceDef
 }
 
@@ -1035,7 +1035,7 @@ func (a *AzureSDKAnalyzer) determineResourceGroupRequirement(resource ResourceAn
 			return true
 		}
 	}
-	
+
 	// Most ARM resources require resource groups except subscription-level resources
 	subscriptionLevelTypes := []string{
 		"Microsoft.Subscription/",
@@ -1043,13 +1043,13 @@ func (a *AzureSDKAnalyzer) determineResourceGroupRequirement(resource ResourceAn
 		"Microsoft.Authorization/policyDefinitions",
 		"Microsoft.Authorization/roleDefinitions",
 	}
-	
+
 	for _, prefix := range subscriptionLevelTypes {
 		if strings.HasPrefix(resource.ARMType, prefix) {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -1127,19 +1127,19 @@ func (a *AzureSDKAnalyzer) mapToDuckDBType(armType string) string {
 
 func (a *AzureSDKAnalyzer) shouldBeIndexed(propName, armType string) bool {
 	indexedProperties := []string{
-		"id", "name", "type", "location", "resourcegroup", 
+		"id", "name", "type", "location", "resourcegroup",
 		"subscriptionid", "provisioningstate", "sku", "kind",
 		"properties.hardwareprofile.vmsize", "properties.provisioningstate",
 		"tags.environment", "tags.application", "tags.owner",
 	}
-	
+
 	propLower := strings.ToLower(propName)
 	for _, indexed := range indexedProperties {
 		if strings.Contains(propLower, indexed) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -1147,29 +1147,29 @@ func (a *AzureSDKAnalyzer) shouldBeCompressed(propName, propType string) bool {
 	// Compress large text fields and JSON
 	compressedTypes := []string{"json", "varchar", "text", "blob"}
 	compressedNames := []string{"properties", "tags", "metadata", "rawdata", "configuration"}
-	
+
 	typeLower := strings.ToLower(propType)
 	nameLower := strings.ToLower(propName)
-	
+
 	for _, ct := range compressedTypes {
 		if strings.Contains(typeLower, ct) {
 			return true
 		}
 	}
-	
+
 	for _, cn := range compressedNames {
 		if strings.Contains(nameLower, cn) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
 func (a *AzureSDKAnalyzer) getCommonTags(armType string) []string {
 	// Standard Azure tags that are commonly used
 	commonTags := []string{"Environment", "Application", "Owner", "CostCenter", "Project"}
-	
+
 	// Add resource-specific common tags
 	if strings.Contains(armType, "Compute") {
 		commonTags = append(commonTags, "Workload", "OSType")
@@ -1180,7 +1180,7 @@ func (a *AzureSDKAnalyzer) getCommonTags(armType string) []string {
 	if strings.Contains(armType, "Network") {
 		commonTags = append(commonTags, "NetworkZone", "SecurityGroup")
 	}
-	
+
 	return commonTags
 }
 
@@ -1188,7 +1188,7 @@ func (a *AzureSDKAnalyzer) getRequiredPermissions(armType, operation string) []s
 	// Map operations to required permissions
 	opType := a.classifyOperationType(operation, "")
 	basePermission := strings.ToLower(armType)
-	
+
 	switch opType {
 	case "list", "get":
 		return []string{basePermission + "/read"}
@@ -1208,7 +1208,7 @@ func (a *AzureSDKAnalyzer) getRequiredPermissions(armType, operation string) []s
 func (a *AzureSDKAnalyzer) getOperationRateLimits(armType, operation string) map[string]int {
 	// Azure ARM API rate limits (requests per minute)
 	limits := make(map[string]int)
-	
+
 	opType := a.classifyOperationType(operation, "")
 	switch opType {
 	case "list":
@@ -1220,7 +1220,7 @@ func (a *AzureSDKAnalyzer) getOperationRateLimits(armType, operation string) map
 	default:
 		limits["requests_per_minute"] = 6000
 	}
-	
+
 	return limits
 }
 
@@ -1230,35 +1230,35 @@ func (a *AzureSDKAnalyzer) isResourceGraphOptimal(armType, operation string) boo
 	if opType != "list" {
 		return false
 	}
-	
+
 	// Some resources are not available in Resource Graph
 	nonResourceGraphTypes := []string{
 		"Microsoft.Authorization/roleAssignments",
-		"Microsoft.Insights/metrics", 
+		"Microsoft.Insights/metrics",
 		"Microsoft.Insights/logs",
 	}
-	
+
 	for _, nonRGType := range nonResourceGraphTypes {
 		if strings.Contains(armType, nonRGType) {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
 func (a *AzureSDKAnalyzer) generateResourceGraphQuery(armType string) string {
 	// Generate optimal KQL query for Resource Graph
 	baseQuery := "Resources"
-	
+
 	// Add type filter
 	if armType != "" {
 		baseQuery += fmt.Sprintf(" | where type =~ '%s'", strings.ToLower(armType))
 	}
-	
+
 	// Add common projections
 	baseQuery += " | project id, name, type, location, resourceGroup, subscriptionId, tags, properties"
-	
+
 	// Add resource-specific optimizations
 	if strings.Contains(armType, "virtualMachines") {
 		baseQuery += ", properties.hardwareProfile.vmSize, properties.provisioningState, properties.powerState"
@@ -1267,13 +1267,13 @@ func (a *AzureSDKAnalyzer) generateResourceGraphQuery(armType string) string {
 	} else if strings.Contains(armType, "virtualNetworks") {
 		baseQuery += ", properties.addressSpace, properties.subnets"
 	}
-	
+
 	return baseQuery
 }
 
 func (a *AzureSDKAnalyzer) applyPatternValidation(prop *PropertyDef) {
 	propLower := strings.ToLower(prop.Name)
-	
+
 	// Apply pattern validation based on property name
 	switch {
 	case strings.Contains(propLower, "id") && strings.Contains(propLower, "resource"):
@@ -1300,45 +1300,45 @@ func (a *AzureSDKAnalyzer) generateResourceRelationships() {
 
 func (a *AzureSDKAnalyzer) findResourceRelationships(resource ResourceDefinition, serviceName string) []ResourceRelationship {
 	var relationships []ResourceRelationship
-	
+
 	// Common relationship patterns in Azure
 	relationshipPatterns := map[string]string{
 		"networkInterface": "Microsoft.Network/networkInterfaces",
-		"subnet":          "Microsoft.Network/virtualNetworks/subnets", 
-		"virtualNetwork":  "Microsoft.Network/virtualNetworks",
-		"storageAccount":  "Microsoft.Storage/storageAccounts",
-		"keyVault":        "Microsoft.KeyVault/vaults",
-		"loadBalancer":    "Microsoft.Network/loadBalancers",
-		"publicIP":        "Microsoft.Network/publicIPAddresses",
+		"subnet":           "Microsoft.Network/virtualNetworks/subnets",
+		"virtualNetwork":   "Microsoft.Network/virtualNetworks",
+		"storageAccount":   "Microsoft.Storage/storageAccounts",
+		"keyVault":         "Microsoft.KeyVault/vaults",
+		"loadBalancer":     "Microsoft.Network/loadBalancers",
+		"publicIP":         "Microsoft.Network/publicIPAddresses",
 	}
-	
+
 	// Analyze properties for relationship indicators
 	for _, prop := range resource.Properties {
 		propLower := strings.ToLower(prop.Name)
-		
+
 		for pattern, targetType := range relationshipPatterns {
-			if strings.Contains(propLower, strings.ToLower(pattern)) && 
-			   strings.Contains(propLower, "id") {
-				
+			if strings.Contains(propLower, strings.ToLower(pattern)) &&
+				strings.Contains(propLower, "id") {
+
 				relationship := ResourceRelationship{
-					SourceType:      resource.ARMType,
-					TargetType:      targetType,
-					RelationType:    "references",
-					Direction:       "unidirectional",
-					PropertyPath:    prop.Path,
-					Cardinality:     "many_to_one",
-					Required:        prop.Required,
+					SourceType:   resource.ARMType,
+					TargetType:   targetType,
+					RelationType: "references",
+					Direction:    "unidirectional",
+					PropertyPath: prop.Path,
+					Cardinality:  "many_to_one",
+					Required:     prop.Required,
 					Metadata: map[string]string{
 						"discovered_from": "property_analysis",
 						"property_name":   prop.Name,
 					},
 				}
-				
+
 				relationships = append(relationships, relationship)
 			}
 		}
 	}
-	
+
 	return relationships
 }
 

@@ -13,9 +13,9 @@ import (
 
 // ServiceDiscovery handles dynamic service discovery for GCP
 type ServiceDiscovery struct {
-	clientFactory      *ClientFactory
-	libraryAnalyzer    *ClientLibraryAnalyzer
-	hierarchyAnalyzer  *ResourceHierarchyAnalyzer
+	clientFactory     *ClientFactory
+	libraryAnalyzer   *ClientLibraryAnalyzer
+	hierarchyAnalyzer *ResourceHierarchyAnalyzer
 }
 
 // NewServiceDiscovery creates a new service discovery instance
@@ -25,14 +25,14 @@ func NewServiceDiscovery(cf *ClientFactory) *ServiceDiscovery {
 	if goPath == "" {
 		goPath = filepath.Join(os.Getenv("HOME"), "go")
 	}
-	
+
 	libraryAnalyzer := NewClientLibraryAnalyzer(goPath, "cloud.google.com/go")
-	
+
 	sd := &ServiceDiscovery{
 		clientFactory:   cf,
 		libraryAnalyzer: libraryAnalyzer,
 	}
-	
+
 	return sd
 }
 
@@ -43,10 +43,10 @@ func (sd *ServiceDiscovery) DiscoverServices(ctx context.Context, projectIDs []s
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service usage client: %w", err)
 	}
-	
+
 	// Use a map to deduplicate services across projects
 	serviceMap := make(map[string]*pb.ServiceInfo)
-	
+
 	// Discover services for each project
 	for _, projectID := range projectIDs {
 		projectServices, err := sd.discoverProjectServices(ctx, client, projectID)
@@ -55,7 +55,7 @@ func (sd *ServiceDiscovery) DiscoverServices(ctx context.Context, projectIDs []s
 			fmt.Printf("Error discovering services for project %s: %v\n", projectID, err)
 			continue
 		}
-		
+
 		// Merge services
 		for _, service := range projectServices {
 			if existing, ok := serviceMap[service.Name]; ok {
@@ -66,13 +66,13 @@ func (sd *ServiceDiscovery) DiscoverServices(ctx context.Context, projectIDs []s
 			}
 		}
 	}
-	
+
 	// Convert map to slice
 	var services []*pb.ServiceInfo
 	for _, service := range serviceMap {
 		services = append(services, service)
 	}
-	
+
 	return services, nil
 }
 
@@ -87,7 +87,7 @@ func (sd *ServiceDiscovery) DiscoverServicesWithLibraryAnalysis(ctx context.Cont
 
 	// Initialize hierarchy analyzer with discovered service mappings
 	sd.hierarchyAnalyzer = NewResourceHierarchyAnalyzer(sd.libraryAnalyzer.ServiceMappings)
-	
+
 	// Analyze resource hierarchies
 	if err := sd.hierarchyAnalyzer.AnalyzeResourceHierarchies(ctx); err != nil {
 		fmt.Printf("Hierarchy analysis failed: %v\n", err)
@@ -102,17 +102,17 @@ func (sd *ServiceDiscovery) DiscoverServicesWithLibraryAnalysis(ctx context.Cont
 
 	// Merge library-discovered and API-discovered services
 	mergedServices := sd.mergeServiceDiscoveryResults(libraryServices, apiServices)
-	
+
 	return mergedServices, nil
 }
 
 // discoverProjectServices discovers services enabled in a specific project
 func (sd *ServiceDiscovery) discoverProjectServices(ctx context.Context, client *serviceusage.Service, projectID string) ([]*pb.ServiceInfo, error) {
 	projectName := fmt.Sprintf("projects/%s", projectID)
-	
+
 	var services []*pb.ServiceInfo
 	pageToken := ""
-	
+
 	for {
 		// List enabled services
 		resp, err := client.Services.List(projectName).
@@ -120,36 +120,36 @@ func (sd *ServiceDiscovery) discoverProjectServices(ctx context.Context, client 
 			PageToken(pageToken).
 			Context(ctx).
 			Do()
-		
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to list services: %w", err)
 		}
-		
+
 		for _, svc := range resp.Services {
 			serviceInfo := sd.parseServiceInfo(svc, projectID)
 			if serviceInfo != nil {
 				services = append(services, serviceInfo)
 			}
 		}
-		
+
 		if resp.NextPageToken == "" {
 			break
 		}
 		pageToken = resp.NextPageToken
 	}
-	
+
 	// Add resource types for each service
 	for _, service := range services {
 		resourceTypeNames := sd.getResourceTypesForService(service.Name)
 		service.ResourceTypes = make([]*pb.ResourceType, len(resourceTypeNames))
 		for i, name := range resourceTypeNames {
 			service.ResourceTypes[i] = &pb.ResourceType{
-				Name: name,
+				Name:     name,
 				TypeName: name,
 			}
 		}
 	}
-	
+
 	return services, nil
 }
 
@@ -157,22 +157,22 @@ func (sd *ServiceDiscovery) parseServiceInfo(svc *serviceusage.GoogleApiServiceu
 	if svc == nil || svc.Config == nil {
 		return nil
 	}
-	
+
 	// Extract service name from the full service name
 	// Format: projects/{project}/services/{service}
 	parts := strings.Split(svc.Name, "/")
 	serviceName := parts[len(parts)-1]
-	
+
 	// Remove .googleapis.com suffix to get short name
 	shortName := strings.TrimSuffix(serviceName, ".googleapis.com")
-	
+
 	serviceInfo := &pb.ServiceInfo{
 		Name:        shortName,
 		DisplayName: svc.Config.Title,
 		PackageName: serviceName,
 		ClientType:  "google-cloud-go",
 	}
-	
+
 	return serviceInfo
 }
 
@@ -180,11 +180,11 @@ func (sd *ServiceDiscovery) extractDescription(config *serviceusage.GoogleApiSer
 	if config == nil {
 		return ""
 	}
-	
+
 	if config.Documentation != nil && config.Documentation.Summary != "" {
 		return config.Documentation.Summary
 	}
-	
+
 	return config.Title
 }
 
@@ -197,7 +197,7 @@ func (sd *ServiceDiscovery) getResourceTypesForService(service string) []string 
 	// Predefined mapping of services to their common resource types
 	serviceResourceTypes := map[string][]string{
 		"compute": {
-			"Instance", "Disk", "Network", "Subnetwork", 
+			"Instance", "Disk", "Network", "Subnetwork",
 			"Firewall", "Address", "Snapshot", "Image",
 			"InstanceTemplate", "InstanceGroup", "HealthCheck",
 			"BackendService", "UrlMap", "TargetHttpProxy",
@@ -367,11 +367,11 @@ func (sd *ServiceDiscovery) getResourceTypesForService(service string) []string 
 			"Job", "Template",
 		},
 	}
-	
+
 	if types, ok := serviceResourceTypes[service]; ok {
 		return types
 	}
-	
+
 	// Return empty slice for unknown services
 	return []string{}
 }
@@ -379,12 +379,12 @@ func (sd *ServiceDiscovery) getResourceTypesForService(service string) []string 
 // mergeServiceDiscoveryResults merges library-analyzed and API-discovered services
 func (sd *ServiceDiscovery) mergeServiceDiscoveryResults(libraryServices, apiServices []*pb.ServiceInfo) []*pb.ServiceInfo {
 	serviceMap := make(map[string]*pb.ServiceInfo)
-	
+
 	// Add library-discovered services first (more detailed)
 	for _, service := range libraryServices {
 		serviceMap[service.Name] = service
 	}
-	
+
 	// Merge with API-discovered services
 	for _, apiService := range apiServices {
 		if existing, ok := serviceMap[apiService.Name]; ok {
@@ -398,13 +398,13 @@ func (sd *ServiceDiscovery) mergeServiceDiscoveryResults(libraryServices, apiSer
 			serviceMap[apiService.Name] = apiService
 		}
 	}
-	
+
 	// Convert back to slice
 	var mergedServices []*pb.ServiceInfo
 	for _, service := range serviceMap {
 		mergedServices = append(mergedServices, service)
 	}
-	
+
 	return mergedServices
 }
 
@@ -413,7 +413,7 @@ func (sd *ServiceDiscovery) GetServiceMapping(serviceName string) *ServiceMappin
 	if sd.libraryAnalyzer == nil {
 		return nil
 	}
-	
+
 	return sd.libraryAnalyzer.ServiceMappings[serviceName]
 }
 

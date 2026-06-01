@@ -152,10 +152,10 @@ func (o *TestOrchestrator) RunTest(ctx context.Context) (*TestResult, error) {
 	if shouldCleanup {
 		fmt.Println("\n🧹 Phase 4: Cleaning up test infrastructure...")
 		cleanupErr := o.harness.Destroy()
-		
+
 		// Capture cleanup result
 		result.CleanupResult = o.harness.GetCleanupResult()
-		
+
 		if cleanupErr != nil {
 			fmt.Printf("⚠️ Warning: Cleanup failed: %v\n", cleanupErr)
 			// Don't fail the test for cleanup errors, but record them
@@ -328,11 +328,11 @@ func (o *TestOrchestrator) printTestSummary(result *TestResult) {
 		fmt.Printf("- Pulumi Success: %t\n", cr.PulumiSuccess)
 		fmt.Printf("- AWS Verified: %t\n", cr.AWSVerified)
 		fmt.Printf("- Cleanup Duration: %v\n", cr.CleanupDuration)
-		
+
 		if len(cr.ResourcesFound) > 0 {
 			fmt.Printf("- Remaining Resources: %d\n", len(cr.ResourcesFound))
 		}
-		
+
 		if len(cr.ManualCleanup) > 0 {
 			successful := 0
 			for _, action := range cr.ManualCleanup {

@@ -62,11 +62,11 @@ func NewTestHarness(ctx context.Context, cfg HarnessConfig, scenario Scenario) (
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Minute
 	}
-	
+
 	if cfg.CorkscrewPath == "" {
 		cfg.CorkscrewPath = "../../corkscrew"
 	}
-	
+
 	if cfg.DBPath == "" {
 		cfg.DBPath = fmt.Sprintf("test_%s-%s.db", scenario.GetName(), cfg.TestID)
 	}
@@ -141,9 +141,9 @@ func (h *TestHarness) GetStackName() string {
 // Scan runs Corkscrew against the deployed infrastructure
 func (h *TestHarness) Scan() (*ScanResult, error) {
 	fmt.Printf("🔍 Running Corkscrew scan for %s...\n", h.scenario.GetName())
-	
+
 	start := time.Now()
-	
+
 	args := []string{
 		"scan",
 		"--provider", h.config.Provider,
@@ -151,24 +151,24 @@ func (h *TestHarness) Scan() (*ScanResult, error) {
 		"--region", h.config.Region,
 		"--output", h.config.DBPath,
 	}
-	
+
 	cmd := exec.CommandContext(h.ctx, h.config.CorkscrewPath, args...)
 	output, err := cmd.CombinedOutput()
-	
+
 	result := &ScanResult{
 		Output:   string(output),
 		Duration: time.Since(start),
 	}
-	
+
 	if cmd.ProcessState != nil {
 		result.ExitCode = cmd.ProcessState.ExitCode()
 	}
-	
+
 	if err != nil {
 		result.Error = err
 		return result, fmt.Errorf("corkscrew scan failed: %w", err)
 	}
-	
+
 	fmt.Printf("✅ Scan complete in %s\n", result.Duration)
 	return result, nil
 }
@@ -194,12 +194,12 @@ func (h *TestHarness) GetBucketName() (string, error) {
 	if !exists {
 		return "", fmt.Errorf("bucketName not found in outputs")
 	}
-	
+
 	name, ok := bucketName.Value.(string)
 	if !ok {
 		return "", fmt.Errorf("bucketName is not a string")
 	}
-	
+
 	return name, nil
 }
 
@@ -209,12 +209,12 @@ func (h *TestHarness) GetBucketArn() (string, error) {
 	if !exists {
 		return "", fmt.Errorf("bucketArn not found in outputs")
 	}
-	
+
 	arn, ok := bucketArn.Value.(string)
 	if !ok {
 		return "", fmt.Errorf("bucketArn is not a string")
 	}
-	
+
 	return arn, nil
 }
 

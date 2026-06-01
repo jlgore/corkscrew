@@ -25,13 +25,13 @@ func ExampleCSVFormatter() {
 
 	// Create CSV formatter
 	formatter := NewCSVFormatter(nil)
-	
+
 	// Format to stdout
 	err := formatter.Format(result, os.Stdout)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
-	
+
 	// Output:
 	// id,name,active
 	// 1,Alice,true
@@ -58,7 +58,7 @@ func ExampleJSONFormatter() {
 	opts := DefaultFormatterOptions()
 	opts.JSONPretty = false
 	formatter := NewJSONFormatter(opts)
-	
+
 	// Format to stdout
 	err := formatter.Format(result, os.Stdout)
 	if err != nil {
@@ -66,7 +66,7 @@ func ExampleJSONFormatter() {
 	}
 }
 
-// ExampleTableFormatter demonstrates table output formatting  
+// ExampleTableFormatter demonstrates table output formatting
 func ExampleTableFormatter() {
 	// Create sample data
 	result := &QueryResult{
@@ -85,34 +85,34 @@ func ExampleTableFormatter() {
 
 	// Create table formatter
 	formatter := NewTableFormatter(nil)
-	
+
 	// Format to stdout
 	err := formatter.Format(result, os.Stdout)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
-	
+
 	// Output will be a nicely formatted table with headers and aligned columns
 }
 
 // ExampleFormatterFactory demonstrates using the factory pattern
 func ExampleFormatterFactory() {
 	factory := &FormatterFactory{}
-	
+
 	// List supported formats
 	formats := factory.GetSupportedFormats()
 	fmt.Printf("Supported formats: %v\n", formats)
-	
+
 	// Create formatter dynamically
 	formatter, err := factory.CreateFormatter("csv", nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	
+
 	// Use the formatter...
 	_ = formatter
-	
+
 	// Output:
 	// Supported formats: [csv json table]
 }
@@ -132,13 +132,13 @@ func ExampleCSVFormatter_FormatStream() {
 
 	// Create CSV formatter
 	formatter := NewCSVFormatter(nil)
-	
+
 	// Format streaming data to stdout
 	err := formatter.FormatStream(rowChan, columns, os.Stdout)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
-	
+
 	// Output:
 	// id,message
 	// 1,Hello
@@ -152,7 +152,7 @@ func ExampleFormatterOptions() {
 	opts.NullValue = "N/A"
 	opts.CSVDelimiter = ';'
 	opts.TableMaxWidth = 60
-	
+
 	result := &QueryResult{
 		Columns: []ColumnInfo{
 			{Name: "name", Type: "VARCHAR", Nullable: true},
@@ -170,7 +170,7 @@ func ExampleFormatterOptions() {
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
-	
+
 	// Output:
 	// name
 	// Alice

@@ -15,14 +15,14 @@ import (
 // CrossRegionScenario tests resources across multiple AWS regions
 type CrossRegionScenario struct {
 	expectedResources map[string]interface{}
-	regions          []string
+	regions           []string
 }
 
 // NewCrossRegionScenario creates a new cross-region test scenario
 func NewCrossRegionScenario() *CrossRegionScenario {
 	return &CrossRegionScenario{
 		expectedResources: make(map[string]interface{}),
-		regions:          []string{"us-east-1", "us-west-2", "eu-west-1"},
+		regions:           []string{"us-east-1", "us-west-2", "eu-west-1"},
 	}
 }
 
@@ -48,7 +48,7 @@ func (s *CrossRegionScenario) DefineResources(ctx *pulumi.Context, testID string
 
 	// Create resources in multiple regions
 	regionalResources := make(map[string]interface{})
-	
+
 	for i, region := range s.regions {
 		regionTags := make(pulumi.StringMap)
 		for k, v := range baseTags {
@@ -70,7 +70,7 @@ func (s *CrossRegionScenario) DefineResources(ctx *pulumi.Context, testID string
 		if err != nil {
 			return fmt.Errorf("failed to create resources in %s: %w", region, err)
 		}
-		
+
 		regionalResources[region] = regionResources
 	}
 
@@ -95,7 +95,7 @@ func (s *CrossRegionScenario) DefineResources(ctx *pulumi.Context, testID string
 // createRegionalResources creates resources specific to each region
 func (s *CrossRegionScenario) createRegionalResources(ctx *pulumi.Context, testID, region string, regionIndex int, tags pulumi.StringMap, provider *aws.Provider) (map[string]interface{}, error) {
 	resources := make(map[string]interface{})
-	
+
 	// Create VPC in each region
 	vpc, err := ec2.NewVpc(ctx, fmt.Sprintf("vpc-%s", region), &ec2.VpcArgs{
 		CidrBlock:          pulumi.String(fmt.Sprintf("10.%d.0.0/16", regionIndex)),
@@ -148,7 +148,7 @@ func (s *CrossRegionScenario) createRegionalResources(ctx *pulumi.Context, testI
 		"us-west-2": "ami-0d1cd67c26f5fca19", // Amazon Linux 2
 		"eu-west-1": "ami-08935252a36e25f85", // Amazon Linux 2
 	}
-	
+
 	instance, err := ec2.NewInstance(ctx, fmt.Sprintf("instance-%s", region), &ec2.InstanceArgs{
 		Ami:          pulumi.String(amiMap[region]),
 		InstanceType: pulumi.String("t2.micro"),
@@ -187,7 +187,7 @@ func (s *CrossRegionScenario) createGlobalResources(ctx *pulumi.Context, testID 
 				}
 			]
 		}`),
-		Tags: tags,
+		Tags:        tags,
 		Description: pulumi.String(fmt.Sprintf("Cross-region IAM role for test %s", testID)),
 	})
 	if err != nil {
@@ -208,7 +208,7 @@ func (s *CrossRegionScenario) createGlobalResources(ctx *pulumi.Context, testID 
 
 	// Create CloudFront distribution with origins from multiple regions
 	origins := cloudfront.DistributionOriginArray{}
-	
+
 	for region, regionRes := range regionalResources {
 		if regionResources, ok := regionRes.(map[string]interface{}); ok {
 			if bucket, ok := regionResources["bucket"].(*s3.Bucket); ok {
@@ -229,7 +229,7 @@ func (s *CrossRegionScenario) createGlobalResources(ctx *pulumi.Context, testID 
 			Comment: pulumi.String(fmt.Sprintf("Cross-region CloudFront distribution for test %s", testID)),
 			Enabled: pulumi.Bool(true),
 			Origins: origins,
-			
+
 			DefaultCacheBehavior: &cloudfront.DistributionDefaultCacheBehaviorArgs{
 				TargetOriginId:       origins[0].OriginId,
 				ViewerProtocolPolicy: pulumi.String("redirect-to-https"),
@@ -246,20 +246,20 @@ func (s *CrossRegionScenario) createGlobalResources(ctx *pulumi.Context, testID 
 					},
 				},
 			},
-			
+
 			// Add cache behaviors for other regions
 			CacheBehaviors: s.createCacheBehaviors(origins[1:]),
-			
+
 			Restrictions: &cloudfront.DistributionRestrictionsArgs{
 				GeoRestriction: &cloudfront.DistributionRestrictionsGeoRestrictionArgs{
 					RestrictionType: pulumi.String("none"),
 				},
 			},
-			
+
 			ViewerCertificate: &cloudfront.DistributionViewerCertificateArgs{
 				CloudfrontDefaultCertificate: pulumi.Bool(true),
 			},
-			
+
 			Tags: tags,
 		})
 		if err != nil {
@@ -274,7 +274,7 @@ func (s *CrossRegionScenario) createGlobalResources(ctx *pulumi.Context, testID 
 // createCacheBehaviors creates cache behaviors for additional origins
 func (s *CrossRegionScenario) createCacheBehaviors(origins cloudfront.DistributionOriginArray) cloudfront.DistributionCacheBehaviorArray {
 	behaviors := cloudfront.DistributionCacheBehaviorArray{}
-	
+
 	for i, origin := range origins {
 		behavior := &cloudfront.DistributionCacheBehaviorArgs{
 			PathPattern:          pulumi.String(fmt.Sprintf("/region%d/*", i+2)),
@@ -295,7 +295,7 @@ func (s *CrossRegionScenario) createCacheBehaviors(origins cloudfront.Distributi
 		}
 		behaviors = append(behaviors, behavior)
 	}
-	
+
 	return behaviors
 }
 
@@ -320,26 +320,26 @@ func (s *CrossRegionScenario) createCrossRegionRelationships(ctx *pulumi.Context
 
 		// Create VPC peering connection
 		peeringName := fmt.Sprintf("peering-%s-%s", sourceRegion, targetRegion)
-		
+
 		// Note: This creates the peering connection request from source region
 		peeringConnection, err := ec2.NewVpcPeeringConnection(ctx, peeringName, &ec2.VpcPeeringConnectionArgs{
-			VpcId:        sourceVPC.ID(),
-			PeerVpcId:    targetVPC.ID(),
-			PeerRegion:   pulumi.String(targetRegion),
-			AutoAccept:   pulumi.Bool(false), // Cross-region peering requires manual accept
-			Tags:         tags,
+			VpcId:      sourceVPC.ID(),
+			PeerVpcId:  targetVPC.ID(),
+			PeerRegion: pulumi.String(targetRegion),
+			AutoAccept: pulumi.Bool(false), // Cross-region peering requires manual accept
+			Tags:       tags,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create VPC peering %s-%s: %w", sourceRegion, targetRegion, err)
 		}
-		
+
 		resources[peeringName] = peeringConnection
 	}
 
 	// Create S3 cross-region replication
 	sourceBucket := s.getBucketFromRegion(regionalResources, sourceRegion)
 	targetBucket := s.getBucketFromRegion(regionalResources, "us-west-2")
-	
+
 	if sourceBucket != nil && targetBucket != nil {
 		// Create IAM role for replication
 		replicationRole, err := iam.NewRole(ctx, "s3-replication-role", &iam.RoleArgs{
@@ -499,7 +499,7 @@ func (s *CrossRegionScenario) exportCrossRegionResources(ctx *pulumi.Context, re
 		},
 		"s3": pulumi.Array{
 			pulumi.Map{
-				"type": pulumi.String("Bucket"),
+				"type":    pulumi.String("Bucket"),
 				"regions": pulumi.Int(3),
 				"attributes": pulumi.Map{
 					"cross_region_replication": pulumi.Bool(true),
@@ -509,14 +509,14 @@ func (s *CrossRegionScenario) exportCrossRegionResources(ctx *pulumi.Context, re
 		},
 		"ec2": pulumi.Array{
 			pulumi.Map{
-				"type": pulumi.String("VPC"),
+				"type":    pulumi.String("VPC"),
 				"regions": pulumi.Int(3),
 				"attributes": pulumi.Map{
 					"peering_connections": pulumi.Int(2),
 				},
 			},
 			pulumi.Map{
-				"type": pulumi.String("Instance"),
+				"type":    pulumi.String("Instance"),
 				"regions": pulumi.Int(3),
 				"attributes": pulumi.Map{
 					"different_amis": pulumi.Bool(true),
@@ -525,7 +525,7 @@ func (s *CrossRegionScenario) exportCrossRegionResources(ctx *pulumi.Context, re
 		},
 		"iam": pulumi.Array{
 			pulumi.Map{
-				"type": pulumi.String("Role"),
+				"type":   pulumi.String("Role"),
 				"global": pulumi.Bool(true),
 				"attributes": pulumi.Map{
 					"cross_region_policies": pulumi.Bool(true),
@@ -534,7 +534,7 @@ func (s *CrossRegionScenario) exportCrossRegionResources(ctx *pulumi.Context, re
 		},
 		"cloudfront": pulumi.Array{
 			pulumi.Map{
-				"type": pulumi.String("Distribution"),
+				"type":   pulumi.String("Distribution"),
 				"global": pulumi.Bool(true),
 				"attributes": pulumi.Map{
 					"multi_region_origins": pulumi.Int(3),

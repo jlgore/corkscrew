@@ -33,16 +33,16 @@ func (r *ASCIIRenderer) RenderMermaid(mermaidContent string) (string, error) {
 			maxLen = len(line)
 		}
 	}
-	
+
 	if maxLen > r.width-4 {
 		maxLen = r.width - 4
 	}
-	
+
 	var result strings.Builder
-	
+
 	// Top border
 	result.WriteString("┌" + strings.Repeat("─", maxLen+2) + "┐\n")
-	
+
 	// Content lines
 	for _, line := range lines {
 		if len(line) > maxLen {
@@ -50,10 +50,10 @@ func (r *ASCIIRenderer) RenderMermaid(mermaidContent string) (string, error) {
 		}
 		result.WriteString(fmt.Sprintf("│ %-*s │\n", maxLen, line))
 	}
-	
+
 	// Bottom border
 	result.WriteString("└" + strings.Repeat("─", maxLen+2) + "┘\n")
-	
+
 	return result.String(), nil
 }
 
@@ -62,9 +62,9 @@ func (r *ASCIIRenderer) RenderASCII(graphData *GraphData) (string, error) {
 	if len(graphData.Nodes) == 0 {
 		return "No nodes to display", nil
 	}
-	
+
 	var result strings.Builder
-	
+
 	// Add title if present
 	if graphData.Title != "" {
 		title := fmt.Sprintf(" %s ", graphData.Title)
@@ -73,27 +73,27 @@ func (r *ASCIIRenderer) RenderASCII(graphData *GraphData) (string, error) {
 			title = title[:r.width-3] + "..."
 			titleLen = r.width
 		}
-		
+
 		padding := (r.width - titleLen) / 2
 		result.WriteString(strings.Repeat(" ", padding) + title + "\n")
 		result.WriteString(strings.Repeat("═", r.width) + "\n\n")
 	}
-	
+
 	// Simple node layout - arrange nodes in a grid
 	nodesPerRow := 3
 	if len(graphData.Nodes) < 3 {
 		nodesPerRow = len(graphData.Nodes)
 	}
-	
+
 	rows := (len(graphData.Nodes) + nodesPerRow - 1) / nodesPerRow
 	nodeWidth := (r.width - (nodesPerRow + 1)) / nodesPerRow
-	
+
 	// Create a map for quick node lookup
 	nodeMap := make(map[string]Node)
 	for _, node := range graphData.Nodes {
 		nodeMap[node.ID] = node
 	}
-	
+
 	// Render nodes row by row
 	for row := 0; row < rows; row++ {
 		// Draw node boxes
@@ -103,10 +103,10 @@ func (r *ASCIIRenderer) RenderASCII(graphData *GraphData) (string, error) {
 				if nodeIndex >= len(graphData.Nodes) {
 					break
 				}
-				
+
 				node := graphData.Nodes[nodeIndex]
 				startCol := col * (nodeWidth + 1)
-				
+
 				if line == 0 {
 					// Top border
 					result.WriteString(fmt.Sprintf("%*s┌%s┐", startCol, "", strings.Repeat("─", nodeWidth-2)))
@@ -125,13 +125,13 @@ func (r *ASCIIRenderer) RenderASCII(graphData *GraphData) (string, error) {
 			}
 			result.WriteString("\n")
 		}
-		
+
 		// Draw connections between nodes in this row and the next
 		if row < rows-1 {
 			r.drawConnections(&result, graphData.Edges, row, nodesPerRow, nodeWidth)
 		}
 	}
-	
+
 	// Add legend for relationships
 	if len(graphData.Edges) > 0 {
 		result.WriteString("\nRelationships:\n")
@@ -139,12 +139,12 @@ func (r *ASCIIRenderer) RenderASCII(graphData *GraphData) (string, error) {
 		for _, edge := range graphData.Edges {
 			relationshipTypes[edge.Type]++
 		}
-		
+
 		for relType, count := range relationshipTypes {
 			result.WriteString(fmt.Sprintf("  %s: %d\n", relType, count))
 		}
 	}
-	
+
 	return result.String(), nil
 }
 
@@ -196,11 +196,11 @@ func DefaultTheme() Theme {
 // RenderSimpleList renders nodes as a simple list (fallback)
 func (r *ASCIIRenderer) RenderSimpleList(graphData *GraphData) string {
 	var result strings.Builder
-	
+
 	if graphData.Title != "" {
 		result.WriteString(fmt.Sprintf("%s\n%s\n\n", graphData.Title, strings.Repeat("=", len(graphData.Title))))
 	}
-	
+
 	// Sort nodes by type then by label
 	sortedNodes := make([]Node, len(graphData.Nodes))
 	copy(sortedNodes, graphData.Nodes)
@@ -210,7 +210,7 @@ func (r *ASCIIRenderer) RenderSimpleList(graphData *GraphData) string {
 		}
 		return sortedNodes[i].Label < sortedNodes[j].Label
 	})
-	
+
 	currentType := ""
 	for _, node := range sortedNodes {
 		if node.Type != currentType {
@@ -222,6 +222,6 @@ func (r *ASCIIRenderer) RenderSimpleList(graphData *GraphData) string {
 		}
 		result.WriteString(fmt.Sprintf("  • %s (%s)\n", node.Label, node.ID))
 	}
-	
+
 	return result.String()
 }

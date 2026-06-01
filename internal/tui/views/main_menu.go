@@ -22,10 +22,10 @@ type MainMenuModel struct {
 	config   interface{} // *config.Config
 
 	// State
-	lastScanTime   string
-	resourceCount  int
-	recentScans    []ScanInfo
-	systemStatus   SystemStatus
+	lastScanTime  string
+	resourceCount int
+	recentScans   []ScanInfo
+	systemStatus  SystemStatus
 }
 
 // MenuItem represents a menu item
@@ -49,11 +49,11 @@ type ScanInfo struct {
 
 // SystemStatus represents current system status
 type SystemStatus struct {
-	DatabaseConnected bool
+	DatabaseConnected   bool
 	ProvidersConfigured int
-	LastScanTime      string
-	TotalResources    int
-	HasErrors         bool
+	LastScanTime        string
+	TotalResources      int
+	HasErrors           bool
 }
 
 // Implement list.Item interface for MenuItem
@@ -73,7 +73,7 @@ func (d menuItemDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 
 	// Determine styling based on selection and enabled state
 	var titleStyle, descStyle lipgloss.Style
-	
+
 	if index == m.Index() {
 		// Selected item
 		titleStyle = styles.SelectedMenuItemStyle
@@ -179,14 +179,14 @@ func NewMainMenuModel() *MainMenuModel {
 	l.Styles.Title = styles.TitleStyle
 
 	return &MainMenuModel{
-		state:       NewViewState(types.ViewMain, "Main Menu"),
-		list:        l,
+		state: NewViewState(types.ViewMain, "Main Menu"),
+		list:  l,
 		systemStatus: SystemStatus{
 			DatabaseConnected:   false,
 			ProvidersConfigured: 0,
 			LastScanTime:        "Never",
 			TotalResources:      0,
-			HasErrors:          false,
+			HasErrors:           false,
 		},
 	}
 }
@@ -417,7 +417,7 @@ func (m *MainMenuModel) loadSystemStatus() tea.Cmd {
 			ProvidersConfigured: m.countConfiguredProviders(m.config),
 			LastScanTime:        m.systemStatus.LastScanTime,
 			TotalResources:      m.systemStatus.TotalResources,
-			HasErrors:          false,
+			HasErrors:           false,
 		}
 		return SystemStatusLoadedMsg{Status: status}
 	}

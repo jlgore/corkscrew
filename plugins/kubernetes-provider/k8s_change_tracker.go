@@ -72,18 +72,18 @@ type StorageConfig struct {
 
 // K8sChangeEvent represents a change event from Kubernetes
 type K8sChangeEvent struct {
-	EventType      watch.EventType        `json:"eventType"`
-	Object         runtime.Object         `json:"object"`
-	OldObject      runtime.Object         `json:"oldObject,omitempty"`
-	Timestamp      time.Time              `json:"timestamp"`
-	Namespace      string                 `json:"namespace"`
-	Name           string                 `json:"name"`
-	Kind           string                 `json:"kind"`
-	APIVersion     string                 `json:"apiVersion"`
-	ResourceUID    string                 `json:"resourceUID"`
-	ResourceVersion string                `json:"resourceVersion"`
-	Labels         map[string]string      `json:"labels"`
-	Annotations    map[string]string      `json:"annotations"`
+	EventType       watch.EventType         `json:"eventType"`
+	Object          runtime.Object          `json:"object"`
+	OldObject       runtime.Object          `json:"oldObject,omitempty"`
+	Timestamp       time.Time               `json:"timestamp"`
+	Namespace       string                  `json:"namespace"`
+	Name            string                  `json:"name"`
+	Kind            string                  `json:"kind"`
+	APIVersion      string                  `json:"apiVersion"`
+	ResourceUID     string                  `json:"resourceUID"`
+	ResourceVersion string                  `json:"resourceVersion"`
+	Labels          map[string]string       `json:"labels"`
+	Annotations     map[string]string       `json:"annotations"`
 	OwnerReferences []metav1.OwnerReference `json:"ownerReferences"`
 }
 
@@ -112,17 +112,17 @@ func NewK8sChangeTracker(ctx context.Context, clientset kubernetes.Interface, dy
 
 	// Create base change tracker configuration
 	baseConfig := &ChangeTrackerConfig{
-		Provider:               "kubernetes",
+		Provider:                 "kubernetes",
 		EnableRealTimeMonitoring: config.EnableRealTime,
-		ChangeRetention:        config.ChangeRetention,
-		DriftCheckInterval:     1 * time.Hour,
-		AlertingEnabled:        true,
-		AnalyticsEnabled:       true,
-		CacheEnabled:           true,
-		CacheTTL:               5 * time.Minute,
-		MaxConcurrentStreams:   100,
-		BatchSize:              1000,
-		MaxQueryTimeRange:      30 * 24 * time.Hour,
+		ChangeRetention:          config.ChangeRetention,
+		DriftCheckInterval:       1 * time.Hour,
+		AlertingEnabled:          true,
+		AnalyticsEnabled:         true,
+		CacheEnabled:             true,
+		CacheTTL:                 5 * time.Minute,
+		MaxConcurrentStreams:     100,
+		BatchSize:                1000,
+		MaxQueryTimeRange:        30 * 24 * time.Hour,
 	}
 
 	baseTracker := NewBaseChangeTracker("kubernetes", storage, baseConfig)
@@ -132,13 +132,13 @@ func NewK8sChangeTracker(ctx context.Context, clientset kubernetes.Interface, dy
 
 	return &K8sChangeTracker{
 		BaseChangeTracker: baseTracker,
-		clientset:        clientset,
-		dynamicClient:    dynamicClient,
-		informerFactory:  informerFactory,
-		watchNamespaces:  config.WatchNamespaces,
-		clusters:         config.Clusters,
-		config:           config,
-		stopCh:           make(chan struct{}),
+		clientset:         clientset,
+		dynamicClient:     dynamicClient,
+		informerFactory:   informerFactory,
+		watchNamespaces:   config.WatchNamespaces,
+		clusters:          config.Clusters,
+		config:            config,
+		stopCh:            make(chan struct{}),
 	}, nil
 }
 
@@ -193,7 +193,7 @@ func (kct *K8sChangeTracker) StreamChanges(req *StreamRequest, stream ChangeEven
 
 	// Wait for context cancellation
 	<-stream.Context().Done()
-	
+
 	log.Printf("Kubernetes change stream cancelled")
 	return nil
 }
@@ -207,12 +207,12 @@ func (kct *K8sChangeTracker) DetectDrift(ctx context.Context, baseline *DriftBas
 	log.Printf("Starting drift detection for baseline: %s", baseline.ID)
 
 	report := &DriftReport{
-		ID:              fmt.Sprintf("drift_%s_%d", baseline.ID, time.Now().Unix()),
-		BaselineID:      baseline.ID,
-		GeneratedAt:     time.Now(),
-		TotalResources:  len(baseline.Resources),
+		ID:               fmt.Sprintf("drift_%s_%d", baseline.ID, time.Now().Unix()),
+		BaselineID:       baseline.ID,
+		GeneratedAt:      time.Now(),
+		TotalResources:   len(baseline.Resources),
 		DriftedResources: 0,
-		DriftItems:      []*DriftItem{},
+		DriftItems:       []*DriftItem{},
 		Summary: &DriftSummary{
 			DriftByType:    make(map[string]int),
 			DriftByService: make(map[string]int),
@@ -231,15 +231,15 @@ func (kct *K8sChangeTracker) DetectDrift(ctx context.Context, baseline *DriftBas
 			// Resource was deleted
 			report.DriftedResources++
 			report.DriftItems = append(report.DriftItems, &DriftItem{
-				ResourceID:      resourceID,
-				ResourceType:    baselineState.Properties["kind"].(string),
-				DriftType:       "DELETED",
-				Severity:        SeverityHigh,
-				Description:     "Resource was deleted since baseline",
-				DetectedAt:      time.Now(),
-				BaselineValue:   "EXISTS",
-				CurrentValue:    "DELETED",
-				Field:           "existence",
+				ResourceID:    resourceID,
+				ResourceType:  baselineState.Properties["kind"].(string),
+				DriftType:     "DELETED",
+				Severity:      SeverityHigh,
+				Description:   "Resource was deleted since baseline",
+				DetectedAt:    time.Now(),
+				BaselineValue: "EXISTS",
+				CurrentValue:  "DELETED",
+				Field:         "existence",
 			})
 			continue
 		}
@@ -409,7 +409,7 @@ func (kct *K8sChangeTracker) queryResourcesInNamespace(ctx context.Context, reso
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, pod := range pods.Items {
 			// Create a synthetic change event for existing resources
 			change := kct.convertPodToChangeEvent(&pod, watch.Modified)
@@ -424,7 +424,7 @@ func (kct *K8sChangeTracker) queryResourcesInNamespace(ctx context.Context, reso
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, service := range services.Items {
 			change := kct.convertServiceToChangeEvent(&service, watch.Modified)
 			if change != nil && kct.matchesTimeFilter(change, req) {
@@ -438,7 +438,7 @@ func (kct *K8sChangeTracker) queryResourcesInNamespace(ctx context.Context, reso
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, deployment := range deployments.Items {
 			change := kct.convertDeploymentToChangeEvent(&deployment, watch.Modified)
 			if change != nil && kct.matchesTimeFilter(change, req) {
@@ -452,7 +452,7 @@ func (kct *K8sChangeTracker) queryResourcesInNamespace(ctx context.Context, reso
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, configMap := range configMaps.Items {
 			change := kct.convertConfigMapToChangeEvent(&configMap, watch.Modified)
 			if change != nil && kct.matchesTimeFilter(change, req) {
@@ -466,7 +466,7 @@ func (kct *K8sChangeTracker) queryResourcesInNamespace(ctx context.Context, reso
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, secret := range secrets.Items {
 			change := kct.convertSecretToChangeEvent(&secret, watch.Modified)
 			if change != nil && kct.matchesTimeFilter(change, req) {
@@ -548,7 +548,7 @@ func (kct *K8sChangeTracker) startInformers(stream ChangeEventStream) {
 func (kct *K8sChangeTracker) startInformersWithCallback(changeEvents chan<- *ChangeEvent) {
 	// Similar to startInformers but sends to channel instead of stream
 	// This is a simplified version for monitoring
-	
+
 	// Start pod informer
 	podInformer := kct.informerFactory.Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -624,25 +624,25 @@ func (kct *K8sChangeTracker) compareResourceStates(baseline, current *ResourceSt
 	for key, baselineValue := range baseline.Properties {
 		if currentValue, exists := current.Properties[key]; !exists {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["kind"].(string),
-				DriftType:      "MISSING_PROPERTY",
-				Severity:       SeverityMedium,
-				Description:    fmt.Sprintf("Property '%s' missing from current state", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   nil,
-				Field:          key,
+				ResourceType:  baseline.Properties["kind"].(string),
+				DriftType:     "MISSING_PROPERTY",
+				Severity:      SeverityMedium,
+				Description:   fmt.Sprintf("Property '%s' missing from current state", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  nil,
+				Field:         key,
 			})
 		} else if !kct.compareValues(baselineValue, currentValue) {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["kind"].(string),
-				DriftType:      "PROPERTY_CHANGE",
-				Severity:       SeverityMedium,
-				Description:    fmt.Sprintf("Property '%s' value changed", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   currentValue,
-				Field:          key,
+				ResourceType:  baseline.Properties["kind"].(string),
+				DriftType:     "PROPERTY_CHANGE",
+				Severity:      SeverityMedium,
+				Description:   fmt.Sprintf("Property '%s' value changed", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  currentValue,
+				Field:         key,
 			})
 		}
 	}
@@ -651,25 +651,25 @@ func (kct *K8sChangeTracker) compareResourceStates(baseline, current *ResourceSt
 	for key, baselineValue := range baseline.Tags {
 		if currentValue, exists := current.Tags[key]; !exists {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["kind"].(string),
-				DriftType:      "MISSING_LABEL",
-				Severity:       SeverityLow,
-				Description:    fmt.Sprintf("Label '%s' missing from current state", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   nil,
-				Field:          fmt.Sprintf("labels.%s", key),
+				ResourceType:  baseline.Properties["kind"].(string),
+				DriftType:     "MISSING_LABEL",
+				Severity:      SeverityLow,
+				Description:   fmt.Sprintf("Label '%s' missing from current state", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  nil,
+				Field:         fmt.Sprintf("labels.%s", key),
 			})
 		} else if baselineValue != currentValue {
 			driftItems = append(driftItems, &DriftItem{
-				ResourceType:   baseline.Properties["kind"].(string),
-				DriftType:      "LABEL_CHANGE",
-				Severity:       SeverityLow,
-				Description:    fmt.Sprintf("Label '%s' value changed", key),
-				DetectedAt:     time.Now(),
-				BaselineValue:  baselineValue,
-				CurrentValue:   currentValue,
-				Field:          fmt.Sprintf("labels.%s", key),
+				ResourceType:  baseline.Properties["kind"].(string),
+				DriftType:     "LABEL_CHANGE",
+				Severity:      SeverityLow,
+				Description:   fmt.Sprintf("Label '%s' value changed", key),
+				DetectedAt:    time.Now(),
+				BaselineValue: baselineValue,
+				CurrentValue:  currentValue,
+				Field:         fmt.Sprintf("labels.%s", key),
 			})
 		}
 	}
@@ -683,7 +683,7 @@ func (kct *K8sChangeTracker) convertPodToChangeEvent(obj interface{}, eventType 
 	// This is a simplified conversion - in practice you'd extract more metadata
 	resourceID := "pod/example"
 	changeType := kct.mapWatchEventToChangeType(eventType)
-	
+
 	change := &ChangeEvent{
 		ID:           kct.GenerateChangeID(resourceID, time.Now(), changeType),
 		Provider:     "kubernetes",
@@ -709,7 +709,7 @@ func (kct *K8sChangeTracker) convertPodToChangeEvent(obj interface{}, eventType 
 func (kct *K8sChangeTracker) convertServiceToChangeEvent(obj interface{}, eventType watch.EventType) *ChangeEvent {
 	resourceID := "service/example"
 	changeType := kct.mapWatchEventToChangeType(eventType)
-	
+
 	change := &ChangeEvent{
 		ID:           kct.GenerateChangeID(resourceID, time.Now(), changeType),
 		Provider:     "kubernetes",
@@ -735,7 +735,7 @@ func (kct *K8sChangeTracker) convertServiceToChangeEvent(obj interface{}, eventT
 func (kct *K8sChangeTracker) convertDeploymentToChangeEvent(obj interface{}, eventType watch.EventType) *ChangeEvent {
 	resourceID := "deployment/example"
 	changeType := kct.mapWatchEventToChangeType(eventType)
-	
+
 	change := &ChangeEvent{
 		ID:           kct.GenerateChangeID(resourceID, time.Now(), changeType),
 		Provider:     "kubernetes",
@@ -761,7 +761,7 @@ func (kct *K8sChangeTracker) convertDeploymentToChangeEvent(obj interface{}, eve
 func (kct *K8sChangeTracker) convertConfigMapToChangeEvent(obj interface{}, eventType watch.EventType) *ChangeEvent {
 	resourceID := "configmap/example"
 	changeType := kct.mapWatchEventToChangeType(eventType)
-	
+
 	change := &ChangeEvent{
 		ID:           kct.GenerateChangeID(resourceID, time.Now(), changeType),
 		Provider:     "kubernetes",
@@ -787,7 +787,7 @@ func (kct *K8sChangeTracker) convertConfigMapToChangeEvent(obj interface{}, even
 func (kct *K8sChangeTracker) convertSecretToChangeEvent(obj interface{}, eventType watch.EventType) *ChangeEvent {
 	resourceID := "secret/example"
 	changeType := kct.mapWatchEventToChangeType(eventType)
-	
+
 	change := &ChangeEvent{
 		ID:           kct.GenerateChangeID(resourceID, time.Now(), changeType),
 		Provider:     "kubernetes",

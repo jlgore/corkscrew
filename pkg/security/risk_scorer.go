@@ -26,56 +26,56 @@ func NewSecurityRiskScorer(db DatabaseInterface, logger *log.Logger) *SecurityRi
 
 // RiskAssessment represents a comprehensive security risk assessment
 type RiskAssessment struct {
-	ID                    string                 `json:"id"`
-	AssessmentType        string                 `json:"assessment_type"`
-	ScopeDefinition       map[string]interface{} `json:"scope_definition"`
-	OverallRiskScore      float64                `json:"overall_risk_score"`
-	RiskLevel             string                 `json:"risk_level"`
-	RiskTrend             string                 `json:"risk_trend"`
-	IdentityRiskScore     float64                `json:"identity_risk_score"`
-	NetworkRiskScore      float64                `json:"network_risk_score"`
-	DataRiskScore         float64                `json:"data_risk_score"`
-	ComplianceRiskScore   float64                `json:"compliance_risk_score"`
-	OperationalRiskScore  float64                `json:"operational_risk_score"`
-	HighRiskFactors       []RiskFactor           `json:"high_risk_factors"`
-	MediumRiskFactors     []RiskFactor           `json:"medium_risk_factors"`
-	LowRiskFactors        []RiskFactor           `json:"low_risk_factors"`
-	FindingsSummary       FindingsSummary        `json:"findings_summary"`
-	CrossCloudSummary     CrossCloudSummary      `json:"cross_cloud_summary"`
-	ImmediateActions      []Action               `json:"immediate_actions"`
-	ShortTermRecommendations []Action            `json:"short_term_recommendations"`
-	LongTermRecommendations  []Action            `json:"long_term_recommendations"`
-	ComplianceFrameworks  []ComplianceFramework  `json:"compliance_frameworks"`
-	ComplianceScores      map[string]float64     `json:"compliance_scores"`
-	ComplianceGaps        []ComplianceGap        `json:"compliance_gaps"`
-	AssessmentMetadata    AssessmentMetadata     `json:"assessment_metadata"`
-	BaselineAssessmentID  string                 `json:"baseline_assessment_id"`
-	PreviousAssessmentID  string                 `json:"previous_assessment_id"`
-	ImprovementScore      float64                `json:"improvement_score"`
-	Status                string                 `json:"status"`
-	AssessmentVersion     string                 `json:"assessment_version"`
-	AssessmentStartTime   time.Time              `json:"assessment_start_time"`
-	AssessmentEndTime     time.Time              `json:"assessment_end_time"`
-	CreatedAt             time.Time              `json:"created_at"`
-	UpdatedAt             time.Time              `json:"updated_at"`
-	ExecutiveSummary      string                 `json:"executive_summary"`
-	DetailedReportURL     string                 `json:"detailed_report_url"`
+	ID                       string                 `json:"id"`
+	AssessmentType           string                 `json:"assessment_type"`
+	ScopeDefinition          map[string]interface{} `json:"scope_definition"`
+	OverallRiskScore         float64                `json:"overall_risk_score"`
+	RiskLevel                string                 `json:"risk_level"`
+	RiskTrend                string                 `json:"risk_trend"`
+	IdentityRiskScore        float64                `json:"identity_risk_score"`
+	NetworkRiskScore         float64                `json:"network_risk_score"`
+	DataRiskScore            float64                `json:"data_risk_score"`
+	ComplianceRiskScore      float64                `json:"compliance_risk_score"`
+	OperationalRiskScore     float64                `json:"operational_risk_score"`
+	HighRiskFactors          []RiskFactor           `json:"high_risk_factors"`
+	MediumRiskFactors        []RiskFactor           `json:"medium_risk_factors"`
+	LowRiskFactors           []RiskFactor           `json:"low_risk_factors"`
+	FindingsSummary          FindingsSummary        `json:"findings_summary"`
+	CrossCloudSummary        CrossCloudSummary      `json:"cross_cloud_summary"`
+	ImmediateActions         []Action               `json:"immediate_actions"`
+	ShortTermRecommendations []Action               `json:"short_term_recommendations"`
+	LongTermRecommendations  []Action               `json:"long_term_recommendations"`
+	ComplianceFrameworks     []ComplianceFramework  `json:"compliance_frameworks"`
+	ComplianceScores         map[string]float64     `json:"compliance_scores"`
+	ComplianceGaps           []ComplianceGap        `json:"compliance_gaps"`
+	AssessmentMetadata       AssessmentMetadata     `json:"assessment_metadata"`
+	BaselineAssessmentID     string                 `json:"baseline_assessment_id"`
+	PreviousAssessmentID     string                 `json:"previous_assessment_id"`
+	ImprovementScore         float64                `json:"improvement_score"`
+	Status                   string                 `json:"status"`
+	AssessmentVersion        string                 `json:"assessment_version"`
+	AssessmentStartTime      time.Time              `json:"assessment_start_time"`
+	AssessmentEndTime        time.Time              `json:"assessment_end_time"`
+	CreatedAt                time.Time              `json:"created_at"`
+	UpdatedAt                time.Time              `json:"updated_at"`
+	ExecutiveSummary         string                 `json:"executive_summary"`
+	DetailedReportURL        string                 `json:"detailed_report_url"`
 }
 
 // RiskFactor represents an individual risk factor
 type RiskFactor struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Description  string  `json:"description"`
-	Category     string  `json:"category"`
-	Severity     string  `json:"severity"`
-	Impact       float64 `json:"impact"`
-	Likelihood   float64 `json:"likelihood"`
-	RiskScore    float64 `json:"risk_score"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Category     string   `json:"category"`
+	Severity     string   `json:"severity"`
+	Impact       float64  `json:"impact"`
+	Likelihood   float64  `json:"likelihood"`
+	RiskScore    float64  `json:"risk_score"`
 	Evidence     []string `json:"evidence"`
-	Mitigation   string  `json:"mitigation"`
-	ResourceType string  `json:"resource_type"`
-	Provider     string  `json:"provider"`
+	Mitigation   string   `json:"mitigation"`
+	ResourceType string   `json:"resource_type"`
+	Provider     string   `json:"provider"`
 }
 
 // FindingsSummary represents a summary of security findings
@@ -111,10 +111,10 @@ type Action struct {
 
 // ComplianceFramework represents a compliance framework assessment
 type ComplianceFramework struct {
-	Name        string  `json:"name"`
-	Version     string  `json:"version"`
-	Score       float64 `json:"score"`
-	Status      string  `json:"status"`
+	Name        string    `json:"name"`
+	Version     string    `json:"version"`
+	Score       float64   `json:"score"`
+	Status      string    `json:"status"`
 	LastUpdated time.Time `json:"last_updated"`
 }
 
@@ -131,13 +131,13 @@ type ComplianceGap struct {
 
 // AssessmentMetadata represents assessment metadata
 type AssessmentMetadata struct {
-	AssessmentMethod  string   `json:"assessment_method"`
-	Assessor          string   `json:"assessor"`
-	ScopeAccounts     []string `json:"scope_accounts"`
-	ScopeRegions      []string `json:"scope_regions"`
-	ScopeServices     []string `json:"scope_services"`
-	DataSources       []string `json:"data_sources"`
-	AnalysisTools     []string `json:"analysis_tools"`
+	AssessmentMethod string   `json:"assessment_method"`
+	Assessor         string   `json:"assessor"`
+	ScopeAccounts    []string `json:"scope_accounts"`
+	ScopeRegions     []string `json:"scope_regions"`
+	ScopeServices    []string `json:"scope_services"`
+	DataSources      []string `json:"data_sources"`
+	AnalysisTools    []string `json:"analysis_tools"`
 }
 
 // PerformComprehensiveRiskAssessment performs a comprehensive security risk assessment
@@ -211,7 +211,7 @@ func (srs *SecurityRiskScorer) PerformComprehensiveRiskAssessment(ctx context.Co
 	assessment.Status = "completed"
 	assessment.UpdatedAt = time.Now()
 
-	srs.logger.Printf("Completed risk assessment: %s (Overall Risk: %.2f - %s)", 
+	srs.logger.Printf("Completed risk assessment: %s (Overall Risk: %.2f - %s)",
 		assessment.ID, assessment.OverallRiskScore, assessment.RiskLevel)
 
 	return assessment, nil
@@ -247,7 +247,7 @@ func (srs *SecurityRiskScorer) assessIdentityRisks(ctx context.Context, assessme
 
 	// Calculate identity risk score
 	assessment.IdentityRiskScore = srs.calculateCategoryRiskScore(riskFactors)
-	
+
 	// Categorize risk factors
 	srs.categorizeRiskFactors(riskFactors, assessment)
 
@@ -845,12 +845,12 @@ func (srs *SecurityRiskScorer) calculateFederationLikelihood(riskLevel string, c
 		"MEDIUM":   0.5,
 		"LOW":      0.3,
 	}
-	
+
 	likelihood := baseLikelihood[riskLevel]
 	if likelihood == 0 {
 		likelihood = 0.5
 	}
-	
+
 	// Increase likelihood with more occurrences
 	likelihood += math.Min(float64(count)/10.0, 0.3)
 	return math.Min(likelihood, 1.0)
@@ -867,7 +867,7 @@ func (srs *SecurityRiskScorer) calculateEscalationLikelihood(riskLevel string, c
 		"MEDIUM":   0.4,
 		"LOW":      0.2,
 	}
-	
+
 	likelihood := baseLikelihood[riskLevel]
 	likelihood += math.Min(float64(count)/5.0, 0.2)
 	return math.Min(likelihood, 1.0)
@@ -880,7 +880,7 @@ func (srs *SecurityRiskScorer) calculateCertificateLikelihood(riskLevel string, 
 		"MEDIUM":   0.3,
 		"LOW":      0.1,
 	}
-	
+
 	likelihood := baseLikelihood[riskLevel]
 	likelihood += math.Min(float64(count)/15.0, 0.2)
 	return math.Min(likelihood, 1.0)
@@ -893,7 +893,7 @@ func (srs *SecurityRiskScorer) calculatePolicyLikelihood(riskLevel string, count
 		"MEDIUM":   0.3,
 		"LOW":      0.2,
 	}
-	
+
 	likelihood := baseLikelihood[riskLevel]
 	likelihood += math.Min(float64(count)/25.0, 0.2)
 	return math.Min(likelihood, 1.0)
@@ -918,24 +918,24 @@ func (srs *SecurityRiskScorer) generateImmediateActions(assessment *RiskAssessme
 
 	if assessment.OverallRiskScore >= 0.8 {
 		actions = append(actions, Action{
-			ID:          "immediate-001",
-			Name:        "Emergency Security Review",
-			Description: "Conduct immediate review of critical security findings",
-			Priority:    "CRITICAL",
-			Effort:      "high",
-			Timeline:    "24 hours",
+			ID:           "immediate-001",
+			Name:         "Emergency Security Review",
+			Description:  "Conduct immediate review of critical security findings",
+			Priority:     "CRITICAL",
+			Effort:       "high",
+			Timeline:     "24 hours",
 			Stakeholders: []string{"CISO", "Security Team", "Cloud Architects"},
 		})
 	}
 
 	if len(assessment.HighRiskFactors) > 0 {
 		actions = append(actions, Action{
-			ID:          "immediate-002",
-			Name:        "Address High-Risk Factors",
-			Description: "Prioritize remediation of high-risk security factors",
-			Priority:    "HIGH",
-			Effort:      "medium",
-			Timeline:    "72 hours",
+			ID:           "immediate-002",
+			Name:         "Address High-Risk Factors",
+			Description:  "Prioritize remediation of high-risk security factors",
+			Priority:     "HIGH",
+			Effort:       "medium",
+			Timeline:     "72 hours",
 			Stakeholders: []string{"Security Team", "DevOps"},
 		})
 	}
@@ -947,23 +947,23 @@ func (srs *SecurityRiskScorer) generateShortTermRecommendations(assessment *Risk
 	var actions []Action
 
 	actions = append(actions, Action{
-		ID:          "short-001",
-		Name:        "Implement MFA for Cross-Cloud Access",
-		Description: "Enable multi-factor authentication for all cross-cloud access scenarios",
-		Priority:    "HIGH",
-		Effort:      "medium",
-		Timeline:    "2 weeks",
+		ID:           "short-001",
+		Name:         "Implement MFA for Cross-Cloud Access",
+		Description:  "Enable multi-factor authentication for all cross-cloud access scenarios",
+		Priority:     "HIGH",
+		Effort:       "medium",
+		Timeline:     "2 weeks",
 		Stakeholders: []string{"Security Team", "Cloud Teams"},
 	})
 
 	if assessment.IdentityRiskScore >= 0.6 {
 		actions = append(actions, Action{
-			ID:          "short-002",
-			Name:        "Review Identity Federation Policies",
-			Description: "Comprehensive review and hardening of identity federation configurations",
-			Priority:    "HIGH",
-			Effort:      "high",
-			Timeline:    "3 weeks",
+			ID:           "short-002",
+			Name:         "Review Identity Federation Policies",
+			Description:  "Comprehensive review and hardening of identity federation configurations",
+			Priority:     "HIGH",
+			Effort:       "high",
+			Timeline:     "3 weeks",
 			Stakeholders: []string{"Identity Team", "Security Architects"},
 		})
 	}
@@ -975,22 +975,22 @@ func (srs *SecurityRiskScorer) generateLongTermRecommendations(assessment *RiskA
 	var actions []Action
 
 	actions = append(actions, Action{
-		ID:          "long-001",
-		Name:        "Implement Zero Trust Architecture",
-		Description: "Develop and implement comprehensive zero trust security model",
-		Priority:    "MEDIUM",
-		Effort:      "high",
-		Timeline:    "6 months",
+		ID:           "long-001",
+		Name:         "Implement Zero Trust Architecture",
+		Description:  "Develop and implement comprehensive zero trust security model",
+		Priority:     "MEDIUM",
+		Effort:       "high",
+		Timeline:     "6 months",
 		Stakeholders: []string{"Security Team", "Cloud Architects", "Engineering"},
 	})
 
 	actions = append(actions, Action{
-		ID:          "long-002",
-		Name:        "Automated Security Monitoring",
-		Description: "Deploy automated monitoring and alerting for cross-cloud security events",
-		Priority:    "MEDIUM",
-		Effort:      "high",
-		Timeline:    "4 months",
+		ID:           "long-002",
+		Name:         "Automated Security Monitoring",
+		Description:  "Deploy automated monitoring and alerting for cross-cloud security events",
+		Priority:     "MEDIUM",
+		Effort:       "high",
+		Timeline:     "4 months",
 		Stakeholders: []string{"Security Team", "SRE", "DevOps"},
 	})
 

@@ -22,19 +22,19 @@ type TestScenario struct {
 
 // ExpectedResults defines what we expect to find in a test scenario
 type ExpectedResults struct {
-	VPNConnections      int
-	NetworkPeerings     int
-	DirectConnections   int
-	DNSCorrelations     int
-	LoadBalancerCorrs   int
-	SecurityCorrs       int
-	MinConfidence       float64
-	ExpectedPatterns    []string
+	VPNConnections    int
+	NetworkPeerings   int
+	DirectConnections int
+	DNSCorrelations   int
+	LoadBalancerCorrs int
+	SecurityCorrs     int
+	MinConfidence     float64
+	ExpectedPatterns  []string
 }
 
 // TestConfig contains configuration for running tests
 type TestConfig struct {
-	ConfidenceThreshold float64
+	ConfidenceThreshold  float64
 	EnableAllCorrelators bool
 	TimeoutSeconds       int
 }
@@ -49,37 +49,37 @@ func NewMultiCloudNetworkTestSuite() *MultiCloudNetworkTestSuite {
 	suite := &MultiCloudNetworkTestSuite{
 		scenarios: make([]*TestScenario, 0),
 	}
-	
+
 	// Initialize test scenarios
 	suite.initializeTestScenarios()
-	
+
 	return suite
 }
 
 // RunAllTests runs all test scenarios
 func (suite *MultiCloudNetworkTestSuite) RunAllTests(ctx context.Context) (*TestResults, error) {
 	results := &TestResults{
-		TotalTests:   len(suite.scenarios),
-		PassedTests:  0,
-		FailedTests:  0,
-		TestDetails:  make([]*TestResult, 0),
-		StartTime:    time.Now(),
+		TotalTests:  len(suite.scenarios),
+		PassedTests: 0,
+		FailedTests: 0,
+		TestDetails: make([]*TestResult, 0),
+		StartTime:   time.Now(),
 	}
-	
+
 	for _, scenario := range suite.scenarios {
 		testResult := suite.runTestScenario(ctx, scenario)
 		results.TestDetails = append(results.TestDetails, testResult)
-		
+
 		if testResult.Passed {
 			results.PassedTests++
 		} else {
 			results.FailedTests++
 		}
 	}
-	
+
 	results.EndTime = time.Now()
 	results.Duration = results.EndTime.Sub(results.StartTime)
-	
+
 	return results, nil
 }
 
@@ -90,7 +90,7 @@ func (suite *MultiCloudNetworkTestSuite) RunScenario(ctx context.Context, scenar
 			return suite.runTestScenario(ctx, scenario), nil
 		}
 	}
-	
+
 	return nil, fmt.Errorf("scenario not found: %s", scenarioName)
 }
 
@@ -106,41 +106,41 @@ func (suite *MultiCloudNetworkTestSuite) GetScenarioNames() []string {
 // runTestScenario runs a single test scenario
 func (suite *MultiCloudNetworkTestSuite) runTestScenario(ctx context.Context, scenario *TestScenario) *TestResult {
 	result := &TestResult{
-		ScenarioName: scenario.Name,
-		StartTime:    time.Now(),
-		Passed:       false,
-		Errors:       make([]string, 0),
+		ScenarioName:  scenario.Name,
+		StartTime:     time.Now(),
+		Passed:        false,
+		Errors:        make([]string, 0),
 		ActualResults: ActualResults{},
 	}
-	
+
 	// Initialize correlators
 	correlators := suite.createCorrelators(scenario.Config)
-	
+
 	// Run correlation analysis
 	allCorrelations := make([]*CrossCloudCorrelation, 0)
-	
+
 	for _, correlator := range correlators {
 		correlations, err := correlator.FindCorrelations(ctx, scenario.Resources)
 		if err != nil {
-			result.Errors = append(result.Errors, 
+			result.Errors = append(result.Errors,
 				fmt.Sprintf("Correlator %s failed: %v", correlator.GetName(), err))
 			continue
 		}
 		allCorrelations = append(allCorrelations, correlations...)
 	}
-	
+
 	// Analyze results
 	result.ActualResults = suite.analyzeCorrelations(allCorrelations)
-	
+
 	// Validate against expected results
 	result.Passed = suite.validateResults(scenario.Expected, result.ActualResults)
-	
+
 	// Add validation details
 	result.ValidationDetails = suite.generateValidationDetails(scenario.Expected, result.ActualResults)
-	
+
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
-	
+
 	return result
 }
 
@@ -148,22 +148,22 @@ func (suite *MultiCloudNetworkTestSuite) runTestScenario(ctx context.Context, sc
 func (suite *MultiCloudNetworkTestSuite) initializeTestScenarios() {
 	// Scenario 1: AWS-Azure VPN Connection
 	suite.scenarios = append(suite.scenarios, suite.createAWSAzureVPNScenario())
-	
+
 	// Scenario 2: Multi-cloud web application with load balancers
 	suite.scenarios = append(suite.scenarios, suite.createMultiCloudWebAppScenario())
-	
+
 	// Scenario 3: DNS-based load balancing across providers
 	suite.scenarios = append(suite.scenarios, suite.createDNSLoadBalancingScenario())
-	
+
 	// Scenario 4: Security group rule overlap
 	suite.scenarios = append(suite.scenarios, suite.createSecurityRuleOverlapScenario())
-	
+
 	// Scenario 5: Network peering simulation
 	suite.scenarios = append(suite.scenarios, suite.createNetworkPeeringScenario())
-	
+
 	// Scenario 6: Direct connection scenario
 	suite.scenarios = append(suite.scenarios, suite.createDirectConnectionScenario())
-	
+
 	// Scenario 7: Complex hybrid cloud network
 	suite.scenarios = append(suite.scenarios, suite.createHybridCloudNetworkScenario())
 }
@@ -181,10 +181,10 @@ func (suite *MultiCloudNetworkTestSuite) createAWSAzureVPNScenario() *TestScenar
 			Region:   "us-east-1",
 			Attributes: map[string]interface{}{
 				"vpn_config": map[string]interface{}{
-					"type":           "ipsec.1",
-					"ike_version":    "2",
-					"peer_ip":        "20.62.184.10",
-					"local_networks": []string{"10.0.0.0/16"},
+					"type":            "ipsec.1",
+					"ike_version":     "2",
+					"peer_ip":         "20.62.184.10",
+					"local_networks":  []string{"10.0.0.0/16"},
 					"remote_networks": []string{"10.1.0.0/16"},
 				},
 				"state": "available",
@@ -202,10 +202,10 @@ func (suite *MultiCloudNetworkTestSuite) createAWSAzureVPNScenario() *TestScenar
 			Region:   "eastus",
 			Attributes: map[string]interface{}{
 				"vpn_config": map[string]interface{}{
-					"type":           "ipsec.1",
-					"ike_version":    "2",
-					"peer_ip":        "3.208.123.45",
-					"local_networks": []string{"10.1.0.0/16"},
+					"type":            "ipsec.1",
+					"ike_version":     "2",
+					"peer_ip":         "3.208.123.45",
+					"local_networks":  []string{"10.1.0.0/16"},
 					"remote_networks": []string{"10.0.0.0/16"},
 				},
 				"state": "connected",
@@ -215,14 +215,14 @@ func (suite *MultiCloudNetworkTestSuite) createAWSAzureVPNScenario() *TestScenar
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "AWS-Azure VPN Connection",
 		Description: "Test VPN connection detection between AWS and Azure",
 		Resources:   resources,
 		Expected: ExpectedResults{
-			VPNConnections: 1,
-			MinConfidence:  0.8,
+			VPNConnections:   1,
+			MinConfidence:    0.8,
 			ExpectedPatterns: []string{"site_to_site_vpn"},
 		},
 		Config: TestConfig{
@@ -278,7 +278,7 @@ func (suite *MultiCloudNetworkTestSuite) createMultiCloudWebAppScenario() *TestS
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "Multi-Cloud Web Application",
 		Description: "Test load balancer correlation in multi-cloud web app setup",
@@ -348,7 +348,7 @@ func (suite *MultiCloudNetworkTestSuite) createDNSLoadBalancingScenario() *TestS
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "DNS Load Balancing",
 		Description: "Test DNS-based load balancing across multiple providers",
@@ -402,30 +402,30 @@ func (suite *MultiCloudNetworkTestSuite) createSecurityRuleOverlapScenario() *Te
 			Attributes: map[string]interface{}{
 				"security_rules": []map[string]interface{}{
 					{
-						"name":                     "AllowHTTP",
-						"protocol":                 "Tcp",
-						"destination_port_range":   "80",
-						"source_address_prefix":    "*",
+						"name":                       "AllowHTTP",
+						"protocol":                   "Tcp",
+						"destination_port_range":     "80",
+						"source_address_prefix":      "*",
 						"destination_address_prefix": "*",
-						"access":                   "Allow",
-						"direction":                "Inbound",
-						"priority":                 1000,
+						"access":                     "Allow",
+						"direction":                  "Inbound",
+						"priority":                   1000,
 					},
 					{
-						"name":                     "AllowHTTPS",
-						"protocol":                 "Tcp",
-						"destination_port_range":   "443",
-						"source_address_prefix":    "*",
+						"name":                       "AllowHTTPS",
+						"protocol":                   "Tcp",
+						"destination_port_range":     "443",
+						"source_address_prefix":      "*",
 						"destination_address_prefix": "*",
-						"access":                   "Allow",
-						"direction":                "Inbound",
-						"priority":                 1010,
+						"access":                     "Allow",
+						"direction":                  "Inbound",
+						"priority":                   1010,
 					},
 				},
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "Security Rule Overlap",
 		Description: "Test security group rule overlap detection",
@@ -474,14 +474,14 @@ func (suite *MultiCloudNetworkTestSuite) createNetworkPeeringScenario() *TestSce
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "Network Peering",
 		Description: "Test network peering detection between AWS and Azure",
 		Resources:   resources,
 		Expected: ExpectedResults{
-			NetworkPeerings: 1,
-			MinConfidence:   0.8,
+			NetworkPeerings:  1,
+			MinConfidence:    0.8,
 			ExpectedPatterns: []string{"network_peering"},
 		},
 		Config: TestConfig{
@@ -523,7 +523,7 @@ func (suite *MultiCloudNetworkTestSuite) createDirectConnectionScenario() *TestS
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "Direct Connection",
 		Description: "Test direct connection detection between AWS Direct Connect and Azure ExpressRoute",
@@ -608,7 +608,7 @@ func (suite *MultiCloudNetworkTestSuite) createHybridCloudNetworkScenario() *Tes
 			},
 		},
 	}
-	
+
 	return &TestScenario{
 		Name:        "Hybrid Cloud Network",
 		Description: "Complex scenario with multiple correlation types across AWS, Azure, and GCP",
@@ -631,7 +631,7 @@ func (suite *MultiCloudNetworkTestSuite) createHybridCloudNetworkScenario() *Tes
 
 func (suite *MultiCloudNetworkTestSuite) createCorrelators(config TestConfig) []Correlator {
 	correlators := make([]Correlator, 0)
-	
+
 	if config.EnableAllCorrelators {
 		correlators = append(correlators,
 			NewVPNConnectionCorrelator(config.ConfidenceThreshold),
@@ -649,7 +649,7 @@ func (suite *MultiCloudNetworkTestSuite) createCorrelators(config TestConfig) []
 			NewDirectConnectionCorrelator(config.ConfidenceThreshold),
 		)
 	}
-	
+
 	return correlators
 }
 
@@ -660,29 +660,29 @@ func (suite *MultiCloudNetworkTestSuite) analyzeCorrelations(correlations []*Cro
 		AverageConfidence: 0.0,
 		Patterns:          make([]string, 0),
 	}
-	
+
 	totalConfidence := 0.0
 	for _, corr := range correlations {
 		results.CorrelationTypes[corr.CorrelationType]++
 		totalConfidence += corr.ConfidenceScore
 		results.Patterns = append(results.Patterns, corr.CorrelationType)
 	}
-	
+
 	if len(correlations) > 0 {
 		results.AverageConfidence = totalConfidence / float64(len(correlations))
 	}
-	
+
 	// Count specific types
 	results.VPNConnections = results.CorrelationTypes["vpn_connection"]
 	results.NetworkPeerings = results.CorrelationTypes["network_peering"]
 	results.DirectConnections = results.CorrelationTypes["direct_connection"]
-	results.DNSCorrelations = results.CorrelationTypes["dns_load_balancing"] + 
-		results.CorrelationTypes["multi_provider_dns"] + 
+	results.DNSCorrelations = results.CorrelationTypes["dns_load_balancing"] +
+		results.CorrelationTypes["multi_provider_dns"] +
 		results.CorrelationTypes["geo_dns_routing"]
-	results.LoadBalancerCorrs = results.CorrelationTypes["backend_pool_correlation"] + 
+	results.LoadBalancerCorrs = results.CorrelationTypes["backend_pool_correlation"] +
 		results.CorrelationTypes["dns_load_balancing"]
 	results.SecurityCorrs = results.CorrelationTypes["security_rule_overlap"]
-	
+
 	return results
 }
 
@@ -691,7 +691,7 @@ func (suite *MultiCloudNetworkTestSuite) validateResults(expected ExpectedResult
 	if actual.AverageConfidence < expected.MinConfidence {
 		return false
 	}
-	
+
 	// Check correlation counts
 	if actual.VPNConnections < expected.VPNConnections ||
 		actual.NetworkPeerings < expected.NetworkPeerings ||
@@ -701,7 +701,7 @@ func (suite *MultiCloudNetworkTestSuite) validateResults(expected ExpectedResult
 		actual.SecurityCorrs < expected.SecurityCorrs {
 		return false
 	}
-	
+
 	// Check expected patterns
 	for _, expectedPattern := range expected.ExpectedPatterns {
 		found := false
@@ -715,19 +715,19 @@ func (suite *MultiCloudNetworkTestSuite) validateResults(expected ExpectedResult
 			return false
 		}
 	}
-	
+
 	return true
 }
 
 func (suite *MultiCloudNetworkTestSuite) generateValidationDetails(expected ExpectedResults, actual ActualResults) map[string]interface{} {
 	details := make(map[string]interface{})
-	
+
 	details["confidence_check"] = map[string]interface{}{
 		"expected_min": expected.MinConfidence,
 		"actual_avg":   actual.AverageConfidence,
 		"passed":       actual.AverageConfidence >= expected.MinConfidence,
 	}
-	
+
 	details["correlation_counts"] = map[string]interface{}{
 		"vpn_connections": map[string]interface{}{
 			"expected": expected.VPNConnections,
@@ -760,19 +760,19 @@ func (suite *MultiCloudNetworkTestSuite) generateValidationDetails(expected Expe
 			"passed":   actual.SecurityCorrs >= expected.SecurityCorrs,
 		},
 	}
-	
+
 	details["pattern_validation"] = map[string]interface{}{
 		"expected_patterns": expected.ExpectedPatterns,
 		"actual_patterns":   actual.Patterns,
 		"missing_patterns":  suite.findMissingPatterns(expected.ExpectedPatterns, actual.Patterns),
 	}
-	
+
 	return details
 }
 
 func (suite *MultiCloudNetworkTestSuite) findMissingPatterns(expected, actual []string) []string {
 	missing := make([]string, 0)
-	
+
 	for _, expectedPattern := range expected {
 		found := false
 		for _, actualPattern := range actual {
@@ -785,44 +785,44 @@ func (suite *MultiCloudNetworkTestSuite) findMissingPatterns(expected, actual []
 			missing = append(missing, expectedPattern)
 		}
 	}
-	
+
 	return missing
 }
 
 // Supporting types
 
 type TestResults struct {
-	TotalTests   int           `json:"total_tests"`
-	PassedTests  int           `json:"passed_tests"`
-	FailedTests  int           `json:"failed_tests"`
-	TestDetails  []*TestResult `json:"test_details"`
-	StartTime    time.Time     `json:"start_time"`
-	EndTime      time.Time     `json:"end_time"`
-	Duration     time.Duration `json:"duration"`
+	TotalTests  int           `json:"total_tests"`
+	PassedTests int           `json:"passed_tests"`
+	FailedTests int           `json:"failed_tests"`
+	TestDetails []*TestResult `json:"test_details"`
+	StartTime   time.Time     `json:"start_time"`
+	EndTime     time.Time     `json:"end_time"`
+	Duration    time.Duration `json:"duration"`
 }
 
 type TestResult struct {
-	ScenarioName        string                 `json:"scenario_name"`
-	Passed              bool                   `json:"passed"`
-	StartTime           time.Time              `json:"start_time"`
-	EndTime             time.Time              `json:"end_time"`
-	Duration            time.Duration          `json:"duration"`
-	ActualResults       ActualResults          `json:"actual_results"`
-	ValidationDetails   map[string]interface{} `json:"validation_details"`
-	Errors              []string               `json:"errors"`
+	ScenarioName      string                 `json:"scenario_name"`
+	Passed            bool                   `json:"passed"`
+	StartTime         time.Time              `json:"start_time"`
+	EndTime           time.Time              `json:"end_time"`
+	Duration          time.Duration          `json:"duration"`
+	ActualResults     ActualResults          `json:"actual_results"`
+	ValidationDetails map[string]interface{} `json:"validation_details"`
+	Errors            []string               `json:"errors"`
 }
 
 type ActualResults struct {
-	TotalCorrelations   int            `json:"total_correlations"`
-	VPNConnections      int            `json:"vpn_connections"`
-	NetworkPeerings     int            `json:"network_peerings"`
-	DirectConnections   int            `json:"direct_connections"`
-	DNSCorrelations     int            `json:"dns_correlations"`
-	LoadBalancerCorrs   int            `json:"loadbalancer_correlations"`
-	SecurityCorrs       int            `json:"security_correlations"`
-	AverageConfidence   float64        `json:"average_confidence"`
-	CorrelationTypes    map[string]int `json:"correlation_types"`
-	Patterns            []string       `json:"patterns"`
+	TotalCorrelations int            `json:"total_correlations"`
+	VPNConnections    int            `json:"vpn_connections"`
+	NetworkPeerings   int            `json:"network_peerings"`
+	DirectConnections int            `json:"direct_connections"`
+	DNSCorrelations   int            `json:"dns_correlations"`
+	LoadBalancerCorrs int            `json:"loadbalancer_correlations"`
+	SecurityCorrs     int            `json:"security_correlations"`
+	AverageConfidence float64        `json:"average_confidence"`
+	CorrelationTypes  map[string]int `json:"correlation_types"`
+	Patterns          []string       `json:"patterns"`
 }
 
 // Phase 3 Security Test Scenarios
@@ -843,14 +843,14 @@ func NewTestScenarioManager(db DatabaseInterface, logger *log.Logger) *TestScena
 
 // SecurityTestScenario represents a comprehensive security test scenario
 type SecurityTestScenario struct {
-	ID                string                     `json:"id"`
-	Name              string                     `json:"name"`
-	Description       string                     `json:"description"`
-	Type              string                     `json:"type"` // identity_federation, security_roles, policy_similarity, certificate_correlation
-	ExpectedOutcome   string                     `json:"expected_outcome"`
-	TestData          SecurityTestData           `json:"test_data"`
+	ID                 string                        `json:"id"`
+	Name               string                        `json:"name"`
+	Description        string                        `json:"description"`
+	Type               string                        `json:"type"` // identity_federation, security_roles, policy_similarity, certificate_correlation
+	ExpectedOutcome    string                        `json:"expected_outcome"`
+	TestData           SecurityTestData              `json:"test_data"`
 	ValidationCriteria []SecurityValidationCriterion `json:"validation_criteria"`
-	CreatedAt         time.Time                  `json:"created_at"`
+	CreatedAt          time.Time                     `json:"created_at"`
 }
 
 // SecurityTestData represents test data for security scenarios
@@ -883,24 +883,24 @@ type SecurityValidationCriterion struct {
 
 // SecurityTestResult represents the result of a security test scenario
 type SecurityTestResult struct {
-	ScenarioID       string                         `json:"scenario_id"`
-	ExecutionTime    time.Time                      `json:"execution_time"`
-	Success          bool                           `json:"success"`
-	FoundCorrelations int                           `json:"found_correlations"`
-	AccuracyScore    float64                        `json:"accuracy_score"`
-	ValidationResults []SecurityValidationResult    `json:"validation_results"`
-	Errors           []string                       `json:"errors"`
-	Metadata         map[string]interface{}         `json:"metadata"`
+	ScenarioID        string                     `json:"scenario_id"`
+	ExecutionTime     time.Time                  `json:"execution_time"`
+	Success           bool                       `json:"success"`
+	FoundCorrelations int                        `json:"found_correlations"`
+	AccuracyScore     float64                    `json:"accuracy_score"`
+	ValidationResults []SecurityValidationResult `json:"validation_results"`
+	Errors            []string                   `json:"errors"`
+	Metadata          map[string]interface{}     `json:"metadata"`
 }
 
 // SecurityValidationResult represents the result of a security validation criterion
 type SecurityValidationResult struct {
-	CriterionID string  `json:"criterion_id"`
-	Passed      bool    `json:"passed"`
-	ActualValue string  `json:"actual_value"`
-	ExpectedValue string `json:"expected_value"`
-	Score       float64 `json:"score"`
-	Details     string  `json:"details"`
+	CriterionID   string  `json:"criterion_id"`
+	Passed        bool    `json:"passed"`
+	ActualValue   string  `json:"actual_value"`
+	ExpectedValue string  `json:"expected_value"`
+	Score         float64 `json:"score"`
+	Details       string  `json:"details"`
 }
 
 // CreateSecurityTestScenarios creates comprehensive test scenarios for Phase 3
@@ -1225,7 +1225,7 @@ func (tsm *TestScenarioManager) createCertificateCorrelationScenario() SecurityT
 	}
 
 	sharedThumbprint := "1234567890abcdef1234567890abcdef12345678"
-	
+
 	scenario.TestData = SecurityTestData{
 		AWSResources: []SecurityTestResource{
 			{
@@ -1236,9 +1236,9 @@ func (tsm *TestScenarioManager) createCertificateCorrelationScenario() SecurityT
 				Region:   "us-east-1",
 				Account:  "123456789012",
 				RawData: map[string]interface{}{
-					"DomainName": "api.example.com",
+					"DomainName":              "api.example.com",
 					"SubjectAlternativeNames": []string{"www.example.com", "app.example.com"},
-					"Certificate": generateTestCertificatePEM("api.example.com", sharedThumbprint),
+					"Certificate":             generateTestCertificatePEM("api.example.com", sharedThumbprint),
 				},
 			},
 		},
@@ -1339,8 +1339,8 @@ func (tsm *TestScenarioManager) createComplexMultiCloudScenario() SecurityTestSc
 				Region:   "us-central1",
 				Account:  "gcp-project-id",
 				RawData: map[string]interface{}{
-					"email":       "multicloud-service-account@project.iam.gserviceaccount.com",
-					"displayName": "Multi-Cloud Service Account",
+					"email":          "multicloud-service-account@project.iam.gserviceaccount.com",
+					"displayName":    "Multi-Cloud Service Account",
 					"oauth2ClientId": "gcp-service-account@project.iam.gserviceaccount.com",
 				},
 			},
@@ -1625,7 +1625,7 @@ func (tsm *TestScenarioManager) executeSecurityScenario(ctx context.Context, sce
 		tsm.logger.Printf("Warning: Failed to cleanup test data for scenario %s: %v", scenario.ID, err)
 	}
 
-	tsm.logger.Printf("Security scenario %s completed: Success=%t, Accuracy=%.2f, Correlations=%d", 
+	tsm.logger.Printf("Security scenario %s completed: Success=%t, Accuracy=%.2f, Correlations=%d",
 		scenario.ID, result.Success, result.AccuracyScore, result.FoundCorrelations)
 
 	return result, nil
@@ -1660,30 +1660,30 @@ func (tsm *TestScenarioManager) insertSecurityTestData(ctx context.Context, test
 
 func (tsm *TestScenarioManager) insertAWSSecurityResource(ctx context.Context, resource SecurityTestResource) error {
 	rawDataJSON, _ := json.Marshal(resource.RawData)
-	
+
 	query := `
 	INSERT INTO aws_resources (id, name, type, arn, raw_data, region, account_id, scanned_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	
+
 	arn := fmt.Sprintf("arn:aws:%s:%s:%s:%s", resource.Type, resource.Region, resource.Account, resource.Name)
-	_, err := tsm.db.QueryContext(ctx, query, resource.ID, resource.Name, resource.Type, arn, 
+	_, err := tsm.db.QueryContext(ctx, query, resource.ID, resource.Name, resource.Type, arn,
 		string(rawDataJSON), resource.Region, resource.Account, time.Now())
-	
+
 	return err
 }
 
 func (tsm *TestScenarioManager) insertAzureSecurityResource(ctx context.Context, resource SecurityTestResource) error {
 	rawDataJSON, _ := json.Marshal(resource.RawData)
-	
+
 	query := `
 	INSERT INTO azure_resources (id, name, type, raw_data, location, subscription_id, scanned_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
-	
+
 	_, err := tsm.db.QueryContext(ctx, query, resource.ID, resource.Name, resource.Type,
 		string(rawDataJSON), resource.Region, resource.Account, time.Now())
-	
+
 	return err
 }
 
@@ -1697,22 +1697,22 @@ func (tsm *TestScenarioManager) insertGCPSecurityResource(ctx context.Context, r
 
 func (tsm *TestScenarioManager) executeIdentityFederationAnalysis(ctx context.Context) ([]interface{}, error) {
 	tsm.logger.Printf("Executing identity federation security analysis")
-	
+
 	// Simulate federation detection with high confidence
 	return []interface{}{
 		map[string]interface{}{
-			"id":             "fed-001",
+			"id":              "fed-001",
 			"federation_type": "oidc_federation",
-			"confidence":     0.96,
-			"evidence":       []string{"matching_oidc_endpoints", "matching_client_ids"},
-			"risk_level":     "HIGH",
+			"confidence":      0.96,
+			"evidence":        []string{"matching_oidc_endpoints", "matching_client_ids"},
+			"risk_level":      "HIGH",
 		},
 	}, nil
 }
 
 func (tsm *TestScenarioManager) executeSecurityRoleAnalysis(ctx context.Context) ([]interface{}, error) {
 	tsm.logger.Printf("Executing security role analysis")
-	
+
 	// Simulate security role relationship detection
 	return []interface{}{
 		map[string]interface{}{
@@ -1727,13 +1727,13 @@ func (tsm *TestScenarioManager) executeSecurityRoleAnalysis(ctx context.Context)
 
 func (tsm *TestScenarioManager) executePolicySimilarityAnalysis(ctx context.Context) ([]interface{}, error) {
 	tsm.logger.Printf("Executing policy similarity analysis")
-	
+
 	// Simulate policy similarity detection
 	return []interface{}{
 		map[string]interface{}{
-			"id":               "policy-001",
-			"similarity_score": 0.87,
-			"similarity_type":  "highly_similar",
+			"id":                "policy-001",
+			"similarity_score":  0.87,
+			"similarity_type":   "highly_similar",
 			"matching_elements": []string{"storage_read", "storage_write", "storage_delete"},
 		},
 	}, nil
@@ -1741,13 +1741,13 @@ func (tsm *TestScenarioManager) executePolicySimilarityAnalysis(ctx context.Cont
 
 func (tsm *TestScenarioManager) executeCertificateCorrelationAnalysis(ctx context.Context) ([]interface{}, error) {
 	tsm.logger.Printf("Executing certificate correlation analysis")
-	
+
 	// Simulate certificate correlation detection
 	return []interface{}{
 		map[string]interface{}{
-			"id":                "cert-001",
-			"correlation_type":  "thumbprint_match",
-			"confidence":        1.0,
+			"id":                  "cert-001",
+			"correlation_type":    "thumbprint_match",
+			"confidence":          1.0,
 			"matching_attributes": []string{"thumbprint_match", "san_match"},
 		},
 	}, nil
@@ -1755,15 +1755,15 @@ func (tsm *TestScenarioManager) executeCertificateCorrelationAnalysis(ctx contex
 
 func (tsm *TestScenarioManager) executeComprehensiveSecurityAnalysis(ctx context.Context) (map[string]interface{}, error) {
 	tsm.logger.Printf("Executing comprehensive security analysis")
-	
+
 	// Simulate comprehensive analysis results
 	return map[string]interface{}{
-		"total_correlations":  5,
-		"escalation_paths":    2,
-		"compliance_gaps":     3,
-		"risk_assessment":     "comprehensive",
-		"overall_risk_score":  0.75,
-		"security_issues":     []string{"missing_mfa", "overprivileged_roles"},
+		"total_correlations": 5,
+		"escalation_paths":   2,
+		"compliance_gaps":    3,
+		"risk_assessment":    "comprehensive",
+		"overall_risk_score": 0.75,
+		"security_issues":    []string{"missing_mfa", "overprivileged_roles"},
 	}, nil
 }
 
@@ -1771,12 +1771,12 @@ func (tsm *TestScenarioManager) executeComprehensiveSecurityAnalysis(ctx context
 
 func (tsm *TestScenarioManager) validateIdentityFederationResults(correlations []interface{}, criteria []SecurityValidationCriterion) []SecurityValidationResult {
 	var results []SecurityValidationResult
-	
+
 	for _, criterion := range criteria {
 		result := SecurityValidationResult{
 			CriterionID: criterion.ID,
 		}
-		
+
 		switch criterion.Type {
 		case "correlation_detected":
 			result.Passed = len(correlations) > 0
@@ -1785,7 +1785,7 @@ func (tsm *TestScenarioManager) validateIdentityFederationResults(correlations [
 			if result.Passed {
 				result.Score = 1.0
 			}
-			
+
 		case "confidence_threshold":
 			if len(correlations) > 0 {
 				if corr, ok := correlations[0].(map[string]interface{}); ok {
@@ -1798,26 +1798,26 @@ func (tsm *TestScenarioManager) validateIdentityFederationResults(correlations [
 				}
 			}
 		}
-		
+
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
 func (tsm *TestScenarioManager) validateSecurityRoleResults(relationships []interface{}, criteria []SecurityValidationCriterion) []SecurityValidationResult {
 	var results []SecurityValidationResult
-	
+
 	for _, criterion := range criteria {
 		result := SecurityValidationResult{
 			CriterionID: criterion.ID,
 		}
-		
+
 		switch criterion.Type {
 		case "correlation_detected":
 			result.Passed = len(relationships) > 0
 			result.ActualValue = fmt.Sprintf("%d", len(relationships))
-			
+
 		case "escalation_detected":
 			hasEscalation := false
 			if len(relationships) > 0 {
@@ -1830,25 +1830,25 @@ func (tsm *TestScenarioManager) validateSecurityRoleResults(relationships []inte
 			result.Passed = hasEscalation
 			result.ActualValue = fmt.Sprintf("%t", hasEscalation)
 		}
-		
+
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
 func (tsm *TestScenarioManager) validatePolicySimilarityResults(similarities []interface{}, criteria []SecurityValidationCriterion) []SecurityValidationResult {
 	var results []SecurityValidationResult
-	
+
 	for _, criterion := range criteria {
 		result := SecurityValidationResult{
 			CriterionID: criterion.ID,
 		}
-		
+
 		switch criterion.Type {
 		case "correlation_detected":
 			result.Passed = len(similarities) > 0
-			
+
 		case "confidence_threshold":
 			if len(similarities) > 0 {
 				if sim, ok := similarities[0].(map[string]interface{}); ok {
@@ -1859,16 +1859,16 @@ func (tsm *TestScenarioManager) validatePolicySimilarityResults(similarities []i
 				}
 			}
 		}
-		
+
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
 func (tsm *TestScenarioManager) validateCertificateCorrelationResults(correlations []interface{}, criteria []SecurityValidationCriterion) []SecurityValidationResult {
 	var results []SecurityValidationResult
-	
+
 	for _, criterion := range criteria {
 		result := SecurityValidationResult{
 			CriterionID: criterion.ID,
@@ -1877,13 +1877,13 @@ func (tsm *TestScenarioManager) validateCertificateCorrelationResults(correlatio
 		}
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
 func (tsm *TestScenarioManager) validateComprehensiveResults(comprehensiveResults map[string]interface{}, criteria []SecurityValidationCriterion) []SecurityValidationResult {
 	var results []SecurityValidationResult
-	
+
 	for _, criterion := range criteria {
 		result := SecurityValidationResult{
 			CriterionID: criterion.ID,
@@ -1892,7 +1892,7 @@ func (tsm *TestScenarioManager) validateComprehensiveResults(comprehensiveResult
 		}
 		results = append(results, result)
 	}
-	
+
 	return results
 }
 
@@ -1901,14 +1901,14 @@ func (tsm *TestScenarioManager) calculateSecurityAccuracyScore(validationResults
 	if len(validationResults) == 0 {
 		return 0.0
 	}
-	
+
 	var totalScore float64
 	for _, result := range validationResults {
 		if result.Passed {
 			totalScore += 1.0
 		}
 	}
-	
+
 	return totalScore / float64(len(validationResults))
 }
 
@@ -1919,13 +1919,13 @@ func (tsm *TestScenarioManager) cleanupSecurityTestData(ctx context.Context, tes
 		query := `DELETE FROM aws_resources WHERE id = ?`
 		tsm.db.QueryContext(ctx, query, resource.ID)
 	}
-	
+
 	// Clean up Azure resources
 	for _, resource := range testData.AzureResources {
 		query := `DELETE FROM azure_resources WHERE id = ?`
 		tsm.db.QueryContext(ctx, query, resource.ID)
 	}
-	
+
 	return nil
 }
 
@@ -1941,55 +1941,55 @@ Thumbprint: %s
 // GenerateSecurityTestReport generates a comprehensive security test report
 func (tsm *TestScenarioManager) GenerateSecurityTestReport(scenarios []SecurityTestScenario, results []SecurityTestResult) string {
 	var report strings.Builder
-	
+
 	report.WriteString("# Phase 3: Identity & Security Test Report\n\n")
 	report.WriteString(fmt.Sprintf("**Generated**: %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
-	
+
 	// Summary
 	totalScenarios := len(scenarios)
 	successfulScenarios := 0
 	totalAccuracy := 0.0
-	
+
 	for _, result := range results {
 		if result.Success {
 			successfulScenarios++
 		}
 		totalAccuracy += result.AccuracyScore
 	}
-	
+
 	avgAccuracy := totalAccuracy / float64(len(results))
-	
+
 	report.WriteString("## Executive Summary\n\n")
 	report.WriteString(fmt.Sprintf("- **Total Scenarios**: %d\n", totalScenarios))
 	report.WriteString(fmt.Sprintf("- **Successful Scenarios**: %d (%.1f%%)\n", successfulScenarios, float64(successfulScenarios)/float64(totalScenarios)*100))
 	report.WriteString(fmt.Sprintf("- **Average Accuracy**: %.2f%%\n", avgAccuracy*100))
 	report.WriteString(fmt.Sprintf("- **Target Accuracy**: 95%%\n"))
-	
+
 	if avgAccuracy >= 0.95 {
 		report.WriteString("- **Status**: ✅ **PASSED** - Target accuracy achieved\n\n")
 	} else {
 		report.WriteString("- **Status**: ❌ **FAILED** - Target accuracy not achieved\n\n")
 	}
-	
+
 	// Detailed Results
 	report.WriteString("## Detailed Results\n\n")
-	
+
 	for i, scenario := range scenarios {
 		result := results[i]
-		
+
 		report.WriteString(fmt.Sprintf("### %s\n\n", scenario.Name))
 		report.WriteString(fmt.Sprintf("**Type**: %s\n", scenario.Type))
 		report.WriteString(fmt.Sprintf("**Description**: %s\n", scenario.Description))
 		report.WriteString(fmt.Sprintf("**Success**: %t\n", result.Success))
 		report.WriteString(fmt.Sprintf("**Accuracy**: %.2f%%\n", result.AccuracyScore*100))
 		report.WriteString(fmt.Sprintf("**Correlations Found**: %d\n", result.FoundCorrelations))
-		
+
 		if len(result.Errors) > 0 {
 			report.WriteString(fmt.Sprintf("**Errors**: %v\n", result.Errors))
 		}
-		
+
 		report.WriteString("\n")
 	}
-	
+
 	return report.String()
 }

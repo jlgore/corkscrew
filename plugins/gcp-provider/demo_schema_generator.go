@@ -66,7 +66,7 @@ func main() {
 
 	// Demo 1: Generate schema from protobuf types
 	fmt.Println("1. Generating schemas from protobuf types:\n")
-	
+
 	// Compute Instance
 	instance := &ComputeInstance{}
 	instanceSchema := generator.GenerateSchemaFromProtoType("Instance", instance)
@@ -103,13 +103,13 @@ func main() {
 
 	// Demo 2: Generate all predefined schemas
 	fmt.Println("\n2. Generating all predefined schemas:\n")
-	
+
 	allSchemas := generator.GenerateSchemas([]string{})
 	fmt.Printf("Total schemas generated: %d\n\n", len(allSchemas.Schemas))
 
 	schemasByService := make(map[string]int)
 	viewCount := 0
-	
+
 	for _, schema := range allSchemas.Schemas {
 		if schema.ResourceType == "view" {
 			viewCount++
@@ -126,7 +126,7 @@ func main() {
 
 	// Demo 3: Show cross-resource views
 	fmt.Println("\n3. Cross-resource analytics views:\n")
-	
+
 	for _, schema := range allSchemas.Schemas {
 		if schema.ResourceType == "view" {
 			fmt.Printf("View: %s\n", schema.Name)

@@ -54,7 +54,7 @@ type KubernetesProvider struct {
 // ProviderConfig holds configuration for the Kubernetes provider
 type ProviderConfig struct {
 	KubeConfigPath  string            `json:"kubeconfig_path"`
-	Contexts        []string          `json:"contexts"`        // Multiple cluster contexts
+	Contexts        []string          `json:"contexts"` // Multiple cluster contexts
 	AllNamespaces   bool              `json:"all_namespaces"`
 	LabelSelectors  map[string]string `json:"label_selectors"`
 	ResourceTypes   []string          `json:"resource_types"`
@@ -77,7 +77,7 @@ type ClusterConnection struct {
 func NewKubernetesProvider() *KubernetesProvider {
 	return &KubernetesProvider{
 		rateLimiter:    rate.NewLimiter(rate.Limit(100), 200), // K8s API can handle high rates
-		maxConcurrency: 20,                                     // Higher concurrency than cloud providers
+		maxConcurrency: 20,                                    // Higher concurrency than cloud providers
 		cache:          NewMultiLevelCache(24 * time.Hour),
 		clusters:       make(map[string]*ClusterConnection),
 	}
@@ -140,11 +140,11 @@ func (p *KubernetesProvider) Initialize(ctx context.Context, req *pb.InitializeR
 		Success: true,
 		Version: "1.0.0",
 		Metadata: map[string]string{
-			"cluster_count":    fmt.Sprintf("%d", len(p.clusters)),
-			"primary_cluster":  p.activeCluster,
-			"all_namespaces":   fmt.Sprintf("%v", config.AllNamespaces),
-			"exclude_system":   fmt.Sprintf("%v", config.ExcludeSystemNS),
-			"watch_mode":       fmt.Sprintf("%v", config.WatchMode),
+			"cluster_count":   fmt.Sprintf("%d", len(p.clusters)),
+			"primary_cluster": p.activeCluster,
+			"all_namespaces":  fmt.Sprintf("%v", config.AllNamespaces),
+			"exclude_system":  fmt.Sprintf("%v", config.ExcludeSystemNS),
+			"watch_mode":      fmt.Sprintf("%v", config.WatchMode),
 		},
 	}, nil
 }
@@ -384,11 +384,11 @@ func (p *KubernetesProvider) ListResources(ctx context.Context, req *pb.ListReso
 	var resourceRefs []*pb.ResourceRef
 	for _, resource := range allResources {
 		resourceRef := &pb.ResourceRef{
-			Id:      resource.Id,
-			Name:    resource.Name,
-			Type:    resource.Type,
-			Service: resource.Service,
-			Region:  resource.Region,
+			Id:              resource.Id,
+			Name:            resource.Name,
+			Type:            resource.Type,
+			Service:         resource.Service,
+			Region:          resource.Region,
 			BasicAttributes: resource.Tags,
 		}
 		resourceRefs = append(resourceRefs, resourceRef)
@@ -399,9 +399,9 @@ func (p *KubernetesProvider) ListResources(ctx context.Context, req *pb.ListReso
 		NextToken:  "", // Kubernetes doesn't use pagination tokens like cloud providers
 		TotalCount: int32(len(allResources)),
 		Metadata: map[string]string{
-			"cluster_count":   fmt.Sprintf("%d", len(clusters)),
-			"resource_count":  fmt.Sprintf("%d", len(allResources)),
-			"scan_timestamp":  time.Now().Format(time.RFC3339),
+			"cluster_count":  fmt.Sprintf("%d", len(clusters)),
+			"resource_count": fmt.Sprintf("%d", len(allResources)),
+			"scan_timestamp": time.Now().Format(time.RFC3339),
 		},
 	}, nil
 }
@@ -435,8 +435,8 @@ func (p *KubernetesProvider) getClustersToScan(req *pb.ListResourcesRequest) []*
 
 // scanClusterResources scans resources in a specific cluster
 func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest) ([]*pb.Resource, error) {
-    // Create scanner with cluster-specific clients
-    scanner := NewResourceScannerForCluster(cluster)
+	// Create scanner with cluster-specific clients
+	scanner := NewResourceScannerForCluster(cluster)
 
 	// Determine which resources to scan
 	var resourcesToScan []string
@@ -450,39 +450,39 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 		resourcesToScan = []string{"all"}
 	}
 
-    // Determine namespaces
-    namespaces := p.getNamespacesToScan(ctx, cluster, req)
+	// Determine namespaces
+	namespaces := p.getNamespacesToScan(ctx, cluster, req)
 
-    // Apply optional label/field selectors
-    labelSel := ""
-    fieldSel := ""
-    if req.Filters != nil {
-        labelSel = req.Filters["label_selector"]
-        fieldSel = req.Filters["field_selector"]
-    }
+	// Apply optional label/field selectors
+	labelSel := ""
+	fieldSel := ""
+	if req.Filters != nil {
+		labelSel = req.Filters["label_selector"]
+		fieldSel = req.Filters["field_selector"]
+	}
 
-    // If selectors present, scan per resource type using specialized paths
-    if labelSel != "" || fieldSel != "" {
-        var all []*pb.Resource
-        for _, rt := range resourcesToScan {
-            var res []*pb.Resource
-            var err error
-            if labelSel != "" {
-                res, err = scanner.ScanWithLabelSelector(ctx, rt, labelSel, namespaces)
-            } else {
-                res, err = scanner.ScanWithFieldSelector(ctx, rt, fieldSel, namespaces)
-            }
-            if err != nil {
-                fmt.Printf("Failed to scan %s with selector: %v\n", rt, err)
-                continue
-            }
-            all = append(all, res...)
-        }
-        return all, nil
-    }
+	// If selectors present, scan per resource type using specialized paths
+	if labelSel != "" || fieldSel != "" {
+		var all []*pb.Resource
+		for _, rt := range resourcesToScan {
+			var res []*pb.Resource
+			var err error
+			if labelSel != "" {
+				res, err = scanner.ScanWithLabelSelector(ctx, rt, labelSel, namespaces)
+			} else {
+				res, err = scanner.ScanWithFieldSelector(ctx, rt, fieldSel, namespaces)
+			}
+			if err != nil {
+				fmt.Printf("Failed to scan %s with selector: %v\n", rt, err)
+				continue
+			}
+			all = append(all, res...)
+		}
+		return all, nil
+	}
 
-    // Default: scan across resource types/namespaces
-    return scanner.ScanResources(ctx, resourcesToScan, namespaces)
+	// Default: scan across resource types/namespaces
+	return scanner.ScanResources(ctx, resourcesToScan, namespaces)
 }
 
 // getNamespacesToScan determines which namespaces to scan
@@ -515,9 +515,9 @@ func (p *KubernetesProvider) getNamespacesToScan(ctx context.Context, cluster *C
 
 // DescribeResource gets detailed information about a specific resource
 func (p *KubernetesProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
-    if !p.initialized {
-        return nil, fmt.Errorf("provider not initialized")
-    }
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
 
 	// Parse resource ID (format: cluster/namespace/kind/name)
 	parts := strings.Split(req.ResourceRef.Id, "/")
@@ -533,18 +533,18 @@ func (p *KubernetesProvider) DescribeResource(ctx context.Context, req *pb.Descr
 		return nil, fmt.Errorf("cluster %s not found", clusterName)
 	}
 
-    // Use a cluster-scoped scanner that has discovery wired
-    scanner := NewResourceScannerForCluster(cluster)
+	// Use a cluster-scoped scanner that has discovery wired
+	scanner := NewResourceScannerForCluster(cluster)
 
-    // Get detailed resource information
-    resource, err := scanner.GetResourceDetails(ctx, cluster, namespace, kind, name)
-    if err != nil {
-        return nil, fmt.Errorf("failed to get resource details: %w", err)
-    }
+	// Get detailed resource information
+	resource, err := scanner.GetResourceDetails(ctx, cluster, namespace, kind, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get resource details: %w", err)
+	}
 
 	// Note: Relationships would be extracted separately in a real implementation
 	// For now, just return the resource
-	
+
 	return &pb.DescribeResourceResponse{
 		Resource: resource,
 	}, nil
@@ -554,16 +554,16 @@ func (p *KubernetesProvider) DescribeResource(ctx context.Context, req *pb.Descr
 func (p *KubernetesProvider) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
 	// This is where auto-generation happens
 	generator := NewScannerGenerator()
-	
+
 	var generatedScanners []*pb.GeneratedScanner
-	
+
 	for _, service := range req.Services {
 		// Generate scanner for each resource type in the service
 		_, err := generator.GenerateServiceScanner(service)
 		if err != nil {
 			continue
 		}
-		
+
 		scanner := &pb.GeneratedScanner{
 			Service:       service,
 			FilePath:      fmt.Sprintf("%s_scanner.go", strings.ToLower(service)),
@@ -572,7 +572,7 @@ func (p *KubernetesProvider) GenerateServiceScanners(ctx context.Context, req *p
 		}
 		generatedScanners = append(generatedScanners, scanner)
 	}
-	
+
 	return &pb.GenerateScannersResponse{
 		Scanners:       generatedScanners,
 		GeneratedCount: int32(len(generatedScanners)),
@@ -601,138 +601,138 @@ func (p *KubernetesProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasR
 
 // BatchScan performs concurrent scanning of multiple services
 func (p *KubernetesProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
-    if !p.initialized {
-        return nil, fmt.Errorf("provider not initialized")
-    }
+	if !p.initialized {
+		return nil, fmt.Errorf("provider not initialized")
+	}
 
-    start := time.Now()
-    // Build a ListResourcesRequest-like struct for cluster/namespaces selection
-    listReq := &pb.ListResourcesRequest{Filters: req.Filters}
-    if len(req.Services) > 0 {
-        if listReq.Filters == nil {
-            listReq.Filters = make(map[string]string)
-        }
-        listReq.Filters["resource_types"] = strings.Join(req.Services, ",")
-    }
+	start := time.Now()
+	// Build a ListResourcesRequest-like struct for cluster/namespaces selection
+	listReq := &pb.ListResourcesRequest{Filters: req.Filters}
+	if len(req.Services) > 0 {
+		if listReq.Filters == nil {
+			listReq.Filters = make(map[string]string)
+		}
+		listReq.Filters["resource_types"] = strings.Join(req.Services, ",")
+	}
 
-    // Determine clusters to scan
-    clusters := p.getClustersToScan(listReq)
-    var allResources []*pb.Resource
-    var errors []string
+	// Determine clusters to scan
+	clusters := p.getClustersToScan(listReq)
+	var allResources []*pb.Resource
+	var errors []string
 
-    for _, cluster := range clusters {
-        resources, err := p.scanClusterResources(ctx, cluster, listReq)
-        if err != nil {
-            errors = append(errors, fmt.Sprintf("cluster %s: %v", cluster.Name, err))
-            continue
-        }
-        allResources = append(allResources, resources...)
-        // Optionally enrich with relationships (basic + cross-resource)
-        if req.IncludeRelationships {
-            // Basic per-resource relationships
-            for _, r := range resources {
-                r.Relationships = p.extractBasicRelationships(r)
-            }
-            // Cross-resource relationships (Service<->Pod based on label selectors)
-            p.enrichServicePodRelationships(resources)
-        }
-    }
+	for _, cluster := range clusters {
+		resources, err := p.scanClusterResources(ctx, cluster, listReq)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("cluster %s: %v", cluster.Name, err))
+			continue
+		}
+		allResources = append(allResources, resources...)
+		// Optionally enrich with relationships (basic + cross-resource)
+		if req.IncludeRelationships {
+			// Basic per-resource relationships
+			for _, r := range resources {
+				r.Relationships = p.extractBasicRelationships(r)
+			}
+			// Cross-resource relationships (Service<->Pod based on label selectors)
+			p.enrichServicePodRelationships(resources)
+		}
+	}
 
-    return &pb.BatchScanResponse{
-        Resources: allResources,
-        Stats: &pb.ScanStats{
-            TotalResources: int32(len(allResources)),
-            DurationMs:     time.Since(start).Milliseconds(),
-        },
-        Errors: errors,
-    }, nil
+	return &pb.BatchScanResponse{
+		Resources: allResources,
+		Stats: &pb.ScanStats{
+			TotalResources: int32(len(allResources)),
+			DurationMs:     time.Since(start).Milliseconds(),
+		},
+		Errors: errors,
+	}, nil
 }
 
 // enrichServicePodRelationships links Services to matching Pods in the same namespace using label selectors
 func (p *KubernetesProvider) enrichServicePodRelationships(resources []*pb.Resource) {
-    // Index pods by namespace
-    podsByNS := make(map[string][]*pb.Resource)
-    services := make([]*pb.Resource, 0)
+	// Index pods by namespace
+	podsByNS := make(map[string][]*pb.Resource)
+	services := make([]*pb.Resource, 0)
 
-    for _, r := range resources {
-        switch r.Type {
-        case "Pod":
-            ns := r.Region
-            podsByNS[ns] = append(podsByNS[ns], r)
-        case "Service":
-            services = append(services, r)
-        }
-    }
+	for _, r := range resources {
+		switch r.Type {
+		case "Pod":
+			ns := r.Region
+			podsByNS[ns] = append(podsByNS[ns], r)
+		case "Service":
+			services = append(services, r)
+		}
+	}
 
-    for _, svc := range services {
-        selector := parseServiceSelectorFromRaw(svc.RawData)
-        if len(selector) == 0 {
-            continue
-        }
-        ns := svc.Region
-        for _, pod := range podsByNS[ns] {
-            if podMatchesSelector(pod, selector) {
-                // Service SELECTS Pod
-                svc.Relationships = append(svc.Relationships, &pb.Relationship{
-                    TargetId:         pod.Id,
-                    TargetType:       pod.Type,
-                    TargetService:    pod.Service,
-                    RelationshipType: "SELECTS",
-                    Properties: map[string]string{
-                        "namespace": ns,
-                    },
-                })
-                // Pod SELECTED_BY Service
-                pod.Relationships = append(pod.Relationships, &pb.Relationship{
-                    TargetId:         svc.Id,
-                    TargetType:       svc.Type,
-                    TargetService:    svc.Service,
-                    RelationshipType: "SELECTED_BY",
-                    Properties: map[string]string{
-                        "namespace": ns,
-                    },
-                })
-            }
-        }
-    }
+	for _, svc := range services {
+		selector := parseServiceSelectorFromRaw(svc.RawData)
+		if len(selector) == 0 {
+			continue
+		}
+		ns := svc.Region
+		for _, pod := range podsByNS[ns] {
+			if podMatchesSelector(pod, selector) {
+				// Service SELECTS Pod
+				svc.Relationships = append(svc.Relationships, &pb.Relationship{
+					TargetId:         pod.Id,
+					TargetType:       pod.Type,
+					TargetService:    pod.Service,
+					RelationshipType: "SELECTS",
+					Properties: map[string]string{
+						"namespace": ns,
+					},
+				})
+				// Pod SELECTED_BY Service
+				pod.Relationships = append(pod.Relationships, &pb.Relationship{
+					TargetId:         svc.Id,
+					TargetType:       svc.Type,
+					TargetService:    svc.Service,
+					RelationshipType: "SELECTED_BY",
+					Properties: map[string]string{
+						"namespace": ns,
+					},
+				})
+			}
+		}
+	}
 }
 
 func parseServiceSelectorFromRaw(raw string) map[string]string {
-    sel := make(map[string]string)
-    if strings.TrimSpace(raw) == "" {
-        return sel
-    }
-    var obj map[string]interface{}
-    if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-        return sel
-    }
-    spec, ok := obj["spec"].(map[string]interface{})
-    if !ok {
-        return sel
-    }
-    if selector, ok := spec["selector"].(map[string]interface{}); ok {
-        for k, v := range selector {
-            if vs, ok := v.(string); ok {
-                sel[k] = vs
-            }
-        }
-    }
-    return sel
+	sel := make(map[string]string)
+	if strings.TrimSpace(raw) == "" {
+		return sel
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return sel
+	}
+	spec, ok := obj["spec"].(map[string]interface{})
+	if !ok {
+		return sel
+	}
+	if selector, ok := spec["selector"].(map[string]interface{}); ok {
+		for k, v := range selector {
+			if vs, ok := v.(string); ok {
+				sel[k] = vs
+			}
+		}
+	}
+	return sel
 }
 
 func podMatchesSelector(pod *pb.Resource, selector map[string]string) bool {
-    if len(selector) == 0 {
-        return false
-    }
-    if pod.Tags == nil {
-        return false
-    }
-    for k, v := range selector {
-        if pod.Tags[k] != v {
-            return false
-        }
-    }
-    return true
+	if len(selector) == 0 {
+		return false
+	}
+	if pod.Tags == nil {
+		return false
+	}
+	for k, v := range selector {
+		if pod.Tags[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // StreamScan streams resources as they are discovered
@@ -759,7 +759,7 @@ func (p *KubernetesProvider) StreamScan(req *pb.StreamScanRequest, stream pb.Clo
 // streamClusterResources streams resources from a specific cluster
 func (p *KubernetesProvider) streamClusterResources(ctx context.Context, cluster *ClusterConnection, req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
 	scanner := NewResourceScannerForCluster(cluster)
-	
+
 	// Create a channel for streaming results
 	resourceChan := make(chan *pb.Resource, 100)
 	errChan := make(chan error, 1)
@@ -838,18 +838,18 @@ func isSystemNamespace(namespace string) bool {
 func (p *KubernetesProvider) getResourcesForAPIGroup(apiGroup string) []string {
 	// This would be populated from discovery
 	// For now, return common resources for the group
-    switch apiGroup {
-    case "core":
-        return []string{"pods", "services", "configmaps", "secrets", "serviceaccounts", "namespaces", "persistentvolumeclaims", "persistentvolumes"}
-    case "apps":
-        return []string{"deployments", "replicasets", "statefulsets", "daemonsets"}
-    case "networking.k8s.io":
-        return []string{"ingresses", "networkpolicies"}
-    case "rbac.authorization.k8s.io":
-        return []string{"roles", "rolebindings", "clusterroles", "clusterrolebindings"}
-    default:
-        return []string{}
-    }
+	switch apiGroup {
+	case "core":
+		return []string{"pods", "services", "configmaps", "secrets", "serviceaccounts", "namespaces", "persistentvolumeclaims", "persistentvolumes"}
+	case "apps":
+		return []string{"deployments", "replicasets", "statefulsets", "daemonsets"}
+	case "networking.k8s.io":
+		return []string{"ingresses", "networkpolicies"}
+	case "rbac.authorization.k8s.io":
+		return []string{"roles", "rolebindings", "clusterroles", "clusterrolebindings"}
+	default:
+		return []string{}
+	}
 }
 
 // GetServiceInfo returns information about a specific Kubernetes API group/service
@@ -860,7 +860,7 @@ func (p *KubernetesProvider) GetServiceInfo(ctx context.Context, req *pb.GetServ
 
 	// In Kubernetes context, "service" is an API group
 	apiGroup := req.Service
-	
+
 	// Use discovery to get API group information
 	groups, err := p.clientset.Discovery().ServerGroups()
 	if err != nil {
@@ -873,27 +873,27 @@ func (p *KubernetesProvider) GetServiceInfo(ctx context.Context, req *pb.GetServ
 		if groupName == "" {
 			groupName = "core" // Core API group has empty name
 		}
-		
+
 		if groupName == apiGroup {
 			// Get resource types for this API group
 			resourceTypes := p.getResourcesForAPIGroup(apiGroup)
-			
+
 			// Get preferred version
 			preferredVersion := group.PreferredVersion.Version
 
 			return &pb.ServiceInfoResponse{
-				ServiceName:         apiGroup,
+				ServiceName:        apiGroup,
 				Version:            preferredVersion,
 				SupportedResources: resourceTypes,
 				RequiredPermissions: []string{
 					"get", "list", "watch", // Basic permissions
 				},
 				Capabilities: map[string]string{
-					"provider":       "kubernetes",
-					"cluster":        p.activeCluster,
-					"api_versions":   p.getVersionsString(group.Versions),
-					"retrieved_at":   time.Now().Format(time.RFC3339),
-					"watch_enabled":  fmt.Sprintf("%v", p.config.WatchMode),
+					"provider":      "kubernetes",
+					"cluster":       p.activeCluster,
+					"api_versions":  p.getVersionsString(group.Versions),
+					"retrieved_at":  time.Now().Format(time.RFC3339),
+					"watch_enabled": fmt.Sprintf("%v", p.config.WatchMode),
 				},
 			}, nil
 		}
@@ -909,10 +909,10 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	}
 
 	startTime := time.Now()
-	
+
 	// In Kubernetes, service is an API group
 	apiGroup := req.Service
-	
+
 	// Get resource types for this API group
 	resourceTypes := p.getResourcesForAPIGroup(apiGroup)
 	if len(resourceTypes) == 0 {
@@ -922,12 +922,12 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 		if err != nil {
 			return nil, fmt.Errorf("failed to discover resources for API group %s: %w", apiGroup, err)
 		}
-		
+
 		// Convert discovered resources to resource type names
 		for _, res := range discoveredResources {
 			resourceTypes = append(resourceTypes, res.Name)
 		}
-		
+
 		// If still no resources found, return empty response
 		if len(resourceTypes) == 0 {
 			return &pb.ScanServiceResponse{
@@ -948,16 +948,16 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	// Scan resources across all configured clusters
 	var allResources []*pb.Resource
 	clusters := p.getClustersToScan(&pb.ListResourcesRequest{})
-	
+
 	for _, cluster := range clusters {
 		scanner := NewResourceScannerForCluster(cluster)
 		namespaces := p.getNamespacesToScan(ctx, cluster, &pb.ListResourcesRequest{})
-		
+
 		resources, err := scanner.ScanResources(ctx, resourceTypes, namespaces)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan resources for cluster %s: %w", cluster.Name, err)
 		}
-		
+
 		// Enrich with relationships if requested
 		if req.IncludeRelationships && p.relationships != nil {
 			for _, resource := range resources {
@@ -965,7 +965,7 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 				resource.Relationships = p.extractBasicRelationships(resource)
 			}
 		}
-		
+
 		allResources = append(allResources, resources...)
 	}
 
@@ -997,7 +997,7 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 
 	ctx := stream.Context()
 	apiGroup := req.Service
-	
+
 	// Get resource types for this API group
 	resourceTypes := p.getResourcesForAPIGroup(apiGroup)
 	if len(resourceTypes) == 0 {
@@ -1012,14 +1012,14 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 
 	// Otherwise, scan and stream from each cluster
 	clusters := p.getClustersToScan(&pb.ListResourcesRequest{})
-	
+
 	for _, cluster := range clusters {
 		scanner := NewResourceScannerForCluster(cluster)
-		
+
 		// Create a channel for streaming results
 		resourceChan := make(chan *pb.Resource, 100)
 		errChan := make(chan error, 1)
-		
+
 		// Start scanning in background
 		go func() {
 			defer close(resourceChan)
@@ -1028,7 +1028,7 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 				errChan <- err
 			}
 		}()
-		
+
 		// Stream resources as they arrive
 		for {
 			select {
@@ -1037,12 +1037,12 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 					// Channel closed, move to next cluster
 					break
 				}
-				
+
 				// Enrich with relationships if requested
 				if req.IncludeRelationships && p.relationships != nil {
 					resource.Relationships = p.extractBasicRelationships(resource)
 				}
-				
+
 				if err := stream.Send(resource); err != nil {
 					return fmt.Errorf("failed to send resource: %w", err)
 				}
@@ -1067,10 +1067,10 @@ func (p *KubernetesProvider) streamWithInformersForService(ctx context.Context, 
 
 	// Create event channel
 	eventChan := make(chan *pb.Resource, 1000)
-	
+
 	// Start informers
 	p.informerCache.StartInformers(ctx, informers, eventChan)
-	
+
 	// Stream events
 	for {
 		select {
@@ -1081,7 +1081,7 @@ func (p *KubernetesProvider) streamWithInformersForService(ctx context.Context, 
 				if req.IncludeRelationships && p.relationships != nil {
 					resource.Relationships = p.extractBasicRelationships(resource)
 				}
-				
+
 				if err := stream.Send(resource); err != nil {
 					return err
 				}
@@ -1098,7 +1098,7 @@ func (p *KubernetesProvider) getAPIGroupForResource(resource *pb.Resource) strin
 	if resource.Service != "" {
 		return resource.Service
 	}
-	
+
 	// Try to infer from type
 	switch resource.Type {
 	case "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim":
@@ -1124,28 +1124,28 @@ func (p *KubernetesProvider) getVersionsString(versions []metav1.GroupVersionFor
 // extractBasicRelationships extracts basic Kubernetes relationships from a resource
 func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []*pb.Relationship {
 	var relationships []*pb.Relationship
-	
+
 	// Parse raw data if available
 	if resource.RawData == "" {
 		return relationships
 	}
-	
+
 	var obj map[string]interface{}
 	if err := json.Unmarshal([]byte(resource.RawData), &obj); err != nil {
 		return relationships
 	}
-	
+
 	// Extract metadata
 	metadata, ok := obj["metadata"].(map[string]interface{})
 	if !ok {
 		return relationships
 	}
-	
+
 	namespace := ""
 	if ns, ok := metadata["namespace"].(string); ok {
 		namespace = ns
 	}
-	
+
 	// 1. Owner References - most common relationship type
 	if ownerRefs, ok := metadata["ownerReferences"].([]interface{}); ok {
 		for _, ownerRef := range ownerRefs {
@@ -1153,13 +1153,13 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 				ownerKind := owner["kind"].(string)
 				ownerName := owner["name"].(string)
 				ownerUID := owner["uid"].(string)
-				
+
 				targetID := fmt.Sprintf("default/%s/%s/%s", namespace, ownerKind, ownerName)
-				
+
 				relationships = append(relationships, &pb.Relationship{
 					RelationshipType: "OWNED_BY",
 					TargetId:         targetID,
-					Properties:       map[string]string{
+					Properties: map[string]string{
 						"owner_kind": ownerKind,
 						"owner_name": ownerName,
 						"owner_uid":  ownerUID,
@@ -1169,7 +1169,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			}
 		}
 	}
-	
+
 	// 2. Pod to Service relationships
 	if resource.Type == "Pod" {
 		// Extract labels from pod
@@ -1186,7 +1186,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			})
 		}
 	}
-	
+
 	// 3. Service to Pod relationships (reverse of above)
 	if resource.Type == "Service" {
 		if spec, ok := obj["spec"].(map[string]interface{}); ok {
@@ -1202,7 +1202,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			}
 		}
 	}
-	
+
 	// 4. ConfigMap/Secret volume mounts
 	if resource.Type == "Pod" {
 		if spec, ok := obj["spec"].(map[string]interface{}); ok {
@@ -1216,7 +1216,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 								targetID := fmt.Sprintf("default/%s/ConfigMap/%s", namespace, cmName)
 								relationships = append(relationships, &pb.Relationship{
 									RelationshipType: "MOUNTS",
-									TargetId: targetID,
+									TargetId:         targetID,
 									Properties: map[string]string{
 										"volume_name": volume["name"].(string),
 										"mount_type":  "configMap",
@@ -1230,7 +1230,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 								targetID := fmt.Sprintf("default/%s/Secret/%s", namespace, secretName)
 								relationships = append(relationships, &pb.Relationship{
 									RelationshipType: "MOUNTS",
-									TargetId: targetID,
+									TargetId:         targetID,
 									Properties: map[string]string{
 										"volume_name": volume["name"].(string),
 										"mount_type":  "secret",
@@ -1244,7 +1244,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 								targetID := fmt.Sprintf("default/%s/PersistentVolumeClaim/%s", namespace, pvcName)
 								relationships = append(relationships, &pb.Relationship{
 									RelationshipType: "MOUNTS",
-									TargetId: targetID,
+									TargetId:         targetID,
 									Properties: map[string]string{
 										"volume_name": volume["name"].(string),
 										"mount_type":  "pvc",
@@ -1257,7 +1257,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			}
 		}
 	}
-	
+
 	// 5. Ingress to Service relationships
 	if resource.Type == "Ingress" {
 		if spec, ok := obj["spec"].(map[string]interface{}); ok {
@@ -1275,7 +1275,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 													targetID := fmt.Sprintf("default/%s/Service/%s", namespace, serviceName)
 													relationships = append(relationships, &pb.Relationship{
 														RelationshipType: "ROUTES_TO",
-																		TargetId: targetID,
+														TargetId:         targetID,
 														Properties: map[string]string{
 															"path": p["path"].(string),
 															"host": r["host"].(string),
@@ -1293,7 +1293,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			}
 		}
 	}
-	
+
 	// 6. NetworkPolicy relationships
 	if resource.Type == "NetworkPolicy" {
 		if spec, ok := obj["spec"].(map[string]interface{}); ok {
@@ -1303,7 +1303,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 					selectorStr := p.labelsToString(matchLabels)
 					relationships = append(relationships, &pb.Relationship{
 						RelationshipType: "APPLIES_TO",
-							Properties: map[string]string{
+						Properties: map[string]string{
 							"pod_selector": selectorStr,
 							"namespace":    namespace,
 						},
@@ -1312,7 +1312,7 @@ func (p *KubernetesProvider) extractBasicRelationships(resource *pb.Resource) []
 			}
 		}
 	}
-	
+
 	return relationships
 }
 

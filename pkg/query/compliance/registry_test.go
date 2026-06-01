@@ -15,15 +15,15 @@ import (
 
 func TestRegistryClient_NewRegistryClient(t *testing.T) {
 	client := NewRegistryClient()
-	
+
 	if client == nil {
 		t.Fatal("Expected client to be created")
 	}
-	
+
 	if client.userAgent != "Corkscrew-Registry-Client/1.0" {
 		t.Errorf("Expected user agent 'Corkscrew-Registry-Client/1.0', got '%s'", client.userAgent)
 	}
-	
+
 	if client.retryConfig.MaxRetries != 3 {
 		t.Errorf("Expected max retries 3, got %d", client.retryConfig.MaxRetries)
 	}
@@ -31,7 +31,7 @@ func TestRegistryClient_NewRegistryClient(t *testing.T) {
 
 func TestRegistryClient_SearchPacks(t *testing.T) {
 	client := NewRegistryClient().WithOfflineMode(true)
-	
+
 	// Initialize cache with test data
 	client.registryCache = &RegistryCache{
 		LastUpdated: time.Now(),
@@ -61,7 +61,7 @@ func TestRegistryClient_SearchPacks(t *testing.T) {
 		},
 		Version: "1.0",
 	}
-	
+
 	tests := []struct {
 		name     string
 		criteria SearchCriteria
@@ -98,7 +98,7 @@ func TestRegistryClient_SearchPacks(t *testing.T) {
 			expected: 0,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -106,11 +106,11 @@ func TestRegistryClient_SearchPacks(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Search failed: %v", err)
 			}
-			
+
 			if len(result.Packs) != tt.expected {
 				t.Errorf("Expected %d packs, got %d", tt.expected, len(result.Packs))
 			}
-			
+
 			if result.Total != tt.expected {
 				t.Errorf("Expected total %d, got %d", tt.expected, result.Total)
 			}
@@ -170,26 +170,26 @@ metadata:
 		}
 	}))
 	defer server.Close()
-	
+
 	// Create temporary cache directory
 	tempDir := t.TempDir()
 	cachePath := filepath.Join(tempDir, "registry.json")
-	
+
 	client := NewRegistryClient()
 	client.cachePath = cachePath
 	client.baseURLs = []string{server.URL}
-	
+
 	ctx := context.Background()
 	err := client.UpdateRegistry(ctx, true)
 	if err != nil {
 		t.Fatalf("UpdateRegistry failed: %v", err)
 	}
-	
+
 	// Verify cache was created
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		t.Error("Cache file was not created")
 	}
-	
+
 	// Verify cache content
 	if client.registryCache == nil {
 		t.Error("Registry cache was not initialized")
@@ -199,10 +199,10 @@ metadata:
 func TestRegistryClient_CacheManagement(t *testing.T) {
 	tempDir := t.TempDir()
 	cachePath := filepath.Join(tempDir, "test-registry.json")
-	
+
 	client := NewRegistryClient()
 	client.cachePath = cachePath
-	
+
 	// Initialize cache with test data
 	client.registryCache = &RegistryCache{
 		LastUpdated: time.Now(),
@@ -217,39 +217,39 @@ func TestRegistryClient_CacheManagement(t *testing.T) {
 		},
 		Version: "1.0",
 	}
-	
+
 	// Test save cache
 	err := client.saveCache()
 	if err != nil {
 		t.Fatalf("Failed to save cache: %v", err)
 	}
-	
+
 	// Verify file exists
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		t.Error("Cache file was not created")
 	}
-	
+
 	// Test load cache
 	client.registryCache = nil
 	err = client.loadCache()
 	if err != nil {
 		t.Fatalf("Failed to load cache: %v", err)
 	}
-	
+
 	if client.registryCache == nil {
 		t.Error("Cache was not loaded")
 	}
-	
+
 	if len(client.registryCache.Packs) != 1 {
 		t.Errorf("Expected 1 pack in cache, got %d", len(client.registryCache.Packs))
 	}
-	
+
 	// Test clear cache
 	err = client.ClearCache()
 	if err != nil {
 		t.Fatalf("Failed to clear cache: %v", err)
 	}
-	
+
 	if len(client.registryCache.Packs) != 0 {
 		t.Errorf("Expected 0 packs after clear, got %d", len(client.registryCache.Packs))
 	}
@@ -257,13 +257,13 @@ func TestRegistryClient_CacheManagement(t *testing.T) {
 
 func TestRegistryClient_OfflineMode(t *testing.T) {
 	client := NewRegistryClient().WithOfflineMode(true)
-	
+
 	if !client.offlineMode {
 		t.Error("Expected offline mode to be enabled")
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// Update should not make network requests in offline mode
 	err := client.UpdateRegistry(ctx, true)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestRegistryClient_OfflineMode(t *testing.T) {
 
 func TestRegistryClient_SearchSorting(t *testing.T) {
 	client := NewRegistryClient().WithOfflineMode(true)
-	
+
 	now := time.Now()
 	client.registryCache = &RegistryCache{
 		LastUpdated: now,
@@ -301,7 +301,7 @@ func TestRegistryClient_SearchSorting(t *testing.T) {
 		},
 		Version: "1.0",
 	}
-	
+
 	tests := []struct {
 		name     string
 		sort     string
@@ -333,7 +333,7 @@ func TestRegistryClient_SearchSorting(t *testing.T) {
 			expected: []string{"gamma", "beta", "alpha"},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -341,16 +341,16 @@ func TestRegistryClient_SearchSorting(t *testing.T) {
 				Sort:  tt.sort,
 				Order: tt.order,
 			}
-			
+
 			result, err := client.SearchPacks(ctx, criteria)
 			if err != nil {
 				t.Fatalf("Search failed: %v", err)
 			}
-			
+
 			if len(result.Packs) != len(tt.expected) {
 				t.Fatalf("Expected %d packs, got %d", len(tt.expected), len(result.Packs))
 			}
-			
+
 			for i, expectedName := range tt.expected {
 				if result.Packs[i].Name != expectedName {
 					t.Errorf("Expected pack %d to be '%s', got '%s'", i, expectedName, result.Packs[i].Name)
@@ -362,7 +362,7 @@ func TestRegistryClient_SearchSorting(t *testing.T) {
 
 func TestRegistryClient_SearchPagination(t *testing.T) {
 	client := NewRegistryClient().WithOfflineMode(true)
-	
+
 	// Create test packs
 	packs := make(map[string]PackInfo)
 	for i := 0; i < 10; i++ {
@@ -373,7 +373,7 @@ func TestRegistryClient_SearchPagination(t *testing.T) {
 			Provider:  "aws",
 		}
 	}
-	
+
 	client.registryCache = &RegistryCache{
 		LastUpdated: time.Now(),
 		TTL:         24 * time.Hour,
@@ -381,9 +381,9 @@ func TestRegistryClient_SearchPagination(t *testing.T) {
 		Packs:       packs,
 		Version:     "1.0",
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// Test pagination
 	criteria := SearchCriteria{
 		Limit:  3,
@@ -391,28 +391,28 @@ func TestRegistryClient_SearchPagination(t *testing.T) {
 		Sort:   "name",
 		Order:  "asc",
 	}
-	
+
 	result, err := client.SearchPacks(ctx, criteria)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
-	
+
 	if result.Total != 10 {
 		t.Errorf("Expected total 10, got %d", result.Total)
 	}
-	
+
 	if len(result.Packs) != 3 {
 		t.Errorf("Expected 3 packs in result, got %d", len(result.Packs))
 	}
-	
+
 	if result.Limit != 3 {
 		t.Errorf("Expected limit 3, got %d", result.Limit)
 	}
-	
+
 	if result.Offset != 2 {
 		t.Errorf("Expected offset 2, got %d", result.Offset)
 	}
-	
+
 	// Verify correct packs are returned (should be pack-02, pack-03, pack-04)
 	expectedNames := []string{"pack-02", "pack-03", "pack-04"}
 	for i, expected := range expectedNames {
@@ -424,21 +424,21 @@ func TestRegistryClient_SearchPagination(t *testing.T) {
 
 func TestRegistryClient_GetCacheInfo(t *testing.T) {
 	client := NewRegistryClient().WithOfflineMode(true)
-	
+
 	// Explicitly set cache to nil to test empty state
 	client.registryCache = nil
-	
+
 	// Test with empty cache
 	info, err := client.GetCacheInfo()
 	if err != nil {
 		t.Fatalf("GetCacheInfo failed: %v", err)
 	}
-	
+
 	status, exists := info["status"]
 	if !exists || status != "empty" {
 		t.Errorf("Expected status 'empty', got '%v'", status)
 	}
-	
+
 	// Test with populated cache
 	client.registryCache = &RegistryCache{
 		LastUpdated: time.Now(),
@@ -450,20 +450,20 @@ func TestRegistryClient_GetCacheInfo(t *testing.T) {
 		},
 		Version: "1.0",
 	}
-	
+
 	info, err = client.GetCacheInfo()
 	if err != nil {
 		t.Fatalf("GetCacheInfo failed: %v", err)
 	}
-	
+
 	if info["pack_count"] != 2 {
 		t.Errorf("Expected pack_count 2, got %v", info["pack_count"])
 	}
-	
+
 	if info["version"] != "1.0" {
 		t.Errorf("Expected version '1.0', got '%v'", info["version"])
 	}
-	
+
 	if info["offline_mode"] != true {
 		t.Errorf("Expected offline_mode true, got %v", info["offline_mode"])
 	}
@@ -472,41 +472,41 @@ func TestRegistryClient_GetCacheInfo(t *testing.T) {
 func TestRegistryClient_RetryLogic(t *testing.T) {
 	// Count requests
 	requestCount := 0
-	
+
 	// Create server that fails first 2 requests, succeeds on 3rd
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		
+
 		if requestCount <= 2 {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		
+
 		// Success response for any request
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("{}"))
 	}))
 	defer server.Close()
-	
+
 	client := NewRegistryClient()
 	client.retryConfig = RetryConfig{
 		MaxRetries: 3,
 		RetryDelay: 10 * time.Millisecond,
 		Backoff:    1.5,
 	}
-	
+
 	// Test the retry logic directly with doRequestWithRetry
 	req, err := http.NewRequest("GET", server.URL+"/test", nil)
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
-	
+
 	resp, err := client.doRequestWithRetry(req)
 	if err != nil {
 		t.Fatalf("Request should succeed after retries: %v", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if requestCount != 3 {
 		t.Errorf("Expected 3 requests (2 failures + 1 success), got %d", requestCount)
 	}
@@ -514,7 +514,7 @@ func TestRegistryClient_RetryLogic(t *testing.T) {
 
 func TestMatchesCriteria(t *testing.T) {
 	client := NewRegistryClient()
-	
+
 	pack := PackInfo{
 		Name:        "aws-security",
 		Description: "AWS security compliance pack",
@@ -524,7 +524,7 @@ func TestMatchesCriteria(t *testing.T) {
 		Categories:  []string{"security"},
 		Namespace:   "org/aws-security",
 	}
-	
+
 	tests := []struct {
 		name     string
 		criteria SearchCriteria
@@ -596,7 +596,7 @@ func TestMatchesCriteria(t *testing.T) {
 			expected: false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := client.matchesCriteria(pack, tt.criteria)

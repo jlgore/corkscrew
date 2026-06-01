@@ -17,14 +17,14 @@ func (ca *ChangeAnalytics) AnalyzeChanges(query *ChangeQuery) (*ChangeAnalysisRe
 	}
 
 	report := &ChangeAnalysisReport{
-		TotalChanges:    len(changes),
-		AnalysisTime:    time.Now(),
-		TimeRange:       fmt.Sprintf("%v to %v", query.StartTime, query.EndTime),
-		ChangesByType:   make(map[string]int),
+		TotalChanges:      len(changes),
+		AnalysisTime:      time.Now(),
+		TimeRange:         fmt.Sprintf("%v to %v", query.StartTime, query.EndTime),
+		ChangesByType:     make(map[string]int),
 		ChangesBySeverity: make(map[string]int),
 		ChangesByService:  make(map[string]int),
-		Trends:          []*ChangeTrend{},
-		Recommendations: []string{},
+		Trends:            []*ChangeTrend{},
+		Recommendations:   []string{},
 	}
 
 	// Analyze change patterns
@@ -44,14 +44,14 @@ func (ca *ChangeAnalytics) AnalyzeChanges(query *ChangeQuery) (*ChangeAnalysisRe
 
 // ChangeAnalysisReport represents the results of change analysis
 type ChangeAnalysisReport struct {
-	TotalChanges      int                    `json:"total_changes"`
-	AnalysisTime      time.Time              `json:"analysis_time"`
-	TimeRange         string                 `json:"time_range"`
-	ChangesByType     map[string]int         `json:"changes_by_type"`
-	ChangesBySeverity map[string]int         `json:"changes_by_severity"`
-	ChangesByService  map[string]int         `json:"changes_by_service"`
-	Trends            []*ChangeTrend         `json:"trends"`
-	Recommendations   []string               `json:"recommendations"`
+	TotalChanges      int            `json:"total_changes"`
+	AnalysisTime      time.Time      `json:"analysis_time"`
+	TimeRange         string         `json:"time_range"`
+	ChangesByType     map[string]int `json:"changes_by_type"`
+	ChangesBySeverity map[string]int `json:"changes_by_severity"`
+	ChangesByService  map[string]int `json:"changes_by_service"`
+	Trends            []*ChangeTrend `json:"trends"`
+	Recommendations   []string       `json:"recommendations"`
 }
 
 // ChangeTrend represents a trend in change patterns
@@ -111,7 +111,7 @@ func (ca *ChangeAnalytics) generateRecommendationsForChanges(changes []*ChangeEv
 func (as *AlertingSystem) SendAlert(change *ChangeEvent) error {
 	// Determine if this change requires an alert
 	if as.shouldAlert(change) {
-		log.Printf("🚨 ALERT: %s change in %s service - Resource: %s", 
+		log.Printf("🚨 ALERT: %s change in %s service - Resource: %s",
 			change.Severity, change.Service, change.ResourceID)
 		// In a real implementation, this would send alerts via email, Slack, etc.
 	}

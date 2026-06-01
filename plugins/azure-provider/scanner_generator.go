@@ -27,20 +27,20 @@ func NewAzureScannerGenerator(subID string) *AzureScannerGenerator {
 
 // ScannerTemplateData holds data for generating scanner code
 type ScannerTemplateData struct {
-	ServiceName         string
-	ResourceType        string
-	ResourceTypeLower   string
-	ClientType          string
-	SDKClient           string
-	PackageName         string
-	ResourceGraphQuery  string
+	ServiceName           string
+	ResourceType          string
+	ResourceTypeLower     string
+	ClientType            string
+	SDKClient             string
+	PackageName           string
+	ResourceGraphQuery    string
 	RequiresResourceGroup bool
-	ListOperation       string
-	PaginationType      string
-	RetryAttempts       int
-	Relationships       []RelationshipMapping
-	BatchSize           int
-	EnableTelemetry     bool
+	ListOperation         string
+	PaginationType        string
+	RetryAttempts         int
+	Relationships         []RelationshipMapping
+	BatchSize             int
+	EnableTelemetry       bool
 }
 
 // RelationshipMapping defines how to extract relationships from resources
@@ -55,7 +55,7 @@ type ResourceGraphClientInterface interface {
 	ExecuteQuery(ctx context.Context, query string) ([]map[string]interface{}, error)
 }
 
-// AzureClientFactoryInterface interface for testing (renamed to avoid conflict)  
+// AzureClientFactoryInterface interface for testing (renamed to avoid conflict)
 type AzureClientFactoryInterface interface {
 	GetClient(resourceType string) (interface{}, error)
 	NewResourceGroupsClient() interface{}
@@ -64,40 +64,40 @@ type AzureClientFactoryInterface interface {
 // GenerateHybridScanner generates a hybrid scanner for the specified resource type
 func (g *AzureScannerGenerator) GenerateHybridScanner(resourceType *pb.ResourceType, serviceName string) (string, error) {
 	data := g.buildTemplateData(resourceType, serviceName)
-	
+
 	scannerTemplate := g.getHybridScannerTemplate()
 	if scannerTemplate == nil {
 		return "", fmt.Errorf("failed to get scanner template")
 	}
-	
+
 	var output strings.Builder
 	err := scannerTemplate.Execute(&output, data)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute scanner template: %w", err)
 	}
-	
+
 	return output.String(), nil
 }
 
 // buildTemplateData builds template data from resource type information
 func (g *AzureScannerGenerator) buildTemplateData(resourceType *pb.ResourceType, serviceName string) *ScannerTemplateData {
 	data := &ScannerTemplateData{
-		ServiceName:         g.formatServiceName(serviceName),
-		ResourceType:        resourceType.Name,
-		ResourceTypeLower:   strings.ToLower(resourceType.Name),
-		ClientType:          g.getClientType(resourceType.TypeName),
-		SDKClient:           g.getSDKClientName(resourceType.TypeName),
-		PackageName:         g.getPackageName(resourceType.TypeName),
-		ResourceGraphQuery:  g.buildResourceGraphQuery(resourceType.TypeName),
+		ServiceName:           g.formatServiceName(serviceName),
+		ResourceType:          resourceType.Name,
+		ResourceTypeLower:     strings.ToLower(resourceType.Name),
+		ClientType:            g.getClientType(resourceType.TypeName),
+		SDKClient:             g.getSDKClientName(resourceType.TypeName),
+		PackageName:           g.getPackageName(resourceType.TypeName),
+		ResourceGraphQuery:    g.buildResourceGraphQuery(resourceType.TypeName),
 		RequiresResourceGroup: g.requiresResourceGroup(resourceType.TypeName),
-		ListOperation:       resourceType.ListOperation,
-		PaginationType:      "standard",
-		RetryAttempts:       3,
-		Relationships:       g.buildRelationshipMappings(resourceType.TypeName),
-		BatchSize:           100,
-		EnableTelemetry:     true,
+		ListOperation:         resourceType.ListOperation,
+		PaginationType:        "standard",
+		RetryAttempts:         3,
+		Relationships:         g.buildRelationshipMappings(resourceType.TypeName),
+		BatchSize:             100,
+		EnableTelemetry:       true,
 	}
-	
+
 	return data
 }
 
@@ -612,15 +612,15 @@ func (g *AzureScannerGenerator) getClientType(resourceType string) string {
 	if len(parts) >= 2 {
 		service := strings.TrimPrefix(parts[0], "Microsoft.")
 		resource := parts[1]
-		
+
 		// Convert plural to singular and add Client suffix
 		if strings.HasSuffix(resource, "s") {
 			resource = strings.TrimSuffix(resource, "s")
 		}
-		
+
 		return fmt.Sprintf("arm%s.%sClient", strings.ToLower(service), strings.Title(resource))
 	}
-	
+
 	return "armresources.Client"
 }
 
@@ -656,20 +656,20 @@ func (g *AzureScannerGenerator) requiresResourceGroup(resourceType string) bool 
 	// Determine if resource type requires resource group enumeration
 	resourceGroupScoped := []string{
 		"Microsoft.Compute/virtualMachines",
-		"Microsoft.Storage/storageAccounts", 
+		"Microsoft.Storage/storageAccounts",
 		"Microsoft.Network/virtualNetworks",
 		"Microsoft.Network/networkInterfaces",
 		"Microsoft.KeyVault/vaults",
 		"Microsoft.Web/sites",
 		"Microsoft.Sql/servers",
 	}
-	
+
 	for _, rgType := range resourceGroupScoped {
 		if strings.EqualFold(resourceType, rgType) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -698,24 +698,24 @@ func (g *AzureScannerGenerator) buildRelationshipMappings(resourceType string) [
 // GenerateServiceScanners generates scanners for all resource types in a service
 func (g *AzureScannerGenerator) GenerateServiceScanners(ctx context.Context, serviceInfo *pb.ServiceInfo) ([]*pb.GeneratedScanner, error) {
 	var scanners []*pb.GeneratedScanner
-	
+
 	for _, resourceType := range serviceInfo.ResourceTypes {
 		_, err := g.GenerateHybridScanner(resourceType, serviceInfo.Name)
 		if err != nil {
 			log.Printf("Failed to generate scanner for %s: %v", resourceType.Name, err)
 			continue
 		}
-		
+
 		scanner := &pb.GeneratedScanner{
 			Service:       serviceInfo.Name,
 			FilePath:      fmt.Sprintf("%s_scanner.go", strings.ToLower(serviceInfo.Name)),
 			ResourceTypes: []string{resourceType.TypeName},
 			GeneratedAt:   timestamppb.Now(),
 		}
-		
+
 		scanners = append(scanners, scanner)
 	}
-	
+
 	return scanners, nil
 }
 
@@ -881,7 +881,7 @@ func (s *AzureBatchScanner) GetBatchMetrics() map[string]interface{} {
 	}{
 		Services: services,
 	}
-	
+
 	tmpl, err := template.New("batchScanner").Funcs(template.FuncMap{
 		"lower": strings.ToLower,
 		"title": strings.Title,
@@ -892,12 +892,12 @@ func (s *AzureBatchScanner) GetBatchMetrics() map[string]interface{} {
 	if err != nil {
 		return "", err
 	}
-	
+
 	var output strings.Builder
 	err = tmpl.Execute(&output, data)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return output.String(), nil
 }

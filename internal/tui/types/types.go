@@ -42,13 +42,13 @@ type Resource struct {
 
 // ScanStatus represents the current scan state
 type ScanStatus struct {
-	Active     bool
-	Progress   float64
-	Operation  string
-	StartTime  time.Time
-	Resources  int
-	Errors     int
-	Providers  []string
+	Active    bool
+	Progress  float64
+	Operation string
+	StartTime time.Time
+	Resources int
+	Errors    int
+	Providers []string
 }
 
 // Core TUI Messages
@@ -105,11 +105,11 @@ type (
 	}
 
 	ScanProgressMsg struct {
-		ScanID     string
-		Progress   float64
-		Operation  string
-		Resources  int
-		Errors     int
+		ScanID    string
+		Progress  float64
+		Operation string
+		Resources int
+		Errors    int
 	}
 
 	ScanCompleteMsg struct {

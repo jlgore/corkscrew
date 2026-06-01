@@ -23,37 +23,37 @@ func (n *NetworkSchemaExtensions) CreateNetworkTopologyExtensions() error {
 	if err := n.createVPNConnectionsTable(); err != nil {
 		return fmt.Errorf("failed to create VPN connections table: %w", err)
 	}
-	
+
 	// Create network peering table
 	if err := n.createNetworkPeeringTable(); err != nil {
 		return fmt.Errorf("failed to create network peering table: %w", err)
 	}
-	
+
 	// Create direct connections table
 	if err := n.createDirectConnectionsTable(); err != nil {
 		return fmt.Errorf("failed to create direct connections table: %w", err)
 	}
-	
+
 	// Create enhanced DNS records table
 	if err := n.createEnhancedDNSTable(); err != nil {
 		return fmt.Errorf("failed to create enhanced DNS table: %w", err)
 	}
-	
+
 	// Create load balancer topology table
 	if err := n.createLoadBalancerTopologyTable(); err != nil {
 		return fmt.Errorf("failed to create load balancer topology table: %w", err)
 	}
-	
+
 	// Create security rule correlations table
 	if err := n.createSecurityRuleCorrelationsTable(); err != nil {
 		return fmt.Errorf("failed to create security rule correlations table: %w", err)
 	}
-	
+
 	// Create network visualization metadata table
 	if err := n.createVisualizationMetadataTable(); err != nil {
 		return fmt.Errorf("failed to create visualization metadata table: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_vpn_connections (
 	if _, err := n.db.Exec(vpnSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_vpn_source_resource ON cross_cloud_vpn_connections(source_resource_id)",
@@ -141,13 +141,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_vpn_connections (
 		"CREATE INDEX IF NOT EXISTS idx_vpn_status ON cross_cloud_vpn_connections(connection_status)",
 		"CREATE INDEX IF NOT EXISTS idx_vpn_correlation ON cross_cloud_vpn_connections(correlation_id)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create VPN index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_peering (
 	if _, err := n.db.Exec(peeringSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_peering_source_network ON cross_cloud_network_peering(source_network_id)",
@@ -243,13 +243,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_peering (
 		"CREATE INDEX IF NOT EXISTS idx_peering_status ON cross_cloud_network_peering(peering_status)",
 		"CREATE INDEX IF NOT EXISTS idx_peering_correlation ON cross_cloud_network_peering(correlation_id)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create peering index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -357,7 +357,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_direct_connections (
 	if _, err := n.db.Exec(directSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_direct_source_resource ON cross_cloud_direct_connections(source_resource_id)",
@@ -368,13 +368,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_direct_connections (
 		"CREATE INDEX IF NOT EXISTS idx_direct_provider ON cross_cloud_direct_connections(service_provider)",
 		"CREATE INDEX IF NOT EXISTS idx_direct_correlation ON cross_cloud_direct_connections(correlation_id)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create direct connection index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -467,7 +467,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_enhanced_dns (
 	if _, err := n.db.Exec(enhancedDNSSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_enhanced_dns_name ON cross_cloud_enhanced_dns(dns_name)",
@@ -479,13 +479,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_enhanced_dns (
 		"CREATE INDEX IF NOT EXISTS idx_enhanced_dns_geo ON cross_cloud_enhanced_dns(geo_continent, geo_country)",
 		"CREATE INDEX IF NOT EXISTS idx_enhanced_dns_cname_target ON cross_cloud_enhanced_dns(ultimate_target)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create enhanced DNS index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -571,7 +571,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_loadbalancer_topology (
 	if _, err := n.db.Exec(lbTopoSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_lb_topo_lb_id ON cross_cloud_loadbalancer_topology(loadbalancer_id)",
@@ -579,13 +579,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_loadbalancer_topology (
 		"CREATE INDEX IF NOT EXISTS idx_lb_topo_type ON cross_cloud_loadbalancer_topology(loadbalancer_type)",
 		"CREATE INDEX IF NOT EXISTS idx_lb_topo_correlation ON cross_cloud_loadbalancer_topology(correlation_type)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create LB topology index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -665,7 +665,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_security_correlations (
 	if _, err := n.db.Exec(securitySQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_sec_corr_source_rule ON cross_cloud_security_correlations(source_rule_id)",
@@ -678,13 +678,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_security_correlations (
 		"CREATE INDEX IF NOT EXISTS idx_sec_corr_risk ON cross_cloud_security_correlations(security_risk_level)",
 		"CREATE INDEX IF NOT EXISTS idx_sec_corr_confidence ON cross_cloud_security_correlations(confidence_score)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create security correlation index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -773,7 +773,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_visualization_metadata (
 	if _, err := n.db.Exec(vizSQL); err != nil {
 		return err
 	}
-	
+
 	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_viz_meta_name ON cross_cloud_visualization_metadata(visualization_name)",
@@ -782,13 +782,13 @@ CREATE TABLE IF NOT EXISTS cross_cloud_visualization_metadata (
 		"CREATE INDEX IF NOT EXISTS idx_viz_meta_created_by ON cross_cloud_visualization_metadata(created_by)",
 		"CREATE INDEX IF NOT EXISTS idx_viz_meta_last_viewed ON cross_cloud_visualization_metadata(last_viewed)",
 	}
-	
+
 	for _, idx := range indexes {
 		if _, err := n.db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create visualization metadata index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -812,7 +812,7 @@ GROUP BY source_provider, target_provider, connection_type;`
 	if _, err := n.db.Exec(vpnSummaryView); err != nil {
 		return fmt.Errorf("failed to create VPN summary view: %w", err)
 	}
-	
+
 	// Create network peering summary view
 	peeringSummaryView := `
 CREATE OR REPLACE VIEW network_peering_summary AS
@@ -831,7 +831,7 @@ GROUP BY source_provider, target_provider, peering_type;`
 	if _, err := n.db.Exec(peeringSummaryView); err != nil {
 		return fmt.Errorf("failed to create peering summary view: %w", err)
 	}
-	
+
 	// Create cross-cloud correlation summary view
 	correlationSummaryView := `
 CREATE OR REPLACE VIEW cross_cloud_correlation_summary AS
@@ -852,6 +852,6 @@ ORDER BY correlation_count DESC;`
 	if _, err := n.db.Exec(correlationSummaryView); err != nil {
 		return fmt.Errorf("failed to create correlation summary view: %w", err)
 	}
-	
+
 	return nil
 }

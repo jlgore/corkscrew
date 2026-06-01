@@ -40,17 +40,17 @@ func TestUtilitiesUsageExample(t *testing.T) {
 		assert.Contains(t, bucketData, "Name")
 		assert.Contains(t, bucketData, "Tags")
 		assert.Contains(t, bucketData, "Region")
-		
+
 		instanceData := mockGen.GenerateEC2InstanceMock("i-" + generateRandomID(8))
 		assert.Contains(t, instanceData, "InstanceId")
 		assert.Contains(t, instanceData, "InstanceType")
 		assert.Contains(t, instanceData, "Tags")
-		
+
 		vpcData := mockGen.GenerateVPCMock("vpc-" + generateRandomID(8))
 		assert.Contains(t, vpcData, "VpcId")
 		assert.Contains(t, vpcData, "CidrBlock")
 		assert.Contains(t, vpcData, "Tags")
-		
+
 		t.Logf("Generated mock data successfully")
 	})
 
@@ -59,24 +59,24 @@ func TestUtilitiesUsageExample(t *testing.T) {
 		// Get database stats (should be empty initially)
 		stats, err := dbHelper.GetDatabaseStats()
 		require.NoError(t, err, "Failed to get database stats")
-		
+
 		totalResources, ok := stats["total_resources"].(int)
 		require.True(t, ok, "total_resources should be an integer")
-		
+
 		t.Logf("Total resources in database: %d", totalResources)
-		
+
 		// Validate relationship integrity (should have no orphaned relationships)
 		orphaned, err := dbHelper.ValidateRelationshipIntegrity()
 		require.NoError(t, err, "Failed to validate relationship integrity")
 		assert.Empty(t, orphaned, "Should have no orphaned relationships")
-		
+
 		t.Logf("Database validation passed")
 	})
 
 	// 8. Test resource matching
 	t.Run("ResourceMatching", func(t *testing.T) {
 		matcher := NewResourceMatcher(testCtx)
-		
+
 		// Create some mock resources
 		resources := []map[string]interface{}{
 			{
@@ -96,19 +96,19 @@ func TestUtilitiesUsageExample(t *testing.T) {
 				},
 			},
 		}
-		
+
 		// Test matching by ID
 		found := matcher.MatchResourceByID(resources, "resource-1")
 		assert.True(t, found, "Should find resource by ID")
-		
+
 		// Test matching by tag
 		found = matcher.MatchResourceByTag(resources, "TestID", testCtx.TestID)
 		assert.True(t, found, "Should find resource by tag")
-		
+
 		// Test matching by type
 		s3Resources := matcher.MatchResourceByType(resources, "AWS::S3::Bucket")
 		assert.Len(t, s3Resources, 1, "Should find one S3 bucket")
-		
+
 		t.Logf("Resource matching tests passed")
 	})
 
@@ -123,10 +123,10 @@ func TestUtilitiesUsageExample(t *testing.T) {
 				"region":    testCtx.Region,
 			},
 		}
-		
+
 		expectedKeys := []string{"resources", "relationships", "metadata"}
 		assertHelper.AssertJSONStructure(jsonData, expectedKeys)
-		
+
 		t.Logf("JSON structure assertion passed")
 	})
 }
@@ -149,16 +149,16 @@ func TestScanIntegration(t *testing.T) {
 		scanOptions := map[string]string{
 			"dry-run": "true",
 		}
-		
+
 		result, err := RunCorkscrewScan(testCtx, []string{"s3"}, scanOptions)
 		require.NoError(t, err, "Failed to run scan")
-		
+
 		// The scan might not succeed in a test environment, but we can verify
 		// that the infrastructure is working
 		t.Logf("Scan exit code: %d", result.ExitCode)
 		t.Logf("Scan duration: %v", result.Duration)
 		t.Logf("Scan output length: %d chars", len(result.Output))
-		
+
 		if result.HasValidJSON {
 			t.Logf("Scan produced valid JSON output")
 		}
@@ -238,7 +238,7 @@ func TestMockDataGeneration(t *testing.T) {
 		// Verify tags
 		tags, ok := bucketData["Tags"].([]map[string]string)
 		require.True(t, ok, "Tags should be array of string maps")
-		
+
 		foundTestID := false
 		for _, tag := range tags {
 			if tag["Key"] == "TestID" && tag["Value"] == testCtx.TestID {
@@ -378,7 +378,7 @@ func TestUtilityFunctions(t *testing.T) {
 	t.Run("GenerateTestID", func(t *testing.T) {
 		id1 := GenerateTestID("test")
 		id2 := GenerateTestID("test")
-		
+
 		assert.NotEqual(t, id1, id2, "Generated IDs should be unique")
 		assert.Contains(t, id1, "test", "ID should contain prefix")
 		assert.Contains(t, id2, "test", "ID should contain prefix")
@@ -408,11 +408,11 @@ func TestUtilityFunctions(t *testing.T) {
 	t.Run("RandomIDGeneration", func(t *testing.T) {
 		id1 := generateRandomID(8)
 		id2 := generateRandomID(8)
-		
+
 		assert.Len(t, id1, 8, "ID should be 8 characters")
 		assert.Len(t, id2, 8, "ID should be 8 characters")
 		assert.NotEqual(t, id1, id2, "IDs should be different")
-		
+
 		// Verify only contains valid characters
 		validChars := "abcdefghijklmnopqrstuvwxyz0123456789"
 		for _, char := range id1 {

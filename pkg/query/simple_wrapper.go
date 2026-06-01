@@ -18,13 +18,13 @@ func ExecuteQuery(engine QueryEngine, query string) ([][]interface{}, []string, 
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	// Extract column names
 	var columns []string
 	for _, col := range result.Columns {
 		columns = append(columns, col.Name)
 	}
-	
+
 	// Convert rows from []map[string]interface{} to [][]interface{}
 	var rows [][]interface{}
 	for _, rowMap := range result.Rows {
@@ -34,6 +34,6 @@ func ExecuteQuery(engine QueryEngine, query string) ([][]interface{}, []string, 
 		}
 		rows = append(rows, row)
 	}
-	
+
 	return rows, columns, nil
 }

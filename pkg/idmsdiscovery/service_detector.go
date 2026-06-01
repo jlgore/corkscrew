@@ -12,18 +12,18 @@ import (
 )
 
 type ServiceDetector struct {
-	config        SmartDiscoveryConfig
-	serviceCache  map[string][]models.Service
-	serviceScore  map[string]ServiceScore
-	activityData  map[string]ServiceActivity
-	mutex         sync.RWMutex
+	config       SmartDiscoveryConfig
+	serviceCache map[string][]models.Service
+	serviceScore map[string]ServiceScore
+	activityData map[string]ServiceActivity
+	mutex        sync.RWMutex
 }
 
 type ServiceScore struct {
-	Priority     int
+	Priority      int
 	ActivityScore float64
 	ResourceCount int
-	LastSeen     time.Time
+	LastSeen      time.Time
 }
 
 type ServiceActivity struct {
@@ -51,7 +51,7 @@ func NewServiceDetector(config SmartDiscoveryConfig) *ServiceDetector {
 
 func (sd *ServiceDetector) DetectActiveServices(ctx context.Context, provider CloudProvider, region string) ([]models.Service, error) {
 	cacheKey := sd.getCacheKey(provider.GetName(), region)
-	
+
 	sd.mutex.RLock()
 	cached, exists := sd.serviceCache[cacheKey]
 	sd.mutex.RUnlock()
@@ -111,7 +111,7 @@ type ServiceActivityData struct {
 func (sd *ServiceDetector) measureServiceActivity(ctx context.Context, provider CloudProvider, service models.Service) ServiceActivity {
 	// Try to discover resources to determine activity
 	resources, err := provider.DiscoverResources(ctx, service)
-	
+
 	hasResources := len(resources) > 0
 	errorRate := 0.0
 	if err != nil {
@@ -167,18 +167,18 @@ func (sd *ServiceDetector) getServicePriorityBoost(serviceName string) float64 {
 	// Core infrastructure services get priority
 	coreServices := map[string]float64{
 		// AWS Core Services
-		"ec2":             0.3,
-		"s3":              0.3,
-		"rds":             0.25,
-		"lambda":          0.25,
-		"iam":             0.3,
-		"vpc":             0.25,
-		"cloudformation":  0.2,
-		"cloudwatch":      0.2,
-		"elb":             0.2,
-		"elbv2":           0.2,
-		"route53":         0.2,
-		
+		"ec2":            0.3,
+		"s3":             0.3,
+		"rds":            0.25,
+		"lambda":         0.25,
+		"iam":            0.3,
+		"vpc":            0.25,
+		"cloudformation": 0.2,
+		"cloudwatch":     0.2,
+		"elb":            0.2,
+		"elbv2":          0.2,
+		"route53":        0.2,
+
 		// Azure Core Services
 		"virtualmachines": 0.3,
 		"azurestorage":    0.3,
@@ -189,25 +189,25 @@ func (sd *ServiceDetector) getServicePriorityBoost(serviceName string) float64 {
 		"resourcegroup":   0.2,
 		"monitor":         0.2,
 		"loadbalancer":    0.2,
-		
+
 		// GCP Core Services
-		"compute":         0.3,
-		"gcpstorage":      0.3,
-		"sql":             0.25,
-		"functions":       0.25,
-		"gcpiam":          0.3,
-		"networking":      0.25,
-		"deployment":      0.2,
-		"monitoring":      0.2,
-		"loadbalancing":   0.2,
-		
+		"compute":       0.3,
+		"gcpstorage":    0.3,
+		"sql":           0.25,
+		"functions":     0.25,
+		"gcpiam":        0.3,
+		"networking":    0.25,
+		"deployment":    0.2,
+		"monitoring":    0.2,
+		"loadbalancing": 0.2,
+
 		// Kubernetes Core
-		"pods":            0.3,
-		"services":        0.3,
-		"deployments":     0.25,
-		"configmaps":      0.2,
-		"secrets":         0.25,
-		"ingress":         0.2,
+		"pods":              0.3,
+		"services":          0.3,
+		"deployments":       0.25,
+		"configmaps":        0.2,
+		"secrets":           0.25,
+		"ingress":           0.2,
 		"persistentvolumes": 0.2,
 	}
 
@@ -243,7 +243,7 @@ func (sd *ServiceDetector) calculatePriority(score float64) int {
 
 func (sd *ServiceDetector) prioritizeServices(services []models.Service) []models.Service {
 	priorities := make([]ServicePriority, len(services))
-	
+
 	for i, service := range services {
 		score := sd.getServiceScoreFromCache(service.Name)
 		priorities[i] = ServicePriority{
@@ -306,7 +306,7 @@ func (sd *ServiceDetector) getServiceKey(provider, region, service string) strin
 }
 
 func (sd *ServiceDetector) isCacheValid(cacheKey string) bool {
-	// Simplified cache validation - in real implementation, 
+	// Simplified cache validation - in real implementation,
 	// would track cache timestamps
 	return false
 }

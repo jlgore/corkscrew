@@ -32,7 +32,7 @@ func (r *MermaidRenderer) RenderASCII(graphData *GraphData) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	// For now, return mermaid content with ASCII borders
 	// In a full implementation, this would use mermaid-ascii or similar
 	ascii := NewASCIIRenderer()
@@ -43,25 +43,25 @@ func (r *MermaidRenderer) RenderASCII(graphData *GraphData) (string, error) {
 // GraphDataToMermaid converts GraphData to Mermaid diagram format
 func (r *MermaidRenderer) GraphDataToMermaid(graphData *GraphData) (string, error) {
 	var result strings.Builder
-	
+
 	// Start with graph declaration
 	result.WriteString("graph TD\n")
-	
+
 	if graphData.Title != "" {
 		// Add title as a comment
 		result.WriteString(fmt.Sprintf("    %%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff0000'}}}%%\n"))
 		result.WriteString(fmt.Sprintf("    %% %s\n", graphData.Title))
 	}
-	
+
 	// Add nodes with styling based on type
 	nodeStyles := make(map[string]string)
 	for _, node := range graphData.Nodes {
 		// Clean node ID for Mermaid (remove special characters)
 		cleanID := r.cleanNodeID(node.ID)
-		
+
 		// Format label to handle special characters
 		cleanLabel := r.escapeLabel(node.Label)
-		
+
 		// Define node with shape based on type
 		switch node.Type {
 		case "vpc":
@@ -87,12 +87,12 @@ func (r *MermaidRenderer) GraphDataToMermaid(graphData *GraphData) (string, erro
 			nodeStyles[cleanID] = "fill:#f5f5f5,stroke:#616161"
 		}
 	}
-	
+
 	// Add edges
 	for _, edge := range graphData.Edges {
 		cleanFromID := r.cleanNodeID(edge.From)
 		cleanToID := r.cleanNodeID(edge.To)
-		
+
 		// Choose arrow style based on relationship type
 		var arrow string
 		switch edge.Type {
@@ -107,7 +107,7 @@ func (r *MermaidRenderer) GraphDataToMermaid(graphData *GraphData) (string, erro
 		default:
 			arrow = "-->"
 		}
-		
+
 		if edge.Label != "" {
 			cleanLabel := r.escapeLabel(edge.Label)
 			result.WriteString(fmt.Sprintf("    %s %s|%s| %s\n", cleanFromID, arrow, cleanLabel, cleanToID))
@@ -115,7 +115,7 @@ func (r *MermaidRenderer) GraphDataToMermaid(graphData *GraphData) (string, erro
 			result.WriteString(fmt.Sprintf("    %s %s %s\n", cleanFromID, arrow, cleanToID))
 		}
 	}
-	
+
 	// Add styling
 	if len(nodeStyles) > 0 {
 		result.WriteString("\n    %% Styling\n")
@@ -124,7 +124,7 @@ func (r *MermaidRenderer) GraphDataToMermaid(graphData *GraphData) (string, erro
 			result.WriteString(fmt.Sprintf("    class %s %sStyle\n", nodeID, nodeID))
 		}
 	}
-	
+
 	return result.String(), nil
 }
 
@@ -144,14 +144,14 @@ func (r *MermaidRenderer) cleanNodeID(id string) string {
 		"{", "_",
 		"}", "_",
 	)
-	
+
 	cleaned := replacer.Replace(id)
-	
+
 	// Ensure it starts with a letter
 	if len(cleaned) > 0 && !isLetter(cleaned[0]) {
 		cleaned = "n" + cleaned
 	}
-	
+
 	return cleaned
 }
 
@@ -170,7 +170,7 @@ func (r *MermaidRenderer) escapeLabel(label string) string {
 		"{", "&#123;",
 		"}", "&#125;",
 	)
-	
+
 	return replacer.Replace(label)
 }
 
@@ -194,19 +194,19 @@ func (r *MermaidRenderer) SetTheme(theme Theme) error {
 // GenerateNetworkDiagram creates a Mermaid network topology diagram
 func (r *MermaidRenderer) GenerateNetworkDiagram(graphData *GraphData) (string, error) {
 	var result strings.Builder
-	
+
 	result.WriteString("graph TD\n")
-	
+
 	if graphData.Title != "" {
 		result.WriteString(fmt.Sprintf("    %% %s\n", graphData.Title))
 	}
-	
+
 	// Group nodes by network hierarchy
 	vpcs := []Node{}
 	subnets := []Node{}
 	instances := []Node{}
 	other := []Node{}
-	
+
 	for _, node := range graphData.Nodes {
 		switch node.Type {
 		case "vpc":
@@ -219,18 +219,18 @@ func (r *MermaidRenderer) GenerateNetworkDiagram(graphData *GraphData) (string, 
 			other = append(other, node)
 		}
 	}
-	
+
 	// Create subgraphs for VPCs
 	for _, vpc := range vpcs {
 		cleanVPCID := r.cleanNodeID(vpc.ID)
 		result.WriteString(fmt.Sprintf("    subgraph %s [\"%s\"]\n", cleanVPCID, vpc.Label))
-		
+
 		// Add subnets in this VPC
 		for _, subnet := range subnets {
 			if r.isConnected(vpc.ID, subnet.ID, graphData.Edges) {
 				cleanSubnetID := r.cleanNodeID(subnet.ID)
 				result.WriteString(fmt.Sprintf("        %s(%s)\n", cleanSubnetID, subnet.Label))
-				
+
 				// Add instances in this subnet
 				for _, instance := range instances {
 					if r.isConnected(subnet.ID, instance.ID, graphData.Edges) {
@@ -240,23 +240,23 @@ func (r *MermaidRenderer) GenerateNetworkDiagram(graphData *GraphData) (string, 
 				}
 			}
 		}
-		
+
 		result.WriteString("    end\n")
 	}
-	
+
 	// Add other resources
 	for _, node := range other {
 		cleanID := r.cleanNodeID(node.ID)
 		result.WriteString(fmt.Sprintf("    %s[%s]\n", cleanID, node.Label))
 	}
-	
+
 	// Add edges
 	for _, edge := range graphData.Edges {
 		cleanFromID := r.cleanNodeID(edge.From)
 		cleanToID := r.cleanNodeID(edge.To)
 		result.WriteString(fmt.Sprintf("    %s --> %s\n", cleanFromID, cleanToID))
 	}
-	
+
 	return result.String(), nil
 }
 

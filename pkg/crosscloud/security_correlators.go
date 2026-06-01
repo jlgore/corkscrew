@@ -52,16 +52,16 @@ type Permission struct {
 
 // CrossAccountRelationship represents a detected cross-account relationship
 type CrossAccountRelationship struct {
-	ID               string            `json:"id"`
-	SourceRole       CrossAccountRole  `json:"source_role"`
-	TargetRole       CrossAccountRole  `json:"target_role"`
-	RelationshipType string            `json:"relationship_type"`
-	AssumptionChain  []string          `json:"assumption_chain"`
-	Confidence       float64           `json:"confidence"`
-	RiskScore        float64           `json:"risk_score"`
-	Evidence         []string          `json:"evidence"`
-	EscalationPaths  []EscalationPath  `json:"escalation_paths"`
-	DetectedAt       time.Time         `json:"detected_at"`
+	ID               string           `json:"id"`
+	SourceRole       CrossAccountRole `json:"source_role"`
+	TargetRole       CrossAccountRole `json:"target_role"`
+	RelationshipType string           `json:"relationship_type"`
+	AssumptionChain  []string         `json:"assumption_chain"`
+	Confidence       float64          `json:"confidence"`
+	RiskScore        float64          `json:"risk_score"`
+	Evidence         []string         `json:"evidence"`
+	EscalationPaths  []EscalationPath `json:"escalation_paths"`
+	DetectedAt       time.Time        `json:"detected_at"`
 }
 
 // EscalationPath represents a potential privilege escalation path
@@ -502,7 +502,7 @@ func (sc *SecurityCorrelator) isServicePrincipal(principal string) bool {
 	servicePatterns := []string{
 		"\\.amazonaws\\.com$",
 		"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", // UUID pattern for Azure
-		"@.*\\.iam\\.gserviceaccount\\.com$",                                  // GCP service account
+		"@.*\\.iam\\.gserviceaccount\\.com$",                             // GCP service account
 	}
 
 	for _, pattern := range servicePatterns {
@@ -789,9 +789,9 @@ func (sc *SecurityCorrelator) PersistSecurityRelationships(ctx context.Context, 
 	for _, rel := range relationships {
 		evidenceJSON, _ := json.Marshal(rel.Evidence)
 		metadataJSON, _ := json.Marshal(map[string]interface{}{
-			"risk_score":        rel.RiskScore,
-			"escalation_paths":  rel.EscalationPaths,
-			"assumption_chain":  rel.AssumptionChain,
+			"risk_score":       rel.RiskScore,
+			"escalation_paths": rel.EscalationPaths,
+			"assumption_chain": rel.AssumptionChain,
 		})
 
 		_, err := stmt.Exec(

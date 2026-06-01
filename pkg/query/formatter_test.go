@@ -419,7 +419,7 @@ func TestFormatterFactory(t *testing.T) {
 	// Test supported formats
 	supportedFormats := factory.GetSupportedFormats()
 	expectedFormats := []string{"csv", "json", "table"}
-	
+
 	if len(supportedFormats) != len(expectedFormats) {
 		t.Errorf("Expected %d supported formats, got %d", len(expectedFormats), len(supportedFormats))
 	}
@@ -501,7 +501,7 @@ func TestFormatterWithCustomNullValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CSV formatting failed: %v", err)
 	}
-	
+
 	output := buf.String()
 	if !strings.Contains(output, "N/A") {
 		t.Error("Expected custom NULL value 'N/A' in CSV output")
@@ -517,7 +517,7 @@ func TestFormatterWithCustomNullValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Table formatting failed: %v", err)
 	}
-	
+
 	output = buf.String()
 	if !strings.Contains(output, "N/A") {
 		t.Error("Expected custom NULL value 'N/A' in table output")

@@ -193,22 +193,22 @@ Example: safe_json_extract(raw_data, '$.Region', 'us-east-1')`,
 // InitializeJSONHelpers registers all JSON helper functions with the DuckDB engine
 func InitializeJSONHelpers(ctx context.Context, db *sql.DB) error {
 	helpers := NewJSONHelpers(db)
-	
+
 	// Register core functions
 	if err := helpers.RegisterJSONFunctions(ctx); err != nil {
 		return fmt.Errorf("failed to register core JSON functions: %w", err)
 	}
-	
+
 	// Register advanced functions
 	if err := helpers.RegisterAdvancedJSONFunctions(ctx); err != nil {
 		return fmt.Errorf("failed to register advanced JSON functions: %w", err)
 	}
-	
+
 	// Validate all functions work
 	if err := helpers.ValidateJSONFunctions(ctx); err != nil {
 		return fmt.Errorf("JSON function validation failed: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -216,7 +216,7 @@ func InitializeJSONHelpers(ctx context.Context, db *sql.DB) error {
 func ListRegisteredJSONFunctions() []string {
 	return []string{
 		"extract_json",
-		"json_path", 
+		"json_path",
 		"has_tag",
 		"count_tags",
 		"safe_json_extract",

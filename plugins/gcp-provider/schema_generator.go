@@ -24,56 +24,56 @@ type GCPSchemaGenerator struct {
 
 // ProtoTypeAnalyzer analyzes Go types generated from protobuf definitions
 type ProtoTypeAnalyzer struct {
-	fileSet      *token.FileSet
-	parsedFiles  map[string]*ast.File
-	typeCache    map[string]*TypeInfo
-	gcpPatterns  *GCPPatterns
+	fileSet     *token.FileSet
+	parsedFiles map[string]*ast.File
+	typeCache   map[string]*TypeInfo
+	gcpPatterns *GCPPatterns
 }
 
 // TypeInfo contains analyzed type information
 type TypeInfo struct {
-	Name         string
-	Package      string
-	Fields       []*FieldInfo
-	IsProtoType  bool
-	GCPResource  *GCPResourceInfo
+	Name        string
+	Package     string
+	Fields      []*FieldInfo
+	IsProtoType bool
+	GCPResource *GCPResourceInfo
 }
 
 // FieldInfo contains field analysis
 type FieldInfo struct {
-	Name         string
-	Type         string
-	JsonTag      string
-	ProtoTag     string
-	IsRepeated   bool
-	IsMap        bool
-	KeyType      string
-	ValueType    string
-	IsOptional   bool
+	Name          string
+	Type          string
+	JsonTag       string
+	ProtoTag      string
+	IsRepeated    bool
+	IsMap         bool
+	KeyType       string
+	ValueType     string
+	IsOptional    bool
 	Documentation string
 }
 
 // GCPResourceInfo contains GCP-specific resource metadata
 type GCPResourceInfo struct {
-	ServiceName    string
-	ResourceType   string
-	HasProject     bool
-	HasZone        bool
-	HasRegion      bool
-	HasLabels      bool
-	HasMetadata    bool
-	Hierarchical   bool
-	IAMEnabled     bool
-	AssetType      string
+	ServiceName  string
+	ResourceType string
+	HasProject   bool
+	HasZone      bool
+	HasRegion    bool
+	HasLabels    bool
+	HasMetadata  bool
+	Hierarchical bool
+	IAMEnabled   bool
+	AssetType    string
 }
 
 // GCPPatterns defines patterns for GCP resource identification
 type GCPPatterns struct {
-	ProjectRegex    *regexp.Regexp
-	ZoneRegex       *regexp.Regexp
-	RegionRegex     *regexp.Regexp
-	ServiceRegex    *regexp.Regexp
-	ResourceRegex   *regexp.Regexp
+	ProjectRegex  *regexp.Regexp
+	ZoneRegex     *regexp.Regexp
+	RegionRegex   *regexp.Regexp
+	ServiceRegex  *regexp.Regexp
+	ResourceRegex *regexp.Regexp
 }
 
 // NewGCPSchemaGenerator creates a new GCP schema generator
@@ -84,17 +84,17 @@ func NewGCPSchemaGenerator() *GCPSchemaGenerator {
 		typeCache:   make(map[string]*TypeInfo),
 		gcpPatterns: initGCPPatterns(),
 	}
-	
+
 	sg := &GCPSchemaGenerator{
 		resourceSchemas:    make(map[string]*pb.Schema),
-		typeAnalyzer:      analyzer,
+		typeAnalyzer:       analyzer,
 		crossResourceViews: make(map[string]string),
 	}
-	
+
 	// Initialize predefined schemas and views
 	sg.initializeSchemas()
 	sg.initializeCrossResourceViews()
-	
+
 	return sg
 }
 
@@ -117,7 +117,7 @@ func initGCPPatterns() *GCPPatterns {
 // GenerateSchemas generates DuckDB schemas for the specified services
 func (sg *GCPSchemaGenerator) GenerateSchemas(services []string) *pb.SchemaResponse {
 	schemas := make([]*pb.Schema, 0)
-	
+
 	// If no specific services requested, return schemas for all known services
 	if len(services) == 0 {
 		for _, schema := range sg.resourceSchemas {
@@ -130,21 +130,21 @@ func (sg *GCPSchemaGenerator) GenerateSchemas(services []string) *pb.SchemaRespo
 			schemas = append(schemas, serviceSchemas...)
 		}
 	}
-	
+
 	// Always include the unified resources table
 	schemas = append(schemas, sg.generateUnifiedResourcesSchema())
-	
+
 	// Add cross-resource views
 	for viewName, viewSQL := range sg.crossResourceViews {
 		schemas = append(schemas, &pb.Schema{
-			Name:        viewName,
-			Service:     "analytics",
+			Name:         viewName,
+			Service:      "analytics",
 			ResourceType: "view",
-			Sql:         viewSQL,
-			Description: "Cross-resource analytics view",
+			Sql:          viewSQL,
+			Description:  "Cross-resource analytics view",
 		})
 	}
-	
+
 	return &pb.SchemaResponse{
 		Schemas: schemas,
 	}
@@ -156,25 +156,25 @@ func (sg *GCPSchemaGenerator) GenerateSchemaFromProtoType(typeName string, proto
 	if typeInfo == nil {
 		return nil
 	}
-	
+
 	tableName := sg.generateTableName(typeInfo)
 	columns := sg.generateColumnsFromTypeInfo(typeInfo)
 	indexes := sg.generateGCPIndexes(typeInfo)
-	
+
 	sql := sg.buildCreateTableSQL(tableName, columns, indexes)
-	
+
 	return &pb.Schema{
-		Name:        tableName,
-		Service:     typeInfo.GCPResource.ServiceName,
+		Name:         tableName,
+		Service:      typeInfo.GCPResource.ServiceName,
 		ResourceType: typeInfo.GCPResource.ResourceType,
-		Sql:         sql,
-		Description: fmt.Sprintf("Schema for %s generated from protobuf type", typeName),
+		Sql:          sql,
+		Description:  fmt.Sprintf("Schema for %s generated from protobuf type", typeName),
 		Metadata: map[string]string{
-			"provider":      "gcp",
-			"proto_type":    typeName,
-			"asset_type":    typeInfo.GCPResource.AssetType,
-			"hierarchical":  strconv.FormatBool(typeInfo.GCPResource.Hierarchical),
-			"iam_enabled":   strconv.FormatBool(typeInfo.GCPResource.IAMEnabled),
+			"provider":     "gcp",
+			"proto_type":   typeName,
+			"asset_type":   typeInfo.GCPResource.AssetType,
+			"hierarchical": strconv.FormatBool(typeInfo.GCPResource.Hierarchical),
+			"iam_enabled":  strconv.FormatBool(typeInfo.GCPResource.IAMEnabled),
 		},
 	}
 }
@@ -183,8 +183,8 @@ func (sg *GCPSchemaGenerator) GenerateSchemaFromProtoType(typeName string, proto
 func (sg *GCPSchemaGenerator) initializeSchemas() {
 	// Compute Engine Instances - Enhanced with GCP patterns
 	sg.resourceSchemas["compute_instances"] = &pb.Schema{
-		Name: "gcp_compute_instances",
-		Service: "compute",
+		Name:         "gcp_compute_instances",
+		Service:      "compute",
 		ResourceType: "Instance",
 		Sql: `CREATE TABLE gcp_compute_instances (
 			-- Resource identifiers
@@ -239,17 +239,17 @@ func (sg *GCPSchemaGenerator) initializeSchemas() {
 		CREATE INDEX idx_creation_timestamp ON gcp_compute_instances(creation_timestamp);`,
 		Description: "Google Compute Engine virtual machine instances with GCP-optimized schema",
 		Metadata: map[string]string{
-			"provider":      "gcp",
-			"asset_type":    "compute.googleapis.com/Instance",
-			"hierarchical":  "true",
-			"iam_enabled":   "true",
+			"provider":     "gcp",
+			"asset_type":   "compute.googleapis.com/Instance",
+			"hierarchical": "true",
+			"iam_enabled":  "true",
 		},
 	}
-	
+
 	// Compute Engine Disks
 	sg.resourceSchemas["compute_disks"] = &pb.Schema{
-		Name: "gcp_compute_disks",
-		Service: "compute",
+		Name:         "gcp_compute_disks",
+		Service:      "compute",
 		ResourceType: "Disk",
 		Sql: `CREATE TABLE gcp_compute_disks (
 			id VARCHAR NOT NULL,
@@ -269,11 +269,11 @@ func (sg *GCPSchemaGenerator) initializeSchemas() {
 		)`,
 		Description: "Google Compute Engine persistent disks",
 	}
-	
+
 	// Cloud Storage Buckets
 	sg.resourceSchemas["storage_buckets"] = &pb.Schema{
-		Name: "gcp_storage_buckets",
-		Service: "storage",
+		Name:         "gcp_storage_buckets",
+		Service:      "storage",
 		ResourceType: "Bucket",
 		Sql: `CREATE TABLE gcp_storage_buckets (
 			id VARCHAR NOT NULL,
@@ -295,11 +295,11 @@ func (sg *GCPSchemaGenerator) initializeSchemas() {
 		)`,
 		Description: "Google Cloud Storage buckets",
 	}
-	
+
 	// Kubernetes Engine Clusters
 	sg.resourceSchemas["container_clusters"] = &pb.Schema{
-		Name: "gcp_container_clusters",
-		Service: "container",
+		Name:         "gcp_container_clusters",
+		Service:      "container",
 		ResourceType: "Cluster",
 		Sql: `CREATE TABLE gcp_container_clusters (
 			id VARCHAR NOT NULL,
@@ -326,11 +326,11 @@ func (sg *GCPSchemaGenerator) initializeSchemas() {
 		)`,
 		Description: "Google Kubernetes Engine clusters",
 	}
-	
+
 	// BigQuery Datasets
 	sg.resourceSchemas["bigquery_datasets"] = &pb.Schema{
-		Name: "gcp_bigquery_datasets",
-		Service: "bigquery",
+		Name:         "gcp_bigquery_datasets",
+		Service:      "bigquery",
 		ResourceType: "Dataset",
 		Sql: `CREATE TABLE gcp_bigquery_datasets (
 			id VARCHAR NOT NULL,
@@ -349,11 +349,11 @@ func (sg *GCPSchemaGenerator) initializeSchemas() {
 		)`,
 		Description: "Google BigQuery datasets",
 	}
-	
+
 	// Cloud SQL Instances
 	sg.resourceSchemas["cloudsql_instances"] = &pb.Schema{
-		Name: "gcp_cloudsql_instances",
-		Service: "cloudsql",
+		Name:         "gcp_cloudsql_instances",
+		Service:      "cloudsql",
 		ResourceType: "Instance",
 		Sql: `CREATE TABLE gcp_cloudsql_instances (
 			id VARCHAR NOT NULL,
@@ -381,16 +381,16 @@ func (sg *GCPSchemaGenerator) initializeSchemas() {
 // getSchemasForService returns schemas for a specific service
 func (sg *GCPSchemaGenerator) getSchemasForService(service string) []*pb.Schema {
 	var schemas []*pb.Schema
-	
+
 	// Map service names to schema keys
 	serviceSchemaMap := map[string][]string{
-		"compute": {"compute_instances", "compute_disks"},
-		"storage": {"storage_buckets"},
+		"compute":   {"compute_instances", "compute_disks"},
+		"storage":   {"storage_buckets"},
 		"container": {"container_clusters"},
-		"bigquery": {"bigquery_datasets"},
-		"cloudsql": {"cloudsql_instances"},
+		"bigquery":  {"bigquery_datasets"},
+		"cloudsql":  {"cloudsql_instances"},
 	}
-	
+
 	if schemaKeys, ok := serviceSchemaMap[service]; ok {
 		for _, key := range schemaKeys {
 			if schema, exists := sg.resourceSchemas[key]; exists {
@@ -398,22 +398,22 @@ func (sg *GCPSchemaGenerator) getSchemasForService(service string) []*pb.Schema 
 			}
 		}
 	}
-	
+
 	// If no predefined schemas, generate a generic one
 	if len(schemas) == 0 {
 		schemas = append(schemas, sg.generateGenericServiceSchema(service))
 	}
-	
+
 	return schemas
 }
 
 // generateGenericServiceSchema generates a generic schema for unknown services
 func (sg *GCPSchemaGenerator) generateGenericServiceSchema(service string) *pb.Schema {
 	tableName := fmt.Sprintf("gcp_%s_resources", strings.ReplaceAll(service, "-", "_"))
-	
+
 	return &pb.Schema{
-		Name: tableName,
-		Service: service,
+		Name:         tableName,
+		Service:      service,
 		ResourceType: "Resource",
 		Sql: fmt.Sprintf(`CREATE TABLE %s (
 			id VARCHAR NOT NULL,
@@ -432,8 +432,8 @@ func (sg *GCPSchemaGenerator) generateGenericServiceSchema(service string) *pb.S
 // generateUnifiedResourcesSchema generates the unified resources table schema
 func (sg *GCPSchemaGenerator) generateUnifiedResourcesSchema() *pb.Schema {
 	return &pb.Schema{
-		Name: "gcp_resources",
-		Service: "all",
+		Name:         "gcp_resources",
+		Service:      "all",
 		ResourceType: "Resource",
 		Sql: `CREATE TABLE gcp_resources (
 			id VARCHAR NOT NULL,
@@ -600,10 +600,10 @@ func (pta *ProtoTypeAnalyzer) AnalyzeType(typeName string, protoType interface{}
 // analyzeField analyzes a struct field and extracts metadata
 func (pta *ProtoTypeAnalyzer) analyzeField(field reflect.StructField) *FieldInfo {
 	fieldInfo := &FieldInfo{
-		Name:      field.Name,
-		Type:      field.Type.String(),
-		JsonTag:   field.Tag.Get("json"),
-		ProtoTag:  field.Tag.Get("protobuf"),
+		Name:     field.Name,
+		Type:     field.Type.String(),
+		JsonTag:  field.Tag.Get("json"),
+		ProtoTag: field.Tag.Get("protobuf"),
 	}
 
 	// Analyze field type
@@ -710,7 +710,7 @@ func (sg *GCPSchemaGenerator) generateTableName(typeInfo *TypeInfo) string {
 
 	resourceType := strings.ToLower(typeInfo.Name)
 	resourceType = strings.ReplaceAll(resourceType, ".", "_")
-	
+
 	return fmt.Sprintf("gcp_%s_%ss", service, resourceType)
 }
 
@@ -788,7 +788,7 @@ func (sg *GCPSchemaGenerator) generateGCPIndexes(typeInfo *TypeInfo) []string {
 // buildCreateTableSQL builds the complete CREATE TABLE statement
 func (sg *GCPSchemaGenerator) buildCreateTableSQL(tableName string, columns []string, indexes []string) string {
 	sql := fmt.Sprintf("CREATE TABLE %s (\n\t%s\n);\n\n", tableName, strings.Join(columns, ",\n\t"))
-	
+
 	for _, index := range indexes {
 		sql += index + ";\n"
 	}
@@ -845,44 +845,44 @@ func (sg *GCPSchemaGenerator) convertFieldNameToSQL(fieldName string) string {
 // inferServiceFromResourceType infers the GCP service from resource type name
 func (pta *ProtoTypeAnalyzer) inferServiceFromResourceType(typeName string) string {
 	typeNameLower := strings.ToLower(typeName)
-	
+
 	// Common GCP resource mappings
 	serviceMap := map[string]string{
 		"instance":       "compute",
-		"disk":          "compute", 
-		"network":       "compute",
-		"firewall":      "compute",
-		"router":        "compute",
-		"subnetwork":    "compute",
-		"bucket":        "storage",
-		"cluster":       "container",
-		"nodepool":      "container",
-		"dataset":       "bigquery",
-		"table":         "bigquery",
-		"job":           "bigquery",
-		"function":      "cloudfunctions",
-		"topic":         "pubsub",
-		"subscription":  "pubsub",
-		"database":      "sql",
-		"user":          "iam",
-		"role":          "iam",
-		"policy":        "iam",
+		"disk":           "compute",
+		"network":        "compute",
+		"firewall":       "compute",
+		"router":         "compute",
+		"subnetwork":     "compute",
+		"bucket":         "storage",
+		"cluster":        "container",
+		"nodepool":       "container",
+		"dataset":        "bigquery",
+		"table":          "bigquery",
+		"job":            "bigquery",
+		"function":       "cloudfunctions",
+		"topic":          "pubsub",
+		"subscription":   "pubsub",
+		"database":       "sql",
+		"user":           "iam",
+		"role":           "iam",
+		"policy":         "iam",
 		"serviceaccount": "iam",
-		"zone":          "dns",
-		"recordset":     "dns",
+		"zone":           "dns",
+		"recordset":      "dns",
 	}
-	
+
 	// Check for direct matches
 	if service, exists := serviceMap[typeNameLower]; exists {
 		return service
 	}
-	
+
 	// Check for partial matches
 	for resourceType, service := range serviceMap {
 		if strings.Contains(typeNameLower, resourceType) {
 			return service
 		}
 	}
-	
+
 	return "unknown"
 }
