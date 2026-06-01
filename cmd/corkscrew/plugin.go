@@ -68,7 +68,7 @@ func listPlugins() {
 func buildPlugins(args []string) {
 	pm := plugins.NewPluginManager()
 
-	providers := []string{"aws", "azure", "gcp", "kubernetes"}
+	providers := []string{"aws", "azure", "gcp", "kubernetes", "github", "cloudflare"}
 	if len(args) > 0 {
 		providers = args
 	}
@@ -92,7 +92,7 @@ func buildPlugins(args []string) {
 }
 
 func checkPluginStatus(args []string) {
-	providers := []string{"aws", "azure"}
+	providers := []string{"aws", "azure", "gcp", "kubernetes", "github", "cloudflare"}
 	if len(args) > 0 {
 		providers = args
 	}

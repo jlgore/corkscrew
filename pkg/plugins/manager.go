@@ -182,6 +182,22 @@ func (pm *PluginManager) ListAvailablePlugins() map[string]PluginInfo {
 			Binary:      "kubernetes-provider",
 			Status:      "beta",
 		},
+		"github": {
+			Name:        "github-provider",
+			Description: "GitHub organization and repository posture provider",
+			Version:     "0.1.0",
+			Source:      "plugins/github-provider",
+			Binary:      "github-provider",
+			Status:      "alpha",
+		},
+		"cloudflare": {
+			Name:        "cloudflare-provider",
+			Description: "Cloudflare provider for edge, Workers, storage, and Zero Trust posture",
+			Version:     "0.1.0",
+			Source:      "plugins/cloudflare-provider",
+			Binary:      "cloudflare-provider",
+			Status:      "alpha",
+		},
 	}
 
 	// Update status for each plugin

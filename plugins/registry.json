@@ -62,6 +62,27 @@
       "capabilities": ["discover","scan","relationships"],
       "status": "beta"
     }
+,
+    "github": {
+      "name": "github-provider",
+      "description": "GitHub organization and repository posture provider",
+      "version": "0.1.0",
+      "source": "plugins/github-provider",
+      "binary": "github-provider",
+      "releases": {},
+      "capabilities": ["discover","scan","security","findings","github_app_auth"],
+      "status": "alpha"
+    },
+    "cloudflare": {
+      "name": "cloudflare-provider",
+      "description": "Cloudflare provider for edge, Workers, storage, and Zero Trust posture",
+      "version": "0.1.0",
+      "source": "plugins/cloudflare-provider",
+      "binary": "cloudflare-provider",
+      "releases": {},
+      "capabilities": ["discover","scan","cloudflare_auth"],
+      "status": "alpha"
+    }
 
   }
 }
