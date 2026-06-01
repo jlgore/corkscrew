@@ -78,6 +78,11 @@ clean-install:
 build: generate-proto build-cli build-plugins generate-registry
 	@echo "🔨 Build complete!"
 
+.PHONY: build-graph-extension
+build-graph-extension:
+	@echo "🔨 Building corkscrew graph extension..."
+	@$(MAKE) -C extensions/corkscrew-graph build
+
 .PHONY: build-cli
 build-cli: create-dirs
 	@echo "🔨 Building main CLI..."

@@ -270,6 +270,8 @@ func main() {
 		runAWSOrg(os.Args[2:])
 	case "serve":
 		runServe(os.Args[2:])
+	case "graph":
+		runGraph(os.Args[2:])
 	case "crosscloud":
 		runCrossCloud(os.Args[2:])
 	case "correlate":
@@ -345,6 +347,11 @@ func printUsage() {
 	fmt.Println("  corkscrew correlate ip --providers aws,azure")
 	fmt.Println("  corkscrew correlate dns --providers aws,azure,gcp")
 	fmt.Println()
+	fmt.Println("  # Graph Query Examples")
+	fmt.Println("  corkscrew graph traverse <resource-id> --db ~/.corkscrew/db/corkscrew.duckdb")
+	fmt.Println("  corkscrew graph path <from-id> <to-id> --output json")
+	fmt.Println("  corkscrew graph patterns list")
+	fmt.Println()
 	fmt.Println("  # Configuration Examples")
 	fmt.Println("  corkscrew config init         # Create default configuration file")
 	fmt.Println("  corkscrew config show         # Display current configuration")
@@ -363,6 +370,7 @@ func printUsage() {
 	fmt.Println("  query               - Execute SQL queries against resource database")
 	fmt.Println("  diagram             - Interactive resource diagram viewer")
 	fmt.Println("  plugin              - Plugin management (list, build, status, groups)")
+	fmt.Println("  graph               - Graph traversal and attack-path queries")
 	fmt.Println("  serve               - Start gRPC API server")
 	fmt.Println("  version             - Show version information")
 	fmt.Println()
