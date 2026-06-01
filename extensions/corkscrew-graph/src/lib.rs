@@ -14,7 +14,7 @@ pub use functions::traverse::GraphTraverseVTab;
 pub use functions::info::GraphCacheInvalidateVTab;
 
 // Register the table function when the extension entrypoint is invoked via the duckdb macro
-#[duckdb::duckdb_entrypoint_c_api(ext_name = "corkscrew_graph", min_duckdb_version = "v1.5.2")]
+#[duckdb::duckdb_entrypoint_c_api(ext_name = "corkscrew_graph", min_duckdb_version = "v1.5.3")]
 pub fn extension_entrypoint(con: Connection) -> Result<(), Box<dyn std::error::Error>> {
     // Register GraphInfoVTab with the connection. The function takes a single
     // VARCHAR parameter: the path to the DuckDB database to inspect.

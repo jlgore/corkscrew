@@ -17,7 +17,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_DUCKDB_EXT_VERSION: '0.5.0'
-  DUCKDB_EXT_VERSION: 'v1.5.2'
+  DUCKDB_EXT_VERSION: 'v1.5.3'
 
 jobs:
   # In-process tests via the sibling `corkscrew-graph-tests` crate (bundled

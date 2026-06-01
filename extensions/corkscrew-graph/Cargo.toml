@@ -8,7 +8,7 @@ crate-type = ["cdylib"]
 
 # NOTE: dependencies are optional in scaffold; features enable them for full build
 [dependencies]
-# DuckDB extension binding (targeting DuckDB v1.5.2)
+# DuckDB extension binding (targeting DuckDB v1.5.3 packaging)
 duckdb = { version = "1.10502.0", features = ["vtab", "vtab-arrow", "vscalar", "loadable-extension"] }
 
 # Direct low-level duckdb bindings used by vscalar code
@@ -39,7 +39,7 @@ lru = { version = "0.12" }
 # Keep default features minimal for the scaffold; the above are marked optional
 
 [package.metadata]
-duckdb_version = "1.5.2"
+duckdb_version = "1.5.3"
 
 [dev-dependencies]
 tempfile = "3.6"
