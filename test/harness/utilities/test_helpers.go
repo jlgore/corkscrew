@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,9 +34,9 @@ type TestContext struct {
 
 // DatabaseHelper provides database connection and query utilities
 type DatabaseHelper struct {
-	db       *sql.DB
-	dbPath   string
-	testCtx  *TestContext
+	db      *sql.DB
+	dbPath  string
+	testCtx *TestContext
 }
 
 // MockDataGenerator generates test data for various scenarios
@@ -69,11 +69,11 @@ type ScanResult struct {
 
 // DeploymentResult represents the result of infrastructure deployment
 type DeploymentResult struct {
-	Stack       auto.Stack
-	Outputs     map[string]interface{}
-	Resources   []string
-	Duration    time.Duration
-	Error       error
+	Stack     auto.Stack
+	Outputs   map[string]interface{}
+	Resources []string
+	Duration  time.Duration
+	Error     error
 }
 
 // VerificationResult represents the result of data verification
@@ -153,7 +153,7 @@ func (dh *DatabaseHelper) GetResourcesByTag(tagKey, tagValue string) ([]map[stri
 		FROM aws_resources 
 		WHERE JSON_EXTRACT(tags, ?) = ?
 	`
-	
+
 	rows, err := dh.db.Query(query, fmt.Sprintf("$.%s", tagKey), tagValue)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (dh *DatabaseHelper) GetResourcesByTag(tagKey, tagValue string) ([]map[stri
 	for rows.Next() {
 		resource := make(map[string]interface{})
 		var id, resourceType, name, arn, region, tags, rawData sql.NullString
-		
+
 		err := rows.Scan(&id, &resourceType, &name, &arn, &region, &tags, &rawData)
 		if err != nil {
 			continue
@@ -175,14 +175,14 @@ func (dh *DatabaseHelper) GetResourcesByTag(tagKey, tagValue string) ([]map[stri
 		resource["name"] = nullStringToString(name)
 		resource["arn"] = nullStringToString(arn)
 		resource["region"] = nullStringToString(region)
-		
+
 		if tags.Valid {
 			var tagsMap map[string]interface{}
 			if err := json.Unmarshal([]byte(tags.String), &tagsMap); err == nil {
 				resource["tags"] = tagsMap
 			}
 		}
-		
+
 		if rawData.Valid {
 			var rawDataMap map[string]interface{}
 			if err := json.Unmarshal([]byte(rawData.String), &rawDataMap); err == nil {
@@ -260,8 +260,8 @@ func (dh *DatabaseHelper) ValidateRelationshipIntegrity() ([]string, error) {
 		if err := rows.Scan(&id, &fromID, &toID, &relType); err != nil {
 			continue
 		}
-		orphaned = append(orphaned, fmt.Sprintf("Relationship %s (%s): %s -> %s", 
-			nullStringToString(id), nullStringToString(relType), 
+		orphaned = append(orphaned, fmt.Sprintf("Relationship %s (%s): %s -> %s",
+			nullStringToString(id), nullStringToString(relType),
 			nullStringToString(fromID), nullStringToString(toID)))
 	}
 
@@ -350,10 +350,10 @@ func (mdg *MockDataGenerator) GenerateVPCMock(vpcID string) map[string]interface
 			{"Key": "TestID", "Value": mdg.testID},
 			{"Key": "Name", "Value": fmt.Sprintf("test-vpc-%s", mdg.testID)},
 		},
-		"IsDefault":                false,
-		"EnableDnsHostnames":       true,
-		"EnableDnsSupport":         true,
-		"InstanceTenancy":          "default",
+		"IsDefault":                   false,
+		"EnableDnsHostnames":          true,
+		"EnableDnsSupport":            true,
+		"InstanceTenancy":             "default",
 		"Ipv6CidrBlockAssociationSet": []interface{}{},
 	}
 }
@@ -401,7 +401,7 @@ func (rm *ResourceMatcher) CompareResourceFields(resource1, resource2 map[string
 	for _, field := range fields {
 		val1, exists1 := resource1[field]
 		val2, exists2 := resource2[field]
-		
+
 		if exists1 != exists2 || !reflect.DeepEqual(val1, val2) {
 			return false
 		}
@@ -469,16 +469,16 @@ func (ah *AssertionHelper) AssertDeploymentSuccess(result *DeploymentResult) {
 // RunCorkscrewScan executes a Corkscrew scan with the given parameters
 func RunCorkscrewScan(testCtx *TestContext, services []string, options map[string]string) (*ScanResult, error) {
 	start := time.Now()
-	
+
 	// Build command arguments
 	args := []string{"scan", "--provider", testCtx.Provider, "--region", testCtx.Region}
-	
+
 	if len(services) > 0 {
 		args = append(args, "--services", strings.Join(services, ","))
 	}
-	
+
 	args = append(args, "--output", "json", "--database", testCtx.DatabasePath)
-	
+
 	// Add custom options
 	for key, value := range options {
 		args = append(args, fmt.Sprintf("--%s", key), value)
@@ -488,7 +488,7 @@ func RunCorkscrewScan(testCtx *TestContext, services []string, options map[strin
 	initCmd := exec.CommandContext(testCtx.Ctx, testCtx.CorkscrewPath, "init", "--database", testCtx.DatabasePath)
 	initCmd.Env = append(os.Environ(), "AWS_PROFILE=sandbox")
 	initOutput, initErr := initCmd.CombinedOutput()
-	
+
 	if initErr != nil {
 		testCtx.T.Logf("Init output: %s", string(initOutput))
 		testCtx.T.Logf("Init error: %v", initErr)
@@ -497,15 +497,15 @@ func RunCorkscrewScan(testCtx *TestContext, services []string, options map[strin
 	// Run the scan
 	cmd := exec.CommandContext(testCtx.Ctx, testCtx.CorkscrewPath, args...)
 	cmd.Env = append(os.Environ(), "AWS_PROFILE=sandbox")
-	
+
 	output, err := cmd.CombinedOutput()
-	
+
 	result := &ScanResult{
 		Output:   string(output),
 		Duration: time.Since(start),
 		Error:    err,
 	}
-	
+
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			result.ExitCode = exitError.ExitCode()
@@ -529,11 +529,11 @@ func SetupTestDatabase(testCtx *TestContext) error {
 	// Initialize the database using Corkscrew init
 	initCmd := exec.CommandContext(testCtx.Ctx, testCtx.CorkscrewPath, "init", "--database", testCtx.DatabasePath)
 	output, err := initCmd.CombinedOutput()
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to initialize test database: %w, output: %s", err, string(output))
 	}
-	
+
 	return nil
 }
 
@@ -544,13 +544,13 @@ func CleanupTestDatabase(testCtx *TestContext) error {
 		testCtx.DatabasePath + ".wal",
 		testCtx.DatabasePath + "-journal",
 	}
-	
+
 	for _, file := range files {
 		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove database file %s: %w", file, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -572,12 +572,12 @@ func ExtractOutputValue(outputs map[string]interface{}, key string) (string, err
 	if !exists {
 		return "", fmt.Errorf("key %s not found in outputs", key)
 	}
-	
+
 	strValue, ok := value.(string)
 	if !ok {
 		return "", fmt.Errorf("value for key %s is not a string", key)
 	}
-	
+
 	return strValue, nil
 }
 
@@ -610,7 +610,7 @@ func (dh *DatabaseHelper) getResourcesByService() (map[string]int, error) {
 		}
 		result[nullStringToString(service)] = count
 	}
-	
+
 	return result, rows.Err()
 }
 
@@ -631,7 +631,7 @@ func (dh *DatabaseHelper) getResourcesByType() (map[string]int, error) {
 		}
 		result[nullStringToString(resourceType)] = count
 	}
-	
+
 	return result, rows.Err()
 }
 
@@ -643,7 +643,7 @@ func (dh *DatabaseHelper) getTotalRelationshipCount() (int, error) {
 
 func (dh *DatabaseHelper) getRawDataStats() (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
-	
+
 	// Count resources with raw data
 	var withRawData int
 	err := dh.db.QueryRow("SELECT COUNT(*) FROM aws_resources WHERE raw_data IS NOT NULL AND raw_data != ''").Scan(&withRawData)
@@ -651,7 +651,7 @@ func (dh *DatabaseHelper) getRawDataStats() (map[string]interface{}, error) {
 		return nil, err
 	}
 	stats["resources_with_raw_data"] = withRawData
-	
+
 	// Count resources without raw data
 	var withoutRawData int
 	err = dh.db.QueryRow("SELECT COUNT(*) FROM aws_resources WHERE raw_data IS NULL OR raw_data = ''").Scan(&withoutRawData)
@@ -659,7 +659,7 @@ func (dh *DatabaseHelper) getRawDataStats() (map[string]interface{}, error) {
 		return nil, err
 	}
 	stats["resources_without_raw_data"] = withoutRawData
-	
+
 	// Average raw data size
 	var avgSize sql.NullFloat64
 	err = dh.db.QueryRow("SELECT AVG(LENGTH(raw_data)) FROM aws_resources WHERE raw_data IS NOT NULL AND raw_data != ''").Scan(&avgSize)
@@ -671,7 +671,7 @@ func (dh *DatabaseHelper) getRawDataStats() (map[string]interface{}, error) {
 	} else {
 		stats["average_raw_data_size"] = 0
 	}
-	
+
 	return stats, nil
 }
 
@@ -686,7 +686,7 @@ func extractJSONFromOutput(output string) string {
 	start := -1
 	end := -1
 	braceCount := 0
-	
+
 	for i, ch := range output {
 		if ch == '{' {
 			if start == -1 {
@@ -701,11 +701,11 @@ func extractJSONFromOutput(output string) string {
 			}
 		}
 	}
-	
+
 	if start != -1 && end != -1 {
 		return output[start:end]
 	}
-	
+
 	return ""
 }
 
@@ -714,7 +714,7 @@ func findCorkscrewBinary() string {
 	if path := os.Getenv("CORKSCREW_PATH"); path != "" {
 		return path
 	}
-	
+
 	// Try relative path from test directory
 	testDir, err := os.Getwd()
 	if err == nil {
@@ -724,12 +724,12 @@ func findCorkscrewBinary() string {
 			return corkscrewPath
 		}
 	}
-	
+
 	// Try PATH
 	if path, err := exec.LookPath("corkscrew"); err == nil {
 		return path
 	}
-	
+
 	return "corkscrew"
 }
 

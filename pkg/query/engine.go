@@ -8,27 +8,27 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/jlgore/corkscrew/internal/db"
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 // QueryEngine defines the interface for executing SQL queries against the Corkscrew database
 type QueryEngine interface {
 	// Execute runs a SQL query and returns structured results
 	Execute(ctx context.Context, query string) (*QueryResult, error)
-	
+
 	// ExecuteWithParams runs a SQL query with parameters and returns structured results
 	ExecuteWithParams(ctx context.Context, query string, params map[string]interface{}) (*QueryResult, error)
-	
+
 	// ExecuteStreaming runs a SQL query and returns a channel of rows for large result sets
 	ExecuteStreaming(ctx context.Context, query string) (<-chan StreamingRow, error)
-	
+
 	// ExecuteStreamingWithParams runs a SQL query with parameters and returns a channel of rows
 	ExecuteStreamingWithParams(ctx context.Context, query string, params map[string]interface{}) (<-chan StreamingRow, error)
-	
+
 	// Validate checks if a SQL query is syntactically valid
 	Validate(query string) error
-	
+
 	// Close closes the query engine and any underlying connections
 	Close() error
 }
@@ -50,18 +50,18 @@ type QueryStats struct {
 
 // QueryResult contains the complete result of a query execution
 type QueryResult struct {
-	Columns []ColumnInfo               `json:"columns"`
-	Rows    []map[string]interface{}   `json:"rows"`
-	Stats   QueryStats                 `json:"stats"`
+	Columns []ColumnInfo             `json:"columns"`
+	Rows    []map[string]interface{} `json:"rows"`
+	Stats   QueryStats               `json:"stats"`
 }
 
 // StreamingRow represents a single row in a streaming result set
 type StreamingRow struct {
 	Data    map[string]interface{} `json:"data"`
-	Columns []ColumnInfo          `json:"columns,omitempty"` // Only included in first row
-	Error   error                 `json:"error,omitempty"`   // Non-nil if error occurred
-	EOF     bool                  `json:"eof,omitempty"`     // True for the final row
-	Stats   *QueryStats           `json:"stats,omitempty"`   // Only included in final row
+	Columns []ColumnInfo           `json:"columns,omitempty"` // Only included in first row
+	Error   error                  `json:"error,omitempty"`   // Non-nil if error occurred
+	EOF     bool                   `json:"eof,omitempty"`     // True for the final row
+	Stats   *QueryStats            `json:"stats,omitempty"`   // Only included in final row
 }
 
 // DuckDBQueryEngine implements QueryEngine using DuckDB
@@ -176,8 +176,8 @@ func (e *DuckDBQueryEngine) ExecuteWithParams(ctx context.Context, query string,
 	columnInfo := make([]ColumnInfo, len(columns))
 	for i, col := range columns {
 		columnInfo[i] = ColumnInfo{
-			Name:     col,
-			Type:     columnTypes[i].DatabaseTypeName(),
+			Name: col,
+			Type: columnTypes[i].DatabaseTypeName(),
 			Nullable: func() bool {
 				nullable, ok := columnTypes[i].Nullable()
 				return ok && nullable
@@ -260,7 +260,7 @@ func (e *DuckDBQueryEngine) ExecuteStreamingWithParams(ctx context.Context, quer
 	// Start streaming in a goroutine
 	go func() {
 		defer close(resultChan)
-		
+
 		startTime := time.Now()
 		rowCount := 0
 
@@ -289,8 +289,8 @@ func (e *DuckDBQueryEngine) ExecuteStreamingWithParams(ctx context.Context, quer
 		columnInfo := make([]ColumnInfo, len(columns))
 		for i, col := range columns {
 			columnInfo[i] = ColumnInfo{
-				Name:     col,
-				Type:     columnTypes[i].DatabaseTypeName(),
+				Name: col,
+				Type: columnTypes[i].DatabaseTypeName(),
 				Nullable: func() bool {
 					nullable, ok := columnTypes[i].Nullable()
 					return ok && nullable
@@ -331,7 +331,7 @@ func (e *DuckDBQueryEngine) ExecuteStreamingWithParams(ctx context.Context, quer
 			}
 
 			streamingRow := StreamingRow{Data: row}
-			
+
 			// Include column info in first row
 			if firstRow {
 				streamingRow.Columns = columnInfo
@@ -375,7 +375,7 @@ func (e *DuckDBQueryEngine) Validate(query string) error {
 	// Check for dangerous operations
 	upperQuery := strings.ToUpper(query)
 	dangerous := []string{"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
-	
+
 	for _, op := range dangerous {
 		if strings.Contains(upperQuery, op) {
 			return fmt.Errorf("query contains potentially dangerous operation: %s", op)
@@ -417,23 +417,23 @@ func (e *DuckDBQueryEngine) replacePlaceholdersForValidation(query string) strin
 	// Count placeholders and replace with appropriate dummy values
 	placeholderCount := strings.Count(query, "?")
 	result := query
-	
+
 	for i := 0; i < placeholderCount; i++ {
 		// Use different dummy values to test various data types
 		var dummy string
 		switch i % 4 {
 		case 0:
-			dummy = "'dummy_string'"  // String type
+			dummy = "'dummy_string'" // String type
 		case 1:
-			dummy = "1"              // Integer type
+			dummy = "1" // Integer type
 		case 2:
-			dummy = "true"           // Boolean type
+			dummy = "true" // Boolean type
 		case 3:
-			dummy = "2023-01-01"     // Date type
+			dummy = "2023-01-01" // Date type
 		}
 		result = strings.Replace(result, "?", dummy, 1)
 	}
-	
+
 	return result
 }
 

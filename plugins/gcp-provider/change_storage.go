@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 // DuckDBChangeStorage implements ChangeStorage using DuckDB
@@ -435,7 +435,7 @@ func (dcs *DuckDBChangeStorage) GetBaseline(baselineID string) (*DriftBaseline, 
 	query := `SELECT * FROM drift_baselines WHERE id = ?`
 
 	row := dcs.db.QueryRow(query, baselineID)
-	
+
 	var baseline DriftBaseline
 	var resourcesJSON, policiesJSON, tagsJSON string
 

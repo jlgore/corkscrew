@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -343,7 +343,7 @@ func TestFunctionDocumentation(t *testing.T) {
 
 func TestListRegisteredJSONFunctions(t *testing.T) {
 	functions := ListRegisteredJSONFunctions()
-	
+
 	expected := 5 // Number of functions we register
 	if len(functions) != expected {
 		t.Errorf("Expected %d functions, got %d", expected, len(functions))

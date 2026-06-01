@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 // Verifier handles DuckDB verification operations
@@ -22,23 +22,23 @@ type Verifier struct {
 
 // VerificationResult contains the results of resource verification
 type VerificationResult struct {
-	BucketsFound      int
-	ExpectedTestID    string
-	ActualTestIDs     []string
-	BucketDetails     []BucketVerification
-	RawDataSizes      []int
-	AllPassed         bool
-	Errors            []string
+	BucketsFound   int
+	ExpectedTestID string
+	ActualTestIDs  []string
+	BucketDetails  []BucketVerification
+	RawDataSizes   []int
+	AllPassed      bool
+	Errors         []string
 }
 
 // BucketVerification contains details about a verified bucket
 type BucketVerification struct {
-	ID          string
-	Name        string
-	ARN         string
-	TestID      string
-	RawDataSize int
-	HasRawData  bool
+	ID           string
+	Name         string
+	ARN          string
+	TestID       string
+	RawDataSize  int
+	HasRawData   bool
 	RawDataValid bool
 }
 
@@ -117,7 +117,7 @@ func (v *Verifier) VerifyBucketExists(ctx context.Context, expectedTestID, bucke
 	for rows.Next() {
 		var bucket BucketVerification
 		var rawData sql.NullString
-		
+
 		err := rows.Scan(&bucket.ID, &bucket.Name, &bucket.ARN, &rawData, &bucket.RawDataSize)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Row scan failed: %v", err))
@@ -130,7 +130,7 @@ func (v *Verifier) VerifyBucketExists(ctx context.Context, expectedTestID, bucke
 			var jsonData interface{}
 			err := json.Unmarshal([]byte(rawData.String), &jsonData)
 			bucket.RawDataValid = err == nil
-			
+
 			// Extract TestID from tags if present
 			if tags, err := v.extractTagsFromRawData(rawData.String); err == nil {
 				if testID, exists := tags["TestID"]; exists {
@@ -151,7 +151,7 @@ func (v *Verifier) VerifyBucketExists(ctx context.Context, expectedTestID, bucke
 	}
 
 	// Determine if verification passed
-	result.AllPassed = result.BucketsFound > 0 && 
+	result.AllPassed = result.BucketsFound > 0 &&
 		len(result.Errors) == 0 &&
 		v.allBucketsHaveValidRawData(result.BucketDetails)
 
@@ -262,10 +262,10 @@ func NewVerifierWithPath(dbPath string) (*Verifier, error) {
 // VerifyResources verifies all expected resources exist in the database
 func (v *Verifier) VerifyResources(ctx context.Context, expected map[string]interface{}) (*EnhancedVerificationResult, error) {
 	result := &EnhancedVerificationResult{
-		StartTime: time.Now(),
-		Matches:   []ResourceMatch{},
-		Missing:   []ExpectedResource{},
-		AttributeChecks: []AttributeCheck{},
+		StartTime:          time.Now(),
+		Matches:            []ResourceMatch{},
+		Missing:            []ExpectedResource{},
+		AttributeChecks:    []AttributeCheck{},
 		RelationshipChecks: []RelationshipCheck{},
 	}
 
@@ -335,9 +335,9 @@ func (v *Verifier) findResource(ctx context.Context, expected ExpectedResource) 
 	`
 
 	service := strings.ToLower(getServiceFromType(expected.Type))
-	
-	row := v.db.QueryRowContext(ctx, query, 
-		expected.Name, expected.ARN, expected.ID, 
+
+	row := v.db.QueryRowContext(ctx, query,
+		expected.Name, expected.ARN, expected.ID,
 		service, expected.Type)
 
 	var id, name, arn, resourceType, resourceService, region sql.NullString
@@ -568,18 +568,18 @@ func calculateAttributeScore(checks []AttributeCheck) float64 {
 // Enhanced verification result types
 
 type EnhancedVerificationResult struct {
-	TotalExpected      int                    `json:"total_expected"`
-	TotalFound         int                    `json:"total_found"`
-	TotalMissing       int                    `json:"total_missing"`
-	Matches            []ResourceMatch        `json:"matches"`
-	Missing            []ExpectedResource     `json:"missing"`
-	AttributeChecks    []AttributeCheck       `json:"attribute_checks"`
-	RelationshipChecks []RelationshipCheck    `json:"relationship_checks"`
-	Success            bool                   `json:"success"`
-	StartTime          time.Time              `json:"start_time"`
-	EndTime            time.Time              `json:"end_time"`
-	Duration           time.Duration          `json:"duration"`
-	Errors             []string               `json:"errors"`
+	TotalExpected      int                 `json:"total_expected"`
+	TotalFound         int                 `json:"total_found"`
+	TotalMissing       int                 `json:"total_missing"`
+	Matches            []ResourceMatch     `json:"matches"`
+	Missing            []ExpectedResource  `json:"missing"`
+	AttributeChecks    []AttributeCheck    `json:"attribute_checks"`
+	RelationshipChecks []RelationshipCheck `json:"relationship_checks"`
+	Success            bool                `json:"success"`
+	StartTime          time.Time           `json:"start_time"`
+	EndTime            time.Time           `json:"end_time"`
+	Duration           time.Duration       `json:"duration"`
+	Errors             []string            `json:"errors"`
 }
 
 type ResourceMatch struct {
@@ -633,7 +633,7 @@ func findDuckDBFile() (string, error) {
 	// Common DuckDB file names used by Corkscrew
 	possibleNames := []string{
 		"corkscrew.db",
-		"data.db", 
+		"data.db",
 		"resources.db",
 		"aws_resources.db",
 	}
@@ -647,8 +647,8 @@ func findDuckDBFile() (string, error) {
 	// Check current directory first (test/harness), then parent directories
 	searchDirs := []string{
 		currentDir,                                    // test/harness (should have local corkscrew.db)
-		filepath.Join(currentDir, ".."),              // test
-		filepath.Join(currentDir, "..", ".."),        // root
+		filepath.Join(currentDir, ".."),               // test
+		filepath.Join(currentDir, "..", ".."),         // root
 		filepath.Join(currentDir, "..", "..", "data"), // root/data
 	}
 

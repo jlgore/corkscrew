@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 // GCPChangeStorage implements change tracking storage for GCP
@@ -420,7 +420,7 @@ func (gcs *DuckDBGCPChangeStorage) GetBaseline(baselineID string) (*DriftBaselin
 	query := `SELECT * FROM gcp_drift_baselines WHERE id = ?`
 
 	row := gcs.db.QueryRow(query, baselineID)
-	
+
 	var baseline DriftBaseline
 	var resourcesJSON, policiesJSON, tagsJSON string
 

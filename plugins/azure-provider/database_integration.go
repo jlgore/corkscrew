@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"  // DuckDB driver
+	_ "github.com/duckdb/duckdb-go/v2" // DuckDB driver
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -30,40 +30,40 @@ func NewAzureDatabaseIntegration() (*AzureDatabaseIntegration, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	
+
 	dbPath := filepath.Join(homeDir, ".corkscrew", "db", "corkscrew.duckdb")
-	
+
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
-	
+
 	// Open database connection
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	
+
 	// Install and load JSON extension
 	if _, err := db.Exec("INSTALL json; LOAD json;"); err != nil {
 		return nil, fmt.Errorf("failed to load JSON extension: %w", err)
 	}
-	
+
 	integration := &AzureDatabaseIntegration{
 		db:     db,
 		dbPath: dbPath,
 	}
-	
+
 	// Initialize Azure tables
 	if err := integration.initializeTables(); err != nil {
 		return nil, fmt.Errorf("failed to initialize tables: %w", err)
 	}
-	
+
 	// Prepare statements
 	if err := integration.prepareStatements(); err != nil {
 		return nil, fmt.Errorf("failed to prepare statements: %w", err)
 	}
-	
+
 	log.Printf("Azure database integration initialized at: %s", dbPath)
 	return integration, nil
 }
@@ -318,31 +318,31 @@ func (d *AzureDatabaseIntegration) StoreResource(resource *pb.Resource) error {
 
 	// Execute insert
 	_, err = d.insertResource.Exec(
-		resource.Id,                    // id
-		resource.Name,                  // name
-		resource.Type,                  // type
-		resource.Id,                    // resource_id (same as id for now)
-		resource.AccountId,             // subscription_id
-		resourceGroup,                  // resource_group
-		resource.Region,                // location
-		resource.ParentId,              // parent_id
-		nil,                           // managed_by
-		resource.Service,               // service
-		nil,                           // kind
-		skuName,                       // sku_name
-		skuTier,                       // sku_tier
-		skuSize,                       // sku_size
-		skuFamily,                     // sku_family
-		skuCapacity,                   // sku_capacity
-		string(tagsJSON),              // tags
-		string(propertiesJSON),        // properties
-		rawData,                       // raw_data
-		nil,                           // provisioning_state
-		nil,                           // power_state
-		createdTime,                   // created_time
-		changedTime,                   // changed_time
-		etag,                          // etag
-		apiVersion,                    // api_version
+		resource.Id,            // id
+		resource.Name,          // name
+		resource.Type,          // type
+		resource.Id,            // resource_id (same as id for now)
+		resource.AccountId,     // subscription_id
+		resourceGroup,          // resource_group
+		resource.Region,        // location
+		resource.ParentId,      // parent_id
+		nil,                    // managed_by
+		resource.Service,       // service
+		nil,                    // kind
+		skuName,                // sku_name
+		skuTier,                // sku_tier
+		skuSize,                // sku_size
+		skuFamily,              // sku_family
+		skuCapacity,            // sku_capacity
+		string(tagsJSON),       // tags
+		string(propertiesJSON), // properties
+		rawData,                // raw_data
+		nil,                    // provisioning_state
+		nil,                    // power_state
+		createdTime,            // created_time
+		changedTime,            // changed_time
+		etag,                   // etag
+		apiVersion,             // api_version
 	)
 
 	if err != nil {
@@ -377,15 +377,15 @@ func (d *AzureDatabaseIntegration) StoreRelationship(fromID string, relationship
 	}
 
 	_, err := d.insertRelation.Exec(
-		fromID,                          // from_id
-		relationship.TargetId,           // to_id
-		relationship.RelationshipType,   // relationship_type
-		"azure",                         // provider
-		"",                              // relationship_subtype
-		propertiesJSON,                  // properties
-		"",                              // from_resource_type (to be filled)
-		relationship.TargetType,         // to_resource_type
-		"outbound",                      // direction
+		fromID,                        // from_id
+		relationship.TargetId,         // to_id
+		relationship.RelationshipType, // relationship_type
+		"azure",                       // provider
+		"",                            // relationship_subtype
+		propertiesJSON,                // properties
+		"",                            // from_resource_type (to be filled)
+		relationship.TargetType,       // to_resource_type
+		"outbound",                    // direction
 	)
 
 	return err

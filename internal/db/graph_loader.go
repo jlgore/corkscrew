@@ -8,10 +8,10 @@ import (
 	"log"
 	"strings"
 
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/pkg/models"
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 type GraphLoader struct {
@@ -47,7 +47,7 @@ func dbInit(db *sql.DB) error {
 	if _, err := db.Exec(`LOAD json;`); err != nil {
 		return fmt.Errorf("failed to load json extension: %w", err)
 	}
-	
+
 	// Install and load the DuckPGQ extension for graph queries
 	if _, err := db.Exec(`INSTALL duckpgq;`); err != nil {
 		fmt.Printf("Warning: INSTALL duckpgq: %v\n", err)
@@ -199,8 +199,8 @@ func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resour
 		if resource.Id == resource.Arn && strings.HasPrefix(resource.Id, "arn:") {
 			arn = "" // Use empty string to avoid duplication
 		}
-		
-		log.Printf("🔍 DB INSERT: ID=%s, ARN=%s (orig=%s), Name=%s, Service=%s, Type=%s, AccountID=%s", 
+
+		log.Printf("🔍 DB INSERT: ID=%s, ARN=%s (orig=%s), Name=%s, Service=%s, Type=%s, AccountID=%s",
 			resource.Id, arn, resource.Arn, resource.Name, resource.Service, resource.Type, resource.AccountId)
 		tagsJSON, _ := json.Marshal(resource.Tags)
 
@@ -280,9 +280,9 @@ func (gl *GraphLoader) LoadScanMetadata(ctx context.Context, service, region str
 			metadata
 		)
 		VALUES (?, ?, 'service', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
-	`, id, provider, string(servicesJSON), string(regionsJSON), 
-	   stats.TotalResources, stats.FailedResources,
-	   stats.DurationMs, string(metadataJSON))
+	`, id, provider, string(servicesJSON), string(regionsJSON),
+		stats.TotalResources, stats.FailedResources,
+		stats.DurationMs, string(metadataJSON))
 
 	return err
 }
@@ -575,7 +575,7 @@ func (gl *GraphLoader) GetAPIActionStats(ctx context.Context, service string, ho
 		var totalCalls, successfulCalls, totalResources int
 		var avgDuration float64
 
-		err := rows.Scan(&svc, &opName, &opType, &totalCalls, &successfulCalls, 
+		err := rows.Scan(&svc, &opName, &opType, &totalCalls, &successfulCalls,
 			&avgDuration, &totalResources, &lastExec)
 		if err != nil {
 			return nil, err
@@ -595,7 +595,7 @@ func (gl *GraphLoader) GetAPIActionStats(ctx context.Context, service string, ho
 	}
 
 	return map[string]interface{}{
-		"stats":        stats,
+		"stats":            stats,
 		"total_operations": len(stats),
 	}, rows.Err()
 }

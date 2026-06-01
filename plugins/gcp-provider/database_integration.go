@@ -7,8 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
-	
-	_ "github.com/marcboeker/go-duckdb"
+
+	_ "github.com/duckdb/duckdb-go/v2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
@@ -32,62 +32,62 @@ func NewGCPDatabaseIntegration(dbPath string) (*GCPDatabaseIntegration, error) {
 	if dbPath == "" {
 		dbPath = "gcp_resources.db"
 	}
-	
+
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	
+
 	integration := &GCPDatabaseIntegration{
 		db:              db,
 		schemaGenerator: NewGCPSchemaGenerator(),
 		dbPath:          dbPath,
 	}
-	
+
 	// Initialize schemas
 	if err := integration.InitializeSchemas(); err != nil {
 		return nil, fmt.Errorf("failed to initialize schemas: %w", err)
 	}
-	
+
 	return integration, nil
 }
 
 // InitializeSchemas creates the necessary database schemas
 func (gdi *GCPDatabaseIntegration) InitializeSchemas() error {
 	schemas := gdi.GenerateDuckDBSchemas()
-	
+
 	// Create unified resources table
 	if err := gdi.executeSchema(schemas.GCPResourcesTable); err != nil {
 		return fmt.Errorf("failed to create resources table: %w", err)
 	}
-	
+
 	// Create relationships table
 	if err := gdi.executeSchema(schemas.GCPRelationshipsTable); err != nil {
 		return fmt.Errorf("failed to create relationships table: %w", err)
 	}
-	
+
 	// Create scan metadata table
 	if err := gdi.executeSchema(schemas.ScanMetadataTable); err != nil {
 		return fmt.Errorf("failed to create scan metadata table: %w", err)
 	}
-	
+
 	// Create service-specific tables
 	for service, schema := range schemas.ServiceTables {
 		if err := gdi.executeSchema(schema); err != nil {
 			log.Printf("Warning: failed to create %s table: %v", service, err)
 		}
 	}
-	
+
 	// Create indexes
 	if err := gdi.createIndexes(); err != nil {
 		log.Printf("Warning: failed to create indexes: %v", err)
 	}
-	
+
 	// Create views
 	if err := gdi.createAnalyticsViews(); err != nil {
 		log.Printf("Warning: failed to create views: %v", err)
 	}
-	
+
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (gdi *GCPDatabaseIntegration) StoreResources(resources []*pb.Resource) erro
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
-	
+
 	// Prepare bulk insert statement
 	stmt, err := tx.Prepare(`
 		INSERT INTO gcp_resources (
@@ -121,25 +121,25 @@ func (gdi *GCPDatabaseIntegration) StoreResources(resources []*pb.Resource) erro
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
-	
+
 	scanID := generateScanID()
-	
+
 	for _, resource := range resources {
 		// Extract GCP-specific fields
 		projectID := extractProjectID(resource.Id)
 		orgID := extractOrgID(resource.Id)
 		folderID := extractFolderID(resource.Id)
-		
+
 		// Parse attributes from JSON string
 		var attrs map[string]interface{}
 		if err := json.Unmarshal([]byte(resource.Attributes), &attrs); err != nil {
 			attrs = make(map[string]interface{})
 		}
-		
+
 		// Convert tags and labels to JSON
 		tagsJSON, _ := json.Marshal(resource.Tags)
 		labelsJSON, _ := json.Marshal(attrs["labels"])
-		
+
 		_, err = stmt.Exec(
 			resource.Id,
 			resource.Name,
@@ -159,23 +159,23 @@ func (gdi *GCPDatabaseIntegration) StoreResources(resources []*pb.Resource) erro
 			log.Printf("Failed to insert resource %s: %v", resource.Id, err)
 			continue
 		}
-		
+
 		// Store in service-specific table if applicable
 		if err := gdi.storeServiceSpecificData(tx, resource); err != nil {
 			log.Printf("Failed to store service-specific data for %s: %v", resource.Id, err)
 		}
 	}
-	
+
 	// Store relationships
 	if err := gdi.storeRelationships(tx, resources); err != nil {
 		log.Printf("Failed to store relationships: %v", err)
 	}
-	
+
 	// Store scan metadata
 	if err := gdi.storeScanMetadata(tx, scanID, len(resources)); err != nil {
 		log.Printf("Failed to store scan metadata: %v", err)
 	}
-	
+
 	return tx.Commit()
 }
 
@@ -194,16 +194,16 @@ func (gdi *GCPDatabaseIntegration) storeRelationships(tx *sql.Tx, resources []*p
 		return err
 	}
 	defer stmt.Close()
-	
+
 	for _, resource := range resources {
 		if resource.Relationships == nil {
 			continue
 		}
-		
+
 		for _, rel := range resource.Relationships {
 			relID := fmt.Sprintf("%s-%s-%s", resource.Id, rel.RelationshipType, rel.TargetId)
 			propertiesJSON, _ := json.Marshal(rel.Properties)
-			
+
 			_, err = stmt.Exec(
 				relID,
 				resource.Id,
@@ -217,7 +217,7 @@ func (gdi *GCPDatabaseIntegration) storeRelationships(tx *sql.Tx, resources []*p
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -242,7 +242,7 @@ func (gdi *GCPDatabaseIntegration) storeComputeInstance(tx *sql.Tx, resource *pb
 	if resource.Type != "Instance" {
 		return nil
 	}
-	
+
 	stmt, err := tx.Prepare(`
 		INSERT INTO gcp_compute_instances (
 			id, name, machine_type, status, zone, project_id,
@@ -260,25 +260,25 @@ func (gdi *GCPDatabaseIntegration) storeComputeInstance(tx *sql.Tx, resource *pb
 		return err
 	}
 	defer stmt.Close()
-	
+
 	// Parse attributes from JSON string
 	var attrs map[string]interface{}
 	if err := json.Unmarshal([]byte(resource.Attributes), &attrs); err != nil {
 		attrs = make(map[string]interface{})
 	}
-	
+
 	// Extract fields from attributes
 	machineType, _ := attrs["machineType"].(string)
 	status, _ := attrs["status"].(string)
 	zone, _ := attrs["zone"].(string)
-	
+
 	networkInterfacesJSON, _ := json.Marshal(attrs["networkInterfaces"])
 	disksJSON, _ := json.Marshal(attrs["disks"])
 	metadataJSON, _ := json.Marshal(attrs["metadata"])
 	labelsJSON, _ := json.Marshal(attrs["labels"])
-	
+
 	createdAt := resource.CreatedAt.AsTime()
-	
+
 	_, err = stmt.Exec(
 		resource.Id,
 		resource.Name,
@@ -292,7 +292,7 @@ func (gdi *GCPDatabaseIntegration) storeComputeInstance(tx *sql.Tx, resource *pb
 		string(labelsJSON),
 		createdAt,
 	)
-	
+
 	return err
 }
 
@@ -301,7 +301,7 @@ func (gdi *GCPDatabaseIntegration) storeStorageBucket(tx *sql.Tx, resource *pb.R
 	if resource.Type != "Bucket" {
 		return nil
 	}
-	
+
 	stmt, err := tx.Prepare(`
 		INSERT INTO gcp_storage_buckets (
 			id, name, location, storage_class, versioning_enabled,
@@ -319,24 +319,24 @@ func (gdi *GCPDatabaseIntegration) storeStorageBucket(tx *sql.Tx, resource *pb.R
 		return err
 	}
 	defer stmt.Close()
-	
+
 	// Parse attributes from JSON string
 	var attrs map[string]interface{}
 	if err := json.Unmarshal([]byte(resource.Attributes), &attrs); err != nil {
 		attrs = make(map[string]interface{})
 	}
-	
+
 	// Extract fields
 	location, _ := attrs["location"].(string)
 	storageClass, _ := attrs["storageClass"].(string)
 	versioningEnabled, _ := attrs["versioningEnabled"].(bool)
-	
+
 	lifecycleRulesJSON, _ := json.Marshal(attrs["lifecycleRules"])
 	iamConfigJSON, _ := json.Marshal(attrs["iamConfiguration"])
 	labelsJSON, _ := json.Marshal(attrs["labels"])
-	
+
 	createdAt := resource.CreatedAt.AsTime()
-	
+
 	_, err = stmt.Exec(
 		resource.Id,
 		resource.Name,
@@ -348,7 +348,7 @@ func (gdi *GCPDatabaseIntegration) storeStorageBucket(tx *sql.Tx, resource *pb.R
 		string(labelsJSON),
 		createdAt,
 	)
-	
+
 	return err
 }
 
@@ -366,7 +366,7 @@ func (gdi *GCPDatabaseIntegration) storeScanMetadata(tx *sql.Tx, scanID string, 
 			status, scan_type
 		) VALUES (?, ?, ?, ?, ?, ?)
 	`, scanID, time.Now(), time.Now(), resourceCount, "completed", "full")
-	
+
 	return err
 }
 
@@ -390,7 +390,7 @@ func (gdi *GCPDatabaseIntegration) GenerateDuckDBSchemas() *DuckDBSchemas {
 				scan_id VARCHAR
 			);
 		`,
-		
+
 		GCPRelationshipsTable: `
 			CREATE TABLE IF NOT EXISTS gcp_relationships (
 				id VARCHAR PRIMARY KEY,
@@ -403,7 +403,7 @@ func (gdi *GCPDatabaseIntegration) GenerateDuckDBSchemas() *DuckDBSchemas {
 				FOREIGN KEY (target_id) REFERENCES gcp_resources(id)
 			);
 		`,
-		
+
 		ScanMetadataTable: `
 			CREATE TABLE IF NOT EXISTS gcp_scan_metadata (
 				scan_id VARCHAR PRIMARY KEY,
@@ -415,7 +415,7 @@ func (gdi *GCPDatabaseIntegration) GenerateDuckDBSchemas() *DuckDBSchemas {
 				error_message VARCHAR
 			);
 		`,
-		
+
 		ServiceTables: map[string]string{
 			"compute_instances": `
 				CREATE TABLE IF NOT EXISTS gcp_compute_instances (
@@ -477,13 +477,13 @@ func (gdi *GCPDatabaseIntegration) createIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_relationships_target ON gcp_relationships(target_id);",
 		"CREATE INDEX IF NOT EXISTS idx_relationships_type ON gcp_relationships(relationship_type);",
 	}
-	
+
 	for _, index := range indexes {
 		if _, err := gdi.db.Exec(index); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -526,13 +526,13 @@ func (gdi *GCPDatabaseIntegration) createAnalyticsViews() error {
 			GROUP BY ci.zone, ci.machine_type, ci.status, r.project_id;
 		`,
 	}
-	
+
 	for name, query := range views {
 		if _, err := gdi.db.Exec(query); err != nil {
 			log.Printf("Failed to create view %s: %v", name, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -543,13 +543,13 @@ func (gdi *GCPDatabaseIntegration) QueryResources(query string, args ...interfac
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var resources []*pb.Resource
 	for rows.Next() {
 		resource := &pb.Resource{}
 		var tagsJSON, labelsJSON, rawDataJSON string
 		var discoveredAt time.Time
-		
+
 		err := rows.Scan(
 			&resource.Id,
 			&resource.Name,
@@ -565,14 +565,14 @@ func (gdi *GCPDatabaseIntegration) QueryResources(query string, args ...interfac
 			log.Printf("Failed to scan row: %v", err)
 			continue
 		}
-		
+
 		// Parse JSON fields
 		json.Unmarshal([]byte(tagsJSON), &resource.Tags)
 		json.Unmarshal([]byte(rawDataJSON), &resource.RawData)
-		
+
 		resources = append(resources, resource)
 	}
-	
+
 	return resources, nil
 }
 
