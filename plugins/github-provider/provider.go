@@ -90,12 +90,17 @@ func (p *GitHubProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*p
 		Version:           providerVersion,
 		SupportedServices: githubServices,
 		Description:       "GitHub provider for organization, repository, security, actions, access, and finding scans",
-		Capabilities: map[string]string{
+		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":       "true",
 			"scanning":        "true",
 			"github_app_auth": "true",
 			"findings":        "true",
-		},
+		}, map[string]bool{
+			shared.OptionalGenerateServiceScanners: false,
+			shared.OptionalConfigureDiscovery:      false,
+			shared.OptionalAnalyzeDiscoveredData:   false,
+			shared.OptionalGenerateFromAnalysis:    false,
+		}),
 	}, nil
 }
 

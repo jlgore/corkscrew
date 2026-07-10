@@ -182,10 +182,15 @@ func (p *AWSProvider) GetProviderInfo(ctx context.Context, _ *pb.Empty) (*pb.Pro
 		Name:        "aws",
 		Version:     "4.0.0",
 		Description: "AWS provider backed by Cloud Control API",
-		Capabilities: map[string]string{
+		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":  "cloudformation.ListTypes + Resource Explorer",
 			"enrichment": "cloudcontrol.GetResource",
-		},
+		}, map[string]bool{
+			shared.OptionalGenerateServiceScanners: false,
+			shared.OptionalConfigureDiscovery:      false,
+			shared.OptionalAnalyzeDiscoveredData:   false,
+			shared.OptionalGenerateFromAnalysis:    false,
+		}),
 	}, nil
 }
 

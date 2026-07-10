@@ -75,13 +75,18 @@ func (p *CloudflareProvider) GetProviderInfo(ctx context.Context, req *pb.Empty)
 		Version:           providerVersion,
 		SupportedServices: append([]string(nil), cloudflareauth.CanonicalServices...),
 		Description:       "Cloudflare provider for edge, Workers, storage, data, and Zero Trust posture inventory",
-		Capabilities: map[string]string{
+		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":       "true",
 			"scanning":        "partial",
 			"oauth_planned":   "true",
 			"token_auth":      "true",
 			"read_only_focus": "true",
-		},
+		}, map[string]bool{
+			shared.OptionalGenerateServiceScanners: false,
+			shared.OptionalConfigureDiscovery:      false,
+			shared.OptionalAnalyzeDiscoveredData:   false,
+			shared.OptionalGenerateFromAnalysis:    false,
+		}),
 	}, nil
 }
 

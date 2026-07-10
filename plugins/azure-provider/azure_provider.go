@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -283,7 +284,7 @@ func (p *AzureProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb
 		Name:        "azure",
 		Version:     "1.0.0",
 		Description: "Microsoft Azure cloud provider plugin with ARM integration, Resource Graph support, and Management Group scoping",
-		Capabilities: map[string]string{
+		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":              "true",
 			"scanning":               "true",
 			"streaming":              "true",
@@ -296,7 +297,12 @@ func (p *AzureProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb
 			"entraid_app_deployment": "true",
 			"tenant_wide_access":     "true",
 			"hierarchical_scoping":   "true",
-		},
+		}, map[string]bool{
+			shared.OptionalGenerateServiceScanners: true,
+			shared.OptionalConfigureDiscovery:      true,
+			shared.OptionalAnalyzeDiscoveredData:   true,
+			shared.OptionalGenerateFromAnalysis:    true,
+		}),
 		SupportedServices: []string{
 			"compute", "storage", "network", "keyvault", "sql", "cosmosdb",
 			"appservice", "functions", "aks", "containerregistry", "monitor",

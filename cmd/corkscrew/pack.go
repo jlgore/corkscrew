@@ -1,5 +1,3 @@
-//go:build experimental_pack_cli
-
 package main
 
 import (

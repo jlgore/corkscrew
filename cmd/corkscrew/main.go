@@ -264,6 +264,8 @@ func main() {
 		runConfig(os.Args[2:])
 	case "plugin":
 		runPlugin(os.Args[2:])
+	case "pack":
+		runPack(os.Args[2:])
 	case "aws-org":
 		runAWSOrg(os.Args[2:])
 	case "serve":
@@ -342,9 +344,10 @@ func printUsage() {
 	fmt.Println("  corkscrew query --list-packs")
 	fmt.Println()
 	fmt.Println("  # Pack Management Examples")
-	fmt.Println("  corkscrew query pack install jlgore/cfi-ccc")
-	fmt.Println("  corkscrew query pack list")
-	fmt.Println("  corkscrew query pack validate jlgore/cfi-ccc")
+	fmt.Println("  corkscrew pack search \"aws security\"")
+	fmt.Println("  corkscrew pack install jlgore/cfi-ccc")
+	fmt.Println("  corkscrew pack list")
+	fmt.Println("  corkscrew pack validate jlgore/cfi-ccc")
 	fmt.Println()
 	fmt.Println("  # Cross-Cloud Examples")
 	fmt.Println("  corkscrew crosscloud scan --providers aws,azure --regions us-east-1,eastus")
@@ -1092,13 +1095,17 @@ func runQuery(args []string) {
 
 	// Check for pack management subcommand
 	if len(args) > 0 && args[0] == "pack" {
-		runPackCommand(args[1:])
+		runPack(args[1:])
 		return
 	}
 
 	// Handle list-packs
 	if *listPacks {
-		listInstalledPacks(*outputFormat)
+		listArgs := []string{"--output", *outputFormat}
+		if *outputFormat == "csv" {
+			listArgs = []string{"--output", "table"}
+		}
+		runPackList(listArgs)
 		return
 	}
 
@@ -1331,128 +1338,6 @@ func printComplianceCSV(results []compliance.SimpleQueryResult) {
 			fmt.Sprintf("%d", r.ResourceCount),
 			message,
 		})
-	}
-}
-
-// Pack management subcommand
-func runPackCommand(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew query pack <command> [options]")
-		fmt.Println("Commands: install, list, validate")
-		return
-	}
-
-	command := args[0]
-	switch command {
-	case "search":
-		printUnavailableCommand("query pack search", "registry search is not implemented in the query-pack CLI")
-	case "install":
-		installPack(args[1:])
-	case "list":
-		listInstalledPacks("table")
-	case "update":
-		printUnavailableCommand("query pack update", "pack updates are not implemented in the query-pack CLI")
-	case "validate":
-		validatePack(args[1:])
-	default:
-		fmt.Printf("Unknown pack command: %s\n", command)
-	}
-}
-
-func installPack(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew query pack install <pack-name>")
-		return
-	}
-
-	packName := args[0]
-	fmt.Printf("📦 Installing pack: %s\n", packName)
-
-	loader := compliance.NewLoader("")
-	if err := loader.InstallPack(packName); err != nil {
-		log.Fatalf("Failed to install pack: %v", err)
-	}
-
-	fmt.Printf("✅ Successfully installed pack: %s\n", packName)
-}
-
-func listInstalledPacks(format string) {
-	loader := compliance.NewLoader("")
-	packs, err := loader.ListPacks()
-	if err != nil {
-		log.Fatalf("Failed to list packs: %v", err)
-	}
-
-	if format == "json" {
-		data, _ := json.MarshalIndent(packs, "", "  ")
-		fmt.Println(string(data))
-		return
-	}
-
-	fmt.Printf("📦 Installed Compliance Packs (%d)\n\n", len(packs))
-
-	if len(packs) == 0 {
-		fmt.Println("No packs installed. Use 'corkscrew query pack install' to add packs.")
-		return
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "Pack\tVersion\tControls\tDescription")
-	fmt.Fprintln(w, "----\t-------\t--------\t-----------")
-
-	for _, pack := range packs {
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
-			pack.Metadata.Name,
-			pack.Metadata.Version,
-			len(pack.Queries),
-			truncateString(pack.Metadata.Description, 50))
-	}
-	w.Flush()
-}
-
-func validatePack(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew query pack validate <pack-name>")
-		return
-	}
-
-	packName := args[0]
-	fmt.Printf("🔍 Validating pack: %s\n", packName)
-
-	loader := compliance.NewLoader("")
-	pack, err := loader.LoadPack(packName)
-	if err != nil {
-		log.Fatalf("Failed to load pack: %v", err)
-	}
-
-	// Validate each query
-	errors := 0
-	warnings := 0
-
-	fmt.Printf("\nValidating %d queries...\n", len(pack.Queries))
-
-	for _, q := range pack.Queries {
-		// Basic validation
-		if q.ID == "" {
-			fmt.Printf("❌ Query missing ID\n")
-			errors++
-			continue
-		}
-
-		if q.SQL == "" {
-			fmt.Printf("❌ %s: Empty query\n", q.ID)
-			errors++
-			continue
-		}
-
-		// TODO: Add SQL validation
-		fmt.Printf("✅ %s: Valid\n", q.ID)
-	}
-
-	if errors == 0 && warnings == 0 {
-		fmt.Printf("\n✅ Pack validation successful!\n")
-	} else {
-		fmt.Printf("\n❌ Validation failed: %d errors, %d warnings\n", errors, warnings)
 	}
 }
 

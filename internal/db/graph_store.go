@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jlgore/corkscrew/pkg/models"
@@ -19,6 +20,38 @@ type GraphStore struct {
 
 func NewGraphStore(db *sql.DB) *GraphStore {
 	return &GraphStore{db: db}
+}
+
+func graphJSONScanString(value interface{}) (string, bool) {
+	switch v := value.(type) {
+	case nil:
+		return "", false
+	case string:
+		return v, v != ""
+	case []byte:
+		return string(v), len(v) > 0
+	case sql.NullString:
+		return v.String, v.Valid && v.String != ""
+	case map[string]interface{}, []interface{}:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return "", false
+		}
+		return string(data), true
+	case bool:
+		if v {
+			return "true", true
+		}
+		return "false", true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return "", false
+		}
+		return string(data), true
+	}
 }
 
 // StoreResources stores cross-cloud resources.
@@ -267,7 +300,7 @@ func (gs *GraphStore) GetResourcesByProvider(provider string) ([]*models.Resourc
 	var resources []*models.Resource
 	for rows.Next() {
 		resource := &models.Resource{}
-		var tags, attributes, metadata, rawData sql.NullString
+		var tags, attributes, metadata, rawData interface{}
 
 		err := rows.Scan(
 			&resource.ID, &resource.Name, &resource.Type, &resource.Service,
@@ -279,17 +312,17 @@ func (gs *GraphStore) GetResourcesByProvider(provider string) ([]*models.Resourc
 			return nil, fmt.Errorf("failed to scan resource: %w", err)
 		}
 
-		if tags.Valid {
-			json.Unmarshal([]byte(tags.String), &resource.Tags)
+		if jsonValue, ok := graphJSONScanString(tags); ok {
+			json.Unmarshal([]byte(jsonValue), &resource.Tags)
 		}
-		if attributes.Valid {
-			json.Unmarshal([]byte(attributes.String), &resource.Attributes)
+		if jsonValue, ok := graphJSONScanString(attributes); ok {
+			json.Unmarshal([]byte(jsonValue), &resource.Attributes)
 		}
-		if metadata.Valid {
-			json.Unmarshal([]byte(metadata.String), &resource.Metadata)
+		if jsonValue, ok := graphJSONScanString(metadata); ok {
+			json.Unmarshal([]byte(jsonValue), &resource.Metadata)
 		}
-		if rawData.Valid {
-			json.Unmarshal([]byte(rawData.String), &resource.RawData)
+		if jsonValue, ok := graphJSONScanString(rawData); ok {
+			json.Unmarshal([]byte(jsonValue), &resource.RawData)
 		}
 
 		resources = append(resources, resource)
@@ -340,13 +373,15 @@ func (gs *GraphStore) GetDNSRecordsByProvider(provider string) ([]*models.DNSRec
 	var records []*models.DNSRecord
 	for rows.Next() {
 		record := &models.DNSRecord{}
-		var valuesJSON string
+		var valuesJSON interface{}
 		err := rows.Scan(&record.Name, &record.Type, &valuesJSON, &record.TTL, &record.Provider, &record.Zone, &record.ResourceID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan DNS record: %w", err)
 		}
 
-		json.Unmarshal([]byte(valuesJSON), &record.Values)
+		if jsonValue, ok := graphJSONScanString(valuesJSON); ok {
+			json.Unmarshal([]byte(jsonValue), &record.Values)
+		}
 		records = append(records, record)
 	}
 

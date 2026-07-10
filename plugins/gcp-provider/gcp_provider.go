@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/resourcemanager/apiv3"
 	"cloud.google.com/go/resourcemanager/apiv3/resourcemanagerpb"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -305,7 +306,7 @@ func (p *GCPProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.P
 		Name:        "gcp",
 		Version:     "1.0.0",
 		Description: "Google Cloud Platform provider plugin with Cloud Asset Inventory integration",
-		Capabilities: map[string]string{
+		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":          "true",
 			"scanning":           "true",
 			"streaming":          "true",
@@ -317,7 +318,12 @@ func (p *GCPProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.P
 			"change_history":     "true",
 			"organization_scope": "true",
 			"folder_scope":       "true",
-		},
+		}, map[string]bool{
+			shared.OptionalGenerateServiceScanners: true,
+			shared.OptionalConfigureDiscovery:      true,
+			shared.OptionalAnalyzeDiscoveredData:   true,
+			shared.OptionalGenerateFromAnalysis:    true,
+		}),
 		SupportedServices: []string{
 			"compute", "storage", "bigquery", "pubsub", "cloudsql",
 			"container", "appengine", "run", "cloudfunctions",

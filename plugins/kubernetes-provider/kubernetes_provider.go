@@ -263,7 +263,7 @@ func (p *KubernetesProvider) GetProviderInfo(ctx context.Context, req *pb.Empty)
 		Name:        "kubernetes",
 		Version:     "1.0.0",
 		Description: "Kubernetes provider with auto-discovery for all resources including CRDs",
-		Capabilities: map[string]string{
+		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":     "true",
 			"scanning":      "true",
 			"streaming":     "true",
@@ -273,7 +273,12 @@ func (p *KubernetesProvider) GetProviderInfo(ctx context.Context, req *pb.Empty)
 			"watch_mode":    "true",
 			"crd_support":   "true",
 			"helm_support":  "true",
-		},
+		}, map[string]bool{
+			shared.OptionalGenerateServiceScanners: true,
+			shared.OptionalConfigureDiscovery:      false,
+			shared.OptionalAnalyzeDiscoveredData:   false,
+			shared.OptionalGenerateFromAnalysis:    false,
+		}),
 	}, nil
 }
 

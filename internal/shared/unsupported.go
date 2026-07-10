@@ -2,9 +2,30 @@ package shared
 
 import (
 	"fmt"
+	"strconv"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
 )
+
+const (
+	OptionalGenerateServiceScanners = "generate_service_scanners"
+	OptionalConfigureDiscovery      = "configure_discovery"
+	OptionalAnalyzeDiscoveredData   = "analyze_discovered_data"
+	OptionalGenerateFromAnalysis    = "generate_from_analysis"
+)
+
+// WithOptionalCapabilities returns a copy of capabilities augmented with
+// canonical feature-detection flags for optional provider operations.
+func WithOptionalCapabilities(capabilities map[string]string, supported map[string]bool) map[string]string {
+	out := make(map[string]string, len(capabilities)+len(supported))
+	for key, value := range capabilities {
+		out[key] = value
+	}
+	for operation, ok := range supported {
+		out["optional."+operation] = strconv.FormatBool(ok)
+	}
+	return out
+}
 
 // UnsupportedOperationReason returns the canonical message for optional
 // provider operations that are present in the gRPC interface but not supported
