@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/orgscan"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
 	"golang.org/x/time/rate"
@@ -81,6 +82,8 @@ type activeScanner interface {
 	DescribeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error)
 	UnsupportedTypes() map[string]string
 }
+
+const unsupportedCodegenReason = "Cloud Control API handles resource discovery dynamically"
 
 // AWSProvider implements pb.CloudProvider on top of the AWS Cloud Control API.
 // Resource Explorer is used for discovery when available; CC GetResource
@@ -446,27 +449,19 @@ func (p *AWSProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 // surface stays stable.
 
 func (p *AWSProvider) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
-	return &pb.GenerateScannersResponse{
-		Errors: []string{"scanner generation removed; Cloud Control API handles all resource types dynamically"},
-	}, nil
+	return shared.UnsupportedGenerateScanners(shared.UnsupportedOperationReason("aws", unsupportedCodegenReason)), nil
 }
 
 func (p *AWSProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
-	return &pb.AnalysisResponse{
-		Success: false,
-		Error:   "analysis pipeline removed; Cloud Control returns config directly via GetResource",
-	}, nil
+	return shared.UnsupportedAnalysis(shared.UnsupportedOperationReason("aws", "analysis pipeline removed; Cloud Control returns config directly via GetResource")), nil
 }
 
 func (p *AWSProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
-	return &pb.ConfigureDiscoveryResponse{Success: true}, nil
+	return shared.UnsupportedConfigureDiscovery(shared.UnsupportedOperationReason("aws", unsupportedCodegenReason)), nil
 }
 
 func (p *AWSProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
-	return &pb.GenerateResponse{
-		Success: false,
-		Error:   "code generation removed",
-	}, nil
+	return shared.UnsupportedGenerate(shared.UnsupportedOperationReason("aws", unsupportedCodegenReason)), nil
 }
 
 func (p *AWSProvider) Cleanup() error {

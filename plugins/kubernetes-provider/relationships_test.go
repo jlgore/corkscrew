@@ -234,7 +234,7 @@ func TestExtractBasicRelationships(t *testing.T) {
 										"service": map[string]interface{}{
 											"name": "web-service",
 											"port": map[string]interface{}{
-												"number": 80,
+												"number": int64(80),
 											},
 										},
 									},

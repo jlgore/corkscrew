@@ -181,10 +181,11 @@ func (g *Guardian) checkCostThreshold() SafetyCheck {
 	totalCost := 0.0
 	if len(result.ResultsByTime) > 0 && len(result.ResultsByTime[0].Groups) > 0 {
 		for _, group := range result.ResultsByTime[0].Groups {
-			if group.Metrics != nil && group.Metrics["BlendedCost"] != nil {
-				if cost := group.Metrics["BlendedCost"].Amount; cost != nil {
+			if group.Metrics != nil {
+				if metric, ok := group.Metrics["BlendedCost"]; ok && metric.Amount != nil {
 					// Convert string cost to float (simplified - would need proper parsing)
 					// This is a placeholder for actual cost parsing
+					_ = metric.Amount
 				}
 			}
 		}

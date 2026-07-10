@@ -204,6 +204,8 @@ func TestGCPChangeTracker_Creation(t *testing.T) {
 		t.Skip("Skipping GCP client tests in short mode")
 	}
 
+	t.Skip("Requires GCP credentials - integration test")
+
 	storage := &MockChangeStorage{}
 	config := &ChangeTrackerConfig{
 		Provider:                 "gcp",
@@ -212,7 +214,7 @@ func TestGCPChangeTracker_Creation(t *testing.T) {
 
 	// This would normally require GCP credentials
 	// For testing, we'll skip the actual client creation
-	t.Skip("Requires GCP credentials - integration test")
+	_, _ = storage, config
 }
 
 func TestGCPChangeTracker_ConvertAssetToChangeEvent(t *testing.T) {

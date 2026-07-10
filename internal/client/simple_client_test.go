@@ -1,28 +1,16 @@
 package client
 
 import (
-	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestPluginSearchPathsUseProviderBinaryName(t *testing.T) {
-	t.Setenv("HOME", "/home/tester")
-
-	paths := pluginSearchPaths("aws")
-	want := []string{
-		filepath.Join(".", "build", "bin", "aws-provider"),
-		filepath.Join(".", "plugins", "aws-provider", "aws-provider"),
-		filepath.Join("/home/tester", ".corkscrew", "plugins", "aws-provider"),
-		filepath.Join("/home/tester", ".corkscrew", "bin", "plugin", "aws-provider"),
+func TestNewPluginClientMissingPluginErrorIsActionable(t *testing.T) {
+	_, err := NewPluginClient("definitely-missing")
+	if err == nil {
+		t.Fatal("NewPluginClient() error = nil, want missing plugin error")
 	}
-
-	if len(paths) != len(want) {
-		t.Fatalf("pluginSearchPaths() got %d paths, want %d", len(paths), len(want))
-	}
-
-	for i := range want {
-		if paths[i] != want[i] {
-			t.Fatalf("pluginSearchPaths()[%d] = %q, want %q", i, paths[i], want[i])
-		}
+	if !strings.Contains(err.Error(), "Please run 'corkscrew init'") {
+		t.Fatalf("NewPluginClient() error = %q, want actionable init hint", err)
 	}
 }

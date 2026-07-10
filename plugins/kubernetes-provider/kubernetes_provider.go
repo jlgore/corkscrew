@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +51,8 @@ type KubernetesProvider struct {
 	// Configuration
 	config *ProviderConfig
 }
+
+const unsupportedCodegenReason = "Kubernetes provider discovers API resources dynamically"
 
 // ProviderConfig holds configuration for the Kubernetes provider
 type ProviderConfig struct {
@@ -1327,23 +1330,15 @@ func (p *KubernetesProvider) labelsToString(labels map[string]interface{}) strin
 
 // ConfigureDiscovery configures discovery sources for the Kubernetes provider
 func (p *KubernetesProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
-	return &pb.ConfigureDiscoveryResponse{
-		Success: true,
-	}, nil
+	return shared.UnsupportedConfigureDiscovery(shared.UnsupportedOperationReason("kubernetes", unsupportedCodegenReason)), nil
 }
 
 // AnalyzeDiscoveredData analyzes discovered Kubernetes data
 func (p *KubernetesProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
-	return &pb.AnalysisResponse{
-		Services: []*pb.ServiceAnalysis{},
-		Success:  true,
-	}, nil
+	return shared.UnsupportedAnalysis(shared.UnsupportedOperationReason("kubernetes", unsupportedCodegenReason)), nil
 }
 
 // GenerateFromAnalysis generates code from analysis results
 func (p *KubernetesProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
-	return &pb.GenerateResponse{
-		Files: []*pb.GeneratedFile{},
-		Stats: &pb.GenerationStats{},
-	}, nil
+	return shared.UnsupportedGenerate(shared.UnsupportedOperationReason("kubernetes", unsupportedCodegenReason)), nil
 }

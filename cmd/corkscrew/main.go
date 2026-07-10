@@ -259,9 +259,7 @@ func main() {
 	case "query":
 		runQuery(os.Args[2:])
 	case "diagram":
-		fmt.Println("❌ Diagram functionality is temporarily disabled")
-		fmt.Println("This feature will be available in a future release")
-		// runDiagram(os.Args[2:])
+		printUnavailableCommand("diagram", "diagram generation is not wired into this binary")
 	case "config":
 		runConfig(os.Args[2:])
 	case "plugin":
@@ -291,6 +289,12 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
+}
+
+func printUnavailableCommand(command, reason string) {
+	fmt.Fprintf(os.Stderr, "Command unavailable: %s\n", command)
+	fmt.Fprintf(os.Stderr, "%s\n", reason)
+	os.Exit(1)
 }
 
 func printUsage() {
@@ -338,10 +342,8 @@ func printUsage() {
 	fmt.Println("  corkscrew query --list-packs")
 	fmt.Println()
 	fmt.Println("  # Pack Management Examples")
-	fmt.Println("  corkscrew query pack search \"aws security\"")
 	fmt.Println("  corkscrew query pack install jlgore/cfi-ccc")
 	fmt.Println("  corkscrew query pack list")
-	fmt.Println("  corkscrew query pack update --all")
 	fmt.Println("  corkscrew query pack validate jlgore/cfi-ccc")
 	fmt.Println()
 	fmt.Println("  # Cross-Cloud Examples")
@@ -475,16 +477,9 @@ func runDiscover(args []string) {
 	fmt.Printf("🔍 Discovering services for provider: %s\n", *providerName)
 
 	// Initialize plugin client
-	pc, err := client.NewPluginClient(*providerName)
+	pc, err := createPluginClient(*providerName)
 	if err != nil {
-		// Provide helpful error message with suggestions
-		pm := plugins.NewPluginManager()
-		if pm.CanBuildPlugin(*providerName) {
-			log.Fatalf("Plugin not found: %s\n\n💡 To build this plugin, run:\n   corkscrew plugin build %s\n   corkscrew plugin install %s",
-				*providerName, *providerName, *providerName)
-		} else {
-			log.Fatalf("Plugin not found: %s\n\n💡 Available plugins:\n   corkscrew plugin list", *providerName)
-		}
+		log.Fatal(err)
 	}
 	defer pc.Close()
 
@@ -742,7 +737,7 @@ func runDescribe(args []string) {
 	fmt.Printf("🔍 Describing resource: %s\n", *resourceID)
 
 	// Initialize plugin client
-	pc, err := client.NewPluginClient(*providerName)
+	pc, err := createPluginClient(*providerName)
 	if err != nil {
 		log.Fatalf("Failed to initialize plugin client: %v", err)
 	}
@@ -857,7 +852,7 @@ func runInfo(args []string) {
 	fmt.Printf("ℹ️  Getting info for provider: %s\n", *providerName)
 
 	// Initialize plugin client
-	pc, err := client.NewPluginClient(*providerName)
+	pc, err := createPluginClient(*providerName)
 	if err != nil {
 		log.Fatalf("Failed to initialize plugin client: %v", err)
 	}
@@ -944,7 +939,7 @@ func runSchemas(args []string) {
 	}
 
 	// Initialize plugin client
-	pc, err := client.NewPluginClient(*providerName)
+	pc, err := createPluginClient(*providerName)
 	if err != nil {
 		log.Fatalf("Failed to initialize plugin client: %v", err)
 	}
@@ -1343,38 +1338,25 @@ func printComplianceCSV(results []compliance.SimpleQueryResult) {
 func runPackCommand(args []string) {
 	if len(args) == 0 {
 		fmt.Println("Usage: corkscrew query pack <command> [options]")
-		fmt.Println("Commands: search, install, list, update, validate")
+		fmt.Println("Commands: install, list, validate")
 		return
 	}
 
 	command := args[0]
 	switch command {
 	case "search":
-		searchPacks(args[1:])
+		printUnavailableCommand("query pack search", "registry search is not implemented in the query-pack CLI")
 	case "install":
 		installPack(args[1:])
 	case "list":
 		listInstalledPacks("table")
 	case "update":
-		updatePacks(args[1:])
+		printUnavailableCommand("query pack update", "pack updates are not implemented in the query-pack CLI")
 	case "validate":
 		validatePack(args[1:])
 	default:
 		fmt.Printf("Unknown pack command: %s\n", command)
 	}
-}
-
-func searchPacks(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: corkscrew query pack search <query>")
-		return
-	}
-
-	query := strings.Join(args, " ")
-	fmt.Printf("🔍 Searching for packs matching: %s\n", query)
-
-	// TODO: Implement pack registry search
-	fmt.Println("Pack search will be available in a future release")
 }
 
 func installPack(args []string) {
@@ -1426,32 +1408,6 @@ func listInstalledPacks(format string) {
 			truncateString(pack.Metadata.Description, 50))
 	}
 	w.Flush()
-}
-
-func updatePacks(args []string) {
-	updateAll := false
-	for _, arg := range args {
-		if arg == "--all" {
-			updateAll = true
-			break
-		}
-	}
-
-	if !updateAll && len(args) == 0 {
-		fmt.Println("Usage: corkscrew query pack update <pack-name> or --all")
-		return
-	}
-
-	if updateAll {
-		fmt.Println("🔄 Updating all packs...")
-		// TODO: Implement pack updates
-		fmt.Println("Pack updates will be available in a future release")
-	} else {
-		packName := args[0]
-		fmt.Printf("🔄 Updating pack: %s\n", packName)
-		// TODO: Implement single pack update
-		fmt.Println("Pack updates will be available in a future release")
-	}
 }
 
 func validatePack(args []string) {

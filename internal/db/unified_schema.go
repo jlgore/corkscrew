@@ -61,15 +61,30 @@ func GetUnifiedDatabasePath(customPath ...string) (string, error) {
 	return filepath.Join(dbDir, "corkscrew.duckdb"), nil
 }
 
-// InitializeUnifiedDatabase creates and initializes the unified cloud database
-// If customPath is provided, it will be used instead of the default location
+// InitializeUnifiedDatabase creates and initializes the unified cloud database.
+// If customPath is provided, it will be used instead of the default location.
+// A `quack:` URI connects to a remote Quack server instead of a local file.
 func InitializeUnifiedDatabase(customPath ...string) (*UnifiedDatabaseConfig, error) {
-	dbPath, err := GetUnifiedDatabasePath(customPath...)
-	if err != nil {
-		return nil, err
+	target := ""
+	if len(customPath) > 0 {
+		target = customPath[0]
+	}
+	return InitializeUnifiedDatabaseWithOptions(target)
+}
+
+// InitializeUnifiedDatabaseWithOptions is like InitializeUnifiedDatabase but
+// accepts connection options (such as WithToken for remote Quack authentication).
+func InitializeUnifiedDatabaseWithOptions(target string, opts ...Option) (*UnifiedDatabaseConfig, error) {
+	dbPath := target
+	if !IsRemoteTarget(target) {
+		resolved, err := GetUnifiedDatabasePath(target)
+		if err != nil {
+			return nil, err
+		}
+		dbPath = resolved
 	}
 
-	db, err := sql.Open("duckdb", dbPath)
+	db, err := OpenDuckDB(context.Background(), dbPath, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -896,44 +911,41 @@ func (c *UnifiedDatabaseConfig) BeginTx(ctx context.Context, opts *sql.TxOptions
 	return c.DB.BeginTx(ctx, opts)
 }
 
-// StoreResources stores resource data (placeholder implementation)
+func (c *UnifiedDatabaseConfig) graphStore() *GraphStore {
+	return NewGraphStore(c.DB)
+}
+
+// StoreResources stores resource data
 func (c *UnifiedDatabaseConfig) StoreResources(resources []*models.Resource) error {
-	// TODO: Implement proper storage
-	return nil
+	return c.graphStore().StoreResources(resources)
 }
 
-// StoreIPAddresses stores IP address data (placeholder implementation)
+// StoreIPAddresses stores IP address data
 func (c *UnifiedDatabaseConfig) StoreIPAddresses(addresses []*models.IPAddress) error {
-	// TODO: Implement proper storage
-	return nil
+	return c.graphStore().StoreIPAddresses(addresses)
 }
 
-// StoreDNSRecords stores DNS record data (placeholder implementation)
+// StoreDNSRecords stores DNS record data
 func (c *UnifiedDatabaseConfig) StoreDNSRecords(records []*models.DNSRecord) error {
-	// TODO: Implement proper storage
-	return nil
+	return c.graphStore().StoreDNSRecords(records)
 }
 
-// StoreCorrelations stores correlation data (placeholder implementation)
+// StoreCorrelations stores correlation data
 func (c *UnifiedDatabaseConfig) StoreCorrelations(correlations interface{}) error {
-	// TODO: Implement proper storage
-	return nil
+	return c.graphStore().StoreCorrelations(correlations)
 }
 
-// GetResourcesByProvider retrieves resources by provider (placeholder implementation)
+// GetResourcesByProvider retrieves resources by provider
 func (c *UnifiedDatabaseConfig) GetResourcesByProvider(provider string) ([]*models.Resource, error) {
-	// TODO: Implement proper retrieval
-	return []*models.Resource{}, nil
+	return c.graphStore().GetResourcesByProvider(provider)
 }
 
-// GetIPAddressesByProvider retrieves IP addresses by provider (placeholder implementation)
+// GetIPAddressesByProvider retrieves IP addresses by provider
 func (c *UnifiedDatabaseConfig) GetIPAddressesByProvider(provider string) ([]*models.IPAddress, error) {
-	// TODO: Implement proper retrieval
-	return []*models.IPAddress{}, nil
+	return c.graphStore().GetIPAddressesByProvider(provider)
 }
 
-// GetDNSRecordsByProvider retrieves DNS records by provider (placeholder implementation)
+// GetDNSRecordsByProvider retrieves DNS records by provider
 func (c *UnifiedDatabaseConfig) GetDNSRecordsByProvider(provider string) ([]*models.DNSRecord, error) {
-	// TODO: Implement proper retrieval
-	return []*models.DNSRecord{}, nil
+	return c.graphStore().GetDNSRecordsByProvider(provider)
 }

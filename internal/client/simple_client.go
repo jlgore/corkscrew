@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"time"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/jlgore/corkscrew/internal/shared"
+	plugincatalog "github.com/jlgore/corkscrew/pkg/plugins"
 )
 
 // PluginClient represents a simple plugin client
@@ -18,49 +19,14 @@ type PluginClient struct {
 
 // NewPluginClient creates a new plugin client for the specified provider
 func NewPluginClient(providerName string) (*PluginClient, error) {
-	// Find plugin binary
-	var pluginPath string
-	for _, path := range pluginSearchPaths(providerName) {
-		if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
-			pluginPath = path
-			break
-		}
-	}
-
-	if pluginPath == "" {
+	pluginPath, err := plugincatalog.NewPluginManager().FindPlugin(providerName)
+	if err != nil {
 		return nil, fmt.Errorf("plugin %s not found. Please run 'corkscrew init' or 'make plugin-%s'", providerName, providerName)
 	}
 
-	// Create plugin client
-	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: shared.HandshakeConfig,
-		Plugins:         shared.PluginMap,
-		Cmd:             exec.Command(pluginPath),
-		AllowedProtocols: []plugin.Protocol{
-			plugin.ProtocolGRPC,
-		},
-		SyncStdout: os.Stdout,
-		SyncStderr: os.Stderr,
-	})
-
-	// Connect via RPC
-	rpcClient, err := client.Client()
+	client, provider, err := startProviderPlugin(pluginPath, []plugin.Protocol{plugin.ProtocolGRPC}, 0)
 	if err != nil {
-		client.Kill()
-		return nil, fmt.Errorf("failed to create RPC client: %w", err)
-	}
-
-	// Request the plugin
-	raw, err := rpcClient.Dispense("provider")
-	if err != nil {
-		client.Kill()
-		return nil, fmt.Errorf("failed to dispense plugin: %w", err)
-	}
-
-	provider, ok := raw.(shared.CloudProvider)
-	if !ok {
-		client.Kill()
-		return nil, fmt.Errorf("unexpected type from plugin")
+		return nil, err
 	}
 
 	return &PluginClient{
@@ -69,16 +35,40 @@ func NewPluginClient(providerName string) (*PluginClient, error) {
 	}, nil
 }
 
-func pluginSearchPaths(providerName string) []string {
-	home, _ := os.UserHomeDir()
-	pluginName := providerName + "-provider"
-
-	return []string{
-		filepath.Join(".", "build", "bin", pluginName),
-		filepath.Join(".", "plugins", pluginName, pluginName),
-		filepath.Join(home, ".corkscrew", "plugins", pluginName),
-		filepath.Join(home, ".corkscrew", "bin", "plugin", pluginName),
+func startProviderPlugin(pluginPath string, protocols []plugin.Protocol, startTimeout time.Duration) (*plugin.Client, shared.CloudProvider, error) {
+	if len(protocols) == 0 {
+		protocols = []plugin.Protocol{plugin.ProtocolGRPC}
 	}
+
+	client := plugin.NewClient(&plugin.ClientConfig{
+		HandshakeConfig:  shared.HandshakeConfig,
+		Plugins:          shared.PluginMap,
+		Cmd:              exec.Command(pluginPath),
+		AllowedProtocols: protocols,
+		SyncStdout:       os.Stdout,
+		SyncStderr:       os.Stderr,
+		StartTimeout:     startTimeout,
+	})
+
+	rpcClient, err := client.Client()
+	if err != nil {
+		client.Kill()
+		return nil, nil, fmt.Errorf("failed to create RPC client: %w", err)
+	}
+
+	raw, err := rpcClient.Dispense("provider")
+	if err != nil {
+		client.Kill()
+		return nil, nil, fmt.Errorf("failed to dispense plugin: %w", err)
+	}
+
+	provider, ok := raw.(shared.CloudProvider)
+	if !ok {
+		client.Kill()
+		return nil, nil, fmt.Errorf("unexpected type from plugin")
+	}
+
+	return client, provider, nil
 }
 
 // GetProvider returns the cloud provider interface

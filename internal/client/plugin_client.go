@@ -3,15 +3,13 @@ package client
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/go-plugin"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
+	plugincatalog "github.com/jlgore/corkscrew/pkg/plugins"
 )
 
 // PluginManager manages cloud provider plugins
@@ -55,39 +53,24 @@ func (pm *PluginManager) LoadProvider(providerName string) (shared.CloudProvider
 		return provider, nil
 	}
 
-	// Build plugin path
-	pluginPath := filepath.Join(pm.pluginDir, fmt.Sprintf("%s-provider", providerName))
-	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("plugin not found: %s", pluginPath)
+	var pluginDirs []string
+	if pm.pluginDir != "" {
+		pluginDirs = []string{pm.pluginDir}
 	}
-
-	// Create plugin client
-	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: shared.HandshakeConfig,
-		Plugins:         shared.PluginMap,
-		Cmd:             exec.Command(pluginPath),
-		AllowedProtocols: []plugin.Protocol{
-			plugin.ProtocolNetRPC, plugin.ProtocolGRPC},
-		SyncStdout:   os.Stdout,
-		SyncStderr:   os.Stderr,
-		StartTimeout: 5 * time.Minute, // Allow 5 minutes for plugin startup/discovery
-	})
-
-	// Connect via gRPC
-	rpcClient, err := client.Client()
+	pluginPath, err := plugincatalog.NewPluginManagerWithDirs(pluginDirs, pm.pluginDir).FindPlugin(providerName)
 	if err != nil {
-		client.Kill()
-		return nil, fmt.Errorf("failed to create plugin client: %w", err)
+		return nil, err
 	}
 
-	// Get the provider
-	raw, err := rpcClient.Dispense("provider")
+	client, provider, err := startProviderPlugin(
+		pluginPath,
+		[]plugin.Protocol{plugin.ProtocolNetRPC, plugin.ProtocolGRPC},
+		5*time.Minute,
+	)
 	if err != nil {
-		client.Kill()
-		return nil, fmt.Errorf("failed to dispense provider: %w", err)
+		return nil, err
 	}
 
-	provider := raw.(shared.CloudProvider)
 	pm.clients[providerName] = client
 	pm.providers[providerName] = provider
 

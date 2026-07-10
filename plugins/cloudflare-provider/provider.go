@@ -10,12 +10,13 @@ import (
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/providers/cloudflareauth"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
 	providerVersion   = "0.1.0"
-	unsupportedReason = "operation not implemented yet by cloudflare provider skeleton"
+	unsupportedReason = "operation not implemented yet by provider skeleton"
 )
 
 type CloudflareProvider struct {
@@ -222,19 +223,19 @@ func (p *CloudflareProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasR
 }
 
 func (p *CloudflareProvider) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
-	return &pb.GenerateScannersResponse{GeneratedCount: 0, Errors: []string{unsupportedReason}}, nil
+	return shared.UnsupportedGenerateScanners(shared.UnsupportedOperationReason("cloudflare", unsupportedReason)), nil
 }
 
 func (p *CloudflareProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
-	return &pb.ConfigureDiscoveryResponse{Success: false, Error: unsupportedReason}, nil
+	return shared.UnsupportedConfigureDiscovery(shared.UnsupportedOperationReason("cloudflare", unsupportedReason)), nil
 }
 
 func (p *CloudflareProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
-	return &pb.AnalysisResponse{Success: false, Error: unsupportedReason}, nil
+	return shared.UnsupportedAnalysis(shared.UnsupportedOperationReason("cloudflare", unsupportedReason)), nil
 }
 
 func (p *CloudflareProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
-	return &pb.GenerateResponse{Success: false, Error: unsupportedReason}, nil
+	return shared.UnsupportedGenerate(shared.UnsupportedOperationReason("cloudflare", unsupportedReason)), nil
 }
 
 func (p *CloudflareProvider) ensureInitialized() error {

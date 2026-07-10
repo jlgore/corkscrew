@@ -37,7 +37,7 @@ func TestResourceScanner_ScanResources(t *testing.T) {
 	// Test scanning pods
 	ctx := context.Background()
 	resources, err := scanner.ScanResources(ctx, []string{"pods"}, []string{"test-namespace"})
-	
+
 	require.NoError(t, err)
 	assert.Len(t, resources, 2)
 	assert.Equal(t, "Pod", resources[0].Type)
@@ -65,7 +65,7 @@ func TestResourceScanner_StreamScanResources(t *testing.T) {
 	// Test streaming
 	ctx := context.Background()
 	resourceChan := make(chan *pb.Resource, 10)
-	
+
 	go func() {
 		err := scanner.StreamScanResources(ctx, []string{"pods"}, resourceChan)
 		assert.NoError(t, err)
@@ -74,7 +74,7 @@ func TestResourceScanner_StreamScanResources(t *testing.T) {
 	// Collect streamed resources
 	var resources []*pb.Resource
 	timeout := time.After(2 * time.Second)
-	
+
 	for {
 		select {
 		case resource, ok := <-resourceChan:
@@ -95,10 +95,10 @@ func TestResourceScanner_ScanWithLabelSelector(t *testing.T) {
 	// Create pods with different labels
 	pod1 := createTestPod("default", "pod-1")
 	pod1.SetLabels(map[string]string{"app": "web", "tier": "frontend"})
-	
+
 	pod2 := createTestPod("default", "pod-2")
 	pod2.SetLabels(map[string]string{"app": "db", "tier": "backend"})
-	
+
 	pod3 := createTestPod("default", "pod-3")
 	pod3.SetLabels(map[string]string{"app": "web", "tier": "backend"})
 
@@ -117,16 +117,15 @@ func TestResourceScanner_ScanWithLabelSelector(t *testing.T) {
 	// Test label selector
 	ctx := context.Background()
 	resources, err := scanner.ScanWithLabelSelector(ctx, "pods", "app=web", []string{"default"})
-	
+
 	require.NoError(t, err)
 	assert.Len(t, resources, 2)
-	
+
 	// Verify both web pods were found
 	names := []string{resources[0].Name, resources[1].Name}
 	assert.Contains(t, names, "pod-1")
 	assert.Contains(t, names, "pod-3")
 }
-
 
 // Helper functions
 
@@ -172,8 +171,8 @@ func createTestService(namespace, name string) *unstructured.Unstructured {
 				},
 				"ports": []interface{}{
 					map[string]interface{}{
-						"port":       80,
-						"targetPort": 8080,
+						"port":       int64(80),
+						"targetPort": int64(8080),
 					},
 				},
 			},

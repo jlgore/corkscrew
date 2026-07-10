@@ -60,16 +60,7 @@ func (dcs *DuckDBChangeStorage) initializeSchema() error {
 			change_metadata JSON,
 			impact_assessment JSON,
 			compliance_impact JSON,
-			related_changes JSON,
-			INDEX idx_provider (provider),
-			INDEX idx_resource_id (resource_id),
-			INDEX idx_resource_type (resource_type),
-			INDEX idx_service (service),
-			INDEX idx_project (project),
-			INDEX idx_change_type (change_type),
-			INDEX idx_severity (severity),
-			INDEX idx_timestamp (timestamp),
-			INDEX idx_detected_at (detected_at)
+			related_changes JSON
 		);`,
 
 		// Drift baselines table
@@ -84,11 +75,7 @@ func (dcs *DuckDBChangeStorage) initializeSchema() error {
 			policies JSON,
 			tags JSON,
 			version VARCHAR,
-			active BOOLEAN DEFAULT true,
-			INDEX idx_provider (provider),
-			INDEX idx_name (name),
-			INDEX idx_active (active),
-			INDEX idx_created_at (created_at)
+			active BOOLEAN DEFAULT true
 		);`,
 
 		// Change analytics aggregation table
@@ -105,14 +92,7 @@ func (dcs *DuckDBChangeStorage) initializeSchema() error {
 			total_impact_score DOUBLE DEFAULT 0,
 			avg_impact_score DOUBLE DEFAULT 0,
 			created_at TIMESTAMP NOT NULL,
-			updated_at TIMESTAMP NOT NULL,
-			INDEX idx_provider (provider),
-			INDEX idx_date_bucket (date_bucket),
-			INDEX idx_bucket_type (bucket_type),
-			INDEX idx_service (service),
-			INDEX idx_resource_type (resource_type),
-			INDEX idx_change_type (change_type),
-			INDEX idx_severity (severity)
+			updated_at TIMESTAMP NOT NULL
 		);`,
 
 		// Alert configurations table
@@ -125,9 +105,7 @@ func (dcs *DuckDBChangeStorage) initializeSchema() error {
 			conditions JSON NOT NULL,
 			actions JSON NOT NULL,
 			created_at TIMESTAMP NOT NULL,
-			updated_at TIMESTAMP NOT NULL,
-			INDEX idx_provider (provider),
-			INDEX idx_enabled (enabled)
+			updated_at TIMESTAMP NOT NULL
 		);`,
 
 		// Change streams table for real-time tracking
@@ -139,9 +117,7 @@ func (dcs *DuckDBChangeStorage) initializeSchema() error {
 			last_processed_timestamp TIMESTAMP,
 			status VARCHAR DEFAULT 'active', -- 'active', 'paused', 'stopped'
 			created_at TIMESTAMP NOT NULL,
-			updated_at TIMESTAMP NOT NULL,
-			INDEX idx_provider (provider),
-			INDEX idx_status (status)
+			updated_at TIMESTAMP NOT NULL
 		);`,
 
 		// Resource state snapshots for efficient drift detection
@@ -155,14 +131,7 @@ func (dcs *DuckDBChangeStorage) initializeSchema() error {
 			snapshot_timestamp TIMESTAMP NOT NULL,
 			state_data JSON NOT NULL,
 			checksum VARCHAR,
-			created_at TIMESTAMP NOT NULL,
-			INDEX idx_resource_id (resource_id),
-			INDEX idx_provider (provider),
-			INDEX idx_resource_type (resource_type),
-			INDEX idx_service (service),
-			INDEX idx_project (project),
-			INDEX idx_snapshot_timestamp (snapshot_timestamp),
-			INDEX idx_checksum (checksum)
+			created_at TIMESTAMP NOT NULL
 		);`,
 	}
 
@@ -437,7 +406,7 @@ func (dcs *DuckDBChangeStorage) GetBaseline(baselineID string) (*DriftBaseline, 
 	row := dcs.db.QueryRow(query, baselineID)
 
 	var baseline DriftBaseline
-	var resourcesJSON, policiesJSON, tagsJSON string
+	var resourcesJSON, policiesJSON, tagsJSON interface{}
 
 	err := row.Scan(
 		&baseline.ID,
@@ -461,15 +430,15 @@ func (dcs *DuckDBChangeStorage) GetBaseline(baselineID string) (*DriftBaseline, 
 	}
 
 	// Unmarshal JSON fields
-	if err := json.Unmarshal([]byte(resourcesJSON), &baseline.Resources); err != nil {
+	if err := json.Unmarshal([]byte(jsonScanString(resourcesJSON)), &baseline.Resources); err != nil {
 		log.Printf("Failed to unmarshal baseline resources: %v", err)
 	}
 
-	if err := json.Unmarshal([]byte(policiesJSON), &baseline.Policies); err != nil {
+	if err := json.Unmarshal([]byte(jsonScanString(policiesJSON)), &baseline.Policies); err != nil {
 		log.Printf("Failed to unmarshal baseline policies: %v", err)
 	}
 
-	if err := json.Unmarshal([]byte(tagsJSON), &baseline.Tags); err != nil {
+	if err := json.Unmarshal([]byte(jsonScanString(tagsJSON)), &baseline.Tags); err != nil {
 		log.Printf("Failed to unmarshal baseline tags: %v", err)
 	}
 
@@ -489,7 +458,7 @@ func (dcs *DuckDBChangeStorage) ListBaselines(provider string) ([]*DriftBaseline
 	var baselines []*DriftBaseline
 	for rows.Next() {
 		var baseline DriftBaseline
-		var resourcesJSON, policiesJSON, tagsJSON string
+		var resourcesJSON, policiesJSON, tagsJSON interface{}
 
 		err := rows.Scan(
 			&baseline.ID,
@@ -511,9 +480,9 @@ func (dcs *DuckDBChangeStorage) ListBaselines(provider string) ([]*DriftBaseline
 		}
 
 		// Unmarshal JSON fields
-		json.Unmarshal([]byte(resourcesJSON), &baseline.Resources)
-		json.Unmarshal([]byte(policiesJSON), &baseline.Policies)
-		json.Unmarshal([]byte(tagsJSON), &baseline.Tags)
+		json.Unmarshal([]byte(jsonScanString(resourcesJSON)), &baseline.Resources)
+		json.Unmarshal([]byte(jsonScanString(policiesJSON)), &baseline.Policies)
+		json.Unmarshal([]byte(jsonScanString(tagsJSON)), &baseline.Tags)
 
 		baselines = append(baselines, &baseline)
 	}
@@ -706,8 +675,8 @@ func (dcs *DuckDBChangeStorage) scanChangeEvent(scanner interface {
 	Scan(dest ...interface{}) error
 }) (*ChangeEvent, error) {
 	var change ChangeEvent
-	var previousStateJSON, currentStateJSON, changedFieldsJSON, changeMetadataJSON string
-	var impactAssessmentJSON, complianceImpactJSON, relatedChangesJSON string
+	var previousStateJSON, currentStateJSON, changedFieldsJSON, changeMetadataJSON interface{}
+	var impactAssessmentJSON, complianceImpactJSON, relatedChangesJSON interface{}
 	var changeTypeStr, severityStr string
 
 	err := scanner.Scan(
@@ -741,35 +710,57 @@ func (dcs *DuckDBChangeStorage) scanChangeEvent(scanner interface {
 	change.Severity = ChangeSeverity(severityStr)
 
 	// Unmarshal JSON fields
-	if previousStateJSON != "" {
-		json.Unmarshal([]byte(previousStateJSON), &change.PreviousState)
+	if jsonText := jsonScanString(previousStateJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.PreviousState)
 	}
 
-	if currentStateJSON != "" {
-		json.Unmarshal([]byte(currentStateJSON), &change.CurrentState)
+	if jsonText := jsonScanString(currentStateJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.CurrentState)
 	}
 
-	if changedFieldsJSON != "" {
-		json.Unmarshal([]byte(changedFieldsJSON), &change.ChangedFields)
+	if jsonText := jsonScanString(changedFieldsJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.ChangedFields)
 	}
 
-	if changeMetadataJSON != "" {
-		json.Unmarshal([]byte(changeMetadataJSON), &change.ChangeMetadata)
+	if jsonText := jsonScanString(changeMetadataJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.ChangeMetadata)
 	}
 
-	if impactAssessmentJSON != "" {
-		json.Unmarshal([]byte(impactAssessmentJSON), &change.ImpactAssessment)
+	if jsonText := jsonScanString(impactAssessmentJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.ImpactAssessment)
 	}
 
-	if complianceImpactJSON != "" {
-		json.Unmarshal([]byte(complianceImpactJSON), &change.ComplianceImpact)
+	if jsonText := jsonScanString(complianceImpactJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.ComplianceImpact)
 	}
 
-	if relatedChangesJSON != "" {
-		json.Unmarshal([]byte(relatedChangesJSON), &change.RelatedChanges)
+	if jsonText := jsonScanString(relatedChangesJSON); jsonText != "" {
+		json.Unmarshal([]byte(jsonText), &change.RelatedChanges)
 	}
 
 	return &change, nil
+}
+
+func jsonScanString(value interface{}) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case sql.NullString:
+		if v.Valid {
+			return v.String
+		}
+		return ""
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
 }
 
 // updateAnalytics updates the analytics aggregation table

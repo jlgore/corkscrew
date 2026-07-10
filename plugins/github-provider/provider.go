@@ -16,6 +16,7 @@ import (
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -290,19 +291,19 @@ func (p *GitHubProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasReque
 const unsupportedReason = "operation not supported by github provider (handwritten scanner; nothing to generate or configure)"
 
 func (p *GitHubProvider) GenerateServiceScanners(ctx context.Context, req *pb.GenerateScannersRequest) (*pb.GenerateScannersResponse, error) {
-	return &pb.GenerateScannersResponse{GeneratedCount: 0, Errors: []string{unsupportedReason}}, nil
+	return shared.UnsupportedGenerateScanners(unsupportedReason), nil
 }
 
 func (p *GitHubProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
-	return &pb.ConfigureDiscoveryResponse{Success: false, Error: unsupportedReason}, nil
+	return shared.UnsupportedConfigureDiscovery(unsupportedReason), nil
 }
 
 func (p *GitHubProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
-	return &pb.AnalysisResponse{Success: false, Error: unsupportedReason}, nil
+	return shared.UnsupportedAnalysis(unsupportedReason), nil
 }
 
 func (p *GitHubProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
-	return &pb.GenerateResponse{Success: false, Error: unsupportedReason}, nil
+	return shared.UnsupportedGenerate(unsupportedReason), nil
 }
 
 func readConfig(req *pb.InitializeRequest) (*providerConfig, error) {

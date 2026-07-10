@@ -16,33 +16,66 @@ type PluginManager struct {
 }
 
 func NewPluginManager() *PluginManager {
-	homeDir, _ := os.UserHomeDir()
 	return &PluginManager{
-		pluginDirs: []string{
-			"./build/bin",
-			"./plugins",
-			filepath.Join(homeDir, ".corkscrew", "plugins"),
-			filepath.Join(homeDir, ".corkscrew", "bin", "plugin"),
-			"/usr/local/lib/corkscrew/plugins",
-		},
-		sourceDir: "./plugins",
+		pluginDirs: DefaultPluginDirs(),
+		sourceDir:  "./plugins",
 	}
+}
+
+func NewPluginManagerWithDirs(pluginDirs []string, sourceDir string) *PluginManager {
+	if len(pluginDirs) == 0 {
+		pluginDirs = DefaultPluginDirs()
+	}
+	if sourceDir == "" {
+		sourceDir = "./plugins"
+	}
+	return &PluginManager{
+		pluginDirs: pluginDirs,
+		sourceDir:  sourceDir,
+	}
+}
+
+func DefaultPluginDirs() []string {
+	homeDir, _ := os.UserHomeDir()
+	dirs := []string{}
+	if envDir := strings.TrimSpace(os.Getenv("CORKSCREW_PLUGIN_DIR")); envDir != "" {
+		dirs = append(dirs, envDir)
+	}
+	dirs = append(dirs,
+		"./build/bin",
+		"./plugins",
+		filepath.Join(homeDir, ".corkscrew", "plugins"),
+		filepath.Join(homeDir, ".corkscrew", "bin", "plugin"),
+		"/usr/local/lib/corkscrew/plugins",
+	)
+	return dirs
+}
+
+func ProviderBinaryName(provider string) string {
+	return fmt.Sprintf("%s-provider", provider)
+}
+
+func PluginSearchPaths(provider string, pluginDirs []string) []string {
+	if len(pluginDirs) == 0 {
+		pluginDirs = DefaultPluginDirs()
+	}
+
+	pluginName := ProviderBinaryName(provider)
+	paths := make([]string, 0, len(pluginDirs)*2)
+	for _, dir := range pluginDirs {
+		paths = append(paths,
+			filepath.Join(dir, pluginName),
+			filepath.Join(dir, pluginName, pluginName),
+		)
+	}
+	return paths
 }
 
 // FindPlugin looks for installed plugin binary
 func (pm *PluginManager) FindPlugin(provider string) (string, error) {
-	pluginName := fmt.Sprintf("%s-provider", provider)
-
-	for _, dir := range pm.pluginDirs {
-		candidates := []string{
-			filepath.Join(dir, pluginName),
-			filepath.Join(dir, pluginName, pluginName),
-		}
-
-		for _, path := range candidates {
-			if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
-				return path, nil
-			}
+	for _, path := range PluginSearchPaths(provider, pm.pluginDirs) {
+		if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
+			return path, nil
 		}
 	}
 
@@ -51,7 +84,7 @@ func (pm *PluginManager) FindPlugin(provider string) (string, error) {
 
 // CanBuildPlugin checks if source exists for plugin
 func (pm *PluginManager) CanBuildPlugin(provider string) bool {
-	sourceDir := filepath.Join(pm.sourceDir, fmt.Sprintf("%s-provider", provider))
+	sourceDir := filepath.Join(pm.sourceDir, ProviderBinaryName(provider))
 	_, err := os.Stat(sourceDir)
 	return err == nil
 }
@@ -70,7 +103,7 @@ func (pm *PluginManager) BuildPlugin(provider string) error {
 	}
 
 	// Fallback to direct go build
-	sourceDir := filepath.Join(pm.sourceDir, fmt.Sprintf("%s-provider", provider))
+	sourceDir := filepath.Join(pm.sourceDir, ProviderBinaryName(provider))
 
 	// Create plugins directory if it doesn't exist
 	pluginsDir := filepath.Join("plugins")
@@ -78,7 +111,7 @@ func (pm *PluginManager) BuildPlugin(provider string) error {
 		return fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 
-	outputPath := filepath.Join(pluginsDir, fmt.Sprintf("%s-provider", provider))
+	outputPath := filepath.Join(pluginsDir, ProviderBinaryName(provider))
 
 	cmd := exec.Command("go", "build", "-o", outputPath, ".")
 	cmd.Dir = sourceDir

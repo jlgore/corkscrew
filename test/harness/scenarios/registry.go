@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/jlgore/corkscrew/test/harness/automation"
-	"github.com/jlgore/corkscrew/test/harness/scenarios/azure"
-	"github.com/jlgore/corkscrew/test/harness/scenarios/gcp"
 )
 
 // ScenarioRegistry manages all available test scenarios
@@ -26,16 +24,6 @@ func NewScenarioRegistry() *ScenarioRegistry {
 	registry.Register("compute-stack", func() automation.Scenario { return NewComputeStackScenario() })
 	registry.Register("security-stack", func() automation.Scenario { return NewSecurityStackScenario() })
 	registry.Register("storage-stack", func() automation.Scenario { return NewStorageStackScenario() })
-
-	// Azure scenarios
-	registry.Register("azure-resource-group", func() automation.Scenario { return azure.NewResourceGroupScenario() })
-	registry.Register("azure-vnet", func() automation.Scenario { return azure.NewVNetScenario() })
-	registry.Register("azure-identity", func() automation.Scenario { return azure.NewIdentityScenario() })
-
-	// GCP scenarios
-	registry.Register("gcp-project", func() automation.Scenario { return gcp.NewProjectScenario() })
-	registry.Register("gcp-vpc", func() automation.Scenario { return gcp.NewVPCScenario() })
-	registry.Register("gcp-iam", func() automation.Scenario { return gcp.NewIAMScenario() })
 
 	return registry
 }

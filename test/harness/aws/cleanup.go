@@ -317,7 +317,7 @@ func (cv *CleanupVerifier) emptyS3Bucket(ctx context.Context, bucketName string)
 				Bucket: aws.String(bucketName),
 				Delete: &types.Delete{
 					Objects: batch,
-					Quiet:   true,
+					Quiet:   aws.Bool(true),
 				},
 			})
 
@@ -327,7 +327,7 @@ func (cv *CleanupVerifier) emptyS3Bucket(ctx context.Context, bucketName string)
 		}
 
 		// Update continuation token for next iteration
-		if versions.IsTruncated {
+		if aws.ToBool(versions.IsTruncated) {
 			listVersionsInput.KeyMarker = versions.NextKeyMarker
 			listVersionsInput.VersionIdMarker = versions.NextVersionIdMarker
 		} else {

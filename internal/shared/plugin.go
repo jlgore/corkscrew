@@ -72,7 +72,6 @@ func (p *CloudProviderGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin
 	return &grpcProviderClient{client: pb.NewCloudProviderClient(c), ctx: ctx}, nil
 }
 
-
 // grpcProviderServer is the gRPC server implementation for CloudProvider
 type grpcProviderServer struct {
 	pb.UnimplementedCloudProviderServer
@@ -138,7 +137,6 @@ func (s *grpcProviderServer) AnalyzeDiscoveredData(ctx context.Context, req *pb.
 func (s *grpcProviderServer) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
 	return s.Impl.GenerateFromAnalysis(ctx, req)
 }
-
 
 // grpcProviderClient is the gRPC client implementation for CloudProvider
 type grpcProviderClient struct {
@@ -240,4 +238,3 @@ func (c *grpcProviderClient) StreamScanService(req *pb.ScanServiceRequest, strea
 
 	return nil
 }
-

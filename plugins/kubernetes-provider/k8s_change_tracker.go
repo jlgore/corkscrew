@@ -575,6 +575,10 @@ func (kct *K8sChangeTracker) startInformersWithCallback(changeEvents chan<- *Cha
 }
 
 func (kct *K8sChangeTracker) getCurrentResourceState(ctx context.Context, resourceID string) (*ResourceState, error) {
+	if kct.clientset == nil {
+		return nil, nil
+	}
+
 	// Parse resource ID to extract namespace, kind, and name
 	// Format: namespace/kind/name or kind/name for cluster-scoped resources
 	parts := strings.Split(resourceID, "/")
@@ -683,9 +687,13 @@ func (kct *K8sChangeTracker) convertPodToChangeEvent(obj interface{}, eventType 
 	// This is a simplified conversion - in practice you'd extract more metadata
 	resourceID := "pod/example"
 	changeType := kct.mapWatchEventToChangeType(eventType)
+	changeID := fmt.Sprintf("kubernetes_%s_%s_%d", resourceID, string(changeType), time.Now().Unix())
+	if kct.BaseChangeTracker != nil {
+		changeID = kct.GenerateChangeID(resourceID, time.Now(), changeType)
+	}
 
 	change := &ChangeEvent{
-		ID:           kct.GenerateChangeID(resourceID, time.Now(), changeType),
+		ID:           changeID,
 		Provider:     "kubernetes",
 		ResourceID:   resourceID,
 		ResourceName: "example-pod",
