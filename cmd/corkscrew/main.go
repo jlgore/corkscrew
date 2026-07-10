@@ -20,7 +20,6 @@ import (
 	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/ui"
 	"github.com/jlgore/corkscrew/internal/client"
 	"github.com/jlgore/corkscrew/internal/db"
-	// "github.com/jlgore/corkscrew/pkg/crosscloud" // TODO: Uncomment when implementing actual cross-cloud logic
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/pkg/plugins"
 	"github.com/jlgore/corkscrew/pkg/query"
@@ -1790,6 +1789,7 @@ func runCrossCloudCorrelate(args []string) {
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score")
 	types := fs.String("types", "ip,dns,network", "Correlation types (ip,dns,network,all)")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
+	dbPath := fs.String("db", "", "Database path")
 	verify := fs.Bool("verify", false, "Verify correlations with additional checks")
 
 	if err := fs.Parse(args); err != nil {
@@ -1800,13 +1800,18 @@ func runCrossCloudCorrelate(args []string) {
 	fmt.Printf("🎯 Confidence threshold: %.2f\n", *confidence)
 	fmt.Printf("📊 Correlation types: %s\n", *types)
 	if *verify {
-		fmt.Println("✅ Verification enabled")
+		fmt.Println("Verification is handled by graph extension fixtures and confidence thresholds")
 	}
 	fmt.Println()
 
-	// Implementation would go here
-	fmt.Println("✅ Correlation analysis completed")
-	fmt.Printf("📈 Found correlations will be displayed in %s format\n", *output)
+	options := NetworkAnalysisOptions{
+		CorrelationTypes: parseCorrelationTypes(*types),
+		MinConfidence:    *confidence,
+		OutputFormat:     *output,
+	}
+	if err := runGraphCorrelations(*dbPath, options.CorrelationTypes, options); err != nil {
+		log.Fatalf("Cross-cloud correlation failed: %v", err)
+	}
 }
 
 // Cross-cloud topology implementation
@@ -1886,6 +1891,7 @@ func runCorrelateIP(args []string) {
 	confidence := fs.Float64("confidence", 0.8, "Minimum confidence score")
 	publicOnly := fs.Bool("public-only", false, "Only correlate public IP addresses")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
+	dbPath := fs.String("db", "", "Database path")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -1901,9 +1907,13 @@ func runCorrelateIP(args []string) {
 	}
 	fmt.Println()
 
-	// Implementation would go here
-	fmt.Println("✅ IP correlation analysis completed")
-	fmt.Printf("📄 Results formatted as: %s\n", *output)
+	options := NetworkAnalysisOptions{
+		MinConfidence: *confidence,
+		OutputFormat:  *output,
+	}
+	if err := runCorrelationAnalysis(*dbPath, "ip", options); err != nil {
+		log.Fatalf("IP correlation failed: %v", err)
+	}
 }
 
 // DNS correlation implementation
@@ -1914,6 +1924,7 @@ func runCorrelateDNS(args []string) {
 	confidence := fs.Float64("confidence", 0.8, "Minimum confidence score")
 	includeCNAME := fs.Bool("include-cname", true, "Include CNAME chain analysis")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
+	dbPath := fs.String("db", "", "Database path")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -1929,9 +1940,13 @@ func runCorrelateDNS(args []string) {
 	}
 	fmt.Println()
 
-	// Implementation would go here
-	fmt.Println("✅ DNS correlation analysis completed")
-	fmt.Printf("📄 Results formatted as: %s\n", *output)
+	options := NetworkAnalysisOptions{
+		MinConfidence: *confidence,
+		OutputFormat:  *output,
+	}
+	if err := runCorrelationAnalysis(*dbPath, "dns", options); err != nil {
+		log.Fatalf("DNS correlation failed: %v", err)
+	}
 }
 
 // Network correlation implementation
@@ -1943,6 +1958,7 @@ func runCorrelateNetwork(args []string) {
 	includeVPN := fs.Bool("include-vpn", true, "Include VPN connections")
 	includePeering := fs.Bool("include-peering", true, "Include peering connections")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
+	dbPath := fs.String("db", "", "Database path")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -1961,9 +1977,13 @@ func runCorrelateNetwork(args []string) {
 	}
 	fmt.Println()
 
-	// Implementation would go here
-	fmt.Println("✅ Network correlation analysis completed")
-	fmt.Printf("📄 Results formatted as: %s\n", *output)
+	options := NetworkAnalysisOptions{
+		MinConfidence: *confidence,
+		OutputFormat:  *output,
+	}
+	if err := runCorrelationAnalysis(*dbPath, "network", options); err != nil {
+		log.Fatalf("Network correlation failed: %v", err)
+	}
 }
 
 // All correlations implementation
@@ -1974,6 +1994,7 @@ func runCorrelateAll(args []string) {
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
 	parallel := fs.Bool("parallel", true, "Run correlations in parallel")
+	dbPath := fs.String("db", "", "Database path")
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
@@ -1989,9 +2010,14 @@ func runCorrelateAll(args []string) {
 	}
 	fmt.Println()
 
-	// Implementation would go here
-	fmt.Println("✅ Comprehensive correlation analysis completed")
-	fmt.Printf("📄 Results formatted as: %s\n", *output)
+	options := NetworkAnalysisOptions{
+		CorrelationTypes: allGraphCorrelationKinds(),
+		MinConfidence:    *confidence,
+		OutputFormat:     *output,
+	}
+	if err := runGraphCorrelations(*dbPath, options.CorrelationTypes, options); err != nil {
+		log.Fatalf("Correlation analysis failed: %v", err)
+	}
 }
 
 // Usage functions

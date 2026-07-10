@@ -22,7 +22,7 @@ type CorkscrewApp struct {
 
 	// Dependencies
 	database interface{} // *db.GraphLoader
-	scanner  interface{} // *crosscloud.Orchestrator
+	scanner  interface{}
 	config   interface{} // *config.Config
 
 	// Application state

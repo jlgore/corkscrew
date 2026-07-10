@@ -15,7 +15,7 @@ type ViewRouter struct {
 	// Dependencies
 	database interface{} // *db.GraphLoader
 	config   interface{} // *config.Config
-	scanner  interface{} // *crosscloud.Orchestrator
+	scanner  interface{}
 
 	// Layout state
 	width  int

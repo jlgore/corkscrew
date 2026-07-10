@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jlgore/corkscrew/internal/db"
 	"github.com/jlgore/corkscrew/internal/tui"
-	"github.com/jlgore/corkscrew/pkg/crosscloud"
 	"github.com/jlgore/corkscrew/pkg/smartscan"
 )
 
@@ -100,14 +99,7 @@ func initializeTUIDependencies(dbPath, configPath string) (interface{}, interfac
 		cfg = nil
 	}
 
-	// Initialize CrossCloud orchestrator
-	// Now that GraphLoader implements DatabaseInterface, we can use CrossCloudOrchestrator
 	var scanner interface{}
-	if database != nil {
-		// Create CrossCloud orchestrator with the database
-		crossCloudOrchestrator := crosscloud.NewCrossCloudOrchestrator(database)
-		scanner = crossCloudOrchestrator
-	}
 
 	return database, cfg, scanner, nil
 }
