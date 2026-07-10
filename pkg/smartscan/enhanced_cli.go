@@ -26,6 +26,9 @@ type EnhancedScanOptions struct {
     ConfigPath     string
     MaxConcurrency int
     DatabasePath   string
+    // QuackToken authenticates writes to a remote Quack server when DatabasePath
+    // is a quack: URI.
+    QuackToken     string
     DBProviderTableOverride string
     // Filters and provider-specific init options
     Namespace      string
@@ -154,7 +157,7 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 
 	// Store results to database if database path is specified
     if options.DatabasePath != "" {
-        if err := storeResultsToDatabase(results, options.DatabasePath, options.DBProviderTableOverride); err != nil {
+        if err := storeResultsToDatabase(results, options.DatabasePath, options.DBProviderTableOverride, options.QuackToken); err != nil {
             fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
         } else {
             fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
@@ -163,7 +166,7 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
         // Try to store to config database or default location
         dbPath := getDefaultDatabasePath(config)
         if dbPath != "" {
-            if err := storeResultsToDatabase(results, dbPath, options.DBProviderTableOverride); err != nil {
+            if err := storeResultsToDatabase(results, dbPath, options.DBProviderTableOverride, options.QuackToken); err != nil {
                 fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
             } else {
                 fmt.Printf("💾 Results stored to database: %s\n", dbPath)
@@ -368,9 +371,14 @@ func GenerateTimestampedFilename(provider string) string {
 }
 
 // storeResultsToDatabase stores scan results to the unified database
-func storeResultsToDatabase(results *AggregatedResults, dbPath string, overrideTable string) error {
-    // Initialize the unified database with custom path
-    dbConfig, err := db.InitializeUnifiedDatabase(dbPath)
+func storeResultsToDatabase(results *AggregatedResults, dbPath string, overrideTable string, quackToken string) error {
+    // Initialize the unified database with custom path. For a remote quack:
+    // target, pass the auth token through to the connection.
+    var opts []db.Option
+    if quackToken != "" && db.IsRemoteTarget(dbPath) {
+        opts = append(opts, db.WithToken(quackToken))
+    }
+    dbConfig, err := db.InitializeUnifiedDatabaseWithOptions(dbPath, opts...)
     if err != nil {
         return fmt.Errorf("failed to initialize database: %w", err)
     }

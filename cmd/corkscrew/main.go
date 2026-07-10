@@ -270,6 +270,8 @@ func main() {
 		runAWSOrg(os.Args[2:])
 	case "serve":
 		runServe(os.Args[2:])
+	case "quack":
+		runQuack(os.Args[2:])
 	case "graph":
 		runGraph(os.Args[2:])
 	case "github":
@@ -408,7 +410,8 @@ func runScan(args []string) {
 	configPath := fs.String("config", "", "Path to configuration file")
 	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
 	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
-	databasePath := fs.String("database", "", "Path to DuckDB database file (default: config database.path or ~/.corkscrew/db/corkscrew.duckdb)")
+	databasePath := fs.String("database", "", "Path to DuckDB database file, or a quack: URI for a remote server (default: config database.path or ~/.corkscrew/db/corkscrew.duckdb)")
+	quackToken := fs.String("token", "", "Auth token for a remote quack: database (or CORKSCREW_QUACK_TOKEN)")
 	dbProviderTable := fs.String("db-provider-table", "", "Override target table for persistence (routes all rows)")
 	// Kubernetes-specific and filter options
 	namespace := fs.String("namespace", "", "Kubernetes namespace filter (single)")
@@ -420,6 +423,18 @@ func runScan(args []string) {
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
+	}
+
+	// Resolve database target and quack auth from flags + environment.
+	scanDBPath := strings.TrimSpace(*databasePath)
+	if scanDBPath == "" {
+		if env := strings.TrimSpace(os.Getenv("CORKSCREW_QUACK_URL")); env != "" {
+			scanDBPath = env
+		}
+	}
+	scanToken := strings.TrimSpace(*quackToken)
+	if scanToken == "" && db.IsRemoteTarget(scanDBPath) {
+		scanToken = strings.TrimSpace(os.Getenv("CORKSCREW_QUACK_TOKEN"))
 	}
 
 	// Parse services - expand service groups
@@ -451,7 +466,8 @@ func runScan(args []string) {
 		ShowEmpty:               *showEmpty,
 		ConfigPath:              *configPath,
 		MaxConcurrency:          *concurrency,
-		DatabasePath:            *databasePath,
+		DatabasePath:            scanDBPath,
+		QuackToken:              scanToken,
 		DBProviderTableOverride: strings.TrimSpace(*dbProviderTable),
 		Namespace:               strings.TrimSpace(*namespace),
 		LabelSelector:           strings.TrimSpace(*labelSelector),
@@ -1077,7 +1093,8 @@ func runQuery(args []string) {
 	dryRun := fs.Bool("dry-run", false, "Validate queries without executing")
 
 	// Common options
-	dbPath := fs.String("db", defaultDBPath, "Path to database file")
+	dbPath := fs.String("db", defaultDBPath, "Path to database file, or a quack: URI for a remote server")
+	token := fs.String("token", "", "Auth token for a remote quack: server (or CORKSCREW_QUACK_TOKEN)")
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
 	verbose := fs.Bool("verbose", false, "Enable verbose output")
 	noHeader := fs.Bool("no-header", false, "Omit header in table output")
@@ -1109,10 +1126,7 @@ func runQuery(args []string) {
 		return
 	}
 
-	resolvedDBPath := strings.TrimSpace(*dbPath)
-	if resolvedDBPath == "" {
-		resolvedDBPath = defaultDBPath
-	}
+	resolvedDBPath, quackOpts := resolveQuackConn(*dbPath, defaultDBPath, *token)
 
 	// Determine query source
 	var sqlQuery string
@@ -1134,9 +1148,9 @@ func runQuery(args []string) {
 			log.Fatalf("Failed to read from stdin: %v", err)
 		}
 		sqlQuery = string(content)
-	} else if len(args) > 0 && args[0] != "" && !strings.HasPrefix(args[0], "-") {
-		// Query provided as positional argument
-		sqlQuery = args[0]
+	} else if rest := fs.Args(); len(rest) > 0 && rest[0] != "" {
+		// Query provided as a positional argument (works before or after flags)
+		sqlQuery = rest[0]
 	} else if *queryStr != "" {
 		sqlQuery = *queryStr
 	} else {
@@ -1147,7 +1161,7 @@ func runQuery(args []string) {
 	}
 
 	// Execute query
-	engine, err := query.NewEngine(resolvedDBPath)
+	engine, err := query.NewEngineWithOptions(resolvedDBPath, quackOpts...)
 	if err != nil {
 		log.Fatalf("Failed to create query engine: %v", err)
 	}

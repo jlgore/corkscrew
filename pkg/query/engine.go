@@ -71,14 +71,27 @@ type DuckDBQueryEngine struct {
 	mutex  sync.RWMutex
 }
 
-// NewDuckDBQueryEngine creates a new DuckDB-based query engine
+// NewDuckDBQueryEngine creates a new DuckDB-based query engine against the
+// default unified database.
 func NewDuckDBQueryEngine() (*DuckDBQueryEngine, error) {
-	dbPath, err := db.GetUnifiedDatabasePath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database path: %w", err)
+	return NewDuckDBQueryEngineForTarget("")
+}
+
+// NewDuckDBQueryEngineForTarget creates a query engine against an explicit
+// target. The target may be a local DuckDB file path or a remote Quack server
+// URI (e.g. "quack:host:9494"). An empty target resolves to the default unified
+// database path. Options (such as db.WithToken) apply only to remote targets.
+func NewDuckDBQueryEngineForTarget(target string, opts ...db.Option) (*DuckDBQueryEngine, error) {
+	dbPath := target
+	if !db.IsRemoteTarget(target) {
+		resolved, err := db.GetUnifiedDatabasePath(target)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get database path: %w", err)
+		}
+		dbPath = resolved
 	}
 
-	database, err := sql.Open("duckdb", dbPath)
+	database, err := db.OpenDuckDB(context.Background(), dbPath, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

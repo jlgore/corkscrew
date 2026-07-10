@@ -1,11 +1,22 @@
 package query
 
-import "context"
+import (
+	"context"
 
-// NewEngine creates a new query engine with the specified database path
-// This is a wrapper for compatibility with existing code
-func NewEngine(dbPath string) (QueryEngine, error) {
-	return NewDuckDBQueryEngine()
+	"github.com/jlgore/corkscrew/internal/db"
+)
+
+// NewEngine creates a new query engine for the specified target, which may be a
+// local DuckDB file path or a remote Quack server URI (e.g. "quack:host:9494").
+// An empty target resolves to the default unified database path.
+func NewEngine(target string) (QueryEngine, error) {
+	return NewDuckDBQueryEngineForTarget(target)
+}
+
+// NewEngineWithOptions creates a query engine for the specified target with
+// connection options (such as db.WithToken for remote Quack authentication).
+func NewEngineWithOptions(target string, opts ...db.Option) (QueryEngine, error) {
+	return NewDuckDBQueryEngineForTarget(target, opts...)
 }
 
 // Engine is an alias for QueryEngine for backward compatibility
