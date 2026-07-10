@@ -1,11 +1,11 @@
-use duckdb::Result;
 use duckdb::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
+use duckdb::Result;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{
-    ReachableRow, chunk_capacity, collect_reachable_row, load_graph_for_path, next_chunk,
-    write_optional_varchar,
+    chunk_capacity, collect_reachable_row, load_graph_for_path, next_chunk, write_optional_varchar,
+    ReachableRow,
 };
 
 #[repr(C)]
@@ -28,10 +28,22 @@ impl VTab for GraphReachableVTab {
     type BindData = ReachableBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        bind.add_result_column("is_reachable", LogicalTypeHandle::from(LogicalTypeId::Boolean));
-        bind.add_result_column("match_count", LogicalTypeHandle::from(LogicalTypeId::Bigint));
-        bind.add_result_column("closest_hop", LogicalTypeHandle::from(LogicalTypeId::Integer));
-        bind.add_result_column("example_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+        bind.add_result_column(
+            "is_reachable",
+            LogicalTypeHandle::from(LogicalTypeId::Boolean),
+        );
+        bind.add_result_column(
+            "match_count",
+            LogicalTypeHandle::from(LogicalTypeId::Bigint),
+        );
+        bind.add_result_column(
+            "closest_hop",
+            LogicalTypeHandle::from(LogicalTypeId::Integer),
+        );
+        bind.add_result_column(
+            "example_id",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
 
         Ok(ReachableBindData {
             db_path: bind.get_parameter(0).to_string(),
@@ -46,11 +58,19 @@ impl VTab for GraphReachableVTab {
         let loaded = load_graph_for_path(&bind_ref.db_path)?;
         Ok(ReachableInitData {
             cursor: AtomicUsize::new(0),
-            row: collect_reachable_row(&loaded, &bind_ref.source_id, &bind_ref.target_type, bind_ref.max_hops),
+            row: collect_reachable_row(
+                &loaded,
+                &bind_ref.source_id,
+                &bind_ref.target_type,
+                bind_ref.max_hops,
+            ),
         })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
         let Some((_, end)) = next_chunk(&init_data.cursor, 1, chunk_capacity()) else {
             output.set_len(0);

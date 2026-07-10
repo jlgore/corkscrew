@@ -1,6 +1,16 @@
-use corkscrew_graph_tests::functions::info::GraphInfoVTab;
-use corkscrew_graph_tests::functions::info::GraphCacheInvalidateVTab;
 use corkscrew_graph_tests::functions::blast::GraphBlastRadiusVTab;
+use corkscrew_graph_tests::functions::correlate_connectivity::GraphCorrelateConnectivityVTab;
+use corkscrew_graph_tests::functions::correlate_dns::GraphCorrelateDNSVTab;
+use corkscrew_graph_tests::functions::correlate_domains::GraphCorrelateDomainsVTab;
+use corkscrew_graph_tests::functions::correlate_identity::GraphCorrelateIdentityVTab;
+use corkscrew_graph_tests::functions::correlate_ips::GraphCorrelateIPsVTab;
+use corkscrew_graph_tests::functions::correlate_load_balancers::GraphCorrelateLoadBalancersVTab;
+use corkscrew_graph_tests::functions::correlate_networks::GraphCorrelateNetworksVTab;
+use corkscrew_graph_tests::functions::correlate_policies::GraphCorrelatePoliciesVTab;
+use corkscrew_graph_tests::functions::correlate_secrets::GraphCorrelateSecretsVTab;
+use corkscrew_graph_tests::functions::correlate_security::GraphCorrelateSecurityVTab;
+use corkscrew_graph_tests::functions::info::GraphCacheInvalidateVTab;
+use corkscrew_graph_tests::functions::info::GraphInfoVTab;
 use corkscrew_graph_tests::functions::list_patterns::GraphListPatternsVTab;
 use corkscrew_graph_tests::functions::match_pattern::GraphMatchPatternVTab;
 use corkscrew_graph_tests::functions::paths::GraphShortestPathVTab;
@@ -123,15 +133,238 @@ fn make_shortest_path_edge_fixture(conn: &Connection) {
     .unwrap();
 }
 
+fn make_cross_cloud_ip_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_ip_addresses (
+            id VARCHAR,
+            ip_address VARCHAR,
+            ip_version VARCHAR,
+            ip_type VARCHAR,
+            ip_scope VARCHAR,
+            resource_id VARCHAR,
+            resource_type VARCHAR,
+            resource_name VARCHAR,
+            provider VARCHAR,
+            region VARCHAR,
+            account_id VARCHAR,
+            vpc_id VARCHAR,
+            subnet_id VARCHAR,
+            network_interface_id VARCHAR,
+            allocation_id VARCHAR,
+            domain VARCHAR,
+            tags JSON,
+            metadata JSON,
+            created_at TIMESTAMP,
+            discovered_at TIMESTAMP,
+            updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_ip_addresses VALUES
+            ('ip-1','8.8.8.8','ipv4','elastic','global','aws-vm-1','aws::ec2::Instance','app-a','aws','us-east-1','111','vpc-1','subnet-1','eni-1',NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('ip-2','8.8.8.8','ipv4','static','global','azure-vm-1','Microsoft.Compute/virtualMachines','app-a','azure','eastus','222','vnet-1','subnet-a','nic-1',NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('ip-3','10.0.0.5','ipv4','private','local','aws-vm-2','aws::ec2::Instance','worker-a','aws','us-east-1','111','vpc-1','subnet-1','eni-2',NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('ip-4','10.0.0.5','ipv4','private','local','gcp-vm-1','compute.googleapis.com/Instance','worker-g','gcp','us-central1','333','vpc-g','subnet-g','nic-g',NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('ip-5','8.8.4.4','ipv4','elastic','global','aws-vm-3','aws::ec2::Instance','app-b','aws','us-east-1','111','vpc-1','subnet-1','eni-3',NULL,NULL,NULL,NULL,NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_dns_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_dns_records (
+            id VARCHAR, dns_name VARCHAR, record_type VARCHAR, record_values JSON, ttl INTEGER,
+            resource_id VARCHAR, resource_type VARCHAR, resource_name VARCHAR, provider VARCHAR,
+            region VARCHAR, account_id VARCHAR, dns_service VARCHAR, zone_id VARCHAR, zone_name VARCHAR,
+            health_check_id VARCHAR, routing_policy VARCHAR, routing_policy_config JSON, tags JSON,
+            metadata JSON, created_at TIMESTAMP, discovered_at TIMESTAMP, updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_dns_records VALUES
+            ('dns-1','api.example.com.','A','[\"203.0.113.10\"]',60,'aws-zone-1','aws::route53::record','api','aws','us-east-1','111','route53','z1','example.com',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('dns-2','api.example.com','A','[\"203.0.113.20\"]',60,'azure-zone-1','Microsoft.Network/dnszones/A','api','azure','eastus','222','azure_dns','z2','example.com',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('dns-3','www.example.com','CNAME','[\"edge.example.net.\"]',60,'aws-cname-1','aws::route53::record','www','aws','us-east-1','111','route53','z1','example.com',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('dns-4','web.example.org','CNAME','[\"edge.example.net\"]',60,'gcp-cname-1','dns.googleapis.com/ResourceRecordSet','web','gcp','global','333','cloud_dns','z3','example.org',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_network_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_network_topology (
+            id VARCHAR, connection_type VARCHAR, connection_id VARCHAR, connection_name VARCHAR,
+            source_network_id VARCHAR, source_network_name VARCHAR, source_provider VARCHAR, source_region VARCHAR, source_account_id VARCHAR, source_cidr_blocks JSON,
+            target_network_id VARCHAR, target_network_name VARCHAR, target_provider VARCHAR, target_region VARCHAR, target_account_id VARCHAR, target_cidr_blocks JSON,
+            status VARCHAR, bandwidth VARCHAR, encryption BOOLEAN, redundancy VARCHAR, routing_tables JSON, route_propagation BOOLEAN,
+            source_gateway_id VARCHAR, target_gateway_id VARCHAR, tags JSON, metadata JSON, created_at TIMESTAMP, discovered_at TIMESTAMP, updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_network_topology VALUES
+            ('topo-1','peering','peer-1','aws-azure-peer','vpc-1','prod-vpc','aws','us-east-1','111','[\"10.0.0.0/16\"]','vnet-1','prod-vnet','azure','eastus','222','[\"10.1.0.0/16\"]','active','1Gbps',true,'regional',NULL,true,'vgw-1','vng-1',NULL,NULL,NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_load_balancer_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_loadbalancer_topology (
+            id VARCHAR, loadbalancer_id VARCHAR, loadbalancer_name VARCHAR, loadbalancer_type VARCHAR,
+            provider VARCHAR, region VARCHAR, backend_targets JSON, backend_health_status JSON, cross_cloud_backends JSON,
+            frontend_config JSON, ssl_certificates JSON, dns_configurations JSON, routing_rules JSON, path_patterns JSON,
+            host_patterns JSON, health_check_configs JSON, health_check_results JSON, health_check_cross_cloud JSON,
+            traffic_distribution_method VARCHAR, session_affinity BOOLEAN, sticky_sessions_config JSON,
+            correlated_loadbalancers JSON, correlation_type VARCHAR, correlation_confidence DOUBLE, correlation_evidence JSON, shared_backends JSON,
+            request_count_hourly BIGINT, request_count_daily BIGINT, response_time_avg_ms DOUBLE, response_time_p95_ms DOUBLE, error_rate_percentage DOUBLE,
+            current_capacity INTEGER, max_capacity INTEGER, auto_scaling_enabled BOOLEAN, scaling_policies JSON,
+            security_groups JSON, ssl_policies JSON, waf_configuration JSON, monitoring_enabled BOOLEAN, alert_configurations JSON,
+            log_destinations JSON, tags JSON, metadata JSON, created_at TIMESTAMP, discovered_at TIMESTAMP, updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_loadbalancer_topology VALUES
+            ('lb-topo-1','aws-lb-1','public-alb','application','aws','us-east-1','[{\"target\":\"10.0.1.10\",\"port\":80}]',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'round_robin',false,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,NULL,NULL,NULL,NULL,false,NULL,NULL,NULL,NULL,false,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('lb-topo-2','azure-lb-1','public-appgw','application','azure','eastus','[{\"ip_address\":\"10.0.1.10\",\"port\":80}]',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'round_robin',false,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,NULL,NULL,NULL,NULL,false,NULL,NULL,NULL,NULL,false,NULL,NULL,NULL,NULL,NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_connectivity_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_vpn_connections (
+            id VARCHAR, connection_name VARCHAR, source_resource_id VARCHAR, source_provider VARCHAR, source_region VARCHAR, source_gateway_id VARCHAR, source_public_ip VARCHAR, source_local_networks JSON,
+            target_resource_id VARCHAR, target_provider VARCHAR, target_region VARCHAR, target_gateway_id VARCHAR, target_public_ip VARCHAR, target_remote_networks JSON,
+            connection_type VARCHAR, ike_version VARCHAR, encryption_algorithm VARCHAR, authentication_method VARCHAR, shared_key_configured BOOLEAN, tunnel_count INTEGER, tunnel_status JSON, routing_type VARCHAR,
+            bgp_asn_source VARCHAR, bgp_asn_target VARCHAR, connection_status VARCHAR, last_status_change TIMESTAMP, uptime_percentage DOUBLE, last_health_check TIMESTAMP,
+            bytes_transferred_in BIGINT, bytes_transferred_out BIGINT, packets_transferred_in BIGINT, packets_transferred_out BIGINT, average_latency_ms DOUBLE,
+            mtu_size INTEGER, keepalive_interval INTEGER, dead_peer_detection BOOLEAN, nat_traversal BOOLEAN, tags JSON, metadata JSON, correlation_id VARCHAR, confidence_score DOUBLE, correlation_method VARCHAR,
+            created_at TIMESTAMP, discovered_at TIMESTAMP, updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_vpn_connections VALUES
+            ('vpn-1','prod-vpn','aws-vgw-1','aws','us-east-1','vgw-1','198.51.100.10','[\"10.0.0.0/16\"]','azure-vng-1','azure','eastus','vng-1','198.51.100.20','[\"10.1.0.0/16\"]','site_to_site','2','aes256','psk',true,2,NULL,'dynamic','65001','65002','active',NULL,NULL,NULL,0,0,0,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0.96,'fixture',NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_security_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_security_correlations (
+            id VARCHAR, source_rule_id VARCHAR, source_resource_id VARCHAR, source_provider VARCHAR, source_region VARCHAR,
+            target_rule_id VARCHAR, target_resource_id VARCHAR, target_provider VARCHAR, target_region VARCHAR,
+            rule_overlap_analysis JSON, overlap_percentage DOUBLE, overlap_type VARCHAR, protocol_correlation JSON, port_overlap_analysis JSON, cidr_overlap_analysis JSON,
+            security_pattern VARCHAR, access_pattern VARCHAR, direction_analysis JSON, action_analysis JSON, security_risk_level VARCHAR, risk_factors JSON, potential_conflicts JSON, recommendations JSON,
+            compliance_frameworks JSON, compliance_gaps JSON, policy_alignment JSON, correlation_method VARCHAR, confidence_score DOUBLE, evidence JSON, validation_status VARCHAR,
+            rule_complexity_score DOUBLE, performance_impact VARCHAR, optimization_suggestions JSON, monitoring_enabled BOOLEAN, alert_thresholds JSON, last_violation_check TIMESTAMP, violation_count INTEGER,
+            tags JSON, metadata JSON, discovered_at TIMESTAMP, last_analyzed TIMESTAMP, updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_security_correlations VALUES
+            ('sec-1','aws-sg-1-ingress-0','aws-sg-1','aws','us-east-1','az-nsg-1-rule-0','az-nsg-1','azure','eastus','{\"protocol\":\"tcp\"}',100.0,'exact','{\"protocol\":\"tcp\"}','{\"ports\":[443]}','{\"cidrs\":[\"0.0.0.0/0\"]}','web_service','public','{\"direction\":\"inbound\"}','{\"action\":\"allow\"}','high','[\"public_https\"]',NULL,NULL,NULL,NULL,NULL,'fixture',0.91,'{\"reason\":\"same public HTTPS exposure\"}','validated',NULL,NULL,NULL,false,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_domain_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE cross_cloud_dns_records (
+            id VARCHAR, dns_name VARCHAR, record_type VARCHAR, record_values JSON, ttl INTEGER,
+            resource_id VARCHAR, resource_type VARCHAR, resource_name VARCHAR, provider VARCHAR,
+            region VARCHAR, account_id VARCHAR, dns_service VARCHAR, zone_id VARCHAR, zone_name VARCHAR,
+            health_check_id VARCHAR, routing_policy VARCHAR, routing_policy_config JSON, tags JSON,
+            metadata JSON, created_at TIMESTAMP, discovered_at TIMESTAMP, updated_at TIMESTAMP
+        );
+        INSERT INTO cross_cloud_dns_records VALUES
+            ('dns-domain-1','api.example.com','A','[\"203.0.113.10\"]',60,'aws-zone-1','aws::route53::record','api','aws','us-east-1','111','route53','z1','example.com',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+            ('dns-domain-2','web.example.com','A','[\"203.0.113.20\"]',60,'azure-zone-1','Microsoft.Network/dnszones/A','web','azure','eastus','222','azure_dns','z2','example.com.',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+        CREATE TABLE certificate_correlations (
+            id VARCHAR, source_cert_id VARCHAR, source_cert_name VARCHAR, source_cert_thumbprint VARCHAR, source_cert_serial_number VARCHAR, source_cloud_provider VARCHAR, source_region VARCHAR, source_account_id VARCHAR, source_resource_id VARCHAR,
+            target_cert_id VARCHAR, target_cert_name VARCHAR, target_cert_thumbprint VARCHAR, target_cert_serial_number VARCHAR, target_cloud_provider VARCHAR, target_region VARCHAR, target_account_id VARCHAR, target_resource_id VARCHAR,
+            correlation_type VARCHAR, chain_relationship VARCHAR, confidence_score DOUBLE, matching_attributes JSON, source_cert_details JSON, target_cert_details JSON, shared_attributes JSON,
+            source_subject VARCHAR, source_issuer VARCHAR, source_common_name VARCHAR, source_sans JSON, target_subject VARCHAR, target_issuer VARCHAR, target_common_name VARCHAR, target_sans JSON,
+            source_not_before TIMESTAMP, source_not_after TIMESTAMP, target_not_before TIMESTAMP, target_not_after TIMESTAMP,
+            security_risk_level VARCHAR, security_risk_score DOUBLE, security_issues JSON, recommendations JSON, compliance_flags JSON, shared_secrets JSON, secret_correlations JSON, status VARCHAR, verified BOOLEAN,
+            detected_at TIMESTAMP, last_verified_at TIMESTAMP, created_at TIMESTAMP, updated_at TIMESTAMP, metadata JSON
+        );
+        INSERT INTO certificate_correlations VALUES
+            ('cert-1','aws-cert-1','api.example.com','abc',NULL,'aws','us-east-1','111','aws-lb-1','azure-cert-1','api.example.com','abc',NULL,'azure','eastus','222','azure-lb-1','thumbprint_match',NULL,0.97,'{\"thumbprint\":\"abc\"}',NULL,NULL,'{\"domain\":\"api.example.com\"}',NULL,NULL,'api.example.com','[\"api.example.com\"]',NULL,NULL,'api.example.com','[\"api.example.com\"]',NULL,NULL,NULL,NULL,'low',0.1,NULL,NULL,NULL,NULL,NULL,'active',true,NULL,NULL,NULL,NULL,NULL);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_identity_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE identity_federation_relationships (
+            id VARCHAR, source_provider_id VARCHAR, source_provider_type VARCHAR, source_provider_name VARCHAR, source_cloud_provider VARCHAR, source_region VARCHAR, source_account_id VARCHAR,
+            target_provider_id VARCHAR, target_provider_type VARCHAR, target_provider_name VARCHAR, target_cloud_provider VARCHAR, target_region VARCHAR, target_account_id VARCHAR,
+            federation_type VARCHAR, federation_method VARCHAR, trust_policy JSON, trust_conditions JSON, oidc_issuer VARCHAR, oidc_endpoints JSON, client_ids JSON, scopes JSON,
+            saml_entity_id VARCHAR, saml_sso_endpoint VARCHAR, certificate_thumbprints JSON, signing_certificates JSON, confidence_score DOUBLE, evidence JSON, matching_attributes JSON,
+            security_risk_level VARCHAR, security_risk_score DOUBLE, security_issues JSON, recommendations JSON, status VARCHAR, verified BOOLEAN, verification_method VARCHAR
+        );
+        INSERT INTO identity_federation_relationships VALUES
+            ('fed-1','aws-oidc-1','OIDC','eks-oidc','aws','us-east-1','111','azure-app-1','OIDC','aks-workload-id','azure','eastus','222','oidc_federation','issuer_match','{}','{}','https://issuer.example.com','[]','[\"api://app\"]','[]',NULL,NULL,'[\"abc\"]','[]',0.94,'{\"issuer\":\"match\"}','{\"issuer\":\"https://issuer.example.com\"}','HIGH',0.8,'[]','[]','active',true,'fixture');",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_policy_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE policy_similarity_analysis (
+            id VARCHAR, source_policy_id VARCHAR, source_policy_name VARCHAR, source_policy_type VARCHAR, source_cloud_provider VARCHAR, source_region VARCHAR, source_account_id VARCHAR, source_resource_id VARCHAR,
+            target_policy_id VARCHAR, target_policy_name VARCHAR, target_policy_type VARCHAR, target_cloud_provider VARCHAR, target_region VARCHAR, target_account_id VARCHAR, target_resource_id VARCHAR,
+            similarity_score DOUBLE, similarity_type VARCHAR, matching_elements JSON, differences JSON, normalized_permissions JSON, source_policy_hash VARCHAR, target_policy_hash VARCHAR, source_statements JSON, target_statements JSON,
+            risk_level VARCHAR, risk_score DOUBLE, risk_factors JSON, security_issues JSON, recommendations JSON, compliance_tags JSON, analysis_method VARCHAR, confidence_score DOUBLE, false_positive_likelihood DOUBLE, status VARCHAR, reviewed BOOLEAN
+        );
+        INSERT INTO policy_similarity_analysis VALUES
+            ('pol-1','aws-pol-1','AdminLike','managed','aws','us-east-1','111','aws-role-1','az-roledef-1','OwnerLike','role','azure','eastus','222','az-sp-1',0.93,'highly_similar','[\"*:*\"]','[]','[\"admin\"]','hash-a','hash-b','[]','[]','HIGH',0.8,'[]','[]','[]','[]','fixture',0.92,0.05,'active',false);",
+    )
+    .unwrap();
+}
+
+fn make_cross_cloud_secret_fixture(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE shared_secrets_correlation (
+            id VARCHAR, secret_type VARCHAR, secret_name VARCHAR, secret_hash VARCHAR, cloud_provider VARCHAR, region VARCHAR, account_id VARCHAR, resource_id VARCHAR, service_name VARCHAR,
+            security_risk_level VARCHAR, security_issues JSON, recommendations JSON, referenced_by JSON, cross_cloud_references JSON, usage_patterns JSON,
+            encryption_status VARCHAR, access_control_status VARCHAR, correlation_confidence DOUBLE, correlation_method VARCHAR, correlation_evidence JSON, status VARCHAR
+        );
+        INSERT INTO shared_secrets_correlation VALUES
+            ('sec-a','api_key','shared-api','hash-123','aws','us-east-1','111','aws-secret-1','secretsmanager','HIGH','[]','[]','[\"lambda\"]','[]','[]','encrypted','restricted',0.91,'hash_match','{\"hash\":\"hash-123\"}','active'),
+            ('sec-b','api_key','shared-api','hash-123','azure','eastus','222','az-secret-1','keyvault','HIGH','[]','[]','[\"function\"]','[]','[]','encrypted','restricted',0.92,'hash_match','{\"hash\":\"hash-123\"}','active');",
+    )
+    .unwrap();
+}
+
 fn register_graph_functions(conn: &Connection) {
-    conn.register_table_function::<GraphInfoVTab>("graph_info").unwrap();
-    conn.register_table_function::<GraphCacheInvalidateVTab>("graph_cache_invalidate").unwrap();
-    conn.register_table_function::<GraphListPatternsVTab>("graph_list_patterns").unwrap();
-    conn.register_table_function::<GraphTraverseVTab>("graph_traverse").unwrap();
-    conn.register_table_function::<GraphShortestPathVTab>("graph_shortest_path").unwrap();
-    conn.register_table_function::<GraphBlastRadiusVTab>("graph_blast_radius").unwrap();
-    conn.register_table_function::<GraphReachableVTab>("graph_reachable").unwrap();
-    conn.register_table_function::<GraphMatchPatternVTab>("graph_match_pattern").unwrap();
+    conn.register_table_function::<GraphInfoVTab>("graph_info")
+        .unwrap();
+    conn.register_table_function::<GraphCacheInvalidateVTab>("graph_cache_invalidate")
+        .unwrap();
+    conn.register_table_function::<GraphListPatternsVTab>("graph_list_patterns")
+        .unwrap();
+    conn.register_table_function::<GraphTraverseVTab>("graph_traverse")
+        .unwrap();
+    conn.register_table_function::<GraphShortestPathVTab>("graph_shortest_path")
+        .unwrap();
+    conn.register_table_function::<GraphBlastRadiusVTab>("graph_blast_radius")
+        .unwrap();
+    conn.register_table_function::<GraphReachableVTab>("graph_reachable")
+        .unwrap();
+    conn.register_table_function::<GraphMatchPatternVTab>("graph_match_pattern")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateIPsVTab>("graph_correlate_ips")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateDNSVTab>("graph_correlate_dns")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateNetworksVTab>("graph_correlate_networks")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateLoadBalancersVTab>(
+        "graph_correlate_load_balancers",
+    )
+    .unwrap();
+    conn.register_table_function::<GraphCorrelateConnectivityVTab>("graph_correlate_connectivity")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateSecurityVTab>("graph_correlate_security")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateDomainsVTab>("graph_correlate_domains")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateIdentityVTab>("graph_correlate_identity")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelatePoliciesVTab>("graph_correlate_policies")
+        .unwrap();
+    conn.register_table_function::<GraphCorrelateSecretsVTab>("graph_correlate_secrets")
+        .unwrap();
     sql_macros::register_macros(conn).unwrap();
 }
 
@@ -154,8 +387,22 @@ fn load_graph_counts_nodes_and_edges() {
     let loaded = loader::load_graph(&conn, &providers).unwrap();
     assert_eq!(loaded.node_count, 3);
     assert_eq!(loaded.edge_count, 2);
-    assert_eq!(loaded.graph.node_weights().filter(|node| node.provider == "aws").count(), 3);
-    assert_eq!(loaded.graph.edge_weights().filter(|edge| edge.provider == "aws").count(), 2);
+    assert_eq!(
+        loaded
+            .graph
+            .node_weights()
+            .filter(|node| node.provider == "aws")
+            .count(),
+        3
+    );
+    assert_eq!(
+        loaded
+            .graph
+            .edge_weights()
+            .filter(|edge| edge.provider == "aws")
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -181,7 +428,8 @@ fn cache_ttl_setting_zero_forces_reload() {
 
     let path = "test::cache_ttl_setting_zero_forces_reload";
     let g1 = cache::get_or_load(&conn, path).unwrap();
-    conn.execute("SET VARIABLE corkscrew_graph_cache_ttl = 0", []).unwrap();
+    conn.execute("SET VARIABLE corkscrew_graph_cache_ttl = 0", [])
+        .unwrap();
     let g2 = cache::get_or_load(&conn, path).unwrap();
 
     assert!(!std::sync::Arc::ptr_eq(&g1, &g2));
@@ -190,7 +438,11 @@ fn cache_ttl_setting_zero_forces_reload() {
 #[test]
 fn cache_get_or_load_is_shared_across_threads() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -221,7 +473,11 @@ fn cache_get_or_load_is_shared_across_threads() {
 #[test]
 fn cache_readers_and_invalidator_can_race_safely() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -263,7 +519,11 @@ fn detect_providers_empty_when_no_tables() {
 #[test]
 fn graph_info_table_function_returns_provider_counts() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -291,7 +551,11 @@ fn graph_info_table_function_returns_provider_counts() {
 #[test]
 fn graph_info_table_function_handles_multiple_providers() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     fixture_conn
@@ -349,7 +613,11 @@ fn graph_info_table_function_handles_multiple_providers() {
 #[test]
 fn graph_traverse_returns_paths_and_hops() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -362,14 +630,17 @@ fn graph_traverse_returns_paths_and_hops() {
         .prepare("SELECT node_id, hop_count, CAST(path_ids AS VARCHAR), CAST(relationship_types AS VARCHAR) FROM graph_traverse(?, ?, CAST(? AS INTEGER), ?, ?) ORDER BY hop_count, node_id")
         .unwrap();
     let rows = stmt
-        .query_map([fixture_path.as_str(), "r1", "3", "outbound", "NULL"], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i32>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })
+        .query_map(
+            [fixture_path.as_str(), "r1", "3", "outbound", "NULL"],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -385,7 +656,11 @@ fn graph_traverse_returns_paths_and_hops() {
 #[test]
 fn graph_traverse_filter_type_uses_case_insensitive_contains() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     fixture_conn
@@ -413,11 +688,14 @@ fn graph_traverse_filter_type_uses_case_insensitive_contains() {
     register_graph_functions(&conn);
 
     let rows = conn
-        .prepare("SELECT node_id FROM graph_traverse(?, ?, CAST(? AS INTEGER), ?, ?) ORDER BY node_id")
+        .prepare(
+            "SELECT node_id FROM graph_traverse(?, ?, CAST(? AS INTEGER), ?, ?) ORDER BY node_id",
+        )
         .unwrap()
-        .query_map([fixture_path.as_str(), "r1", "2", "outbound", "instance"], |row| {
-            row.get::<_, String>(0)
-        })
+        .query_map(
+            [fixture_path.as_str(), "r1", "2", "outbound", "instance"],
+            |row| row.get::<_, String>(0),
+        )
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -428,7 +706,11 @@ fn graph_traverse_filter_type_uses_case_insensitive_contains() {
 #[test]
 fn graph_traverse_accepts_actual_sql_null_filter() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -453,7 +735,11 @@ fn graph_traverse_accepts_actual_sql_null_filter() {
 #[test]
 fn graph_traverse_both_direction_deduplicates_bidirectional_neighbors() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     fixture_conn
@@ -495,7 +781,11 @@ fn graph_traverse_both_direction_deduplicates_bidirectional_neighbors() {
 #[test]
 fn graph_shortest_path_returns_ordered_route() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -527,7 +817,11 @@ fn graph_shortest_path_returns_ordered_route() {
 #[test]
 fn graph_shortest_path_returns_empty_when_source_missing() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -550,7 +844,11 @@ fn graph_shortest_path_returns_empty_when_source_missing() {
 #[test]
 fn graph_shortest_path_returns_empty_when_target_missing() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -573,7 +871,11 @@ fn graph_shortest_path_returns_empty_when_target_missing() {
 #[test]
 fn graph_shortest_path_returns_empty_when_no_path_exists() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_shortest_path_edge_fixture(&fixture_conn);
@@ -596,7 +898,11 @@ fn graph_shortest_path_returns_empty_when_no_path_exists() {
 #[test]
 fn graph_shortest_path_returns_single_row_for_self_path() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_shortest_path_edge_fixture(&fixture_conn);
@@ -626,7 +932,11 @@ fn graph_shortest_path_returns_single_row_for_self_path() {
 #[test]
 fn graph_reachable_reports_matches() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -656,7 +966,11 @@ fn graph_reachable_reports_matches() {
 #[test]
 fn graph_blast_radius_aggregates_by_type() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -688,7 +1002,11 @@ fn graph_blast_radius_aggregates_by_type() {
 #[test]
 fn graph_match_pattern_matches_builtin_pattern() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -723,7 +1041,11 @@ fn graph_match_pattern_matches_builtin_pattern() {
 #[test]
 fn graph_match_pattern_matches_inline_json_pattern() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -770,7 +1092,11 @@ fn graph_match_pattern_matches_inline_json_pattern() {
 #[test]
 fn graph_match_pattern_matches_multihop_builtin_patterns() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_pattern_fixture(&fixture_conn);
@@ -794,14 +1120,21 @@ fn graph_match_pattern_matches_multihop_builtin_patterns() {
                 |row| row.get::<_, i64>(0),
             )
             .unwrap();
-        assert_eq!(row_count, expected_rows, "unexpected row count for {pattern_name}");
+        assert_eq!(
+            row_count, expected_rows,
+            "unexpected row count for {pattern_name}"
+        );
     }
 }
 
 #[test]
 fn graph_match_pattern_surfaces_truncation() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_many_public_s3_matches_fixture(&fixture_conn);
@@ -859,7 +1192,11 @@ fn graph_list_patterns_returns_builtin_registry() {
 #[test]
 fn graph_cache_invalidate_table_function_returns_success() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -869,7 +1206,11 @@ fn graph_cache_invalidate_table_function_returns_success() {
     register_graph_functions(&conn);
 
     let before = conn
-        .query_row("SELECT nodes FROM graph_info(?)", [fixture_path.as_str()], |row| row.get::<_, i64>(0))
+        .query_row(
+            "SELECT nodes FROM graph_info(?)",
+            [fixture_path.as_str()],
+            |row| row.get::<_, i64>(0),
+        )
         .unwrap();
     let invalidated = conn
         .query_row(
@@ -879,7 +1220,11 @@ fn graph_cache_invalidate_table_function_returns_success() {
         )
         .unwrap();
     let after = conn
-        .query_row("SELECT nodes FROM graph_info(?)", [fixture_path.as_str()], |row| row.get::<_, i64>(0))
+        .query_row(
+            "SELECT nodes FROM graph_info(?)",
+            [fixture_path.as_str()],
+            |row| row.get::<_, i64>(0),
+        )
         .unwrap();
 
     assert_eq!(before, 3);
@@ -890,7 +1235,11 @@ fn graph_cache_invalidate_table_function_returns_success() {
 #[test]
 fn cloud_path_macro_wraps_shortest_path() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -915,7 +1264,11 @@ fn cloud_path_macro_wraps_shortest_path() {
 #[test]
 fn blast_radius_macro_wraps_blast_radius_function() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_fixture(&fixture_conn);
@@ -1065,7 +1418,11 @@ fn make_star_fixture(conn: &Connection, leaves: usize) {
 #[test]
 fn graph_traverse_returns_all_rows_across_multiple_chunks() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_star_fixture(&fixture_conn, 5000);
@@ -1081,7 +1438,10 @@ fn graph_traverse_returns_all_rows_across_multiple_chunks() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(row_count, 5000, "traverse must emit every leaf across chunks");
+    assert_eq!(
+        row_count, 5000,
+        "traverse must emit every leaf across chunks"
+    );
 
     // Sanity check that the chunked output still produces distinct rows (i.e.
     // we're not just emitting the same first 2048 over and over).
@@ -1098,7 +1458,11 @@ fn graph_traverse_returns_all_rows_across_multiple_chunks() {
 #[test]
 fn graph_blast_radius_chunks_correctly_with_many_types() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     // 3000 distinct resource types means blast's per-type rollup also crosses
     // the chunk boundary.
@@ -1163,7 +1527,11 @@ fn graph_blast_radius_chunks_correctly_with_many_types() {
 #[test]
 fn graph_reachable_handles_large_match_count() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     let fixture_conn = Connection::open(&fixture_path).unwrap();
     make_star_fixture(&fixture_conn, 5000);
@@ -1176,7 +1544,13 @@ fn graph_reachable_handles_large_match_count() {
         .query_row(
             "SELECT is_reachable, match_count, closest_hop FROM graph_reachable(?, ?, ?, 3)",
             [fixture_path.as_str(), "hub", "s3"],
-            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, i64>(1)?, row.get::<_, i32>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, bool>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i32>(2)?,
+                ))
+            },
         )
         .unwrap();
     assert!(is_reachable);
@@ -1187,7 +1561,11 @@ fn graph_reachable_handles_large_match_count() {
 #[test]
 fn cache_auto_invalidates_when_file_changes_on_disk() {
     let temp_dir = TempDir::new().unwrap();
-    let fixture_path = temp_dir.path().join("fixture.duckdb").to_string_lossy().into_owned();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
 
     {
         let conn1 = Connection::open(&fixture_path).unwrap();
@@ -1232,7 +1610,10 @@ fn cache_auto_invalidates_when_file_changes_on_disk() {
 
     let load_conn2 = Connection::open(&fixture_path).unwrap();
     let g2 = cache::get_or_load(&load_conn2, &fixture_path).unwrap();
-    assert!(!std::sync::Arc::ptr_eq(&g1, &g2), "expected fresh load after file mtime change");
+    assert!(
+        !std::sync::Arc::ptr_eq(&g1, &g2),
+        "expected fresh load after file mtime change"
+    );
     assert_eq!(g2.node_count, 4);
 }
 
@@ -1274,7 +1655,10 @@ fn detect_providers_ignores_unpaired_tables() {
     .unwrap();
 
     let providers = schema::detect_providers(&conn).unwrap();
-    assert!(providers.is_empty(), "prefixes without both tables must be skipped");
+    assert!(
+        providers.is_empty(),
+        "prefixes without both tables must be skipped"
+    );
 }
 
 #[test]
@@ -1303,4 +1687,397 @@ fn detect_providers_excludes_reserved_cloud_prefix() {
     let providers = schema::detect_providers(&conn).unwrap();
     assert_eq!(providers.len(), 1);
     assert_eq!(providers[0].provider, "aws");
+}
+
+#[test]
+fn graph_correlate_ips_finds_cross_provider_shared_public_ip() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_ip_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, source_provider, target_provider, confidence, evidence) = conn
+        .query_row(
+            "SELECT source_id, target_id, source_provider, target_provider, confidence, evidence
+             FROM graph_correlate_ips(?, 0.8)
+             ORDER BY source_id, target_id",
+            [fixture_path.as_str()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, f64>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            },
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-vm-1");
+    assert_eq!(target_id, "azure-vm-1");
+    assert_eq!(source_provider, "aws");
+    assert_eq!(target_provider, "azure");
+    assert_eq!(confidence, 1.0);
+    assert!(evidence.contains("\"shared_ip_address\":\"8.8.8.8\""));
+    assert!(evidence.contains("\"ip_classification\":\"public\""));
+}
+
+#[test]
+fn graph_correlate_ips_filters_by_min_confidence() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_ip_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let all_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM graph_correlate_ips(?, 0.5)",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let high_confidence_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM graph_correlate_ips(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(all_count, 2);
+    assert_eq!(high_confidence_count, 1);
+}
+
+#[test]
+fn graph_correlate_ips_returns_empty_when_ip_table_missing() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM graph_correlate_ips(?, 0.5)",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn graph_correlate_dns_finds_name_and_cname_matches() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_dns_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let count_without_cname: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM graph_correlate_dns(?, false, 0.8)",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let count_with_cname: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM graph_correlate_dns(?, true, 0.8)",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let evidence: String = conn
+        .query_row(
+            "SELECT evidence FROM graph_correlate_dns(?, true, 0.8) WHERE correlation_type = 'dns_cname_target_match'",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(count_without_cname, 1);
+    assert_eq!(count_with_cname, 2);
+    assert!(evidence.contains("edge.example.net"));
+}
+
+#[test]
+fn graph_correlate_networks_uses_explicit_topology() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_network_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_networks(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "vpc-1");
+    assert_eq!(target_id, "vnet-1");
+    assert_eq!(confidence, 0.9500000000000001);
+    assert!(evidence.contains("topology-backed explicit connection only"));
+}
+
+#[test]
+fn graph_correlate_load_balancers_finds_shared_backend() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_load_balancer_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_load_balancers(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-lb-1");
+    assert_eq!(target_id, "azure-lb-1");
+    assert_eq!(confidence, 0.9);
+    assert!(evidence.contains("10.0.1.10"));
+}
+
+#[test]
+fn graph_correlate_connectivity_finds_explicit_vpn() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_connectivity_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_connectivity(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-vgw-1");
+    assert_eq!(target_id, "azure-vng-1");
+    assert_eq!(confidence, 0.96);
+    assert!(evidence.contains("cross_cloud_vpn_connections"));
+}
+
+#[test]
+fn graph_correlate_security_uses_security_correlation_table() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_security_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_security(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-sg-1");
+    assert_eq!(target_id, "az-nsg-1");
+    assert_eq!(confidence, 0.91);
+    assert!(evidence.contains("public_https"));
+}
+
+#[test]
+fn graph_correlate_domains_finds_dns_and_certificate_matches() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_domain_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM graph_correlate_domains(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let evidence: String = conn
+        .query_row(
+            "SELECT evidence FROM graph_correlate_domains(?, 0.9) WHERE correlation_type = 'domain_certificate_match'",
+            [fixture_path.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(count, 2);
+    assert!(evidence.contains("api.example.com"));
+}
+
+#[test]
+fn graph_correlate_identity_finds_federation_relationship() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_identity_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_identity(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-oidc-1");
+    assert_eq!(target_id, "azure-app-1");
+    assert_eq!(confidence, 0.94);
+    assert!(evidence.contains("https://issuer.example.com"));
+}
+
+#[test]
+fn graph_correlate_policies_finds_similarity_row() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_policy_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_policies(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-pol-1");
+    assert_eq!(target_id, "az-roledef-1");
+    assert_eq!(confidence, 0.92);
+    assert!(evidence.contains("highly_similar"));
+}
+
+#[test]
+fn graph_correlate_secrets_finds_shared_hash_across_providers() {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_cross_cloud_secret_fixture(&fixture_conn);
+    drop(fixture_conn);
+
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    let (source_id, target_id, confidence, evidence): (String, String, f64, String) = conn
+        .query_row(
+            "SELECT source_id, target_id, confidence, evidence FROM graph_correlate_secrets(?, 0.8)",
+            [fixture_path.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    assert_eq!(source_id, "aws-secret-1");
+    assert_eq!(target_id, "az-secret-1");
+    assert_eq!(confidence, 0.91);
+    assert!(evidence.contains("hash-123"));
 }

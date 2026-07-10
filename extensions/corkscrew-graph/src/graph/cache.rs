@@ -1,13 +1,13 @@
 // Graph cache: TTL- and fingerprint-validated, LRU-bounded.
 use anyhow::Result;
+use duckdb::Connection;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use duckdb::Connection;
 
-use super::loader::{LoadedGraph, fingerprint_path};
+use super::loader::{fingerprint_path, LoadedGraph};
 
 const DEFAULT_CACHE_TTL_SECS: u64 = 300; // 5 minutes
 const DEFAULT_CACHE_MAX_ENTRIES: usize = 4;

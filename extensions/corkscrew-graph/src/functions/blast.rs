@@ -1,11 +1,11 @@
-use duckdb::Result;
 use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
+use duckdb::Result;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{
-    BlastRow, chunk_capacity, collect_blast_rows, load_graph_for_path, next_chunk,
-    write_varchar_list_column,
+    chunk_capacity, collect_blast_rows, load_graph_for_path, next_chunk, write_varchar_list_column,
+    BlastRow,
 };
 
 #[repr(C)]
@@ -27,10 +27,22 @@ impl VTab for GraphBlastRadiusVTab {
     type BindData = BlastBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        bind.add_result_column("resource_type", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("reachable_count", LogicalTypeHandle::from(LogicalTypeId::Integer));
-        bind.add_result_column("max_hop_distance", LogicalTypeHandle::from(LogicalTypeId::Integer));
-        bind.add_result_column("sample_ids", LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Varchar)));
+        bind.add_result_column(
+            "resource_type",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "reachable_count",
+            LogicalTypeHandle::from(LogicalTypeId::Integer),
+        );
+        bind.add_result_column(
+            "max_hop_distance",
+            LogicalTypeHandle::from(LogicalTypeId::Integer),
+        );
+        bind.add_result_column(
+            "sample_ids",
+            LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Varchar)),
+        );
 
         Ok(BlastBindData {
             db_path: bind.get_parameter(0).to_string(),
@@ -50,9 +62,14 @@ impl VTab for GraphBlastRadiusVTab {
         })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
-        let Some((start, end)) = next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity()) else {
+        let Some((start, end)) =
+            next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
+        else {
             output.set_len(0);
             return Ok(());
         };

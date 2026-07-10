@@ -49,7 +49,9 @@ pub struct PatternGraph {
 }
 
 impl PatternGraph {
-    pub fn from_definition(definition: PatternDefinition) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_definition(
+        definition: PatternDefinition,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut graph = DiGraph::<PatternNode, PatternEdge>::new();
         let mut label_map = HashMap::new();
         let mut node_order = Vec::with_capacity(definition.nodes.len());

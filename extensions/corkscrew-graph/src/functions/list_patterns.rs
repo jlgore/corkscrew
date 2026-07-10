@@ -1,6 +1,6 @@
-use duckdb::Result;
 use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
+use duckdb::Result;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
@@ -19,10 +19,22 @@ impl VTab for GraphListPatternsVTab {
     type BindData = ListPatternsBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        bind.add_result_column("pattern_name", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("description", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("node_count", LogicalTypeHandle::from(LogicalTypeId::Integer));
-        bind.add_result_column("edge_count", LogicalTypeHandle::from(LogicalTypeId::Integer));
+        bind.add_result_column(
+            "pattern_name",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "description",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "node_count",
+            LogicalTypeHandle::from(LogicalTypeId::Integer),
+        );
+        bind.add_result_column(
+            "edge_count",
+            LogicalTypeHandle::from(LogicalTypeId::Integer),
+        );
         Ok(ListPatternsBindData)
     }
 
@@ -45,9 +57,14 @@ impl VTab for GraphListPatternsVTab {
         })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
-        let Some((start, end)) = next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity()) else {
+        let Some((start, end)) =
+            next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
+        else {
             output.set_len(0);
             return Ok(());
         };

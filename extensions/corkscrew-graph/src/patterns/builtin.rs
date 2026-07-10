@@ -30,7 +30,8 @@ pub fn lookup(name: &str) -> Option<PatternDefinition> {
 fn internet_to_database() -> PatternDefinition {
     PatternDefinition {
         name: "internet_to_database".to_string(),
-        description: "Internet gateway path through security controls and compute to a database".to_string(),
+        description: "Internet gateway path through security controls and compute to a database"
+            .to_string(),
         nodes: vec![
             PatternNodeDefinition {
                 label: "igw".to_string(),

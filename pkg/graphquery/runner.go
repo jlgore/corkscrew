@@ -61,6 +61,8 @@ func (r *Runner) Run(args []string) int {
 		err = r.runPatterns(args[1:])
 	case "cache":
 		err = r.runCache(args[1:])
+	case "correlate":
+		err = r.runCorrelate(args[1:])
 	case "help", "--help", "-h":
 		r.printGraphUsage()
 		return 0
@@ -87,11 +89,108 @@ func (r *Runner) printGraphUsage() {
 	_, _ = fmt.Fprintln(r.Stdout, "  match <pattern-name>|--pattern-file   Run a builtin or inline JSON attack pattern")
 	_, _ = fmt.Fprintln(r.Stdout, "  patterns list                         List builtin graph patterns")
 	_, _ = fmt.Fprintln(r.Stdout, "  cache invalidate                      Invalidate graph cache for a database")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate ip                          Find cross-provider shared-IP correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate dns                         Find cross-provider DNS correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate network                     Find cross-provider network topology correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate load-balancer               Find cross-provider load balancer correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate connectivity                Find cross-provider VPN/peering/direct correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate security                    Find cross-provider security rule correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate domain                      Find cross-provider DNS/certificate domain correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate identity                    Find cross-provider identity federation/role correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate policy                      Find cross-provider policy similarity correlations")
+	_, _ = fmt.Fprintln(r.Stdout, "  correlate secret                      Find cross-provider shared secret correlations")
 	_, _ = fmt.Fprintln(r.Stdout)
 	_, _ = fmt.Fprintln(r.Stdout, "Common options:")
 	_, _ = fmt.Fprintln(r.Stdout, "  --db <path>                           DuckDB database path")
 	_, _ = fmt.Fprintln(r.Stdout, "  --extension <path>                    Packaged corkscrew graph extension path")
 	_, _ = fmt.Fprintln(r.Stdout, "  --output table|json|csv|dot           Output format")
+}
+
+func (r *Runner) runCorrelate(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: corkscrew graph correlate ip|dns|network|load-balancer|connectivity|security|domain|identity|policy|secret [options]")
+	}
+	subcommand := args[0]
+	if subcommand != "ip" && subcommand != "dns" && subcommand != "network" && subcommand != "load-balancer" && subcommand != "connectivity" && subcommand != "security" && subcommand != "domain" && subcommand != "identity" && subcommand != "policy" && subcommand != "secret" {
+		return fmt.Errorf("usage: corkscrew graph correlate ip|dns|network|load-balancer|connectivity|security|domain|identity|policy|secret [options]")
+	}
+	fs := flag.NewFlagSet("graph correlate "+subcommand, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	dbPath := fs.String("db", defaultDatabasePath(), "Path to DuckDB database file")
+	extensionPath := fs.String("extension", "", "Path to corkscrew_graph.duckdb_extension")
+	confidence := fs.Float64("confidence", 0.8, "Minimum confidence score")
+	includeCNAME := fs.Bool("include-cname", true, "Include CNAME target correlations for DNS")
+	outputFormat := fs.String("output", "table", "Output format")
+	noHeader := fs.Bool("no-header", false, "Omit header in table output")
+	if err := fs.Parse(normalizeArgs(args[1:], map[string]bool{"-no-header": true, "--no-header": true, "-include-cname": true, "--include-cname": true})); err != nil {
+		return err
+	}
+
+	var query string
+	switch subcommand {
+	case "ip":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_ips(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "dns":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_dns(%s, %t, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*includeCNAME,
+			*confidence,
+		)
+	case "network":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_networks(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "load-balancer":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_load_balancers(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "connectivity":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_connectivity(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "security":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_security(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "domain":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_domains(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "identity":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_identity(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "policy":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_policies(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	case "secret":
+		query = fmt.Sprintf(
+			"SELECT * FROM graph_correlate_secrets(%s, %.6f) ORDER BY confidence DESC, source_provider, target_provider, source_id, target_id",
+			sqlStringLiteral(*dbPath),
+			*confidence,
+		)
+	}
+	return r.runSQL(*dbPath, *extensionPath, query, *outputFormat, *noHeader)
 }
 
 func (r *Runner) runTraverse(args []string) error {

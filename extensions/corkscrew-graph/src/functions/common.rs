@@ -1,9 +1,9 @@
-use duckdb::Connection;
 use duckdb::core::{FlatVector, Inserter, ListVector};
-use petgraph::Direction::{Incoming, Outgoing};
+use duckdb::Connection;
 use petgraph::algo::astar;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
+use petgraph::Direction::{Incoming, Outgoing};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -87,7 +87,9 @@ pub struct BlastRow {
     pub sample_ids: Vec<String>,
 }
 
-pub fn load_graph_for_path(db_path: &str) -> Result<std::sync::Arc<LoadedGraph>, Box<dyn std::error::Error>> {
+pub fn load_graph_for_path(
+    db_path: &str,
+) -> Result<std::sync::Arc<LoadedGraph>, Box<dyn std::error::Error>> {
     let conn = Connection::open(db_path)?;
     Ok(crate::graph::cache::get_or_load(&conn, db_path)?)
 }
@@ -208,7 +210,12 @@ pub fn collect_reachable_row(
     max_hops: usize,
 ) -> ReachableRow {
     let Some(start) = loaded.node_map.get(source_id).copied() else {
-        return ReachableRow { is_reachable: false, match_count: 0, closest_hop: None, example_id: None };
+        return ReachableRow {
+            is_reachable: false,
+            match_count: 0,
+            closest_hop: None,
+            example_id: None,
+        };
     };
     let filter = (!target_type.is_empty()).then_some(target_type);
 
@@ -268,12 +275,14 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
     while let Some((node, hops)) = queue.pop_front() {
         if hops > 0 {
             let resource = &loaded.graph[node];
-            let entry = grouped.entry(resource.resource_type.clone()).or_insert_with(|| BlastRow {
-                resource_type: resource.resource_type.clone(),
-                reachable_count: 0,
-                max_hop_distance: 0,
-                sample_ids: Vec::new(),
-            });
+            let entry = grouped
+                .entry(resource.resource_type.clone())
+                .or_insert_with(|| BlastRow {
+                    resource_type: resource.resource_type.clone(),
+                    reachable_count: 0,
+                    max_hop_distance: 0,
+                    sample_ids: Vec::new(),
+                });
             entry.reachable_count += 1;
             entry.max_hop_distance = entry.max_hop_distance.max(hops as i32);
             if entry.sample_ids.len() < 5 {
@@ -295,7 +304,10 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
     grouped.into_values().collect()
 }
 
-pub fn write_varchar_list_column(vector: &mut ListVector<'_>, values: &[Vec<String>]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn write_varchar_list_column(
+    vector: &mut ListVector<'_>,
+    values: &[Vec<String>],
+) -> Result<(), Box<dyn std::error::Error>> {
     let total_values = values.iter().map(Vec::len).sum();
     let child = vector.child(total_values);
     let mut offset = 0usize;
@@ -317,11 +329,18 @@ pub fn write_optional_varchar(vector: &mut FlatVector<'_>, row_idx: usize, value
     }
 }
 
-fn neighbors(graph: &CloudGraph, node: NodeIndex, direction: TraversalDirection) -> Vec<(NodeIndex, String)> {
+fn neighbors(
+    graph: &CloudGraph,
+    node: NodeIndex,
+    direction: TraversalDirection,
+) -> Vec<(NodeIndex, String)> {
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
-    if matches!(direction, TraversalDirection::Outbound | TraversalDirection::Both) {
+    if matches!(
+        direction,
+        TraversalDirection::Outbound | TraversalDirection::Both
+    ) {
         for edge in graph.edges_directed(node, Outgoing) {
             if seen.insert(edge.target()) {
                 results.push((edge.target(), edge.weight().relationship_type.clone()));
@@ -329,7 +348,10 @@ fn neighbors(graph: &CloudGraph, node: NodeIndex, direction: TraversalDirection)
         }
     }
 
-    if matches!(direction, TraversalDirection::Inbound | TraversalDirection::Both) {
+    if matches!(
+        direction,
+        TraversalDirection::Inbound | TraversalDirection::Both
+    ) {
         for edge in graph.edges_directed(node, Incoming) {
             if seen.insert(edge.source()) {
                 results.push((edge.source(), edge.weight().relationship_type.clone()));
@@ -389,7 +411,11 @@ fn edge_cost(edge: &RelationshipEdge, weighted: bool) -> u64 {
 
     edge.properties
         .get("weight")
-        .and_then(|value| value.as_u64().or_else(|| value.as_i64().and_then(|v| u64::try_from(v).ok())))
+        .and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_i64().and_then(|v| u64::try_from(v).ok()))
+        })
         .filter(|value| *value > 0)
         .unwrap_or(1)
 }

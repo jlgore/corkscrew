@@ -160,6 +160,18 @@ export PATH="$HOME/.corkscrew/bin:$PATH"
 
 # Cross-cloud correlation scanning
 ./corkscrew crosscloud scan --providers aws,azure --regions us-east-1,eastus
+
+# DuckDB extension-backed IP correlation
+./corkscrew graph correlate ip --confidence 0.8
+./corkscrew graph correlate dns --include-cname=true --confidence 0.8
+./corkscrew graph correlate network --confidence 0.8
+./corkscrew graph correlate load-balancer --confidence 0.8
+./corkscrew graph correlate connectivity --confidence 0.8
+./corkscrew graph correlate security --confidence 0.8
+./corkscrew graph correlate domain --confidence 0.8
+./corkscrew graph correlate identity --confidence 0.8
+./corkscrew graph correlate policy --confidence 0.8
+./corkscrew graph correlate secret --confidence 0.8
 ```
 
 ### Configuration

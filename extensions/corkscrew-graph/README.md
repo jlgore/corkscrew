@@ -29,6 +29,35 @@ Current SQL surface:
 - `graph_match_pattern(db_path, pattern_spec)`
 - `graph_list_patterns()`
 - `graph_cache_invalidate(db_path)`
+- `graph_correlate_ips(db_path, min_confidence)` finds cross-provider
+  resources that share an IP address using `cross_cloud_ip_addresses`.
+- `graph_correlate_dns(db_path, include_cname, min_confidence)` finds
+  cross-provider DNS records with the same normalized DNS name using
+  `cross_cloud_dns_records`; when `include_cname` is true it also matches
+  shared CNAME targets from `record_values`.
+- `graph_correlate_networks(db_path, min_confidence)` emits conservative
+  cross-provider network correlations from explicit rows in
+  `cross_cloud_network_topology`.
+- `graph_correlate_load_balancers(db_path, min_confidence)` correlates
+  cross-provider load balancers sharing explicit backend or DNS target tokens
+  from `cross_cloud_loadbalancer_topology` and `cross_cloud_dns_records`.
+- `graph_correlate_connectivity(db_path, min_confidence)` emits explicit
+  cross-provider VPN, peering, and direct-connect rows from
+  `cross_cloud_vpn_connections`, `cross_cloud_network_peering`, and
+  `cross_cloud_direct_connections`.
+- `graph_correlate_security(db_path, min_confidence)` emits explicit
+  cross-provider security rule correlations from
+  `cross_cloud_security_correlations`.
+- `graph_correlate_domains(db_path, min_confidence)` correlates DNS domain
+  ownership from `cross_cloud_dns_records` and explicit certificate/domain
+  rows from `certificate_correlations`.
+- `graph_correlate_identity(db_path, min_confidence)` emits explicit identity
+  federation and role trust rows from `identity_federation_relationships` and
+  `security_role_relationships`.
+- `graph_correlate_policies(db_path, min_confidence)` emits policy similarity
+  rows from `policy_similarity_analysis`.
+- `graph_correlate_secrets(db_path, min_confidence)` correlates cross-provider
+  secret material sharing the same secret hash in `shared_secrets_correlation`.
 
 Pattern library:
 
@@ -81,3 +110,34 @@ currently emits weights — until they do, `weighted := true` behaves identicall
 to `weighted := false`. To wire it up, have the Go-side relationship emitter
 add `{"weight": N, ...}` to the properties for any edge class you want to
 penalize (cross-region links, untrusted hops, etc.).
+
+Cross-cloud correlation functions emit `correlation_id`, `correlation_type`,
+`source_id`, `target_id`, `source_provider`, `target_provider`, `confidence`,
+`evidence` JSON, and `description`.
+
+The initial confidence model mirrors the legacy IP heuristic: shared IP starts
+at `0.5`, public IPs add `0.3`, and elastic/reserved/static allocations add
+`0.2`, capped at `1.0`.
+
+CLI usage:
+
+    corkscrew graph correlate ip --db ~/.corkscrew/db/corkscrew.duckdb --confidence 0.8
+    corkscrew graph correlate dns --include-cname=true --confidence 0.8
+    corkscrew graph correlate network --confidence 0.8
+    corkscrew graph correlate load-balancer --confidence 0.8
+    corkscrew graph correlate connectivity --confidence 0.8
+    corkscrew graph correlate security --confidence 0.8
+    corkscrew graph correlate domain --confidence 0.8
+    corkscrew graph correlate identity --confidence 0.8
+    corkscrew graph correlate policy --confidence 0.8
+    corkscrew graph correlate secret --confidence 0.8
+
+The initial network slice is intentionally topology-backed: it reports explicit
+cross-provider network connections already present in `cross_cloud_network_topology`
+and includes source/target CIDR JSON as evidence, but does not infer arbitrary
+CIDR overlaps from provider raw JSON.
+
+The connectivity, security, certificate/domain, identity, policy, and secret
+slices are table-backed first passes: they consume explicit normalized
+correlation/topology rows and do not yet perform broad provider raw JSON
+inference.

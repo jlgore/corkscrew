@@ -37,7 +37,8 @@ where
 
     #[inline]
     fn node_label(&self, index: NodeIndex) -> Option<&Self::NodeLabel> {
-        self.0.node_weight(petgraph::stable_graph::NodeIndex::<Ix>::new(index))
+        self.0
+            .node_weight(petgraph::stable_graph::NodeIndex::<Ix>::new(index))
     }
 
     #[inline]

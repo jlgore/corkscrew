@@ -1,6 +1,8 @@
-use corkscrew_graph_tests::functions::common::{TraversalDirection, collect_blast_rows, collect_traverse_rows};
+use corkscrew_graph_tests::functions::common::{
+    collect_blast_rows, collect_traverse_rows, TraversalDirection,
+};
 use corkscrew_graph_tests::graph::{loader, schema};
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use duckdb::Connection;
 
 const TRAVERSE_TARGET_TOTAL_NODES: usize = 50_000;
@@ -68,7 +70,8 @@ fn bench_traverse_depth_five(c: &mut Criterion) {
     let mut group = c.benchmark_group("traverse_depth_five");
     group.bench_function(BenchmarkId::new("total_nodes", loaded.node_count), |b| {
         b.iter(|| {
-            let rows = collect_traverse_rows(&loaded, "inst0", 5, TraversalDirection::Outbound, None);
+            let rows =
+                collect_traverse_rows(&loaded, "inst0", 5, TraversalDirection::Outbound, None);
             criterion::black_box(rows.len())
         });
     });
@@ -78,18 +81,23 @@ fn bench_traverse_depth_five(c: &mut Criterion) {
 fn bench_blast_radius_scan(c: &mut Criterion) {
     let instance_count = BLAST_TARGET_TOTAL_NODES * BLAST_FANOUT / (BLAST_FANOUT + 1);
     let loaded = synthetic_loaded_graph(instance_count, BLAST_FANOUT);
-    let instance_ids = (0..instance_count).map(|index| format!("inst{index}")).collect::<Vec<_>>();
+    let instance_ids = (0..instance_count)
+        .map(|index| format!("inst{index}"))
+        .collect::<Vec<_>>();
 
     let mut group = c.benchmark_group("blast_radius_scan");
-    group.bench_function(BenchmarkId::new("instances_scanned", instance_ids.len()), |b| {
-        b.iter(|| {
-            let total = instance_ids
-                .iter()
-                .map(|id| collect_blast_rows(&loaded, id, 3).len())
-                .sum::<usize>();
-            criterion::black_box(total)
-        });
-    });
+    group.bench_function(
+        BenchmarkId::new("instances_scanned", instance_ids.len()),
+        |b| {
+            b.iter(|| {
+                let total = instance_ids
+                    .iter()
+                    .map(|id| collect_blast_rows(&loaded, id, 3).len())
+                    .sum::<usize>();
+                criterion::black_box(total)
+            });
+        },
+    );
     group.finish();
 }
 

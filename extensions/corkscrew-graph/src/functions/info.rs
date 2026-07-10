@@ -1,5 +1,8 @@
-use duckdb::{core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId}, Result};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
+use duckdb::{
+    core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
+    Result,
+};
 use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
@@ -52,12 +55,20 @@ impl VTab for GraphInfoVTab {
             .map(|(provider, (nodes, edges))| (provider.clone(), *nodes, *edges, loaded_at.clone()))
             .collect();
 
-        Ok(InfoInitData { cursor: AtomicUsize::new(0), rows })
+        Ok(InfoInitData {
+            cursor: AtomicUsize::new(0),
+            rows,
+        })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
-        let Some((start, end)) = next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity()) else {
+        let Some((start, end)) =
+            next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
+        else {
             output.set_len(0);
             return Ok(());
         };
@@ -69,7 +80,9 @@ impl VTab for GraphInfoVTab {
         let nodes_slice = v1.as_mut_slice::<i64>();
         let edges_slice = v2.as_mut_slice::<i64>();
 
-        for (out_idx, (prov, nodes, edges, loaded_at)) in init_data.rows[start..end].iter().enumerate() {
+        for (out_idx, (prov, nodes, edges, loaded_at)) in
+            init_data.rows[start..end].iter().enumerate()
+        {
             v0.insert(out_idx, CString::new(prov.clone())?);
             nodes_slice[out_idx] = *nodes;
             edges_slice[out_idx] = *edges;
@@ -110,21 +123,31 @@ impl VTab for GraphCacheInvalidateVTab {
     type BindData = CacheInvalidateBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        bind.add_result_column("invalidated", LogicalTypeHandle::from(LogicalTypeId::Bigint));
+        bind.add_result_column(
+            "invalidated",
+            LogicalTypeHandle::from(LogicalTypeId::Bigint),
+        );
         Ok(CacheInvalidateBindData {
             db_path: bind.get_parameter(0).to_string(),
         })
     }
 
     fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe { init.get_bind_data::<CacheInvalidateBindData>().as_ref().unwrap() };
+        let bind_ref = unsafe {
+            init.get_bind_data::<CacheInvalidateBindData>()
+                .as_ref()
+                .unwrap()
+        };
         graph_cache_invalidate(&bind_ref.db_path);
         Ok(CacheInvalidateInitData {
             cursor: AtomicUsize::new(0),
         })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
         let Some((start, end)) = next_chunk(&init_data.cursor, 1, chunk_capacity()) else {
             output.set_len(0);

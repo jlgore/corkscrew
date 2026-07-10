@@ -36,11 +36,17 @@ pub fn detect_providers(conn: &Connection) -> Result<Vec<ProviderTables>> {
         let name = name.to_lowercase();
         if let Some(prefix) = name.strip_suffix("_resources") {
             if !reserved.contains(prefix) {
-                buckets.entry(prefix.to_string()).or_insert((false, false)).0 = true;
+                buckets
+                    .entry(prefix.to_string())
+                    .or_insert((false, false))
+                    .0 = true;
             }
         } else if let Some(prefix) = name.strip_suffix("_relationships") {
             if !reserved.contains(prefix) {
-                buckets.entry(prefix.to_string()).or_insert((false, false)).1 = true;
+                buckets
+                    .entry(prefix.to_string())
+                    .or_insert((false, false))
+                    .1 = true;
             }
         }
     }

@@ -1,13 +1,13 @@
-use duckdb::Result;
 use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
+use duckdb::Result;
 use petgraph::stable_graph::NodeIndex;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
 use crate::graph::loader::{CloudGraph, ResourceNode};
 use crate::graph::vf2_impl::StableGraphRef;
-use crate::patterns::{PatternGraph, load_pattern};
+use crate::patterns::{load_pattern, PatternGraph};
 
 const MAX_MATCHES: usize = 256;
 
@@ -41,12 +41,27 @@ impl VTab for GraphMatchPatternVTab {
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         bind.add_result_column("match_id", LogicalTypeHandle::from(LogicalTypeId::Integer));
-        bind.add_result_column("pattern_node", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("resource_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("resource_type", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("resource_name", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+        bind.add_result_column(
+            "pattern_node",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "resource_id",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "resource_type",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "resource_name",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
         bind.add_result_column("region", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("account_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+        bind.add_result_column(
+            "account_id",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
 
         Ok(MatchPatternBindData {
             db_path: bind.get_parameter(0).to_string(),
@@ -55,7 +70,11 @@ impl VTab for GraphMatchPatternVTab {
     }
 
     fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe { init.get_bind_data::<MatchPatternBindData>().as_ref().unwrap() };
+        let bind_ref = unsafe {
+            init.get_bind_data::<MatchPatternBindData>()
+                .as_ref()
+                .unwrap()
+        };
         let loaded = crate::functions::common::load_graph_for_path(&bind_ref.db_path)?;
         let pattern = load_pattern(&bind_ref.pattern_spec)?;
         let rows = collect_match_rows(&pattern, &loaded.graph, MAX_MATCHES);
@@ -66,9 +85,14 @@ impl VTab for GraphMatchPatternVTab {
         })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
-        let Some((start, end)) = next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity()) else {
+        let Some((start, end)) =
+            next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
+        else {
             output.set_len(0);
             return Ok(());
         };
@@ -110,7 +134,9 @@ fn collect_match_rows(
     data_graph: &CloudGraph,
     max_matches: usize,
 ) -> Vec<MatchPatternRow> {
-    if pattern.graph.node_count() > data_graph.node_count() || pattern.graph.edge_count() > data_graph.edge_count() {
+    if pattern.graph.node_count() > data_graph.node_count()
+        || pattern.graph.edge_count() > data_graph.edge_count()
+    {
         return Vec::new();
     }
 
@@ -145,11 +171,17 @@ fn collect_match_rows(
 
 fn node_matches(pattern_node: &crate::patterns::PatternNode, data_node: &ResourceNode) -> bool {
     pattern_node.type_filter.as_ref().map_or(true, |filter| {
-        data_node.resource_type.to_ascii_lowercase().contains(&filter.to_ascii_lowercase())
+        data_node
+            .resource_type
+            .to_ascii_lowercase()
+            .contains(&filter.to_ascii_lowercase())
     })
 }
 
-fn edge_matches(pattern_edge: &crate::patterns::PatternEdge, data_edge: &crate::graph::loader::RelationshipEdge) -> bool {
+fn edge_matches(
+    pattern_edge: &crate::patterns::PatternEdge,
+    data_edge: &crate::graph::loader::RelationshipEdge,
+) -> bool {
     pattern_edge.rel_filter.as_ref().map_or(true, |filter| {
         data_edge.relationship_type.eq_ignore_ascii_case(filter)
     })

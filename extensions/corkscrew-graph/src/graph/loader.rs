@@ -1,11 +1,11 @@
 // Graph loader implementation (two-pass): resources then relationships.
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use petgraph::stable_graph::{StableGraph, NodeIndex};
+use duckdb::Connection;
+use petgraph::stable_graph::{NodeIndex, StableGraph};
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use duckdb::Connection;
 
 /// Metadata attached to each graph node
 #[derive(Debug, Clone)]
@@ -48,7 +48,10 @@ pub struct LoadedGraph {
     pub file_fingerprint: Option<(u64, u64)>,
 }
 
-pub fn load_graph(conn: &Connection, providers: &[super::schema::ProviderTables]) -> Result<LoadedGraph> {
+pub fn load_graph(
+    conn: &Connection,
+    providers: &[super::schema::ProviderTables],
+) -> Result<LoadedGraph> {
     let mut graph: CloudGraph = StableGraph::new();
     let mut node_map: NodeMap = HashMap::new();
     let mut provider_counts: BTreeMap<String, (i64, i64)> = BTreeMap::new();
@@ -96,7 +99,10 @@ pub fn load_graph(conn: &Connection, providers: &[super::schema::ProviderTables]
             };
             let idx = graph.add_node(node);
             node_map.insert(id, idx);
-            provider_counts.entry(pt.provider.clone()).or_insert((0, 0)).0 += 1;
+            provider_counts
+                .entry(pt.provider.clone())
+                .or_insert((0, 0))
+                .0 += 1;
         }
     }
 
@@ -114,8 +120,14 @@ pub fn load_graph(conn: &Connection, providers: &[super::schema::ProviderTables]
             let rel_type: Option<String> = row.get(2)?;
             let props_str: Option<String> = row.get(3)?;
 
-            let from_id = match from_id { Some(v) => v, None => continue };
-            let to_id = match to_id { Some(v) => v, None => continue };
+            let from_id = match from_id {
+                Some(v) => v,
+                None => continue,
+            };
+            let to_id = match to_id {
+                Some(v) => v,
+                None => continue,
+            };
 
             let from_idx = match node_map.get(&from_id) {
                 Some(i) => *i,
@@ -138,7 +150,10 @@ pub fn load_graph(conn: &Connection, providers: &[super::schema::ProviderTables]
                 provider: pt.provider.clone(),
             };
             graph.add_edge(from_idx, to_idx, edge);
-            provider_counts.entry(pt.provider.clone()).or_insert((0, 0)).1 += 1;
+            provider_counts
+                .entry(pt.provider.clone())
+                .or_insert((0, 0))
+                .1 += 1;
         }
     }
 

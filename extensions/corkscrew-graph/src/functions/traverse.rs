@@ -1,13 +1,13 @@
-use duckdb::Result;
 use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
 use duckdb::ffi::duckdb_is_null_value;
 use duckdb::vtab::Value;
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
+use duckdb::Result;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{
-    TraversalDirection, TraverseRow, chunk_capacity, collect_traverse_rows, load_graph_for_path,
-    next_chunk, write_varchar_list_column,
+    chunk_capacity, collect_traverse_rows, load_graph_for_path, next_chunk,
+    write_varchar_list_column, TraversalDirection, TraverseRow,
 };
 
 #[repr(C)]
@@ -35,10 +35,16 @@ impl VTab for GraphTraverseVTab {
         bind.add_result_column("node_type", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         bind.add_result_column("node_name", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         bind.add_result_column("region", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("account_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+        bind.add_result_column(
+            "account_id",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
         bind.add_result_column("provider", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         bind.add_result_column("hop_count", LogicalTypeHandle::from(LogicalTypeId::Integer));
-        bind.add_result_column("path_ids", LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Varchar)));
+        bind.add_result_column(
+            "path_ids",
+            LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Varchar)),
+        );
         bind.add_result_column(
             "relationship_types",
             LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Varchar)),
@@ -76,9 +82,14 @@ impl VTab for GraphTraverseVTab {
         })
     }
 
-    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(
+        func: &TableFunctionInfo<Self>,
+        output: &mut DataChunkHandle,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let init_data = func.get_init_data();
-        let Some((start, end)) = next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity()) else {
+        let Some((start, end)) =
+            next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
+        else {
             output.set_len(0);
             return Ok(());
         };
