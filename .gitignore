@@ -46,6 +46,7 @@ plugins/aws-provider/aws-provider
 plugins/azure-provider/azure-provider  
 plugins/gcp-provider/gcp-provider
 plugins/kubernetes-provider/kubernetes-provider
+plugins/github-provider/github-provider
 plugins/aws-provider/analyze-*
 plugins/aws-provider/build-*
 plugins/gcp-provider/analyze-*
