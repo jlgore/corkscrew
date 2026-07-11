@@ -982,7 +982,7 @@ func (p *YourProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) 
 ### Technical References
 - [Plugin Interface Definition](../internal/shared/plugin.go) - Core interface all providers implement
 - [Protocol Buffer Definitions](../proto/scanner.proto) - gRPC service definitions
-- [Provider Registry](../internal/provider/cloud_provider.go) - Provider management system
+- [Provider Interface](../internal/shared/plugin.go) - Active v2 provider plugin interface
 
 ---
 
