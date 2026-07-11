@@ -2,88 +2,25 @@ package smartscan
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
 )
 
 type SmartScanConfiguration struct {
-	Version   string                    `yaml:"version"`
-	Providers map[string]ProviderConfig `yaml:"providers"`
-	Output    OutputConfig              `yaml:"output"`
-	Database  DatabaseConfig            `yaml:"database"`
+	*appconfig.CorkscrewConfig
 }
 
-type ProviderConfig struct {
-	Enabled  bool     `yaml:"enabled"`
-	Regions  []string `yaml:"regions"`
-	Services []string `yaml:"services"`
-}
-
-type OutputConfig struct {
-	DefaultFormat     string `yaml:"default_format"`
-	Colors            bool   `yaml:"colors"`
-	ProgressBars      bool   `yaml:"progress_bars"`
-	HideEmptyRegions  bool   `yaml:"hide_empty_regions"`
-	HideEmptyServices bool   `yaml:"hide_empty_services"`
-}
-
-type DatabaseConfig struct {
-	Path string `yaml:"path"`
-}
+type ProviderConfig = appconfig.CloudProviderConfig
+type OutputConfig = appconfig.OutputConfig
+type DatabaseConfig = appconfig.DatabaseConfig
 
 func LoadSmartScanConfig(configPath string) (*SmartScanConfiguration, error) {
-	if configPath == "" {
-		if configFile := strings.TrimSpace(os.Getenv("CORKSCREW_CONFIG_FILE")); configFile != "" {
-			configPath = configFile
-		}
-	}
-
-	if configPath == "" {
-		// Try to find config in common locations
-		candidates := []string{
-			"corkscrew.yaml",
-			"corkscrew.yml",
-			filepath.Join(os.Getenv("HOME"), ".corkscrew", "config.yaml"),
-			filepath.Join(".", "corkscrew.yaml"),
-		}
-
-		for _, candidate := range candidates {
-			if _, err := os.Stat(candidate); err == nil {
-				configPath = candidate
-				break
-			}
-		}
-
-		if configPath == "" {
-			return nil, fmt.Errorf("no configuration file found in standard locations")
-		}
-	}
-
-	data, err := os.ReadFile(configPath)
+	cfg, err := appconfig.LoadCorkscrewConfig(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+		return nil, err
 	}
-
-	var config SmartScanConfiguration
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", configPath, err)
-	}
-
-	// Apply defaults
-	config.applyDefaults()
-
-	return &config, nil
-}
-
-func (c *SmartScanConfiguration) applyDefaults() {
-	// Apply default output settings if not specified
-	if c.Output.DefaultFormat == "" {
-		c.Output.DefaultFormat = "table"
-	}
+	return &SmartScanConfiguration{CorkscrewConfig: cfg}, nil
 }
 
 func (c *SmartScanConfiguration) GetRegionsForProvider(provider string) ([]string, error) {
@@ -98,7 +35,7 @@ func (c *SmartScanConfiguration) GetRegionsForProvider(provider string) ([]strin
 
 	if len(providerConfig.Regions) == 0 {
 		// Return default regions based on provider
-		return c.getDefaultRegions(provider), nil
+		return appconfig.DefaultRegionsForProvider(provider), nil
 	}
 
 	return providerConfig.Regions, nil
@@ -115,21 +52,6 @@ func (c *SmartScanConfiguration) GetServicesForProvider(provider string) ([]stri
 	}
 
 	return providerConfig.Services, nil
-}
-
-func (c *SmartScanConfiguration) getDefaultRegions(provider string) []string {
-	switch provider {
-	case "aws":
-		return []string{"us-east-1", "us-west-2"}
-	case "azure":
-		return []string{"eastus", "westus2"}
-	case "gcp":
-		return []string{"us-central1-a", "us-west1-a"}
-	case "kubernetes":
-		return []string{"default"}
-	default:
-		return []string{}
-	}
 }
 
 func (c *SmartScanConfiguration) IsProviderEnabled(provider string) bool {
@@ -188,15 +110,7 @@ func (c *SmartScanConfiguration) getPreferredRegions(provider string, configured
 }
 
 func (c *SmartScanConfiguration) ValidateProvider(provider string) error {
-	validProviders := []string{"aws", "azure", "gcp", "kubernetes"}
-
-	for _, valid := range validProviders {
-		if provider == valid {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("unsupported provider: %s. Valid providers: %v", provider, validProviders)
+	return appconfig.ValidateProviderName(provider)
 }
 
 func (c *SmartScanConfiguration) PrintConfig() {

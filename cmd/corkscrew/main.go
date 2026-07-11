@@ -214,90 +214,17 @@ func (p parameterFlags) Set(value string) error {
 }
 
 func main() {
-	// Check for global --tui flag first
-	if len(os.Args) >= 2 && (os.Args[1] == "--tui" || os.Args[1] == "-t") {
-		// Launch TUI mode directly
-		if err := runTUIMode(os.Args[2:]); err != nil {
-			fmt.Printf("Failed to start TUI: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
-	}
-
-	command := os.Args[1]
-
-	// Check if TUI mode is requested for specific commands
-	if handleTUIRequest(command, os.Args[2:]) {
-		return
-	}
-
-	switch command {
-	case "init":
-		runInit(os.Args[2:])
-	case "scan":
-		runScan(os.Args[2:])
-	case "discover":
-		runDiscover(os.Args[2:])
-	case "orchestrator-discover":
-		if err := runOrchestratorDiscovery(os.Args[2:]); err != nil {
-			log.Fatalf("Orchestrator discovery failed: %v", err)
-		}
-	case "list":
-		runList(os.Args[2:])
-	case "describe":
-		runDescribe(os.Args[2:])
-	case "info":
-		runInfo(os.Args[2:])
-	case "schemas":
-		runSchemas(os.Args[2:])
-	case "query":
-		runQuery(os.Args[2:])
-	case "diagram":
-		printUnavailableCommand("diagram", "diagram generation is not wired into this binary")
-	case "config":
-		runConfig(os.Args[2:])
-	case "plugin":
-		runPlugin(os.Args[2:])
-	case "pack":
-		runPack(os.Args[2:])
-	case "aws-org":
-		runAWSOrg(os.Args[2:])
-	case "serve":
-		runServe(os.Args[2:])
-	case "quack":
-		runQuack(os.Args[2:])
-	case "graph":
-		runGraph(os.Args[2:])
-	case "github":
-		runGitHub(os.Args[2:])
-	case "cloudflare":
-		runCloudflare(os.Args[2:])
-	case "crosscloud":
-		runCrossCloud(os.Args[2:])
-	case "correlate":
-		runCorrelate(os.Args[2:])
-	case "version", "--version", "-v":
-		fmt.Printf("Corkscrew %s (commit: %s, built: %s)\n", version, commit, date)
-		return
-	case "help", "--help", "-h":
-		printUsage()
-		return
-	default:
-		fmt.Printf("Unknown command: %s\n", command)
-		printUsage()
-		os.Exit(1)
-	}
+	os.Exit(runCLI(os.Args[1:]))
 }
 
 func printUnavailableCommand(command, reason string) {
-	fmt.Fprintf(os.Stderr, "Command unavailable: %s\n", command)
-	fmt.Fprintf(os.Stderr, "%s\n", reason)
+	printUnavailableCommandMessage(os.Stderr, command, reason)
 	os.Exit(1)
+}
+
+func printUnavailableCommandMessage(w io.Writer, command, reason string) {
+	fmt.Fprintf(w, "Command unavailable: %s\n", command)
+	fmt.Fprintf(w, "%s\n", reason)
 }
 
 func printUsage() {
@@ -398,8 +325,9 @@ func printUsage() {
 	fmt.Println("  azure       - Microsoft Azure")
 }
 
-func runScan(args []string) {
-	fs := flag.NewFlagSet("scan", flag.ExitOnError)
+func runScanE(args []string) error {
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
 
 	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
 	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
@@ -421,7 +349,10 @@ func runScan(args []string) {
 	includeRels := fs.Bool("include-relationships", true, "Include and persist basic relationships")
 
 	if err := fs.Parse(args); err != nil {
-		log.Fatal(err)
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return fmt.Errorf("parse scan flags: %w", err)
 	}
 
 	// Resolve database target and quack auth from flags + environment.
@@ -448,13 +379,6 @@ func runScan(args []string) {
 		}
 	}
 
-	// Initialize plugin client
-	pc, err := createPluginClient(*providerName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer pc.Close()
-
 	// Run enhanced multi-region scan
 	options := smartscan.EnhancedScanOptions{
 		Provider:                *providerName,
@@ -477,8 +401,9 @@ func runScan(args []string) {
 	}
 
 	if err := smartscan.RunEnhancedScan(context.Background(), options); err != nil {
-		log.Fatalf("Scan failed: %v", err)
+		return err
 	}
+	return nil
 }
 
 func runDiscover(args []string) {

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
 )
 
 // InitConfig represents the initialization configuration
@@ -30,68 +30,15 @@ type InitConfig struct {
 	DuckDBVersion string
 }
 
-// CorkscrewConfig represents the complete configuration from corkscrew.yaml
-type CorkscrewConfig struct {
-	Version      string                    `yaml:"version"`
-	Providers    map[string]ProviderConfig `yaml:"providers"`
-	Dependencies DependenciesConfig        `yaml:"dependencies"`
-	Database     DatabaseConfig            `yaml:"database"`
-	Query        QueryConfig               `yaml:"query"`
-	Compliance   ComplianceConfig          `yaml:"compliance"`
-	Logging      LoggingConfig             `yaml:"logging"`
-	Output       OutputConfig              `yaml:"output"`
-}
-
-// ProviderConfig represents configuration for a cloud provider
-type ProviderConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	DefaultRegion string   `yaml:"default_region"`
-	Services      []string `yaml:"services"`
-}
-
-// DependenciesConfig represents dependency configuration
-type DependenciesConfig struct {
-	Protoc DependencyConfig `yaml:"protoc"`
-	DuckDB DependencyConfig `yaml:"duckdb"`
-}
-
-// DependencyConfig represents individual dependency configuration
-type DependencyConfig struct {
-	Version      string `yaml:"version"`
-	AutoDownload bool   `yaml:"auto_download"`
-}
-
-// DatabaseConfig represents database configuration
-type DatabaseConfig struct {
-	Path       string `yaml:"path"`
-	AutoCreate bool   `yaml:"auto_create"`
-}
-
-// QueryConfig represents query engine configuration
-type QueryConfig struct {
-	Timeout            string `yaml:"timeout"`
-	StreamingThreshold int    `yaml:"streaming_threshold"`
-	MaxMemory          string `yaml:"max_memory"`
-}
-
-// ComplianceConfig represents compliance settings
-type ComplianceConfig struct {
-	PacksDir   string `yaml:"packs_dir"`
-	AutoUpdate bool   `yaml:"auto_update"`
-}
-
-// LoggingConfig represents logging configuration
-type LoggingConfig struct {
-	Level  string `yaml:"level"`
-	Format string `yaml:"format"`
-}
-
-// OutputConfig represents output configuration
-type OutputConfig struct {
-	DefaultFormat string `yaml:"default_format"`
-	Colors        bool   `yaml:"colors"`
-	ProgressBars  bool   `yaml:"progress_bars"`
-}
+type CorkscrewConfig = appconfig.CorkscrewConfig
+type ProviderConfig = appconfig.CloudProviderConfig
+type DependenciesConfig = appconfig.DependenciesConfig
+type DependencyConfig = appconfig.DependencyConfig
+type DatabaseConfig = appconfig.DatabaseConfig
+type QueryConfig = appconfig.QueryConfig
+type ComplianceConfig = appconfig.ComplianceConfig
+type LoggingConfig = appconfig.LoggingConfig
+type OutputConfig = appconfig.OutputConfig
 
 // DependencyInfo represents a dependency to download
 type DependencyInfo struct {
@@ -658,15 +605,9 @@ func readConfiguration() (*CorkscrewConfig, error) {
 		return getDefaultConfig(), nil
 	}
 
-	// Read and parse YAML configuration
-	data, err := os.ReadFile(configFile)
+	config, err := appconfig.LoadCorkscrewConfig(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read configuration file: %w", err)
-	}
-
-	var config CorkscrewConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse configuration file: %w", err)
+		return nil, err
 	}
 
 	fmt.Println("  ✓ Configuration file found and parsed")
@@ -681,37 +622,11 @@ func readConfiguration() (*CorkscrewConfig, error) {
 	}
 	fmt.Println()
 
-	return &config, nil
+	return config, nil
 }
 
 func getDefaultConfig() *CorkscrewConfig {
-	return &CorkscrewConfig{
-		Version: "2.0",
-		Providers: map[string]ProviderConfig{
-			"aws": {
-				Enabled:       true,
-				DefaultRegion: "us-east-1",
-				Services:      []string{"s3", "ec2", "lambda", "iam", "rds", "dynamodb"},
-			},
-			"azure": {
-				Enabled:       true,
-				DefaultRegion: "eastus",
-				Services:      []string{"storage", "compute", "keyvault", "sql"},
-			},
-			"gcp": {
-				Enabled:       false,
-				DefaultRegion: "us-central1-a",
-				Services:      []string{"storage", "compute", "bigquery"},
-			},
-			"kubernetes": {
-				Enabled: false,
-			},
-		},
-		Dependencies: DependenciesConfig{
-			Protoc: DependencyConfig{Version: "25.3", AutoDownload: true},
-			DuckDB: DependencyConfig{Version: "1.5.2", AutoDownload: true},
-		},
-	}
+	return appconfig.DefaultCorkscrewConfig()
 }
 
 func generateProviderCode(config *CorkscrewConfig) error {
