@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	pb "github.com/jlgore/corkscrew/internal/proto"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes/fake"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // MockChangeStorage is a mock implementation of ChangeStorage for testing
@@ -77,12 +77,12 @@ func (m *MockChangeStorage) DeleteBaseline(baselineID string) error {
 // Test Kubernetes change tracker creation
 func TestNewK8sChangeTracker(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create fake Kubernetes clients
 	fakeClientset := fake.NewSimpleClientset()
 	scheme := runtime.NewScheme()
 	fakeDynamicClient := dynamicfake.NewSimpleDynamicClient(scheme)
-	
+
 	config := &K8sChangeTrackerConfig{
 		WatchNamespaces: []string{"default", "test"},
 		ResourceTypes:   []string{"pods", "services"},
@@ -94,7 +94,7 @@ func TestNewK8sChangeTracker(t *testing.T) {
 	}
 
 	tracker, err := NewK8sChangeTracker(ctx, fakeClientset, fakeDynamicClient, config)
-	
+
 	assert.NoError(t, err)
 	assert.NotNil(t, tracker)
 	assert.Equal(t, "kubernetes", tracker.provider)
@@ -106,23 +106,23 @@ func TestMapWatchEventToChangeType(t *testing.T) {
 	tracker := &K8sChangeTracker{}
 
 	tests := []struct {
-		eventType       watch.EventType
+		eventType          watch.EventType
 		expectedChangeType ChangeType
 	}{
 		{
-			eventType:       watch.Added,
+			eventType:          watch.Added,
 			expectedChangeType: ChangeTypeCreate,
 		},
 		{
-			eventType:       watch.Modified,
+			eventType:          watch.Modified,
 			expectedChangeType: ChangeTypeUpdate,
 		},
 		{
-			eventType:       watch.Deleted,
+			eventType:          watch.Deleted,
 			expectedChangeType: ChangeTypeDelete,
 		},
 		{
-			eventType:       watch.Error,
+			eventType:          watch.Error,
 			expectedChangeType: ChangeTypeUpdate,
 		},
 	}
@@ -140,28 +140,28 @@ func TestMapK8sSeverity(t *testing.T) {
 	tracker := &K8sChangeTracker{}
 
 	tests := []struct {
-		eventType    watch.EventType
-		resourceType string
+		eventType        watch.EventType
+		resourceType     string
 		expectedSeverity ChangeSeverity
 	}{
 		{
-			eventType:    watch.Deleted,
-			resourceType: "Pod",
+			eventType:        watch.Deleted,
+			resourceType:     "Pod",
 			expectedSeverity: SeverityHigh,
 		},
 		{
-			eventType:    watch.Added,
-			resourceType: "Pod",
+			eventType:        watch.Added,
+			resourceType:     "Pod",
 			expectedSeverity: SeverityMedium,
 		},
 		{
-			eventType:    watch.Modified,
-			resourceType: "Secret",
+			eventType:        watch.Modified,
+			resourceType:     "Secret",
 			expectedSeverity: SeverityHigh,
 		},
 		{
-			eventType:    watch.Modified,
-			resourceType: "ConfigMap",
+			eventType:        watch.Modified,
+			resourceType:     "ConfigMap",
 			expectedSeverity: SeverityMedium,
 		},
 	}
@@ -203,42 +203,42 @@ func TestIsCriticalK8sResourceType(t *testing.T) {
 func TestCreateK8sBaseline(t *testing.T) {
 	ctx := context.Background()
 	mockStorage := &MockChangeStorage{}
-	
+
 	// Mock the StoreBaseline method
 	mockStorage.On("StoreBaseline", mock.AnythingOfType("*main.DriftBaseline")).Return(nil)
 
 	baseConfig := &ChangeTrackerConfig{Provider: "kubernetes"}
 	baseTracker := NewBaseChangeTracker("kubernetes", mockStorage, baseConfig)
-	
+
 	tracker := &K8sChangeTracker{
 		BaseChangeTracker: baseTracker,
 	}
 
 	resources := []*pb.Resource{
 		{
-			Id:       "default/pod/test-pod",
-			Type:     "Pod",
-			Region:   "default",
-			Service:  "core",
-			Tags:     map[string]string{"app": "test"},
+			Id:      "default/pod/test-pod",
+			Type:    "Pod",
+			Region:  "default",
+			Service: "core",
+			Tags:    map[string]string{"app": "test"},
 		},
 		{
-			Id:       "default/service/test-service",
-			Type:     "Service",
-			Region:   "default",
-			Service:  "core",
-			Tags:     map[string]string{"app": "test"},
+			Id:      "default/service/test-service",
+			Type:    "Service",
+			Region:  "default",
+			Service: "core",
+			Tags:    map[string]string{"app": "test"},
 		},
 	}
 
 	baseline, err := tracker.CreateBaseline(ctx, resources)
-	
+
 	assert.NoError(t, err)
 	assert.NotNil(t, baseline)
 	assert.Equal(t, "kubernetes", baseline.Provider)
 	assert.Len(t, baseline.Resources, 2)
 	assert.True(t, baseline.Active)
-	
+
 	mockStorage.AssertExpectations(t)
 }
 
@@ -246,10 +246,10 @@ func TestCreateK8sBaseline(t *testing.T) {
 func TestValidateK8sChangeQuery(t *testing.T) {
 	mockStorage := &MockChangeStorage{}
 	baseConfig := &ChangeTrackerConfig{
-		Provider: "kubernetes",
+		Provider:          "kubernetes",
 		MaxQueryTimeRange: 24 * time.Hour,
 	}
-	
+
 	tracker := NewBaseChangeTracker("kubernetes", mockStorage, baseConfig)
 
 	tests := []struct {
@@ -298,33 +298,33 @@ func TestValidateK8sChangeQuery(t *testing.T) {
 // Test time filter matching
 func TestMatchesTimeFilter(t *testing.T) {
 	tracker := &K8sChangeTracker{}
-	
+
 	baseTime := time.Now()
 	startTime := baseTime.Add(-2 * time.Hour)
 	endTime := baseTime.Add(-1 * time.Hour)
-	
+
 	query := &ChangeQuery{
 		StartTime: startTime,
 		EndTime:   endTime,
 	}
 
 	tests := []struct {
-		name      string
+		name       string
 		changeTime time.Time
 		expected   bool
 	}{
 		{
-			name:      "change within range",
+			name:       "change within range",
 			changeTime: baseTime.Add(-90 * time.Minute),
 			expected:   true,
 		},
 		{
-			name:      "change before range",
+			name:       "change before range",
 			changeTime: baseTime.Add(-3 * time.Hour),
 			expected:   false,
 		},
 		{
-			name:      "change after range",
+			name:       "change after range",
 			changeTime: baseTime.Add(-30 * time.Minute),
 			expected:   false,
 		},
@@ -347,7 +347,7 @@ func TestDetectK8sDrift(t *testing.T) {
 	mockStorage := &MockChangeStorage{}
 	baseConfig := &ChangeTrackerConfig{Provider: "kubernetes"}
 	baseTracker := NewBaseChangeTracker("kubernetes", mockStorage, baseConfig)
-	
+
 	tracker := &K8sChangeTracker{
 		BaseChangeTracker: baseTracker,
 	}
@@ -372,7 +372,7 @@ func TestDetectK8sDrift(t *testing.T) {
 	}
 
 	report, err := tracker.DetectDrift(ctx, baseline)
-	
+
 	assert.NoError(t, err)
 	assert.NotNil(t, report)
 	assert.Equal(t, "test-k8s-baseline", report.BaselineID)
@@ -382,9 +382,9 @@ func TestDetectK8sDrift(t *testing.T) {
 // Test change event conversion
 func TestConvertPodToChangeEvent(t *testing.T) {
 	tracker := &K8sChangeTracker{}
-	
+
 	change := tracker.convertPodToChangeEvent(nil, watch.Added)
-	
+
 	assert.NotNil(t, change)
 	assert.Equal(t, "kubernetes", change.Provider)
 	assert.Equal(t, "Pod", change.ResourceType)
@@ -405,7 +405,7 @@ func TestAnalyzeK8sChangeImpact(t *testing.T) {
 	}
 
 	assessment := tracker.AnalyzeChangeImpact(change)
-	
+
 	assert.NotNil(t, assessment)
 	assert.Equal(t, SeverityHigh, assessment.SecurityImpact.Level)
 	assert.True(t, assessment.RiskScore > 0)

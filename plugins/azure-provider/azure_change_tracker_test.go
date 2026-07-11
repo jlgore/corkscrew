@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	pb "github.com/jlgore/corkscrew/internal/proto"
 )
 
 // MockChangeStorage is a mock implementation of ChangeStorage for testing
@@ -74,8 +74,8 @@ func (m *MockChangeStorage) DeleteBaseline(baselineID string) error {
 func TestNewAzureChangeTracker(t *testing.T) {
 	config := &AzureChangeTrackerConfig{
 		SubscriptionIDs: []string{"test-subscription"},
-		TenantID:       "test-tenant",
-		QueryInterval:  5 * time.Minute,
+		TenantID:        "test-tenant",
+		QueryInterval:   5 * time.Minute,
 		StorageConfig: StorageConfig{
 			Type: "duckdb",
 			Path: ":memory:",
@@ -93,10 +93,10 @@ func TestNewAzureChangeTracker(t *testing.T) {
 func TestValidateChangeQuery(t *testing.T) {
 	mockStorage := &MockChangeStorage{}
 	baseConfig := &ChangeTrackerConfig{
-		Provider: "azure",
+		Provider:          "azure",
 		MaxQueryTimeRange: 24 * time.Hour,
 	}
-	
+
 	tracker := NewBaseChangeTracker("azure", mockStorage, baseConfig)
 
 	tests := []struct {
@@ -150,7 +150,7 @@ func TestValidateChangeQuery(t *testing.T) {
 // Test Azure severity mapping
 func TestMapAzureSeverity(t *testing.T) {
 	config := &AzureChangeTrackerConfig{}
-	
+
 	// Mock Azure change event
 	azureChange := &AzureChangeEvent{
 		ResourceType: "Microsoft.Compute/virtualMachines",
@@ -209,42 +209,42 @@ func TestExtractServiceFromResourceType(t *testing.T) {
 func TestCreateBaseline(t *testing.T) {
 	ctx := context.Background()
 	mockStorage := &MockChangeStorage{}
-	
+
 	// Mock the StoreBaseline method
 	mockStorage.On("StoreBaseline", mock.AnythingOfType("*main.DriftBaseline")).Return(nil)
 
 	baseConfig := &ChangeTrackerConfig{Provider: "azure"}
 	baseTracker := NewBaseChangeTracker("azure", mockStorage, baseConfig)
-	
+
 	tracker := &AzureChangeTracker{
 		BaseChangeTracker: baseTracker,
 	}
 
 	resources := []*pb.Resource{
 		{
-			Id:       "test-vm-1",
-			Type:     "Microsoft.Compute/virtualMachines",
-			Region:   "eastus",
-			Service:  "Compute",
-			Tags:     map[string]string{"env": "test"},
+			Id:      "test-vm-1",
+			Type:    "Microsoft.Compute/virtualMachines",
+			Region:  "eastus",
+			Service: "Compute",
+			Tags:    map[string]string{"env": "test"},
 		},
 		{
-			Id:       "test-storage-1", 
-			Type:     "Microsoft.Storage/storageAccounts",
-			Region:   "eastus",
-			Service:  "Storage",
-			Tags:     map[string]string{"env": "test"},
+			Id:      "test-storage-1",
+			Type:    "Microsoft.Storage/storageAccounts",
+			Region:  "eastus",
+			Service: "Storage",
+			Tags:    map[string]string{"env": "test"},
 		},
 	}
 
 	baseline, err := tracker.CreateBaseline(ctx, resources)
-	
+
 	assert.NoError(t, err)
 	assert.NotNil(t, baseline)
 	assert.Equal(t, "azure", baseline.Provider)
 	assert.Len(t, baseline.Resources, 2)
 	assert.True(t, baseline.Active)
-	
+
 	mockStorage.AssertExpectations(t)
 }
 
@@ -259,7 +259,7 @@ func TestGenerateChangeID(t *testing.T) {
 	changeType := ChangeTypeUpdate
 
 	changeID := tracker.GenerateChangeID(resourceID, timestamp, changeType)
-	
+
 	expected := "azure_test-resource-1_UPDATE_1704110400"
 	assert.Equal(t, expected, changeID)
 }
@@ -277,7 +277,7 @@ func TestAnalyzeChangeImpact(t *testing.T) {
 	}
 
 	assessment := tracker.AnalyzeChangeImpact(change)
-	
+
 	assert.NotNil(t, assessment)
 	assert.Equal(t, SeverityHigh, assessment.AvailabilityImpact.Level)
 	assert.True(t, assessment.RiskScore > 0)
