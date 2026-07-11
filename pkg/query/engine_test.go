@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -142,6 +143,26 @@ func TestQueryEngineWithParams(t *testing.T) {
 
 	if result.Rows[0]["text"] != "test" {
 		t.Errorf("Expected text='test', got %v", result.Rows[0]["text"])
+	}
+}
+
+func TestConvertNamedParamsPreservesSQLOrderAndRepeats(t *testing.T) {
+	engine := &DuckDBQueryEngine{}
+
+	query, args := engine.convertNamedParams(
+		"SELECT :second as second, :first as first, :second as second_again",
+		map[string]interface{}{
+			"first":  "one",
+			"second": "two",
+		},
+	)
+
+	if query != "SELECT ? as second, ? as first, ? as second_again" {
+		t.Fatalf("query = %q, want positional placeholders in SQL order", query)
+	}
+	wantArgs := []interface{}{"two", "one", "two"}
+	if !reflect.DeepEqual(args, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", args, wantArgs)
 	}
 }
 

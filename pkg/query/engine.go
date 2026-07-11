@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,8 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/jlgore/corkscrew/internal/db"
 )
+
+var namedParamPattern = regexp.MustCompile(`:([A-Za-z_][A-Za-z0-9_]*)`)
 
 // QueryEngine defines the interface for executing SQL queries against the Corkscrew database
 type QueryEngine interface {
@@ -453,19 +456,17 @@ func (e *DuckDBQueryEngine) replacePlaceholdersForValidation(query string) strin
 // convertNamedParams converts named parameters to positional parameters
 func (e *DuckDBQueryEngine) convertNamedParams(query string, params map[string]interface{}) (string, []interface{}) {
 	var args []interface{}
-	paramIndex := 1
 
-	// Simple implementation - replace :paramName with ? for DuckDB
-	for name, value := range params {
-		placeholder := ":" + name
-		if strings.Contains(query, placeholder) {
-			query = strings.ReplaceAll(query, placeholder, "?")
-			args = append(args, value)
-			paramIndex++
+	converted := namedParamPattern.ReplaceAllStringFunc(query, func(match string) string {
+		value, ok := params[match[1:]]
+		if !ok {
+			return match
 		}
-	}
+		args = append(args, value)
+		return "?"
+	})
 
-	return query, args
+	return converted, args
 }
 
 // Close closes the query engine and any underlying connections

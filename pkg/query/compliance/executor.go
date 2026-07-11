@@ -99,11 +99,6 @@ func NewComplianceExecutor(engine query.QueryEngine) *ComplianceExecutor {
 
 // ExecuteQuery executes a single compliance query with parameter substitution
 func (e *ComplianceExecutor) ExecuteQuery(ctx context.Context, query *ComplianceQuery, parameters map[string]interface{}) ([]ComplianceResult, error) {
-	// Validate required columns
-	if err := e.validateQueryColumns(query.SQL); err != nil {
-		return nil, fmt.Errorf("query validation failed: %w", err)
-	}
-
 	// Substitute parameters
 	substitutedSQL, sqlParams, err := e.substituteParameters(query.SQL, query.Parameters, parameters)
 	if err != nil {
@@ -117,7 +112,7 @@ func (e *ComplianceExecutor) ExecuteQuery(ctx context.Context, query *Compliance
 	}
 
 	// Convert to compliance results
-	complianceResults, err := e.convertToComplianceResults(result)
+	complianceResults, err := e.convertToComplianceResults(query, result)
 	if err != nil {
 		return nil, fmt.Errorf("result conversion failed: %w", err)
 	}
@@ -257,15 +252,6 @@ func (e *ComplianceExecutor) DryRun(ctx context.Context, pack *QueryPack, parame
 		validation := QueryValidation{
 			QueryID:    query.ID,
 			Parameters: parameters,
-		}
-
-		// Validate required columns
-		if err := e.validateQueryColumns(query.SQL); err != nil {
-			validation.IsValid = false
-			validation.Error = err
-			allValid = false
-			validations = append(validations, validation)
-			continue
 		}
 
 		// Substitute parameters
@@ -428,11 +414,26 @@ func (e *ComplianceExecutor) substituteParameters(sqlQuery string, queryParams [
 			}
 		} else {
 			// Regular parameter substitution
-			sqlParams[paramName] = value
+			sqlParams[paramName] = normalizeSQLParam(value)
 		}
 	}
 
 	return result, sqlParams, nil
+}
+
+func normalizeSQLParam(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			values = append(values, fmt.Sprintf("%v", item))
+		}
+		return strings.Join(values, ",")
+	case []string:
+		return strings.Join(typed, ",")
+	default:
+		return value
+	}
 }
 
 // validatePackParameters validates all parameters required by a pack
@@ -486,77 +487,72 @@ func (e *ComplianceExecutor) validatePackParameters(pack *QueryPack, providedPar
 	return nil
 }
 
-// convertToComplianceResults converts raw query results to standardized compliance format
-func (e *ComplianceExecutor) convertToComplianceResults(result *query.QueryResult) ([]ComplianceResult, error) {
+// convertToComplianceResults converts raw query results to standardized compliance format.
+// Query packs carry the control metadata, while SQL rows usually carry the resource facts.
+func (e *ComplianceExecutor) convertToComplianceResults(complianceQuery *ComplianceQuery, result *query.QueryResult) ([]ComplianceResult, error) {
 	var complianceResults []ComplianceResult
 
 	for _, row := range result.Rows {
 		complianceResult := ComplianceResult{
-			Timestamp: time.Now(),
+			ControlID:   complianceQuery.ID,
+			ControlName: complianceQuery.Title,
+			Severity:    strings.ToUpper(complianceQuery.Severity),
+			Timestamp:   time.Now(),
 		}
 
-		// Map required fields
-		if val, ok := row["resource_id"]; ok && val != nil {
-			complianceResult.ResourceID = fmt.Sprintf("%v", val)
-		} else {
+		if complianceResult.ResourceID = firstString(row, "resource_id", "id", "asset_name"); complianceResult.ResourceID == "" {
 			return nil, fmt.Errorf("missing required field: resource_id")
 		}
 
-		if val, ok := row["resource_name"]; ok && val != nil {
-			complianceResult.ResourceName = fmt.Sprintf("%v", val)
+		complianceResult.ResourceName = firstString(row, "resource_name", "name", "bucket_name", "asset_name")
+		if complianceResult.ResourceName == "" {
+			complianceResult.ResourceName = complianceResult.ResourceID
 		}
 
-		if val, ok := row["resource_type"]; ok && val != nil {
-			complianceResult.ResourceType = fmt.Sprintf("%v", val)
-		} else {
-			return nil, fmt.Errorf("missing required field: resource_type")
+		complianceResult.ResourceType = firstString(row, "resource_type", "type", "asset_type")
+		if complianceResult.ResourceType == "" {
+			complianceResult.ResourceType = "resource"
 		}
 
-		if val, ok := row["region"]; ok && val != nil {
-			complianceResult.Region = fmt.Sprintf("%v", val)
+		complianceResult.Region = firstString(row, "region", "location", "zone")
+
+		if controlID := firstString(row, "control_id"); controlID != "" {
+			complianceResult.ControlID = controlID
 		}
 
-		if val, ok := row["control_id"]; ok && val != nil {
-			complianceResult.ControlID = fmt.Sprintf("%v", val)
-		} else {
-			return nil, fmt.Errorf("missing required field: control_id")
+		if controlName := firstString(row, "control_name"); controlName != "" {
+			complianceResult.ControlName = controlName
 		}
 
-		if val, ok := row["control_name"]; ok && val != nil {
-			complianceResult.ControlName = fmt.Sprintf("%v", val)
-		} else {
-			return nil, fmt.Errorf("missing required field: control_name")
-		}
-
-		if val, ok := row["status"]; ok && val != nil {
-			status := fmt.Sprintf("%v", val)
+		if status := strings.ToUpper(firstString(row, "status")); status != "" {
 			if !isValidComplianceStatus(status) {
 				return nil, fmt.Errorf("invalid status value: %s (must be PASS, FAIL, WARNING, or ERROR)", status)
 			}
 			complianceResult.Status = status
-		} else {
+		}
+		if complianceResult.Status == "" {
 			return nil, fmt.Errorf("missing required field: status")
 		}
 
-		if val, ok := row["severity"]; ok && val != nil {
-			severity := fmt.Sprintf("%v", val)
+		if severity := strings.ToUpper(firstString(row, "severity")); severity != "" {
 			if !isValidSeverity(severity) {
 				return nil, fmt.Errorf("invalid severity value: %s", severity)
 			}
 			complianceResult.Severity = severity
-		} else {
-			return nil, fmt.Errorf("missing required field: severity")
+		}
+		if complianceResult.Severity == "" {
+			complianceResult.Severity = "INFO"
 		}
 
-		if val, ok := row["details"]; ok && val != nil {
-			complianceResult.Details = fmt.Sprintf("%v", val)
-		} else {
-			return nil, fmt.Errorf("missing required field: details")
+		complianceResult.Details = firstString(row, "details", "issue_description", "description")
+		if complianceResult.Details == "" {
+			complianceResult.Details = complianceQuery.Description
 		}
 
-		// Optional remediation field (NULL for passing checks)
-		if val, ok := row["remediation"]; ok && val != nil {
-			remediation := fmt.Sprintf("%v", val)
+		if remediation := firstString(row, "remediation"); remediation != "" {
+			complianceResult.Remediation = &remediation
+		} else if complianceResult.Status != "PASS" && complianceQuery.Remediation.Description != "" {
+			remediation := complianceQuery.Remediation.Description
 			complianceResult.Remediation = &remediation
 		}
 
@@ -564,6 +560,15 @@ func (e *ComplianceExecutor) convertToComplianceResults(result *query.QueryResul
 	}
 
 	return complianceResults, nil
+}
+
+func firstString(row map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if val, ok := row[key]; ok && val != nil {
+			return fmt.Sprintf("%v", val)
+		}
+	}
+	return ""
 }
 
 // categorizeError categorizes an error for better reporting
