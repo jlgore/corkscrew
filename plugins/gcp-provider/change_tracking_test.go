@@ -261,6 +261,8 @@ func TestDuckDBChangeStorage_StoreAndRetrieve(t *testing.T) {
 			ResourceID:   "test-resource",
 			ResourceType: "Instance",
 			Service:      "compute",
+			Project:      "test-project",
+			Region:       "us-central1",
 			ChangeType:   ChangeTypeCreate,
 			Severity:     SeverityMedium,
 			Timestamp:    time.Now().Truncate(time.Second),
@@ -293,6 +295,20 @@ func TestDuckDBChangeStorage_StoreAndRetrieve(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, changes)
 		assert.GreaterOrEqual(t, len(changes), 1) // Should find the change we stored above
+	})
+
+	t.Run("query changes by project", func(t *testing.T) {
+		changes, err := storage.QueryChanges(&ChangeQuery{
+			Provider:  "gcp",
+			StartTime: time.Now().Add(-1 * time.Hour),
+			EndTime:   time.Now(),
+			ResourceFilter: &ResourceFilter{
+				Projects: []string{"test-project"},
+			},
+		})
+		assert.NoError(t, err)
+		require.Len(t, changes, 1)
+		assert.Equal(t, "test-project", changes[0].Project)
 	})
 }
 
