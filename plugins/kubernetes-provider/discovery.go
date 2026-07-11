@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
-	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // ResourceDefinition represents a Kubernetes resource type
@@ -80,7 +80,7 @@ func (d *APIDiscovery) discoverCoreResources(ctx context.Context) ([]*ResourceDe
 	for _, group := range apiGroupList.Groups {
 		// Skip deprecated versions
 		preferredVersion := group.PreferredVersion
-		
+
 		// Get resources for this group version
 		apiResourceList, err := d.discoveryClient.ServerResourcesForGroupVersion(preferredVersion.GroupVersion)
 		if err != nil {

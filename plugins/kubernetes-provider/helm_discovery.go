@@ -1,11 +1,11 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"compress/gzip"
 	"io"
 	"strings"
 
@@ -31,17 +31,17 @@ func NewHelmDiscovery(clientFactory *ClientFactory) *HelmDiscovery {
 
 // HelmRelease represents a Helm release with detailed information
 type HelmRelease struct {
-	Name         string                         `json:"name"`
-	Namespace    string                         `json:"namespace"`
-	Revision     int                            `json:"revision"`
-	Updated      string                         `json:"updated"`
-	Status       string                         `json:"status"`
-	Chart        string                         `json:"chart"`
-	ChartVersion string                         `json:"chart_version"`
-	AppVersion   string                         `json:"app_version"`
-	Values       map[string]interface{}         `json:"values"`
-	Manifest     string                         `json:"manifest"`
-	Resources    []unstructured.Unstructured    `json:"resources"`
+	Name         string                      `json:"name"`
+	Namespace    string                      `json:"namespace"`
+	Revision     int                         `json:"revision"`
+	Updated      string                      `json:"updated"`
+	Status       string                      `json:"status"`
+	Chart        string                      `json:"chart"`
+	ChartVersion string                      `json:"chart_version"`
+	AppVersion   string                      `json:"app_version"`
+	Values       map[string]interface{}      `json:"values"`
+	Manifest     string                      `json:"manifest"`
+	Resources    []unstructured.Unstructured `json:"resources"`
 }
 
 // DiscoverHelmReleases discovers all Helm releases in the cluster
@@ -70,10 +70,10 @@ func (h *HelmDiscovery) DiscoverHelmReleases(ctx context.Context) ([]*HelmReleas
 			fmt.Printf("Failed to parse Helm secret %s: %v\n", item.GetName(), err)
 			continue
 		}
-		
+
 		// Parse resources from manifest
 		release.Resources = h.parseManifestResources(release.Manifest)
-		
+
 		releases = append(releases, release)
 	}
 
@@ -227,15 +227,15 @@ func (h *HelmDiscovery) ConvertHelmReleasesToResources(releases []*HelmRelease) 
 			Region:       release.Namespace, // Using Region for namespace
 			DiscoveredAt: timestamppb.Now(),
 			Tags: map[string]string{
-				"chart":         release.Chart,
-				"chart_version": release.ChartVersion,
-				"app_version":   release.AppVersion,
-				"status":        release.Status,
-				"revision":      fmt.Sprintf("%d", release.Revision),
-				"updated":       release.Updated,
+				"chart":          release.Chart,
+				"chart_version":  release.ChartVersion,
+				"app_version":    release.AppVersion,
+				"status":         release.Status,
+				"revision":       fmt.Sprintf("%d", release.Revision),
+				"updated":        release.Updated,
 				"resource_count": fmt.Sprintf("%d", len(release.Resources)),
-				"api_version":   "helm.sh/v3",
-				"kind":          "HelmRelease",
+				"api_version":    "helm.sh/v3",
+				"kind":           "HelmRelease",
 			},
 		}
 

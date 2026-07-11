@@ -22,10 +22,10 @@ func runOrchestratorDiscovery(args []string) error {
 	forceFlag := fs.Bool("force-refresh", false, "Force refresh of discovery data")
 	generateFlag := fs.Bool("generate", false, "Generate scanner code after analysis")
 	verbose := fs.Bool("verbose", false, "Verbose output")
-	
+
 	fs.Parse(args)
 	ctx := context.Background()
-	
+
 	// Create orchestrator with memory cache
 	cache := orchestrator.NewMemoryCache(100*1024*1024, "LRU") // 100MB LRU cache
 	orch := orchestrator.NewOrchestrator(cache)
@@ -39,10 +39,10 @@ func runOrchestratorDiscovery(args []string) error {
 			log.Printf("✅ AWS provider registered with orchestrator")
 		}
 	}
-	
+
 	// Prepare discovery sources
 	var sources []orchestrator.DiscoverySource
-	
+
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		githubSource := orchestrator.NewGitHubSource(token)
 		sources = append(sources, githubSource)
@@ -50,7 +50,7 @@ func runOrchestratorDiscovery(args []string) error {
 	} else {
 		log.Printf("⚠️  GITHUB_TOKEN not set - GitHub discovery disabled")
 	}
-	
+
 	// Add API source for additional discovery
 	if os.Getenv("AWS_API_TOKEN") != "" {
 		apiSource := orchestrator.NewAPISource("https://api.aws.amazon.com", orchestrator.AuthConfig{
@@ -62,10 +62,10 @@ func runOrchestratorDiscovery(args []string) error {
 		sources = append(sources, apiSource)
 		log.Printf("✅ AWS API discovery source configured")
 	}
-	
+
 	// Configure discovery options
 	options := orchestrator.DiscoveryOptions{
-		Sources: sources,
+		Sources:         sources,
 		ForceRefresh:    *forceFlag,
 		ConcurrentLimit: 10,
 		CacheStrategy: orchestrator.CacheStrategy{
@@ -82,61 +82,61 @@ func runOrchestratorDiscovery(args []string) error {
 			fmt.Printf("📊 [%s] %.1f%% - %s\n", phase, progress*100, message)
 		},
 	}
-	
+
 	if *verbose {
 		fmt.Printf("🔧 Using orchestrator-based discovery for %s provider\n", *provider)
 	}
-	
+
 	// Step 1: Discover
 	log.Printf("🔍 Starting orchestrator discovery for %s provider...", *provider)
 	startTime := time.Now()
-	
+
 	discovered, err := orch.Discover(ctx, *provider, options)
 	if err != nil {
 		return fmt.Errorf("orchestrator discovery failed: %w", err)
 	}
-	
+
 	discoveryDuration := time.Since(startTime)
 	log.Printf("✅ Discovery complete in %v", discoveryDuration)
-	
+
 	// Calculate total items from all sources
 	totalItems := 0
 	for _, sourceData := range discovered.Sources {
 		totalItems += getSourceItemCount(sourceData)
 	}
-	
+
 	log.Printf("📈 Discovered %d items from %d sources", totalItems, len(discovered.Sources))
-	
+
 	// Print discovery summary
 	fmt.Printf("\n🎯 Discovery Summary:\n")
 	fmt.Printf("  Provider: %s\n", discovered.Provider)
 	fmt.Printf("  Total Items: %d\n", totalItems)
 	fmt.Printf("  Sources Used: %d\n", len(discovered.Sources))
 	fmt.Printf("  Discovery Time: %v\n", discoveryDuration)
-	
+
 	for sourceName, sourceData := range discovered.Sources {
 		fmt.Printf("  📡 Source '%s': %v items\n", sourceName, getSourceItemCount(sourceData))
 	}
-	
+
 	if len(discovered.Errors) > 0 {
 		fmt.Printf("\n⚠️  Discovery Warnings:\n")
 		for _, err := range discovered.Errors {
 			fmt.Printf("  - %s: %s\n", err.Source, err.Message)
 		}
 	}
-	
+
 	// Step 2: Analyze
 	log.Printf("\n🔬 Analyzing discovered data...")
 	analysisStart := time.Now()
-	
+
 	analysis, err := orch.Analyze(ctx, *provider, discovered)
 	if err != nil {
 		return fmt.Errorf("orchestrator analysis failed: %w", err)
 	}
-	
+
 	analysisDuration := time.Since(analysisStart)
 	log.Printf("✅ Analysis complete in %v", analysisDuration)
-	
+
 	// Print analysis summary
 	fmt.Printf("\n📊 Analysis Summary:\n")
 	fmt.Printf("  Services: %d\n", len(analysis.Services))
@@ -144,14 +144,14 @@ func runOrchestratorDiscovery(args []string) error {
 	fmt.Printf("  Operations: %d\n", len(analysis.Operations))
 	fmt.Printf("  Relationships: %d\n", len(analysis.Relationships))
 	fmt.Printf("  Analysis Time: %v\n", analysisDuration)
-	
+
 	if len(analysis.Warnings) > 0 {
 		fmt.Printf("\n⚠️  Analysis Warnings:\n")
 		for _, warning := range analysis.Warnings {
 			fmt.Printf("  - %s\n", warning)
 		}
 	}
-	
+
 	// Show top services discovered
 	fmt.Printf("\n🔧 Top Services Discovered:\n")
 	for i, service := range analysis.Services {
@@ -159,38 +159,38 @@ func runOrchestratorDiscovery(args []string) error {
 			fmt.Printf("  ... and %d more services\n", len(analysis.Services)-5)
 			break
 		}
-		fmt.Printf("  📦 %s - %s (v%s)\n", 
+		fmt.Printf("  📦 %s - %s (v%s)\n",
 			service.Name, service.DisplayName, service.Version)
 	}
-	
+
 	// Show resource types
 	fmt.Printf("\n🏗️  Resource Types Found:\n")
 	resourcesByService := make(map[string]int)
 	for _, resource := range analysis.Resources {
 		resourcesByService[resource.Service]++
 	}
-	
+
 	for service, count := range resourcesByService {
 		if count > 0 {
 			fmt.Printf("  🔹 %s: %d resource types\n", service, count)
 		}
 	}
-	
+
 	// Step 3: Generate (if requested)
 	var generation *orchestrator.GenerationResult
 	if *generateFlag {
 		log.Printf("\n🏗️  Generating scanner code...")
 		generationStart := time.Now()
-		
+
 		var err error
 		generation, err = orch.Generate(ctx, *provider, analysis)
 		if err != nil {
 			return fmt.Errorf("orchestrator generation failed: %w", err)
 		}
-		
+
 		generationDuration := time.Since(generationStart)
 		log.Printf("✅ Generation complete in %v", generationDuration)
-		
+
 		// Print generation summary
 		fmt.Printf("\n📁 Generation Summary:\n")
 		fmt.Printf("  Files Generated: %d\n", len(generation.Files))
@@ -198,14 +198,14 @@ func runOrchestratorDiscovery(args []string) error {
 		fmt.Printf("  Total Resources: %d\n", generation.Stats.TotalResources)
 		fmt.Printf("  Total Operations: %d\n", generation.Stats.TotalOperations)
 		fmt.Printf("  Generation Time: %v\n", generationDuration)
-		
+
 		if len(generation.Errors) > 0 {
 			fmt.Printf("\n❌ Generation Errors:\n")
 			for _, err := range generation.Errors {
 				fmt.Printf("  - %s\n", err)
 			}
 		}
-		
+
 		// Show generated files
 		fmt.Printf("\n📄 Generated Files:\n")
 		for i, file := range generation.Files {
@@ -216,7 +216,7 @@ func runOrchestratorDiscovery(args []string) error {
 			fmt.Printf("  📝 %s (%s)\n", file.Path, file.Service)
 		}
 	}
-	
+
 	// Step 4: Get pipeline status
 	status, err := orch.GetPipeline(*provider)
 	if err == nil {
@@ -224,24 +224,24 @@ func runOrchestratorDiscovery(args []string) error {
 		fmt.Printf("  Current Phase: %s\n", status.CurrentPhase)
 		fmt.Printf("  Overall Progress: %.1f%%\n", status.Progress*100)
 		fmt.Printf("  Started: %v\n", status.StartedAt.Format("2006-01-02 15:04:05"))
-		
+
 		if status.CompletedAt != nil {
 			totalDuration := status.CompletedAt.Sub(status.StartedAt)
 			fmt.Printf("  Completed: %v\n", status.CompletedAt.Format("2006-01-02 15:04:05"))
 			fmt.Printf("  Total Duration: %v\n", totalDuration)
 		}
-		
+
 		// Show phase details
 		fmt.Printf("\n📋 Phase Details:\n")
 		for phaseName, phaseInfo := range status.PhaseDetails {
 			progressStr := fmt.Sprintf("%.1f%%", phaseInfo.Progress*100)
 			fmt.Printf("  🔸 %s: %s (%s)\n", phaseName, phaseInfo.Status, progressStr)
-			
+
 			if phaseInfo.Error != "" {
 				fmt.Printf("    ❌ Error: %s\n", phaseInfo.Error)
 			}
 		}
-		
+
 		if len(status.Errors) > 0 {
 			fmt.Printf("\n❌ Pipeline Errors:\n")
 			for _, err := range status.Errors {
@@ -249,7 +249,7 @@ func runOrchestratorDiscovery(args []string) error {
 			}
 		}
 	}
-	
+
 	// Summary
 	totalDuration := time.Since(startTime)
 	fmt.Printf("\n🎉 Orchestrator Discovery Complete!\n")
@@ -259,7 +259,7 @@ func runOrchestratorDiscovery(args []string) error {
 	if *generateFlag && generation != nil {
 		fmt.Printf("Files Generated: %d\n", len(generation.Files))
 	}
-	
+
 	return nil
 }
 
@@ -277,7 +277,6 @@ func getSourceItemCount(sourceData interface{}) int {
 	}
 }
 
-
 // registerAWSProvider loads the AWS provider plugin and registers it with the orchestrator
 func registerAWSProvider(ctx context.Context, orch orchestrator.Orchestrator, verbose bool) error {
 	// Create plugin manager
@@ -285,7 +284,7 @@ func registerAWSProvider(ctx context.Context, orch orchestrator.Orchestrator, ve
 	if envDir := os.Getenv("CORKSCREW_PLUGIN_DIR"); envDir != "" {
 		pluginDir = envDir
 	}
-	
+
 	pluginManager := client.NewPluginManager(pluginDir)
 	if verbose {
 		pluginManager.SetDebug(true)
@@ -301,7 +300,7 @@ func registerAWSProvider(ctx context.Context, orch orchestrator.Orchestrator, ve
 	config := map[string]string{
 		"debug": fmt.Sprintf("%t", verbose),
 	}
-	
+
 	cacheDir := filepath.Join(os.TempDir(), "corkscrew-cache")
 	err = pluginManager.InitializeProvider(ctx, "aws", config, cacheDir)
 	if err != nil {

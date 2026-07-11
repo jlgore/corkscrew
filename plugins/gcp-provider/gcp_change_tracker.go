@@ -13,19 +13,19 @@ import (
 	asset "cloud.google.com/go/asset/apiv1"
 	"cloud.google.com/go/asset/apiv1/assetpb"
 	"cloud.google.com/go/logging"
-	"google.golang.org/api/iterator"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"google.golang.org/api/iterator"
 )
 
 // GCPChangeTracker implements change tracking for Google Cloud Platform
 type GCPChangeTracker struct {
 	*BaseChangeTracker
-	assetClient    *asset.Client
-	loggingClient  *logging.Client
-	projectIDs     []string
-	orgID          string
-	scope          string
-	
+	assetClient   *asset.Client
+	loggingClient *logging.Client
+	projectIDs    []string
+	orgID         string
+	scope         string
+
 	// Real-time monitoring
 	monitoringActive bool
 	stopCh           chan struct{}
@@ -36,17 +36,17 @@ type GCPChangeTracker struct {
 func NewGCPChangeTracker(ctx context.Context, storage ChangeStorage, config *ChangeTrackerConfig) (*GCPChangeTracker, error) {
 	if config == nil {
 		config = &ChangeTrackerConfig{
-			Provider:               "gcp",
+			Provider:                 "gcp",
 			EnableRealTimeMonitoring: true,
-			ChangeRetention:        365 * 24 * time.Hour,
-			DriftCheckInterval:     1 * time.Hour,
-			AlertingEnabled:        true,
-			AnalyticsEnabled:       true,
-			CacheEnabled:           true,
-			CacheTTL:               5 * time.Minute,
-			MaxConcurrentStreams:   100,
-			BatchSize:              1000,
-			MaxQueryTimeRange:      30 * 24 * time.Hour,
+			ChangeRetention:          365 * 24 * time.Hour,
+			DriftCheckInterval:       1 * time.Hour,
+			AlertingEnabled:          true,
+			AnalyticsEnabled:         true,
+			CacheEnabled:             true,
+			CacheTTL:                 5 * time.Minute,
+			MaxConcurrentStreams:     100,
+			BatchSize:                1000,
+			MaxQueryTimeRange:        30 * 24 * time.Hour,
 		}
 	}
 
@@ -72,7 +72,7 @@ func NewGCPChangeTracker(ctx context.Context, storage ChangeStorage, config *Cha
 		BaseChangeTracker: baseTracker,
 		assetClient:       assetClient,
 		loggingClient:     loggingClient,
-		stopCh:           make(chan struct{}),
+		stopCh:            make(chan struct{}),
 	}
 
 	return gct, nil
@@ -141,7 +141,7 @@ func (gct *GCPChangeTracker) StreamChanges(req *StreamRequest, stream ChangeEven
 	}
 
 	ctx := stream.Context()
-	
+
 	// Set up streaming parameters
 	bufferSize := req.BufferSize
 	if bufferSize <= 0 {
@@ -220,18 +220,18 @@ func (gct *GCPChangeTracker) DetectDrift(ctx context.Context, baseline *DriftBas
 
 	// TODO: Implement full drift detection - this is a placeholder
 	return &DriftReport{
-		BaselineID:    baseline.Name,
-		GeneratedAt:   time.Now(),
-		DriftItems:    []*DriftItem{},
+		BaselineID:  baseline.Name,
+		GeneratedAt: time.Now(),
+		DriftItems:  []*DriftItem{},
 		Summary: &DriftSummary{
 			HighSeverityCount:     0,
 			MediumSeverityCount:   0,
 			LowSeverityCount:      0,
 			CriticalSeverityCount: 0,
-			DriftByType:          make(map[string]int),
-			DriftByService:       make(map[string]int),
-			ComplianceScore:      100.0,
-			Recommendations:      []string{},
+			DriftByType:           make(map[string]int),
+			DriftByService:        make(map[string]int),
+			ComplianceScore:       100.0,
+			Recommendations:       []string{},
 		},
 	}, nil
 }
@@ -531,7 +531,7 @@ func (gct *GCPChangeTracker) convertAssetToChangeEvent(assetChange *AssetChange)
 	}
 
 	asset := assetChange.Asset
-	
+
 	event := &ChangeEvent{
 		ID:           gct.GenerateChangeID(asset.Name, assetChange.Timestamp, ChangeType(assetChange.ChangeType)),
 		Provider:     "gcp",
@@ -555,11 +555,11 @@ func (gct *GCPChangeTracker) convertAssetToChangeEvent(assetChange *AssetChange)
 
 	// Add current state
 	event.CurrentState = &ResourceState{
-		ResourceID:  asset.Name,
-		Timestamp:   assetChange.Timestamp,
-		Properties:  gct.extractAssetProperties(asset),
-		Status:      "active", // Placeholder
-		Checksum:    gct.CalculateResourceChecksum(&ResourceState{ResourceID: asset.Name}),
+		ResourceID: asset.Name,
+		Timestamp:  assetChange.Timestamp,
+		Properties: gct.extractAssetProperties(asset),
+		Status:     "active", // Placeholder
+		Checksum:   gct.CalculateResourceChecksum(&ResourceState{ResourceID: asset.Name}),
 	}
 
 	return event
@@ -609,16 +609,16 @@ func (gct *GCPChangeTracker) extractProjectFromResourceName(resourceName string)
 
 func (gct *GCPChangeTracker) extractAssetProperties(asset *assetpb.Asset) map[string]interface{} {
 	properties := make(map[string]interface{})
-	
+
 	properties["name"] = asset.Name
 	properties["asset_type"] = asset.AssetType
-	
+
 	// Add additional properties from asset resource data
 	if asset.Resource != nil {
 		properties["version"] = asset.Resource.Version
 		properties["discovery_document_uri"] = asset.Resource.DiscoveryDocumentUri
 		properties["discovery_name"] = asset.Resource.DiscoveryName
-		
+
 		// Convert resource data to map
 		if asset.Resource.Data != nil {
 			dataMap := make(map[string]interface{})
@@ -626,7 +626,7 @@ func (gct *GCPChangeTracker) extractAssetProperties(asset *assetpb.Asset) map[st
 			properties["resource_data"] = dataMap
 		}
 	}
-	
+
 	return properties
 }
 
@@ -834,7 +834,7 @@ func (gct *GCPChangeTracker) convertResourceToState(resource *pb.Resource) *Reso
 	state.Properties["resourceType"] = resource.Type
 	state.Properties["region"] = resource.Region
 	state.Properties["service"] = resource.Service
-	
+
 	// Parse attributes if available
 	if resource.Attributes != "" {
 		var attrs map[string]interface{}
@@ -861,7 +861,7 @@ func (gct *GCPChangeTracker) matchesChangeType(change *AssetChange, changeTypes 
 	if len(changeTypes) == 0 {
 		return true
 	}
-	
+
 	changeType := ChangeTypeUpdate // Default
 	if change.ChangeType == "ADDED" {
 		changeType = ChangeTypeCreate
@@ -880,7 +880,7 @@ func (gct *GCPChangeTracker) matchesChangeType(change *AssetChange, changeTypes 
 // convertResourceTypesToAssetTypes converts resource types to GCP asset types
 func (gct *GCPChangeTracker) convertResourceTypesToAssetTypes(resourceTypes []string) []string {
 	assetTypes := make([]string, 0, len(resourceTypes))
-	
+
 	for _, resourceType := range resourceTypes {
 		// Map common resource types to GCP asset types
 		switch resourceType {
@@ -895,7 +895,7 @@ func (gct *GCPChangeTracker) convertResourceTypesToAssetTypes(resourceTypes []st
 			assetTypes = append(assetTypes, resourceType)
 		}
 	}
-	
+
 	return assetTypes
 }
 

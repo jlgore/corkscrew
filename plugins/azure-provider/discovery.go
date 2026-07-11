@@ -447,4 +447,3 @@ func (d *AzureServiceDiscovery) RefreshProvider(ctx context.Context, namespace s
 
 	return nil
 }
-

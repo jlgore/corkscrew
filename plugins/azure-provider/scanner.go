@@ -37,38 +37,38 @@ func NewAzureResourceScanner(cred azcore.TokenCredential, subID string) *AzureRe
 // ScanService scans resources for a specific service
 func (s *AzureResourceScanner) ScanService(ctx context.Context, service string, filters map[string]string) ([]*pb.ResourceRef, error) {
 	log.Printf("Scanning service: %s with filters: %v", service, filters)
-	
+
 	// For now, let's scan all resources and filter by service
 	// This is because Azure ARM filter syntax is limited
 	allResources, err := s.scanWithFilter(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Map common service names to Azure resource provider namespaces
 	serviceMapping := map[string][]string{
-		"storage":   {"Microsoft.Storage/storageAccounts"},
-		"compute":   {"Microsoft.Compute/virtualMachines", "Microsoft.Compute/disks", "Microsoft.Compute/virtualMachineScaleSets"},
-		"network":   {"Microsoft.Network/virtualNetworks", "Microsoft.Network/networkInterfaces", "Microsoft.Network/publicIPAddresses", "Microsoft.Network/privateDnsZones", "Microsoft.Network/networkSecurityGroups"},
-		"keyvault":  {"Microsoft.KeyVault/vaults"},
-		"sql":       {"Microsoft.Sql/servers", "Microsoft.Sql/servers/databases"},
-		"cosmosdb":  {"Microsoft.DocumentDB/databaseAccounts"},
-		"appservice": {"Microsoft.Web/sites", "Microsoft.Web/serverFarms"},
-		"functions": {"Microsoft.Web/sites"},
-		"aks":       {"Microsoft.ContainerService/managedClusters"},
+		"storage":           {"Microsoft.Storage/storageAccounts"},
+		"compute":           {"Microsoft.Compute/virtualMachines", "Microsoft.Compute/disks", "Microsoft.Compute/virtualMachineScaleSets"},
+		"network":           {"Microsoft.Network/virtualNetworks", "Microsoft.Network/networkInterfaces", "Microsoft.Network/publicIPAddresses", "Microsoft.Network/privateDnsZones", "Microsoft.Network/networkSecurityGroups"},
+		"keyvault":          {"Microsoft.KeyVault/vaults"},
+		"sql":               {"Microsoft.Sql/servers", "Microsoft.Sql/servers/databases"},
+		"cosmosdb":          {"Microsoft.DocumentDB/databaseAccounts"},
+		"appservice":        {"Microsoft.Web/sites", "Microsoft.Web/serverFarms"},
+		"functions":         {"Microsoft.Web/sites"},
+		"aks":               {"Microsoft.ContainerService/managedClusters"},
 		"containerregistry": {"Microsoft.ContainerRegistry/registries"},
-		"monitor":   {"Microsoft.Insights/components", "Microsoft.OperationalInsights/workspaces"},
-		"eventhub":  {"Microsoft.EventHub/namespaces"},
-		"managedidentity": {"Microsoft.ManagedIdentity/userAssignedIdentities"},
+		"monitor":           {"Microsoft.Insights/components", "Microsoft.OperationalInsights/workspaces"},
+		"eventhub":          {"Microsoft.EventHub/namespaces"},
+		"managedidentity":   {"Microsoft.ManagedIdentity/userAssignedIdentities"},
 	}
-	
+
 	// Get the Azure resource types for this service
 	resourceTypes := serviceMapping[strings.ToLower(service)]
 	if len(resourceTypes) == 0 {
 		// If no mapping, try to match by provider namespace
 		resourceTypes = []string{fmt.Sprintf("Microsoft.%s/", strings.Title(service))}
 	}
-	
+
 	// Filter resources by type
 	var filteredResources []*pb.ResourceRef
 	for _, resource := range allResources {
@@ -90,7 +90,7 @@ func (s *AzureResourceScanner) ScanService(ctx context.Context, service string, 
 			}
 		}
 	}
-	
+
 	log.Printf("Found %d resources for service %s", len(filteredResources), service)
 	return filteredResources, nil
 }
@@ -166,7 +166,7 @@ func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, serv
 				}
 			}
 		}
-		
+
 		// Extract relationships from the resource
 		relationships := s.extractRelationshipsFromResource(resource, ref)
 		for _, rel := range relationships {
@@ -183,22 +183,22 @@ func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, serv
 func (s *AzureResourceScanner) getAPIVersionForResourceType(resourceType string) string {
 	// Map of resource types to their recommended API versions
 	apiVersionMap := map[string]string{
-		"Microsoft.Storage/storageAccounts":           "2023-01-01",
-		"Microsoft.Compute/virtualMachines":           "2023-03-01",
-		"Microsoft.Network/virtualNetworks":           "2023-05-01",
-		"Microsoft.KeyVault/vaults":                   "2023-02-01",
-		"Microsoft.EventHub/namespaces":               "2021-11-01",
-		"Microsoft.Web/sites":                         "2022-09-01",
-		"Microsoft.ContainerService/managedClusters":  "2023-05-01",
-		"Microsoft.Sql/servers":                       "2022-05-01-preview",
-		"Microsoft.DocumentDB/databaseAccounts":       "2023-04-15",
+		"Microsoft.Storage/storageAccounts":          "2023-01-01",
+		"Microsoft.Compute/virtualMachines":          "2023-03-01",
+		"Microsoft.Network/virtualNetworks":          "2023-05-01",
+		"Microsoft.KeyVault/vaults":                  "2023-02-01",
+		"Microsoft.EventHub/namespaces":              "2021-11-01",
+		"Microsoft.Web/sites":                        "2022-09-01",
+		"Microsoft.ContainerService/managedClusters": "2023-05-01",
+		"Microsoft.Sql/servers":                      "2022-05-01-preview",
+		"Microsoft.DocumentDB/databaseAccounts":      "2023-04-15",
 	}
-	
+
 	// Check for exact match
 	if version, ok := apiVersionMap[resourceType]; ok {
 		return version
 	}
-	
+
 	// Check for partial match (e.g., Microsoft.Storage/* resources)
 	parts := strings.Split(resourceType, "/")
 	if len(parts) >= 2 {
@@ -209,7 +209,7 @@ func (s *AzureResourceScanner) getAPIVersionForResourceType(resourceType string)
 			}
 		}
 	}
-	
+
 	// Default fallback
 	return "2023-01-01"
 }
@@ -221,7 +221,7 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	}
 
 	log.Printf("DEBUG: DescribeResource called for %s (type: %s)", resourceRef.Id, resourceRef.Type)
-	
+
 	// Determine the appropriate API version
 	apiVersion := s.getAPIVersionForResourceType(resourceRef.Type)
 	log.Printf("DEBUG: Using API version %s for resource type %s", apiVersion, resourceRef.Type)
@@ -231,7 +231,7 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource %s with API version %s: %w", resourceRef.Id, apiVersion, err)
 	}
-	
+
 	log.Printf("DEBUG: ARM API returned data for %s", resourceRef.Id)
 
 	resource := &pb.Resource{
@@ -286,7 +286,7 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 		"tags":       resource.Tags,
 		"properties": result.Properties,
 	}
-	
+
 	// Add SKU if present
 	if result.SKU != nil {
 		skuData := map[string]interface{}{}
@@ -307,7 +307,7 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 		}
 		fullResource["sku"] = skuData
 	}
-	
+
 	// Add other fields if present
 	if result.Kind != nil {
 		fullResource["kind"] = *result.Kind
@@ -322,7 +322,7 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	if result.ManagedBy != nil {
 		fullResource["managedBy"] = *result.ManagedBy
 	}
-	
+
 	// Store the complete resource data as raw data
 	if fullData, err := json.Marshal(fullResource); err == nil {
 		resource.RawData = string(fullData)
@@ -454,7 +454,6 @@ func (s *AzureResourceScanner) extractResourceGroupFromID(resourceID string) str
 	return ""
 }
 
-
 // matchesTags checks if a resource matches the specified tags
 func (s *AzureResourceScanner) matchesTags(resource *pb.ResourceRef, tags map[string]string) bool {
 	if resource.BasicAttributes == nil {
@@ -471,7 +470,6 @@ func (s *AzureResourceScanner) matchesTags(resource *pb.ResourceRef, tags map[st
 	return true
 }
 
-
 // extractProviderFromType extracts provider namespace from resource type
 func (s *AzureResourceScanner) extractProviderFromType(resourceType string) string {
 	// Microsoft.Compute/virtualMachines -> Microsoft.Compute
@@ -482,11 +480,10 @@ func (s *AzureResourceScanner) extractProviderFromType(resourceType string) stri
 	return "unknown"
 }
 
-
 // extractRelationshipsFromResource extracts relationships from an Azure resource
 func (s *AzureResourceScanner) extractRelationshipsFromResource(resource *pb.Resource, ref *pb.ResourceRef) []*pb.Relationship {
 	relationships := []*pb.Relationship{}
-	
+
 	// Extract parent-child relationships from resource ID structure
 	// Azure resource IDs follow pattern: /subscriptions/{sub}/resourceGroups/{rg}/providers/{provider}/{type}/{name}
 	if resource.ParentId != "" && resource.ParentId != resource.Id {
@@ -496,7 +493,7 @@ func (s *AzureResourceScanner) extractRelationshipsFromResource(resource *pb.Res
 			RelationshipType: "child_of",
 		})
 	}
-	
+
 	// Extract relationships from properties if available
 	if ref.BasicAttributes != nil && ref.BasicAttributes["properties"] != "" {
 		var props map[string]interface{}
@@ -505,29 +502,29 @@ func (s *AzureResourceScanner) extractRelationshipsFromResource(resource *pb.Res
 			if strings.Contains(resource.Type, "Microsoft.Compute/virtualMachines") {
 				s.extractVMRelationships(resource.Id, props, &relationships)
 			}
-			
+
 			// Storage Account relationships
 			if strings.Contains(resource.Type, "Microsoft.Storage/storageAccounts") {
 				s.extractStorageRelationships(resource.Id, props, &relationships)
 			}
-			
+
 			// Virtual Network relationships
 			if strings.Contains(resource.Type, "Microsoft.Network/virtualNetworks") {
 				s.extractVNetRelationships(resource.Id, props, &relationships)
 			}
-			
+
 			// Network Interface relationships
 			if strings.Contains(resource.Type, "Microsoft.Network/networkInterfaces") {
 				s.extractNICRelationships(resource.Id, props, &relationships)
 			}
-			
+
 			// Key Vault relationships
 			if strings.Contains(resource.Type, "Microsoft.KeyVault/vaults") {
 				s.extractKeyVaultRelationships(resource.Id, props, &relationships)
 			}
 		}
 	}
-	
+
 	return relationships
 }
 
@@ -550,7 +547,7 @@ func (s *AzureResourceScanner) extractVMRelationships(vmID string, props map[str
 			}
 		}
 	}
-	
+
 	// Availability Set
 	if availSet, ok := props["availabilitySet"].(map[string]interface{}); ok {
 		if availSetID, ok := availSet["id"].(string); ok {
@@ -561,7 +558,7 @@ func (s *AzureResourceScanner) extractVMRelationships(vmID string, props map[str
 			})
 		}
 	}
-	
+
 	// Storage Profile - OS and Data Disks
 	if storageProfile, ok := props["storageProfile"].(map[string]interface{}); ok {
 		// OS Disk
@@ -576,7 +573,7 @@ func (s *AzureResourceScanner) extractVMRelationships(vmID string, props map[str
 				}
 			}
 		}
-		
+
 		// Data Disks
 		if dataDisks, ok := storageProfile["dataDisks"].([]interface{}); ok {
 			for _, disk := range dataDisks {
@@ -632,7 +629,7 @@ func (s *AzureResourceScanner) extractVNetRelationships(vnetID string, props map
 			}
 		}
 	}
-	
+
 	// VNet Peerings
 	if peerings, ok := props["virtualNetworkPeerings"].([]interface{}); ok {
 		for _, peering := range peerings {
@@ -669,7 +666,7 @@ func (s *AzureResourceScanner) extractNICRelationships(nicID string, props map[s
 							})
 						}
 					}
-					
+
 					// Public IP relationship
 					if publicIP, ok := ipConfigProps["publicIPAddress"].(map[string]interface{}); ok {
 						if publicIPID, ok := publicIP["id"].(string); ok {
@@ -684,7 +681,7 @@ func (s *AzureResourceScanner) extractNICRelationships(nicID string, props map[s
 			}
 		}
 	}
-	
+
 	// Network Security Group
 	if nsg, ok := props["networkSecurityGroup"].(map[string]interface{}); ok {
 		if nsgID, ok := nsg["id"].(string); ok {
@@ -714,4 +711,3 @@ func (s *AzureResourceScanner) extractKeyVaultRelationships(kvID string, props m
 		}
 	}
 }
-

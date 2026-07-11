@@ -7,40 +7,40 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/jlgore/corkscrew/internal/db"
 	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/graph"
 	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
-	"github.com/jlgore/corkscrew/internal/db"
 )
 
 // DiagramModel represents the main BubbleTea model for diagram viewing
 type DiagramModel struct {
 	// Core components
-	viewport     viewport.Model
-	graphLoader  *db.GraphLoader
-	converter    *graph.GraphConverter
-	renderer     renderer.DiagramRenderer
-	
+	viewport    viewport.Model
+	graphLoader *db.GraphLoader
+	converter   *graph.GraphConverter
+	renderer    renderer.DiagramRenderer
+
 	// State
-	currentData  *renderer.GraphData
-	currentView  ViewType
-	options      renderer.DiagramOptions
-	
+	currentData *renderer.GraphData
+	currentView ViewType
+	options     renderer.DiagramOptions
+
 	// UI state
-	width        int
-	height       int
-	ready        bool
-	error        string
-	loading      bool
-	
+	width   int
+	height  int
+	ready   bool
+	error   string
+	loading bool
+
 	// Interaction state
 	selectedNode string
 	showHelp     bool
-	
+
 	// Styles
-	titleStyle   lipgloss.Style
-	errorStyle   lipgloss.Style
-	helpStyle    lipgloss.Style
-	statusStyle  lipgloss.Style
+	titleStyle  lipgloss.Style
+	errorStyle  lipgloss.Style
+	helpStyle   lipgloss.Style
+	statusStyle lipgloss.Style
 }
 
 // ViewType represents different diagram view modes
@@ -56,7 +56,7 @@ const (
 func NewDiagramModel(graphLoader *db.GraphLoader) *DiagramModel {
 	converter := graph.NewGraphConverter(graphLoader)
 	asciiRenderer := renderer.NewASCIIRenderer()
-	
+
 	return &DiagramModel{
 		graphLoader: graphLoader,
 		converter:   converter,
@@ -92,13 +92,13 @@ func (m DiagramModel) Init() tea.Cmd {
 func (m DiagramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
-	
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		headerHeight := 3
 		footerHeight := 3
 		verticalMarginHeight := headerHeight + footerHeight
-		
+
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
 			m.viewport.YPosition = headerHeight
@@ -107,57 +107,57 @@ func (m DiagramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
-		
+
 		m.width = msg.Width
 		m.height = msg.Height
-		
+
 		// Update renderer dimensions
 		m.renderer.SetDimensions(m.viewport.Width, m.viewport.Height)
-		
+
 		// Re-render with new dimensions
 		if m.currentData != nil {
 			cmds = append(cmds, m.renderCurrentData())
 		}
-		
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-			
+
 		case "h", "?":
 			m.showHelp = !m.showHelp
 			cmds = append(cmds, m.renderCurrentData())
-			
+
 		case "r":
 			// Refresh/reload data
 			m.loading = true
 			cmds = append(cmds, m.loadDiagramData())
-			
+
 		case "1":
 			// Switch to ASCII view
 			m.currentView = ViewTypeASCII
 			m.renderer = renderer.NewASCIIRenderer()
 			m.renderer.SetDimensions(m.viewport.Width, m.viewport.Height)
 			cmds = append(cmds, m.renderCurrentData())
-			
+
 		case "2":
 			// Switch to Mermaid view
 			m.currentView = ViewTypeMermaid
 			m.renderer = renderer.NewMermaidRenderer()
 			m.renderer.SetDimensions(m.viewport.Width, m.viewport.Height)
 			cmds = append(cmds, m.renderCurrentData())
-			
+
 		case "3":
 			// Switch to List view
 			m.currentView = ViewTypeList
 			cmds = append(cmds, m.renderCurrentData())
-			
+
 		case "n":
 			// Switch diagram type to relationship
 			m.options.Type = renderer.DiagramTypeRelationship
 			m.loading = true
 			cmds = append(cmds, m.loadDiagramData())
-			
+
 		case "d":
 			// Switch diagram type to dependency
 			if m.options.ResourceID != "" {
@@ -165,19 +165,19 @@ func (m DiagramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				cmds = append(cmds, m.loadDiagramData())
 			}
-			
+
 		case "t":
 			// Switch diagram type to network topology
 			m.options.Type = renderer.DiagramTypeNetwork
 			m.loading = true
 			cmds = append(cmds, m.loadDiagramData())
-			
+
 		case "s":
 			// Switch diagram type to service map
 			m.options.Type = renderer.DiagramTypeService
 			m.loading = true
 			cmds = append(cmds, m.loadDiagramData())
-			
+
 		case "+", "=":
 			// Increase depth
 			if m.options.Depth < 5 {
@@ -185,7 +185,7 @@ func (m DiagramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				cmds = append(cmds, m.loadDiagramData())
 			}
-			
+
 		case "-":
 			// Decrease depth
 			if m.options.Depth > 1 {
@@ -194,25 +194,25 @@ func (m DiagramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.loadDiagramData())
 			}
 		}
-		
+
 	case DiagramDataMsg:
 		m.loading = false
 		m.currentData = msg.Data
 		m.error = ""
 		cmds = append(cmds, m.renderCurrentData())
-		
+
 	case DiagramErrorMsg:
 		m.loading = false
 		m.error = msg.Error
-		
+
 	case DiagramContentMsg:
 		m.viewport.SetContent(msg.Content)
 	}
-	
+
 	// Update viewport
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
-	
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -221,21 +221,21 @@ func (m DiagramModel) View() string {
 	if !m.ready {
 		return "\n  Initializing..."
 	}
-	
+
 	// Header
 	header := m.renderHeader()
-	
+
 	// Footer
 	footer := m.renderFooter()
-	
+
 	// Main content
 	content := m.viewport.View()
-	
+
 	// Help overlay
 	if m.showHelp {
 		content = m.renderHelpOverlay(content)
 	}
-	
+
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 }
 
@@ -245,7 +245,7 @@ func (m DiagramModel) renderHeader() string {
 	if m.currentData != nil && m.currentData.Title != "" {
 		title = m.currentData.Title
 	}
-	
+
 	var status string
 	if m.loading {
 		status = m.statusStyle.Render("Loading...")
@@ -254,12 +254,12 @@ func (m DiagramModel) renderHeader() string {
 	} else if m.currentData != nil {
 		status = m.statusStyle.Render(fmt.Sprintf("Nodes: %d, Edges: %d", len(m.currentData.Nodes), len(m.currentData.Edges)))
 	}
-	
+
 	titleLine := m.titleStyle.Render(title)
 	statusLine := status
-	
+
 	headerContent := lipgloss.JoinVertical(lipgloss.Left, titleLine, statusLine)
-	
+
 	return lipgloss.NewStyle().
 		Width(m.width).
 		Padding(0, 1).
@@ -277,19 +277,19 @@ func (m DiagramModel) renderFooter() string {
 		"2: Mermaid",
 		"3: List",
 	}
-	
+
 	if m.options.ResourceID != "" {
 		controls = append(controls, "d: dependencies")
 	}
-	
+
 	controls = append(controls, "n: relationships", "t: topology", "s: services")
-	
+
 	if m.currentView == ViewTypeASCII || m.currentView == ViewTypeMermaid {
 		controls = append(controls, "+/-: depth")
 	}
-	
+
 	controlsText := lipgloss.JoinHorizontal(lipgloss.Left, controls...)
-	
+
 	return lipgloss.NewStyle().
 		Width(m.width).
 		Padding(0, 1).
@@ -329,7 +329,7 @@ Current Settings:
   Depth:       %d
   Resource:    %s
 `
-	
+
 	diagramType := "Relationships"
 	switch m.options.Type {
 	case renderer.DiagramTypeDependency:
@@ -339,14 +339,14 @@ Current Settings:
 	case renderer.DiagramTypeService:
 		diagramType = "Service Map"
 	}
-	
+
 	resourceID := m.options.ResourceID
 	if resourceID == "" {
 		resourceID = "All"
 	}
-	
+
 	help := fmt.Sprintf(helpText, diagramType, m.options.Depth, resourceID)
-	
+
 	helpBox := lipgloss.NewStyle().
 		Background(lipgloss.Color("235")).
 		Foreground(lipgloss.Color("252")).
@@ -354,7 +354,7 @@ Current Settings:
 		Margin(2, 4).
 		Border(lipgloss.RoundedBorder()).
 		Render(help)
-	
+
 	// Center the help box
 	return lipgloss.Place(m.width, m.height-6, lipgloss.Center, lipgloss.Center, helpBox)
 }
@@ -379,10 +379,10 @@ func (m DiagramModel) renderCurrentData() tea.Cmd {
 		if m.currentData == nil {
 			return DiagramContentMsg{Content: "No data to display"}
 		}
-		
+
 		var content string
 		var err error
-		
+
 		switch m.currentView {
 		case ViewTypeASCII:
 			content, err = m.renderer.RenderASCII(m.currentData)
@@ -394,11 +394,11 @@ func (m DiagramModel) renderCurrentData() tea.Cmd {
 		default:
 			content, err = m.renderer.RenderASCII(m.currentData)
 		}
-		
+
 		if err != nil {
 			return DiagramErrorMsg{Error: err.Error()}
 		}
-		
+
 		return DiagramContentMsg{Content: content}
 	}
 }

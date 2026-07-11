@@ -9,15 +9,15 @@ import (
 
 	asset "cloud.google.com/go/asset/apiv1"
 	"cloud.google.com/go/asset/apiv1/assetpb"
-	"google.golang.org/api/iterator"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // AssetInventoryClient provides efficient resource querying using Cloud Asset Inventory
 type AssetInventoryClient struct {
 	client     *asset.Client
-	projectIDs []string  // Multiple projects support
+	projectIDs []string // Multiple projects support
 	orgID      string
 	folderID   string
 	scope      string // "projects", "folders", or "organizations"
@@ -33,7 +33,7 @@ type AssetChange struct {
 // IAMPolicy represents a GCP IAM policy
 type IAMPolicy struct {
 	Bindings []IAMBinding `json:"bindings"`
-	Version  int         `json:"version"`
+	Version  int          `json:"version"`
 }
 
 // IAMBinding represents an IAM policy binding
@@ -48,7 +48,7 @@ func NewAssetInventoryClient(ctx context.Context) (*AssetInventoryClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create asset client: %w", err)
 	}
-	
+
 	return &AssetInventoryClient{
 		client: client,
 	}, nil
@@ -65,7 +65,7 @@ func (aic *AssetInventoryClient) SetScope(scope string, projectIDs []string, org
 // QueryAllAssets queries all assets across the configured scope
 func (aic *AssetInventoryClient) QueryAllAssets(ctx context.Context) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
-	
+
 	// Query based on scope
 	switch aic.scope {
 	case "organizations":
@@ -77,7 +77,7 @@ func (aic *AssetInventoryClient) QueryAllAssets(ctx context.Context) ([]*pb.Reso
 			return nil, err
 		}
 		allResources = append(allResources, resources...)
-		
+
 	case "folders":
 		if aic.folderID == "" {
 			return nil, fmt.Errorf("folder ID required for folder scope")
@@ -87,7 +87,7 @@ func (aic *AssetInventoryClient) QueryAllAssets(ctx context.Context) ([]*pb.Reso
 			return nil, err
 		}
 		allResources = append(allResources, resources...)
-		
+
 	case "projects":
 		// Query multiple projects
 		for _, projectID := range aic.projectIDs {
@@ -100,7 +100,7 @@ func (aic *AssetInventoryClient) QueryAllAssets(ctx context.Context) ([]*pb.Reso
 			allResources = append(allResources, resources...)
 		}
 	}
-	
+
 	return allResources, nil
 }
 
@@ -111,10 +111,10 @@ func (aic *AssetInventoryClient) queryAssetsForParent(ctx context.Context, paren
 		ContentType: assetpb.ContentType_RESOURCE,
 		PageSize:    1000,
 	}
-	
+
 	var resources []*pb.ResourceRef
 	it := aic.client.ListAssets(ctx, req)
-	
+
 	for {
 		asset, err := it.Next()
 		if err == iterator.Done {
@@ -123,23 +123,23 @@ func (aic *AssetInventoryClient) queryAssetsForParent(ctx context.Context, paren
 		if err != nil {
 			return nil, fmt.Errorf("failed to list assets for %s: %w", parent, err)
 		}
-		
+
 		resource := aic.convertAssetToResourceRef(asset)
 		if resource != nil {
 			resources = append(resources, resource)
 		}
 	}
-	
+
 	return resources, nil
 }
 
 // QueryAssetsByType queries assets of specific types
 func (aic *AssetInventoryClient) QueryAssetsByType(ctx context.Context, assetTypes []string) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
-	
+
 	// Iterate through configured scope
 	parents := aic.getParents()
-	
+
 	for _, parent := range parents {
 		req := &assetpb.ListAssetsRequest{
 			Parent:      parent,
@@ -147,9 +147,9 @@ func (aic *AssetInventoryClient) QueryAssetsByType(ctx context.Context, assetTyp
 			ContentType: assetpb.ContentType_RESOURCE,
 			PageSize:    1000,
 		}
-		
+
 		it := aic.client.ListAssets(ctx, req)
-		
+
 		for {
 			asset, err := it.Next()
 			if err == iterator.Done {
@@ -160,33 +160,33 @@ func (aic *AssetInventoryClient) QueryAssetsByType(ctx context.Context, assetTyp
 				fmt.Printf("Error querying assets by type for %s: %v\n", parent, err)
 				break
 			}
-			
+
 			resource := aic.convertAssetToResourceRef(asset)
 			if resource != nil {
 				allResources = append(allResources, resource)
 			}
 		}
 	}
-	
+
 	return allResources, nil
 }
 
 // SearchAssets performs advanced search using Cloud Asset Inventory search
 func (aic *AssetInventoryClient) SearchAssets(ctx context.Context, query string) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
-	
+
 	// Determine search scope
 	scopes := aic.getSearchScopes()
-	
+
 	for _, scope := range scopes {
 		req := &assetpb.SearchAllResourcesRequest{
 			Scope:    scope,
 			Query:    query,
 			PageSize: 500,
 		}
-		
+
 		it := aic.client.SearchAllResources(ctx, req)
-		
+
 		for {
 			result, err := it.Next()
 			if err == iterator.Done {
@@ -197,14 +197,14 @@ func (aic *AssetInventoryClient) SearchAssets(ctx context.Context, query string)
 				fmt.Printf("Error searching assets in scope %s: %v\n", scope, err)
 				break
 			}
-			
+
 			resource := aic.convertSearchResultToResourceRef(result)
 			if resource != nil {
 				allResources = append(allResources, resource)
 			}
 		}
 	}
-	
+
 	return allResources, nil
 }
 
@@ -212,7 +212,7 @@ func (aic *AssetInventoryClient) SearchAssets(ctx context.Context, query string)
 func (aic *AssetInventoryClient) QueryAssetHistory(ctx context.Context, assetName string, startTime, endTime time.Time) ([]*AssetChange, error) {
 	// Get parent from asset name
 	parent := aic.extractParentFromAssetName(assetName)
-	
+
 	req := &assetpb.BatchGetAssetsHistoryRequest{
 		Parent:      parent,
 		AssetNames:  []string{assetName},
@@ -222,40 +222,40 @@ func (aic *AssetInventoryClient) QueryAssetHistory(ctx context.Context, assetNam
 			EndTime:   timestamppb.New(endTime),
 		},
 	}
-	
+
 	resp, err := aic.client.BatchGetAssetsHistory(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get asset history: %w", err)
 	}
-	
+
 	return aic.parseAssetHistory(resp), nil
 }
 
 // QueryAssetRelationships discovers relationships between resources using IAM analysis
 func (aic *AssetInventoryClient) QueryAssetRelationships(ctx context.Context) ([]*pb.Relationship, error) {
 	var allRelationships []*pb.Relationship
-	
+
 	// For each parent, analyze IAM policies
 	parents := aic.getParents()
-	
+
 	for _, parent := range parents {
 		req := &assetpb.AnalyzeIamPolicyRequest{
 			AnalysisQuery: &assetpb.IamPolicyAnalysisQuery{
 				Scope: parent,
 			},
 		}
-		
+
 		resp, err := aic.client.AnalyzeIamPolicy(ctx, req)
 		if err != nil {
 			// Log error but continue with other parents
 			fmt.Printf("Error analyzing IAM policy for %s: %v\n", parent, err)
 			continue
 		}
-		
+
 		relationships := aic.extractRelationshipsFromAnalysis(resp)
 		allRelationships = append(allRelationships, relationships...)
 	}
-	
+
 	return allRelationships, nil
 }
 
@@ -266,15 +266,15 @@ func (aic *AssetInventoryClient) IsHealthy(ctx context.Context) bool {
 	if len(parents) == 0 {
 		return false
 	}
-	
+
 	req := &assetpb.ListAssetsRequest{
 		Parent:   parents[0],
 		PageSize: 1,
 	}
-	
+
 	it := aic.client.ListAssets(ctx, req)
 	_, err := it.Next()
-	
+
 	// If we get iterator.Done, that's still healthy (just no assets)
 	return err == nil || err == iterator.Done
 }
@@ -284,7 +284,7 @@ func (aic *AssetInventoryClient) IsHealthy(ctx context.Context) bool {
 // getParents returns all parent resources based on configured scope
 func (aic *AssetInventoryClient) getParents() []string {
 	var parents []string
-	
+
 	switch aic.scope {
 	case "organizations":
 		if aic.orgID != "" {
@@ -299,7 +299,7 @@ func (aic *AssetInventoryClient) getParents() []string {
 			parents = append(parents, fmt.Sprintf("projects/%s", projectID))
 		}
 	}
-	
+
 	return parents
 }
 
@@ -314,7 +314,7 @@ func (aic *AssetInventoryClient) convertAssetToResourceRef(asset *assetpb.Asset)
 	if asset == nil || asset.Resource == nil {
 		return nil
 	}
-	
+
 	ref := &pb.ResourceRef{
 		Id:              asset.Name,
 		Name:            aic.extractResourceName(asset.Name),
@@ -322,22 +322,22 @@ func (aic *AssetInventoryClient) convertAssetToResourceRef(asset *assetpb.Asset)
 		Service:         aic.extractServiceFromType(asset.AssetType),
 		BasicAttributes: make(map[string]string),
 	}
-	
+
 	// Extract location from resource data
 	if asset.Resource.Location != "" {
 		ref.Region = asset.Resource.Location
 	}
-	
+
 	// Extract parent information
 	if asset.Resource.Parent != "" {
 		ref.BasicAttributes["parent"] = asset.Resource.Parent
 	}
-	
+
 	// Extract project ID from asset name
 	if projectID := aic.extractProjectFromAssetName(asset.Name); projectID != "" {
 		ref.BasicAttributes["project_id"] = projectID
 	}
-	
+
 	// Extract resource data as JSON
 	if asset.Resource.Data != nil {
 		// Convert protobuf Struct to JSON string
@@ -345,7 +345,7 @@ func (aic *AssetInventoryClient) convertAssetToResourceRef(asset *assetpb.Asset)
 			ref.BasicAttributes["resource_data"] = string(jsonData)
 		}
 	}
-	
+
 	// Extract labels
 	if asset.Resource.Data != nil {
 		if labels := aic.extractLabels(asset.Resource.Data.AsMap()); labels != nil {
@@ -354,7 +354,7 @@ func (aic *AssetInventoryClient) convertAssetToResourceRef(asset *assetpb.Asset)
 			}
 		}
 	}
-	
+
 	return ref
 }
 
@@ -363,7 +363,7 @@ func (aic *AssetInventoryClient) convertSearchResultToResourceRef(result *assetp
 	if result == nil {
 		return nil
 	}
-	
+
 	ref := &pb.ResourceRef{
 		Id:              result.Name,
 		Name:            aic.extractResourceNameFromFullName(result.Name),
@@ -371,36 +371,36 @@ func (aic *AssetInventoryClient) convertSearchResultToResourceRef(result *assetp
 		Service:         aic.extractServiceFromType(result.AssetType),
 		BasicAttributes: make(map[string]string),
 	}
-	
+
 	// Set location
 	if result.Location != "" {
 		ref.Region = result.Location
 	}
-	
+
 	// Extract project
 	if result.Project != "" {
 		ref.BasicAttributes["project_id"] = strings.TrimPrefix(result.Project, "projects/")
 	}
-	
+
 	// Store display name
 	if result.DisplayName != "" {
 		ref.BasicAttributes["display_name"] = result.DisplayName
 	}
-	
+
 	// Extract labels
 	if result.Labels != nil {
 		for k, v := range result.Labels {
 			ref.BasicAttributes["label_"+k] = v
 		}
 	}
-	
+
 	// Store additional attributes as JSON if present
 	if result.AdditionalAttributes != nil {
 		if jsonData, err := json.Marshal(result.AdditionalAttributes.AsMap()); err == nil {
 			ref.BasicAttributes["additional_attributes"] = string(jsonData)
 		}
 	}
-	
+
 	return ref
 }
 
@@ -474,19 +474,19 @@ func (aic *AssetInventoryClient) extractParentFromAssetName(assetName string) st
 			}
 		}
 	}
-	
+
 	// Default to first project if we can't extract
 	if len(aic.projectIDs) > 0 {
 		return fmt.Sprintf("projects/%s", aic.projectIDs[0])
 	}
-	
+
 	return ""
 }
 
 // extractLabels extracts labels from resource data
 func (aic *AssetInventoryClient) extractLabels(data map[string]interface{}) map[string]string {
 	labels := make(map[string]string)
-	
+
 	// Check for labels field
 	if labelsData, ok := data["labels"]; ok {
 		if labelsMap, ok := labelsData.(map[string]interface{}); ok {
@@ -497,14 +497,14 @@ func (aic *AssetInventoryClient) extractLabels(data map[string]interface{}) map[
 			}
 		}
 	}
-	
+
 	return labels
 }
 
 // parseAssetHistory parses asset history response
 func (aic *AssetInventoryClient) parseAssetHistory(resp *assetpb.BatchGetAssetsHistoryResponse) []*AssetChange {
 	var changes []*AssetChange
-	
+
 	// The actual response structure may differ, this is a placeholder implementation
 	// In practice, you would parse the actual response structure from the API
 	for _, asset := range resp.Assets {
@@ -515,50 +515,50 @@ func (aic *AssetInventoryClient) parseAssetHistory(resp *assetpb.BatchGetAssetsH
 		}
 		changes = append(changes, change)
 	}
-	
+
 	return changes
 }
 
 // extractRelationshipsFromAnalysis extracts relationships from IAM policy analysis
 func (aic *AssetInventoryClient) extractRelationshipsFromAnalysis(resp *assetpb.AnalyzeIamPolicyResponse) []*pb.Relationship {
 	var relationships []*pb.Relationship
-	
+
 	// Process analysis results
 	for _, analysisResult := range resp.MainAnalysis.AnalysisResults {
 		// Extract identity to resource relationships
 		if analysisResult.IamBinding != nil && analysisResult.AttachedResourceFullName != "" {
 			for _, member := range analysisResult.IamBinding.Members {
 				rel := &pb.Relationship{
-					TargetId: analysisResult.AttachedResourceFullName,
-					RelationshipType:     "has_access_to",
+					TargetId:         analysisResult.AttachedResourceFullName,
+					RelationshipType: "has_access_to",
 					Properties: map[string]string{
 						"source_identity": member,
-						"role":           analysisResult.IamBinding.Role,
-						"access_state":   "allowed",
+						"role":            analysisResult.IamBinding.Role,
+						"access_state":    "allowed",
 					},
 				}
 				relationships = append(relationships, rel)
 			}
 		}
 	}
-	
+
 	// Process service account impersonation analysis
 	for _, serviceAccountResult := range resp.ServiceAccountImpersonationAnalysis {
 		// Extract service account usage relationships
 		for _, analysisResult := range serviceAccountResult.AnalysisResults {
 			if analysisResult.IamBinding != nil {
 				rel := &pb.Relationship{
-					TargetId: analysisResult.AttachedResourceFullName,
-					RelationshipType:     "can_impersonate",
+					TargetId:         analysisResult.AttachedResourceFullName,
+					RelationshipType: "can_impersonate",
 					Properties: map[string]string{
 						"source_identity": strings.Join(analysisResult.IamBinding.Members, ","),
-						"role":           analysisResult.IamBinding.Role,
+						"role":            analysisResult.IamBinding.Role,
 					},
 				}
 				relationships = append(relationships, rel)
 			}
 		}
 	}
-	
+
 	return relationships
 }

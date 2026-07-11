@@ -14,21 +14,21 @@ type ChangeAnalytics struct {
 
 // AnalyticsReport contains aggregated analytics data
 type AnalyticsReport struct {
-	Provider               string                    `json:"provider"`
-	TimeRange             TimeRange                 `json:"time_range"`
-	GeneratedAt           time.Time                 `json:"generated_at"`
-	TotalChanges          int                       `json:"total_changes"`
-	ChangesByType         map[string]int            `json:"changes_by_type"`
-	ChangesBySeverity     map[string]int            `json:"changes_by_severity"`
-	ChangesByService      map[string]int            `json:"changes_by_service"`
-	ChangesByResourceType map[string]int            `json:"changes_by_resource_type"`
-	ChangesByProject      map[string]int            `json:"changes_by_project"`
-	ChangesByRegion       map[string]int            `json:"changes_by_region"`
-	FrequencyTrends       []*FrequencyDataPoint     `json:"frequency_trends"`
-	ImpactTrends          []*ImpactDataPoint        `json:"impact_trends"`
-	TopChangedResources   []*ResourceChangesSummary `json:"top_changed_resources"`
-	AnomalousPatterns     []*ChangeAnomaly          `json:"anomalous_patterns"`
-	ComplianceMetrics     *ComplianceMetrics        `json:"compliance_metrics"`
+	Provider              string                     `json:"provider"`
+	TimeRange             TimeRange                  `json:"time_range"`
+	GeneratedAt           time.Time                  `json:"generated_at"`
+	TotalChanges          int                        `json:"total_changes"`
+	ChangesByType         map[string]int             `json:"changes_by_type"`
+	ChangesBySeverity     map[string]int             `json:"changes_by_severity"`
+	ChangesByService      map[string]int             `json:"changes_by_service"`
+	ChangesByResourceType map[string]int             `json:"changes_by_resource_type"`
+	ChangesByProject      map[string]int             `json:"changes_by_project"`
+	ChangesByRegion       map[string]int             `json:"changes_by_region"`
+	FrequencyTrends       []*FrequencyDataPoint      `json:"frequency_trends"`
+	ImpactTrends          []*ImpactDataPoint         `json:"impact_trends"`
+	TopChangedResources   []*ResourceChangesSummary  `json:"top_changed_resources"`
+	AnomalousPatterns     []*ChangeAnomaly           `json:"anomalous_patterns"`
+	ComplianceMetrics     *ComplianceMetrics         `json:"compliance_metrics"`
 	Recommendations       []*AnalyticsRecommendation `json:"recommendations"`
 }
 
@@ -41,15 +41,15 @@ type TimeRange struct {
 
 // FrequencyDataPoint represents change frequency at a point in time
 type FrequencyDataPoint struct {
-	Timestamp    time.Time `json:"timestamp"`
-	ChangeCount  int       `json:"change_count"`
-	Bucket       string    `json:"bucket"` // hour, day, week, month
+	Timestamp        time.Time      `json:"timestamp"`
+	ChangeCount      int            `json:"change_count"`
+	Bucket           string         `json:"bucket"` // hour, day, week, month
 	ServiceBreakdown map[string]int `json:"service_breakdown"`
 }
 
 // ImpactDataPoint represents impact metrics at a point in time
 type ImpactDataPoint struct {
-	Timestamp         time.Time `json:"timestamp"`
+	Timestamp          time.Time `json:"timestamp"`
 	AverageImpactScore float64   `json:"average_impact_score"`
 	TotalImpactScore   float64   `json:"total_impact_score"`
 	HighImpactChanges  int       `json:"high_impact_changes"`
@@ -58,39 +58,39 @@ type ImpactDataPoint struct {
 
 // ResourceChangesSummary summarizes changes for a specific resource
 type ResourceChangesSummary struct {
-	ResourceID     string            `json:"resource_id"`
-	ResourceType   string            `json:"resource_type"`
-	Service        string            `json:"service"`
-	Project        string            `json:"project"`
-	TotalChanges   int               `json:"total_changes"`
-	ChangesByType  map[string]int    `json:"changes_by_type"`
-	LastChange     time.Time         `json:"last_change"`
-	AverageImpact  float64           `json:"average_impact"`
-	RiskLevel      ChangeSeverity    `json:"risk_level"`
+	ResourceID    string         `json:"resource_id"`
+	ResourceType  string         `json:"resource_type"`
+	Service       string         `json:"service"`
+	Project       string         `json:"project"`
+	TotalChanges  int            `json:"total_changes"`
+	ChangesByType map[string]int `json:"changes_by_type"`
+	LastChange    time.Time      `json:"last_change"`
+	AverageImpact float64        `json:"average_impact"`
+	RiskLevel     ChangeSeverity `json:"risk_level"`
 }
 
 // ChangeAnomaly represents detected anomalous change patterns
 type ChangeAnomaly struct {
-	ID              string            `json:"id"`
-	AnomalyType     string            `json:"anomaly_type"`
-	Description     string            `json:"description"`
-	Severity        ChangeSeverity    `json:"severity"`
-	DetectedAt      time.Time         `json:"detected_at"`
-	TimeWindow      TimeRange         `json:"time_window"`
-	AffectedResources []string        `json:"affected_resources"`
-	Metrics         map[string]float64 `json:"metrics"`
-	Confidence      float64           `json:"confidence"`
-	Recommendations []string          `json:"recommendations"`
+	ID                string             `json:"id"`
+	AnomalyType       string             `json:"anomaly_type"`
+	Description       string             `json:"description"`
+	Severity          ChangeSeverity     `json:"severity"`
+	DetectedAt        time.Time          `json:"detected_at"`
+	TimeWindow        TimeRange          `json:"time_window"`
+	AffectedResources []string           `json:"affected_resources"`
+	Metrics           map[string]float64 `json:"metrics"`
+	Confidence        float64            `json:"confidence"`
+	Recommendations   []string           `json:"recommendations"`
 }
 
 // ComplianceMetrics provides compliance-related analytics
 type ComplianceMetrics struct {
-	OverallScore         float64            `json:"overall_score"`
-	FrameworkScores      map[string]float64 `json:"framework_scores"`
-	ViolationCount       int                `json:"violation_count"`
-	CriticalViolations   int                `json:"critical_violations"`
-	TrendDirection       string             `json:"trend_direction"` // "improving", "stable", "declining"
-	RecentViolations     []*ComplianceViolation `json:"recent_violations"`
+	OverallScore       float64                `json:"overall_score"`
+	FrameworkScores    map[string]float64     `json:"framework_scores"`
+	ViolationCount     int                    `json:"violation_count"`
+	CriticalViolations int                    `json:"critical_violations"`
+	TrendDirection     string                 `json:"trend_direction"` // "improving", "stable", "declining"
+	RecentViolations   []*ComplianceViolation `json:"recent_violations"`
 }
 
 // AnalyticsRecommendation provides actionable insights
@@ -108,18 +108,18 @@ type AnalyticsRecommendation struct {
 
 // AnalyticsQuery defines parameters for analytics queries
 type AnalyticsQuery struct {
-	Provider      string            `json:"provider"`
-	TimeRange     TimeRange         `json:"time_range"`
-	Granularity   string            `json:"granularity"` // "hour", "day", "week", "month"
-	Services      []string          `json:"services,omitempty"`
-	ResourceTypes []string          `json:"resource_types,omitempty"`
-	Projects      []string          `json:"projects,omitempty"`
-	Regions       []string          `json:"regions,omitempty"`
-	ChangeTypes   []ChangeType      `json:"change_types,omitempty"`
-	Severities    []ChangeSeverity  `json:"severities,omitempty"`
-	IncludeAnomalies bool           `json:"include_anomalies"`
-	IncludeCompliance bool          `json:"include_compliance"`
-	TopN          int               `json:"top_n"` // For top resources, services, etc.
+	Provider          string           `json:"provider"`
+	TimeRange         TimeRange        `json:"time_range"`
+	Granularity       string           `json:"granularity"` // "hour", "day", "week", "month"
+	Services          []string         `json:"services,omitempty"`
+	ResourceTypes     []string         `json:"resource_types,omitempty"`
+	Projects          []string         `json:"projects,omitempty"`
+	Regions           []string         `json:"regions,omitempty"`
+	ChangeTypes       []ChangeType     `json:"change_types,omitempty"`
+	Severities        []ChangeSeverity `json:"severities,omitempty"`
+	IncludeAnomalies  bool             `json:"include_anomalies"`
+	IncludeCompliance bool             `json:"include_compliance"`
+	TopN              int              `json:"top_n"` // For top resources, services, etc.
 }
 
 // NewChangeAnalytics creates a new change analytics engine
@@ -212,7 +212,7 @@ func (ca *ChangeAnalytics) GetChangeFrequency(ctx context.Context, provider stri
 		dp := &FrequencyDataPoint{
 			Timestamp:        bucket,
 			ChangeCount:      0,
-			Bucket:          granularity,
+			Bucket:           granularity,
 			ServiceBreakdown: make(map[string]int),
 		}
 
@@ -353,11 +353,11 @@ func (ca *ChangeAnalytics) populateBasicStats(ctx context.Context, report *Analy
 		report.ChangesBySeverity[string(change.Severity)]++
 		report.ChangesByService[change.Service]++
 		report.ChangesByResourceType[change.ResourceType]++
-		
+
 		if change.Project != "" {
 			report.ChangesByProject[change.Project]++
 		}
-		
+
 		if change.Region != "" {
 			report.ChangesByRegion[change.Region]++
 		}
@@ -420,15 +420,15 @@ func (ca *ChangeAnalytics) populateImpactTrends(ctx context.Context, report *Ana
 		for _, change := range changes {
 			if ca.isInTimeBucket(change.Timestamp, bucket, granularity) {
 				changeCount++
-				
+
 				if change.ImpactAssessment != nil {
 					totalImpact += change.ImpactAssessment.RiskScore
-					
+
 					if change.ImpactAssessment.RiskScore > 70 {
 						highImpactCount++
 					}
 				}
-				
+
 				if change.Severity == SeverityCritical {
 					criticalCount++
 				}
@@ -530,17 +530,17 @@ func (ca *ChangeAnalytics) populateComplianceMetrics(ctx context.Context, report
 	for _, change := range changes {
 		if change.ComplianceImpact != nil {
 			complianceChanges++
-			
+
 			if change.ComplianceImpact.Level == SeverityCritical {
 				criticalViolations++
 			}
-			
+
 			// Aggregate framework scores (simplified)
 			for _, framework := range change.ComplianceImpact.AffectedFrameworks {
 				if _, exists := metrics.FrameworkScores[framework]; !exists {
 					metrics.FrameworkScores[framework] = 85.0 // Default baseline
 				}
-				
+
 				// Reduce score based on severity
 				switch change.Severity {
 				case SeverityCritical:
@@ -659,7 +659,7 @@ func (ca *ChangeAnalytics) createTimeBuckets(timeRange TimeRange, granularity st
 	var buckets []time.Time
 	start := timeRange.StartTime
 	end := timeRange.EndTime
-	
+
 	var interval time.Duration
 	switch granularity {
 	case "minute":
@@ -675,11 +675,11 @@ func (ca *ChangeAnalytics) createTimeBuckets(timeRange TimeRange, granularity st
 	default:
 		interval = 24 * time.Hour
 	}
-	
+
 	for current := start; current.Before(end); current = current.Add(interval) {
 		buckets = append(buckets, current)
 	}
-	
+
 	return buckets
 }
 
@@ -699,7 +699,7 @@ func (ca *ChangeAnalytics) isInTimeBucket(timestamp, bucket time.Time, granulari
 	default:
 		interval = 24 * time.Hour
 	}
-	
+
 	return timestamp.After(bucket) && timestamp.Before(bucket.Add(interval))
 }
 
@@ -733,7 +733,7 @@ func (ca *ChangeAnalytics) detectPatternAnomalies(changes []*ChangeEvent) []*Cha
 	for _, change := range changes {
 		serviceCount[change.Service]++
 	}
-	
+
 	for service, count := range serviceCount {
 		if count > len(changes)/2 {
 			anomalies = append(anomalies, &ChangeAnomaly{
@@ -744,7 +744,7 @@ func (ca *ChangeAnalytics) detectPatternAnomalies(changes []*ChangeEvent) []*Cha
 			})
 		}
 	}
-	
+
 	return anomalies
 }
 
@@ -755,7 +755,7 @@ func (ca *ChangeAnalytics) detectResourceAnomalies(changes []*ChangeEvent) []*Ch
 	for _, change := range changes {
 		resourceCount[change.ResourceID]++
 	}
-	
+
 	for resource, count := range resourceCount {
 		if count > 50 { // Threshold for single resource
 			anomalies = append(anomalies, &ChangeAnomaly{
@@ -766,7 +766,7 @@ func (ca *ChangeAnalytics) detectResourceAnomalies(changes []*ChangeEvent) []*Ch
 			})
 		}
 	}
-	
+
 	return anomalies
 }
 
@@ -774,11 +774,11 @@ func (ca *ChangeAnalytics) detectResourceAnomalies(changes []*ChangeEvent) []*Ch
 
 func (ca *ChangeAnalytics) determineOptimalGranularity(timeRange TimeRange) string {
 	duration := timeRange.EndTime.Sub(timeRange.StartTime)
-	
+
 	if duration <= 2*time.Hour {
 		return "minute"
 	} else if duration <= 48*time.Hour {
-		return "hour"  
+		return "hour"
 	} else if duration <= 30*24*time.Hour {
 		return "day"
 	} else if duration <= 365*24*time.Hour {
@@ -788,14 +788,13 @@ func (ca *ChangeAnalytics) determineOptimalGranularity(timeRange TimeRange) stri
 	}
 }
 
-
 // Additional missing helper methods
 
 func (ca *ChangeAnalytics) createResourceSummary(resourceID string, changes []*ChangeEvent) *ResourceChangesSummary {
 	if len(changes) == 0 {
 		return nil
 	}
-	
+
 	summary := &ResourceChangesSummary{
 		ResourceID:    resourceID,
 		ResourceType:  changes[0].ResourceType,
@@ -805,28 +804,28 @@ func (ca *ChangeAnalytics) createResourceSummary(resourceID string, changes []*C
 		ChangesByType: make(map[string]int),
 		LastChange:    changes[0].Timestamp,
 	}
-	
+
 	var totalImpact float64
 	for _, change := range changes {
 		summary.ChangesByType[string(change.ChangeType)]++
-		
+
 		if change.Timestamp.After(summary.LastChange) {
 			summary.LastChange = change.Timestamp
 		}
-		
+
 		if change.ImpactAssessment != nil {
 			totalImpact += change.ImpactAssessment.RiskScore
 		}
-		
+
 		if change.Severity > summary.RiskLevel {
 			summary.RiskLevel = change.Severity
 		}
 	}
-	
+
 	if len(changes) > 0 {
 		summary.AverageImpact = totalImpact / float64(len(changes))
 	}
-	
+
 	return summary
 }
 
@@ -845,12 +844,12 @@ func (ca *ChangeAnalytics) calculateAverageFrequency(dataPoints []*FrequencyData
 	if len(dataPoints) == 0 {
 		return 0
 	}
-	
+
 	var total int
 	for _, dp := range dataPoints {
 		total += dp.ChangeCount
 	}
-	
+
 	return float64(total) / float64(len(dataPoints))
 }
 
@@ -858,25 +857,25 @@ func (ca *ChangeAnalytics) calculateAverageImpact(dataPoints []*ImpactDataPoint)
 	if len(dataPoints) == 0 {
 		return 0
 	}
-	
+
 	var total float64
 	for _, dp := range dataPoints {
 		total += dp.AverageImpactScore
 	}
-	
+
 	return total / float64(len(dataPoints))
 }
 
 func (ca *ChangeAnalytics) findTopService(serviceChanges map[string]int) string {
 	var topService string
 	var maxChanges int
-	
+
 	for service, count := range serviceChanges {
 		if count > maxChanges {
 			maxChanges = count
 			topService = service
 		}
 	}
-	
+
 	return topService
 }

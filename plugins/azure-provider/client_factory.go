@@ -234,5 +234,3 @@ func extractServiceFromResourceType(resourceType string) string {
 	}
 	return "Unknown"
 }
-
-

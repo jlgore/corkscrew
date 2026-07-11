@@ -9,23 +9,23 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jlgore/corkscrew/internal/db"
 	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/graph"
 	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
 	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/ui"
-	"github.com/jlgore/corkscrew/internal/db"
 )
 
 func main() {
 	var (
-		dbPath     = flag.String("db", "corkscrew.db", "Path to DuckDB database")
-		resourceID = flag.String("resource", "", "Specific resource ID to visualize")
+		dbPath      = flag.String("db", "corkscrew.db", "Path to DuckDB database")
+		resourceID  = flag.String("resource", "", "Specific resource ID to visualize")
 		diagramType = flag.String("type", "relationships", "Diagram type: relationships, dependencies, network, services")
-		depth      = flag.Int("depth", 2, "Depth for relationship traversal")
-		export     = flag.String("export", "", "Export to file (mermaid.md, ascii.txt)")
-		service    = flag.String("service", "", "Filter by service")
-		region     = flag.String("region", "", "Filter by region")
-		title      = flag.String("title", "", "Custom diagram title")
-		help       = flag.Bool("help", false, "Show help")
+		depth       = flag.Int("depth", 2, "Depth for relationship traversal")
+		export      = flag.String("export", "", "Export to file (mermaid.md, ascii.txt)")
+		service     = flag.String("service", "", "Filter by service")
+		region      = flag.String("region", "", "Filter by region")
+		title       = flag.String("title", "", "Custom diagram title")
+		help        = flag.Bool("help", false, "Show help")
 	)
 	flag.Parse()
 
@@ -86,7 +86,7 @@ func main() {
 
 	// Launch interactive viewer
 	model := ui.NewDiagramModelWithOptions(graphLoader, options)
-	
+
 	program := tea.NewProgram(
 		model,
 		tea.WithAltScreen(),
@@ -100,7 +100,7 @@ func main() {
 
 func exportDiagram(graphLoader *db.GraphLoader, options renderer.DiagramOptions, filename string) error {
 	ctx := context.Background()
-	
+
 	// Create converter and generate data
 	converter := graph.NewGraphConverter(graphLoader)
 	data, err := converter.ConvertToGraphData(ctx, options)
@@ -109,7 +109,7 @@ func exportDiagram(graphLoader *db.GraphLoader, options renderer.DiagramOptions,
 	}
 
 	var content string
-	
+
 	// Determine export format based on filename extension
 	if strings.HasSuffix(filename, ".md") || strings.HasSuffix(filename, ".mmd") {
 		// Export as Mermaid
@@ -117,15 +117,15 @@ func exportDiagram(graphLoader *db.GraphLoader, options renderer.DiagramOptions,
 		if err != nil {
 			return fmt.Errorf("failed to generate Mermaid diagram: %w", err)
 		}
-		
+
 		// Wrap in markdown code block
 		content = "```mermaid\n" + content + "\n```\n"
-		
+
 	} else {
 		// Export as ASCII
 		asciiRenderer := renderer.NewASCIIRenderer()
 		asciiRenderer.SetDimensions(120, 80) // Set reasonable dimensions for export
-		
+
 		content, err = asciiRenderer.RenderASCII(data)
 		if err != nil {
 			return fmt.Errorf("failed to generate ASCII diagram: %w", err)

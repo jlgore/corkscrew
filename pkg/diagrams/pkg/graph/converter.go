@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
 	"github.com/jlgore/corkscrew/internal/db"
+	"github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
 )
 
 // GraphConverter converts DuckDB data to diagram format
@@ -41,19 +41,19 @@ func (gc *GraphConverter) ConvertToGraphData(ctx context.Context, options render
 func (gc *GraphConverter) convertResourceRelationships(ctx context.Context, options renderer.DiagramOptions) (*renderer.GraphData, error) {
 	var nodes []renderer.Node
 	var edges []renderer.Edge
-	
+
 	if options.ResourceID != "" {
 		// Get neighborhood around specific resource
 		depth := options.Depth
 		if depth <= 0 {
 			depth = 2
 		}
-		
+
 		neighborData, err := gc.graphLoader.GetResourceNeighborhood(ctx, options.ResourceID, depth)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get resource neighborhood: %w", err)
 		}
-		
+
 		// Convert to nodes
 		nodeMap := make(map[string]bool)
 		for _, data := range neighborData {
@@ -62,7 +62,7 @@ func (gc *GraphConverter) convertResourceRelationships(ctx context.Context, opti
 				continue
 			}
 			nodeMap[id] = true
-			
+
 			nodes = append(nodes, renderer.Node{
 				ID:    id,
 				Label: gc.formatNodeLabel(getString(data["name"]), getString(data["type"])),
@@ -72,18 +72,18 @@ func (gc *GraphConverter) convertResourceRelationships(ctx context.Context, opti
 				},
 			})
 		}
-		
+
 		// Get relationships for these nodes
 		edges, err = gc.getRelationshipsForNodes(ctx, nodeMap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relationships: %w", err)
 		}
-		
+
 	} else {
 		// Get all resources with filters
 		query := "SELECT id, type, name, region, arn FROM aws_resources WHERE 1=1"
 		args := []interface{}{}
-		
+
 		// Apply filters
 		if service, ok := options.Filters["service"]; ok {
 			query += " AND service = ?"
@@ -97,14 +97,14 @@ func (gc *GraphConverter) convertResourceRelationships(ctx context.Context, opti
 			query += " AND type = ?"
 			args = append(args, resourceType)
 		}
-		
+
 		query += " ORDER BY type, name LIMIT 50"
-		
+
 		resourceData, err := gc.graphLoader.Query(ctx, query, args...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query resources: %w", err)
 		}
-		
+
 		// Convert to nodes
 		nodeMap := make(map[string]bool)
 		for _, data := range resourceData {
@@ -113,7 +113,7 @@ func (gc *GraphConverter) convertResourceRelationships(ctx context.Context, opti
 				continue
 			}
 			nodeMap[id] = true
-			
+
 			nodes = append(nodes, renderer.Node{
 				ID:    id,
 				Label: gc.formatNodeLabel(getString(data["name"]), getString(data["type"])),
@@ -124,21 +124,21 @@ func (gc *GraphConverter) convertResourceRelationships(ctx context.Context, opti
 				},
 			})
 		}
-		
+
 		// Get relationships
 		edges, err = gc.getRelationshipsForNodes(ctx, nodeMap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relationships: %w", err)
 		}
 	}
-	
+
 	title := "Resource Relationships"
 	if options.Title != "" {
 		title = options.Title
 	} else if options.ResourceID != "" {
 		title = fmt.Sprintf("Relationships for %s", options.ResourceID)
 	}
-	
+
 	return &renderer.GraphData{
 		Nodes: nodes,
 		Edges: edges,
@@ -151,28 +151,28 @@ func (gc *GraphConverter) convertResourceDependencies(ctx context.Context, optio
 	if options.ResourceID == "" {
 		return nil, fmt.Errorf("resource ID required for dependency diagram")
 	}
-	
+
 	// Get dependencies (what this resource depends on)
 	deps, err := gc.graphLoader.GetResourceDependencies(ctx, options.ResourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependencies: %w", err)
 	}
-	
+
 	// Get dependents (what depends on this resource)
 	dependents, err := gc.graphLoader.GetResourceDependents(ctx, options.ResourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependents: %w", err)
 	}
-	
+
 	// Get the root resource info
 	rootData, err := gc.graphLoader.Query(ctx, "SELECT id, type, name FROM aws_resources WHERE id = ?", options.ResourceID)
 	if err != nil || len(rootData) == 0 {
 		return nil, fmt.Errorf("resource not found: %s", options.ResourceID)
 	}
-	
+
 	var nodes []renderer.Node
 	var edges []renderer.Edge
-	
+
 	// Add root node
 	root := rootData[0]
 	nodes = append(nodes, renderer.Node{
@@ -183,7 +183,7 @@ func (gc *GraphConverter) convertResourceDependencies(ctx context.Context, optio
 			"role": "root",
 		},
 	})
-	
+
 	// Add dependency nodes and edges
 	for _, dep := range deps {
 		targetID := getString(dep["target_id"])
@@ -195,7 +195,7 @@ func (gc *GraphConverter) convertResourceDependencies(ctx context.Context, optio
 				"role": "dependency",
 			},
 		})
-		
+
 		edges = append(edges, renderer.Edge{
 			From:  options.ResourceID,
 			To:    targetID,
@@ -203,7 +203,7 @@ func (gc *GraphConverter) convertResourceDependencies(ctx context.Context, optio
 			Type:  "depends_on",
 		})
 	}
-	
+
 	// Add dependent nodes and edges
 	for _, dependent := range dependents {
 		sourceID := getString(dependent["source_id"])
@@ -215,7 +215,7 @@ func (gc *GraphConverter) convertResourceDependencies(ctx context.Context, optio
 				"role": "dependent",
 			},
 		})
-		
+
 		edges = append(edges, renderer.Edge{
 			From:  sourceID,
 			To:    options.ResourceID,
@@ -223,12 +223,12 @@ func (gc *GraphConverter) convertResourceDependencies(ctx context.Context, optio
 			Type:  "depends_on",
 		})
 	}
-	
+
 	title := fmt.Sprintf("Dependencies for %s", options.ResourceID)
 	if options.Title != "" {
 		title = options.Title
 	}
-	
+
 	return &renderer.GraphData{
 		Nodes: nodes,
 		Edges: edges,
@@ -245,34 +245,34 @@ func (gc *GraphConverter) convertNetworkTopology(ctx context.Context, options re
 		WHERE type IN ('vpc', 'subnet', 'security-group', 'route-table', 'internet-gateway', 'nat-gateway', 'instance', 'load-balancer')
 	`
 	args := []interface{}{}
-	
+
 	if region, ok := options.Filters["region"]; ok {
 		query += " AND region = ?"
 		args = append(args, region)
 	}
-	
+
 	if vpc, ok := options.Filters["vpc"]; ok {
 		query += " AND (id = ? OR parent_id = ?)"
 		args = append(args, vpc, vpc)
 	}
-	
+
 	query += " ORDER BY type, name"
-	
+
 	resourceData, err := gc.graphLoader.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query network resources: %w", err)
 	}
-	
+
 	var nodes []renderer.Node
 	nodeMap := make(map[string]bool)
-	
+
 	for _, data := range resourceData {
 		id := getString(data["id"])
 		if id == "" || nodeMap[id] {
 			continue
 		}
 		nodeMap[id] = true
-		
+
 		nodes = append(nodes, renderer.Node{
 			ID:    id,
 			Label: gc.formatNodeLabel(getString(data["name"]), getString(data["type"])),
@@ -283,18 +283,18 @@ func (gc *GraphConverter) convertNetworkTopology(ctx context.Context, options re
 			},
 		})
 	}
-	
+
 	// Get relationships for network topology
 	edges, err := gc.getRelationshipsForNodes(ctx, nodeMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network relationships: %w", err)
 	}
-	
+
 	title := "Network Topology"
 	if options.Title != "" {
 		title = options.Title
 	}
-	
+
 	return &renderer.GraphData{
 		Nodes: nodes,
 		Edges: edges,
@@ -312,30 +312,30 @@ func (gc *GraphConverter) convertServiceMap(ctx context.Context, options rendere
 		WHERE service IS NOT NULL
 	`
 	args := []interface{}{}
-	
+
 	if service, ok := options.Filters["service"]; ok {
 		query += " AND service = ?"
 		args = append(args, service)
 	}
-	
+
 	query += " GROUP BY service, type ORDER BY service, count DESC"
-	
+
 	serviceData, err := gc.graphLoader.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query service data: %w", err)
 	}
-	
+
 	var nodes []renderer.Node
 	var edges []renderer.Edge
-	
+
 	serviceNodes := make(map[string]bool)
-	
+
 	for _, data := range serviceData {
 		service := getString(data["service"])
 		resourceType := getString(data["type"])
 		count := getInt(data["count"])
 		region := getString(data["sample_region"])
-		
+
 		// Create service node if not exists
 		serviceNodeID := fmt.Sprintf("service_%s", service)
 		if !serviceNodes[serviceNodeID] {
@@ -349,7 +349,7 @@ func (gc *GraphConverter) convertServiceMap(ctx context.Context, options rendere
 			})
 			serviceNodes[serviceNodeID] = true
 		}
-		
+
 		// Create resource type node
 		typeNodeID := fmt.Sprintf("%s_%s", service, resourceType)
 		nodes = append(nodes, renderer.Node{
@@ -357,13 +357,13 @@ func (gc *GraphConverter) convertServiceMap(ctx context.Context, options rendere
 			Label: fmt.Sprintf("%s (%d)", resourceType, count),
 			Type:  resourceType,
 			Properties: map[string]string{
-				"service":      service,
-				"count":        fmt.Sprintf("%d", count),
-				"region":       region,
+				"service":       service,
+				"count":         fmt.Sprintf("%d", count),
+				"region":        region,
 				"resource_type": resourceType,
 			},
 		})
-		
+
 		// Create edge from service to resource type
 		edges = append(edges, renderer.Edge{
 			From:  serviceNodeID,
@@ -372,12 +372,12 @@ func (gc *GraphConverter) convertServiceMap(ctx context.Context, options rendere
 			Type:  "contains",
 		})
 	}
-	
+
 	title := "Service Map"
 	if options.Title != "" {
 		title = options.Title
 	}
-	
+
 	return &renderer.GraphData{
 		Nodes: nodes,
 		Edges: edges,
@@ -390,38 +390,38 @@ func (gc *GraphConverter) getRelationshipsForNodes(ctx context.Context, nodeMap 
 	if len(nodeMap) == 0 {
 		return []renderer.Edge{}, nil
 	}
-	
+
 	// Build IN clause for node IDs
 	nodeIDs := make([]string, 0, len(nodeMap))
 	for nodeID := range nodeMap {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
-	
+
 	placeholders := strings.Repeat("?,", len(nodeIDs))
 	placeholders = placeholders[:len(placeholders)-1] // Remove trailing comma
-	
+
 	query := fmt.Sprintf(`
 		SELECT from_id, to_id, relationship_type, properties
 		FROM aws_relationships
 		WHERE from_id IN (%s) AND to_id IN (%s)
 	`, placeholders, placeholders)
-	
+
 	args := make([]interface{}, len(nodeIDs)*2)
 	for i, nodeID := range nodeIDs {
 		args[i] = nodeID
 		args[i+len(nodeIDs)] = nodeID
 	}
-	
+
 	relationshipData, err := gc.graphLoader.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var edges []renderer.Edge
 	for _, data := range relationshipData {
 		fromID := getString(data["from_id"])
 		toID := getString(data["to_id"])
-		
+
 		// Only include if both nodes are in our set
 		if nodeMap[fromID] && nodeMap[toID] {
 			edges = append(edges, renderer.Edge{
@@ -435,7 +435,7 @@ func (gc *GraphConverter) getRelationshipsForNodes(ctx context.Context, nodeMap 
 			})
 		}
 	}
-	
+
 	return edges, nil
 }
 
@@ -450,12 +450,12 @@ func (gc *GraphConverter) formatNodeLabel(name, resourceType string) string {
 	if name == "" {
 		return resourceType
 	}
-	
+
 	// Truncate long names
 	if len(name) > 30 {
 		name = name[:27] + "..."
 	}
-	
+
 	return fmt.Sprintf("%s\n(%s)", name, resourceType)
 }
 
