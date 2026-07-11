@@ -1,3 +1,4 @@
 package proto
 
+// Generated Go protobuf output is intentionally committed only in internal/proto.
 //go:generate protoc --proto_path=../../proto --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative scanner.proto api.proto
