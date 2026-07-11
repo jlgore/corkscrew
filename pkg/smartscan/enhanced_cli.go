@@ -157,7 +157,7 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 
 	// Store results to database if database path is specified
     if options.DatabasePath != "" {
-        if err := storeResultsToDatabase(results, options.DatabasePath, options.DBProviderTableOverride, options.QuackToken); err != nil {
+        if err := storeResultsToDatabase(ctx, results, options.DatabasePath, options.DBProviderTableOverride, options.QuackToken); err != nil {
             fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
         } else {
             fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
@@ -166,13 +166,21 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
         // Try to store to config database or default location
         dbPath := getDefaultDatabasePath(config)
         if dbPath != "" {
-            if err := storeResultsToDatabase(results, dbPath, options.DBProviderTableOverride, options.QuackToken); err != nil {
+            if err := storeResultsToDatabase(ctx, results, dbPath, options.DBProviderTableOverride, options.QuackToken); err != nil {
                 fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
             } else {
                 fmt.Printf("💾 Results stored to database: %s\n", dbPath)
             }
         }
     }
+
+	if options.SaveToFile {
+		filename, err := saveResultsToTimestampedFile(results, options.Provider)
+		if err != nil {
+			return fmt.Errorf("failed to save results: %w", err)
+		}
+		fmt.Printf("💾 Results saved to file: %s\n", filename)
+	}
 
 	// Print results based on output format
 	switch options.OutputFormat {
@@ -370,8 +378,16 @@ func GenerateTimestampedFilename(provider string) string {
 	return fmt.Sprintf("enhanced-scan-%s-%s.json", provider, timestamp)
 }
 
+func saveResultsToTimestampedFile(results *AggregatedResults, provider string) (string, error) {
+	filename := GenerateTimestampedFilename(provider)
+	if err := SaveResultsToFile(results, filename); err != nil {
+		return "", err
+	}
+	return filename, nil
+}
+
 // storeResultsToDatabase stores scan results to the unified database
-func storeResultsToDatabase(results *AggregatedResults, dbPath string, overrideTable string, quackToken string) error {
+func storeResultsToDatabase(ctx context.Context, results *AggregatedResults, dbPath string, overrideTable string, quackToken string) error {
     // Initialize the unified database with custom path. For a remote quack:
     // target, pass the auth token through to the connection.
     var opts []db.Option
@@ -384,229 +400,9 @@ func storeResultsToDatabase(results *AggregatedResults, dbPath string, overrideT
     }
     defer dbConfig.DB.Close()
 
-    // De-duplicate by (table,id) to avoid duplicate inserts
-    seen := make(map[string]struct{})
-    for _, resource := range results.AllResources {
-        // Compute target table for dedupe key
-        table := tableOverrideFromResource(resource)
-        if strings.TrimSpace(overrideTable) != "" {
-            table = strings.TrimSpace(overrideTable)
-        }
-        if table == "" {
-            table = tableForProvider(resource.Provider)
-        }
-        if table == "" {
-            table = "aws_resources"
-        }
-        key := table + "|" + resource.Id
-        if _, ok := seen[key]; ok {
-            continue
-        }
-        seen[key] = struct{}{}
-
-        if err := storeResourceToDatabase(dbConfig, resource, overrideTable); err != nil {
-            return fmt.Errorf("failed to store resource %s: %w", resource.Id, err)
-        }
-        if len(resource.Relationships) > 0 {
-            if err := storeRelationshipsToDatabase(dbConfig, resource); err != nil {
-                return fmt.Errorf("failed to store relationships for %s: %w", resource.Id, err)
-            }
-        }
-    }
-
-    return nil
-}
-
-// storeResourceToDatabase stores a single resource to the database
-func storeResourceToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Resource, overrideTable string) error {
-    // Determine target table (CLI override > attributes override > provider default)
-    table := strings.TrimSpace(overrideTable)
-    if table == "" {
-        table = tableOverrideFromResource(resource)
-    }
-    if table == "" {
-        table = tableForProvider(resource.Provider)
-    }
-    if table == "" {
-        table = "aws_resources"
-    }
-
-    // Convert tags map to JSON string (nullable)
-    tagsJSON := ""
-    if len(resource.Tags) > 0 {
-        if b, err := json.Marshal(resource.Tags); err == nil {
-            tagsJSON = string(b)
-        }
-    }
-    // Prepare JSON parameters (use NULL when empty to avoid conversion errors)
-    var tagsParam interface{}
-    var attrsParam interface{}
-    var rawParam interface{}
-    if strings.TrimSpace(tagsJSON) != "" {
-        tagsParam = tagsJSON
-    } else {
-        tagsParam = nil
-    }
-    if strings.TrimSpace(resource.Attributes) != "" {
-        attrsParam = resource.Attributes
-    } else {
-        attrsParam = nil
-    }
-    if strings.TrimSpace(resource.RawData) != "" {
-        rawParam = resource.RawData
-    } else {
-        rawParam = nil
-    }
-
-    // The arn column has a UNIQUE constraint in the resource tables.
-    // Some Cloud Control resource types (and a few SDK ones too) don't
-    // populate an ARN — in that case every row would share arn="" and
-    // collide. Fall back to the resource Id, which is already unique.
-    arnValue := resource.Arn
-    if strings.TrimSpace(arnValue) == "" {
-        arnValue = resource.Id
-    }
-
-    // Upsert via DELETE + INSERT
-    tx, txErr := dbConfig.DB.Begin()
-    if txErr != nil {
-        return fmt.Errorf("begin tx: %w", txErr)
-    }
-    if _, delErr := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), resource.Id); delErr != nil {
-        _ = tx.Rollback()
-        return fmt.Errorf("delete existing: %w", delErr)
-    }
-    insertStmt := fmt.Sprintf(`
-        INSERT INTO %s (
-            id, arn, name, type, service, region, account_id,
-            tags, attributes, raw_data, state,
-            created_at, modified_at, scanned_at
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?,
-            try_cast(? AS JSON), try_cast(? AS JSON), try_cast(? AS JSON), ?,
-            ?, ?, CURRENT_TIMESTAMP
-        )
-    `, table)
-    if _, insErr := tx.Exec(insertStmt,
-        resource.Id,
-        arnValue,
-        resource.Name,
-        resource.Type,
-        resource.Service,
-        resource.Region,
-        resource.AccountId,
-        tagsParam,
-        attrsParam,
-        rawParam,
-        "active",
-        resource.DiscoveredAt.AsTime(),
-        resource.DiscoveredAt.AsTime(),
-    ); insErr != nil {
-        _ = tx.Rollback()
-        return fmt.Errorf("insert: %w", insErr)
-    }
-    if commitErr := tx.Commit(); commitErr != nil {
-        return fmt.Errorf("commit: %w", commitErr)
-    }
-    return nil
-}
-
-func tableForProvider(provider string) string {
-    switch strings.ToLower(provider) {
-    case "aws":
-        return "aws_resources"
-    case "azure":
-        return "azure_resources"
-    case "kubernetes":
-        return "kubernetes_resources"
-    case "gcp":
-        return "gcp_resources"
-    default:
-        return ""
-    }
-}
-
-// storeRelationshipsToDatabase persists resource relationships into cloud_relationships
-func storeRelationshipsToDatabase(dbConfig *db.UnifiedDatabaseConfig, resource *pb.Resource) error {
-    if len(resource.Relationships) == 0 {
-        return nil
-    }
-    tx, err := dbConfig.DB.Begin()
-    if err != nil {
-        return fmt.Errorf("begin tx: %w", err)
-    }
-    // De-duplicate relationships per resource to avoid PK conflicts
-    seen := make(map[string]struct{})
-    for _, rel := range resource.Relationships {
-        if rel == nil || rel.TargetId == "" || rel.RelationshipType == "" {
-            continue
-        }
-        key := resource.Id + "|" + rel.TargetId + "|" + rel.RelationshipType
-        if _, ok := seen[key]; ok {
-            continue
-        }
-        seen[key] = struct{}{}
-        // Infer target type from target ID if possible: cluster/namespace/Kind/name
-        toType := ""
-        parts := strings.Split(rel.TargetId, "/")
-        if len(parts) >= 3 {
-            toType = parts[2]
-        }
-        if _, insErr := tx.Exec(
-            `INSERT INTO cloud_relationships (
-                from_id, to_id, relationship_type, provider,
-                relationship_subtype, properties,
-                from_resource_type, to_resource_type, direction
-            ) VALUES (
-                ?, ?, ?, ?, ?, try_cast(? AS JSON), ?, ?, ?
-            )`,
-            resource.Id, rel.TargetId, rel.RelationshipType, strings.ToLower(resource.Provider),
-            "", jsonOrNull(rel.Properties), resource.Type, toType, "outbound",
-        ); insErr != nil {
-            _ = tx.Rollback()
-            return fmt.Errorf("insert rel: %w", insErr)
-        }
-    }
-    if err := tx.Commit(); err != nil {
-        return fmt.Errorf("commit rels: %w", err)
-    }
-    return nil
-}
-
-func jsonOrNull(m map[string]string) interface{} {
-    if len(m) == 0 {
-        return nil
-    }
-    b, err := json.Marshal(m)
-    if err != nil {
-        return nil
-    }
-    return string(b)
-}
-
-func coalesceStr(v string, d string) string {
-    if strings.TrimSpace(v) == "" {
-        return d
-    }
-    return v
-}
-
-// tableOverrideFromResource allows a provider to choose a custom table name by
-// embedding a special key in the Attributes JSON: {"_table": "my_table"}
-func tableOverrideFromResource(resource *pb.Resource) string {
-    if strings.TrimSpace(resource.Attributes) == "" {
-        return ""
-    }
-    var m map[string]interface{}
-    if err := json.Unmarshal([]byte(resource.Attributes), &m); err != nil {
-        return ""
-    }
-    if v, ok := m["_table"]; ok {
-        if s, ok2 := v.(string); ok2 && s != "" {
-            return s
-        }
-    }
-    return ""
+    return db.NewGraphStore(dbConfig.DB).StoreScanResources(ctx, results.AllResources, db.StoreScanResourcesOptions{
+        ProviderTableOverride: overrideTable,
+    })
 }
 
 // getDefaultDatabasePath gets database path from config or returns default

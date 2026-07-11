@@ -124,6 +124,11 @@ func (c *UnifiedDatabaseConfig) createUnifiedTables() error {
 		return fmt.Errorf("failed to create Kubernetes tables: %w", err)
 	}
 
+	// Create GCP tables
+	if err := c.createGCPTables(); err != nil {
+		return fmt.Errorf("failed to create GCP tables: %w", err)
+	}
+
 	// Create unified relationships table
 	if err := c.createUnifiedRelationshipsTable(); err != nil {
 		return fmt.Errorf("failed to create relationships table: %w", err)
@@ -323,6 +328,49 @@ CREATE TABLE IF NOT EXISTS azure_resources (
 		"CREATE INDEX IF NOT EXISTS idx_azure_parent_id ON azure_resources(parent_id)",
 		"CREATE INDEX IF NOT EXISTS idx_azure_provisioning_state ON azure_resources(provisioning_state)",
 		"CREATE INDEX IF NOT EXISTS idx_azure_scanned_at ON azure_resources(scanned_at)",
+	}
+
+	for _, idx := range indexes {
+		if _, err := c.DB.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// createGCPTables creates the GCP resources table
+func (c *UnifiedDatabaseConfig) createGCPTables() error {
+	gcpTableSQL := `
+CREATE TABLE IF NOT EXISTS gcp_resources (
+    id VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    type VARCHAR NOT NULL,
+    service VARCHAR NOT NULL,
+    project_id VARCHAR NOT NULL,
+    location VARCHAR,
+    org_id VARCHAR,
+    folder_id VARCHAR,
+    tags JSON,
+    labels JSON,
+    raw_data JSON,
+    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    scan_id VARCHAR
+);`
+
+	if _, err := c.DB.Exec(gcpTableSQL); err != nil {
+		return err
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_type ON gcp_resources(type)",
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_service ON gcp_resources(service)",
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_project ON gcp_resources(project_id)",
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_location ON gcp_resources(location)",
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_scan ON gcp_resources(scan_id)",
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_org ON gcp_resources(org_id)",
+		"CREATE INDEX IF NOT EXISTS idx_gcp_resources_folder ON gcp_resources(folder_id)",
 	}
 
 	for _, idx := range indexes {
