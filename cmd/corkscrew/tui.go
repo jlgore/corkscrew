@@ -57,6 +57,12 @@ func runTUIMode(args []string) error {
 		app.StartWithResultsView()
 	case "config":
 		app.StartWithConfigView()
+	case "diagrams":
+		app.StartWithView(tui.ViewDiagrams)
+	case "query":
+		app.StartWithView(tui.ViewQuery)
+	case "compliance":
+		app.StartWithView(tui.ViewCompliance)
 	case "main":
 		fallthrough
 	default:

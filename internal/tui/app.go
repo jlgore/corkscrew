@@ -388,7 +388,7 @@ func (app *CorkscrewApp) loadInitialData() tea.Cmd {
 		// Load configuration
 		func() tea.Msg {
 			// config, err := config.LoadConfig("./corkscrew.yaml")
-			return ConfigLoadedMsg{Config: nil, Error: nil}
+			return ConfigLoadedMsg{Config: app.config, Error: nil}
 		},
 		// Connect to database
 		func() tea.Msg {

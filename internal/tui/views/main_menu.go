@@ -1,8 +1,14 @@
 package views
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"io"
+	"reflect"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,6 +60,19 @@ type SystemStatus struct {
 	LastScanTime        string
 	TotalResources      int
 	HasErrors           bool
+}
+
+type databaseQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+}
+
+var inventoryResourceTables = []string{
+	"aws_resources",
+	"azure_resources",
+	"gcp_resources",
+	"kubernetes_resources",
+	"cloudflare_resources",
+	"github_resources",
 }
 
 // Implement list.Item interface for MenuItem
@@ -151,7 +170,7 @@ func NewMainMenuModel() *MainMenuModel {
 			action:      "query",
 			icon:        styles.IconQuery,
 			enabled:     true,
-			shortcut:    "q",
+			shortcut:    "b",
 		},
 		MenuItem{
 			title:       "Diagrams",
@@ -227,6 +246,8 @@ func (m *MainMenuModel) Update(msg tea.Msg) (BaseView, tea.Cmd) {
 		case "p":
 			return m, m.handleMenuAction("compliance")
 		case "q":
+			return m, nil
+		case "b":
 			return m, m.handleMenuAction("query")
 		case "d":
 			return m, m.handleMenuAction("diagrams")
@@ -410,13 +431,21 @@ func (m *MainMenuModel) handleMenuAction(action string) tea.Cmd {
 // loadSystemStatus loads current system status
 func (m *MainMenuModel) loadSystemStatus() tea.Cmd {
 	return func() tea.Msg {
-		// In a real implementation, this would query the database
-		// and configuration to get current status
+		totalResources, dbOK := m.countStoredResources()
+		if totalResources == 0 {
+			totalResources = m.systemStatus.TotalResources
+		}
+
+		lastScanTime := m.latestScanTime()
+		if lastScanTime == "" {
+			lastScanTime = m.systemStatus.LastScanTime
+		}
+
 		status := SystemStatus{
-			DatabaseConnected:   m.database != nil,
+			DatabaseConnected:   dbOK,
 			ProvidersConfigured: m.countConfiguredProviders(m.config),
-			LastScanTime:        m.systemStatus.LastScanTime,
-			TotalResources:      m.systemStatus.TotalResources,
+			LastScanTime:        lastScanTime,
+			TotalResources:      totalResources,
 			HasErrors:           false,
 		}
 		return SystemStatusLoadedMsg{Status: status}
@@ -426,27 +455,261 @@ func (m *MainMenuModel) loadSystemStatus() tea.Cmd {
 // loadRecentScans loads recent scan information
 func (m *MainMenuModel) loadRecentScans() tea.Cmd {
 	return func() tea.Msg {
-		// In a real implementation, this would query the database
-		scans := []ScanInfo{
-			{
-				ID:        "scan-1",
-				Timestamp: "2 hours ago",
-				Resources: 1234,
-				Providers: []string{"aws", "azure"},
-				Duration:  "5m 23s",
-			},
-		}
-		return RecentScansLoadedMsg{Scans: scans}
+		return RecentScansLoadedMsg{Scans: m.queryRecentScans()}
 	}
 }
 
 // countConfiguredProviders counts configured providers
 func (m *MainMenuModel) countConfiguredProviders(config interface{}) int {
-	if config == nil {
-		return 0
+	return len(configuredProviderNames(config, true))
+}
+
+func (m *MainMenuModel) countStoredResources() (int, bool) {
+	queryer, ok := m.database.(databaseQueryer)
+	if !ok || queryer == nil {
+		return 0, false
 	}
-	// This would inspect the actual config structure
-	return 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	total := 0
+	foundAnyTable := false
+	for _, table := range inventoryResourceTables {
+		count, err := countRows(ctx, queryer, table)
+		if err != nil {
+			continue
+		}
+		foundAnyTable = true
+		total += count
+	}
+	return total, foundAnyTable
+}
+
+func (m *MainMenuModel) latestScanTime() string {
+	scans := m.queryRecentScans()
+	if len(scans) == 0 {
+		return "Never"
+	}
+	return scans[0].Timestamp
+}
+
+func (m *MainMenuModel) queryRecentScans() []ScanInfo {
+	queryer, ok := m.database.(databaseQueryer)
+	if !ok || queryer == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	columns, err := queryColumns(ctx, queryer, "scan_metadata")
+	if err != nil {
+		return nil
+	}
+
+	if columns["scan_start_time"] {
+		return queryUnifiedRecentScans(ctx, queryer)
+	}
+	if columns["scan_time"] {
+		return queryLegacyRecentScans(ctx, queryer)
+	}
+	return nil
+}
+
+func countRows(ctx context.Context, queryer databaseQueryer, table string) (int, error) {
+	rows, err := queryer.QueryContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", table))
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var count int
+	if rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			return 0, err
+		}
+	}
+	return count, rows.Err()
+}
+
+func queryColumns(ctx context.Context, queryer databaseQueryer, table string) (map[string]bool, error) {
+	rows, err := queryer.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s LIMIT 0", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]bool, len(columns))
+	for _, column := range columns {
+		result[column] = true
+	}
+	return result, nil
+}
+
+func queryUnifiedRecentScans(ctx context.Context, queryer databaseQueryer) []ScanInfo {
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT id, provider, scan_start_time, total_resources, duration_ms
+		FROM scan_metadata
+		ORDER BY scan_start_time DESC
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var scans []ScanInfo
+	for rows.Next() {
+		var id, provider string
+		var scanTime time.Time
+		var resources int
+		var duration sql.NullInt64
+		if err := rows.Scan(&id, &provider, &scanTime, &resources, &duration); err != nil {
+			continue
+		}
+		scans = append(scans, ScanInfo{
+			ID:        id,
+			Timestamp: formatScanTime(scanTime),
+			Resources: resources,
+			Providers: splitProviderList(provider),
+			Duration:  formatDurationMillis(duration),
+		})
+	}
+	return scans
+}
+
+func queryLegacyRecentScans(ctx context.Context, queryer databaseQueryer) []ScanInfo {
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT id, service, region, scan_time, total_resources, duration_ms
+		FROM scan_metadata
+		ORDER BY scan_time DESC
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var scans []ScanInfo
+	for rows.Next() {
+		var id, service, region string
+		var scanTime time.Time
+		var resources int
+		var duration sql.NullInt64
+		if err := rows.Scan(&id, &service, &region, &scanTime, &resources, &duration); err != nil {
+			continue
+		}
+		label := strings.Trim(strings.Join([]string{service, region}, " "), " ")
+		scans = append(scans, ScanInfo{
+			ID:        id,
+			Timestamp: formatScanTime(scanTime),
+			Resources: resources,
+			Providers: splitProviderList(label),
+			Duration:  formatDurationMillis(duration),
+		})
+	}
+	return scans
+}
+
+func formatScanTime(scanTime time.Time) string {
+	if scanTime.IsZero() {
+		return "Unknown"
+	}
+	return scanTime.Format("2006-01-02 15:04")
+}
+
+func formatDurationMillis(duration sql.NullInt64) string {
+	if !duration.Valid || duration.Int64 <= 0 {
+		return ""
+	}
+	return (time.Duration(duration.Int64) * time.Millisecond).Round(time.Millisecond).String()
+}
+
+func splitProviderList(provider string) []string {
+	fields := strings.FieldsFunc(provider, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '[' || r == ']'
+	})
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.Trim(field, `"`)
+		if field != "" {
+			result = append(result, field)
+		}
+	}
+	return result
+}
+
+func configuredProviderNames(config interface{}, enabledOnly bool) []string {
+	providers := providerMapValue(reflect.ValueOf(config))
+	if !providers.IsValid() || providers.Kind() != reflect.Map {
+		return nil
+	}
+
+	names := make([]string, 0, providers.Len())
+	for _, key := range providers.MapKeys() {
+		if key.Kind() != reflect.String {
+			continue
+		}
+		value := providers.MapIndex(key)
+		if enabledOnly && !providerEnabled(value) {
+			continue
+		}
+		names = append(names, key.String())
+	}
+	sort.Strings(names)
+	return names
+}
+
+func providerMapValue(value reflect.Value) reflect.Value {
+	if !value.IsValid() {
+		return reflect.Value{}
+	}
+	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return reflect.Value{}
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return reflect.Value{}
+	}
+	if providers := value.FieldByName("Providers"); providers.IsValid() {
+		return providers
+	}
+	if embedded := value.FieldByName("CorkscrewConfig"); embedded.IsValid() {
+		return providerMapValue(embedded)
+	}
+	return reflect.Value{}
+}
+
+func providerEnabled(value reflect.Value) bool {
+	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return false
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return false
+	}
+	enabled := value.FieldByName("Enabled")
+	return enabled.IsValid() && enabled.Kind() == reflect.Bool && enabled.Bool()
+}
+
+// SetDatabase updates the database dependency.
+func (m *MainMenuModel) SetDatabase(database interface{}) {
+	m.database = database
+}
+
+// SetConfig updates the config dependency.
+func (m *MainMenuModel) SetConfig(config interface{}) {
+	m.config = config
 }
 
 // Interface implementations
@@ -464,7 +727,7 @@ func (m *MainMenuModel) FullHelp() [][]string {
 		{"↑/k", "up", "↓/j", "down"},
 		{"enter/space", "select", "esc", "back"},
 		{"s", "quick scan", "c", "configure"},
-		{"r", "results", "q", "query"},
+		{"r", "results", "b", "query"},
 		{"?", "help", "ctrl+c", "quit"},
 	}
 }

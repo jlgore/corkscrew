@@ -195,7 +195,7 @@ func (r *ViewRouter) createView(viewType ViewType) views.BaseView {
 	case ViewScan:
 		return r.createScanView()
 	case ViewResults:
-		return r.createResultsView()
+		return views.NewResultsViewModel()
 	case ViewConfig:
 		return r.createConfigView()
 	case ViewDiagrams:
@@ -210,35 +210,83 @@ func (r *ViewRouter) createView(viewType ViewType) views.BaseView {
 	}
 }
 
-// Placeholder view creation methods (to be implemented)
 func (r *ViewRouter) createScanView() views.BaseView {
-	// TODO: Implement scan view
-	return nil
-}
-
-func (r *ViewRouter) createResultsView() views.BaseView {
-	// TODO: Implement results view
-	return nil
+	return views.NewSummaryViewModel(ViewScan, "Scan", "Scan execution workspace", []views.SummarySection{
+		{
+			Title: "Current scan",
+			Items: []string{
+				"No active scan",
+				"Configured provider and service selection will appear here",
+			},
+		},
+		{
+			Title: "Status",
+			Items: []string{
+				"Progress updates are shown in the status bar",
+				"Completed scans can be opened from Results",
+			},
+		},
+	})
 }
 
 func (r *ViewRouter) createConfigView() views.BaseView {
-	// TODO: Implement config view
-	return nil
+	return views.NewSummaryViewModel(ViewConfig, "Configuration", "Provider, region, and service settings", []views.SummarySection{
+		{
+			Title: "Providers",
+			Items: []string{
+				"Configuration file status is shown in the main menu",
+				"Provider auth and service defaults will be edited here",
+			},
+		},
+		{
+			Title: "Validation",
+			Items: []string{
+				"Config validation messages will appear in this workspace",
+			},
+		},
+	})
 }
 
 func (r *ViewRouter) createDiagramsView() views.BaseView {
-	// TODO: Implement diagrams view wrapper
-	return nil
+	return views.NewSummaryViewModel(ViewDiagrams, "Diagrams", "Architecture diagram workspace", []views.SummarySection{
+		{
+			Title: "Diagram source",
+			Items: []string{
+				"No graph loaded",
+				"ASCII and Mermaid diagram modes will appear here",
+			},
+		},
+	})
 }
 
 func (r *ViewRouter) createQueryView() views.BaseView {
-	// TODO: Implement query view
-	return nil
+	return views.NewSummaryViewModel(ViewQuery, "Query", "SQL query workspace", []views.SummarySection{
+		{
+			Title: "Editor",
+			Items: []string{
+				"No query loaded",
+				"Saved queries and parameter inputs will appear here",
+			},
+		},
+		{
+			Title: "Results",
+			Items: []string{
+				"Query output tables will render below the editor",
+			},
+		},
+	})
 }
 
 func (r *ViewRouter) createComplianceView() views.BaseView {
-	// TODO: Implement compliance view
-	return nil
+	return views.NewSummaryViewModel(ViewCompliance, "Compliance", "Compliance pack execution workspace", []views.SummarySection{
+		{
+			Title: "Packs",
+			Items: []string{
+				"No compliance pack selected",
+				"Pack parameters and run results will appear here",
+			},
+		},
+	})
 }
 
 // injectDependencies injects dependencies into a view
@@ -249,13 +297,15 @@ func (r *ViewRouter) injectDependencies(view views.BaseView) {
 
 	switch v := view.(type) {
 	case *views.MainMenuModel:
-		// Inject database and config into main menu
 		if r.database != nil {
-			// v.SetDatabase(r.database)
-			_ = v // Avoid unused variable error
+			v.SetDatabase(r.database)
 		}
 		if r.config != nil {
-			// v.SetConfig(r.config)
+			v.SetConfig(r.config)
+		}
+	case *views.ResultsViewModel:
+		if r.database != nil {
+			v.SetDatabase(r.database)
 		}
 	default:
 		// Handle other view types as they're implemented
@@ -276,7 +326,9 @@ func (r *ViewRouter) handleViewData(viewType ViewType, data interface{}) tea.Cmd
 	case ViewResults:
 		// Handle results view data (e.g., "correlate" for correlation mode)
 		if mode, ok := data.(string); ok && mode == "correlate" {
-			// Set results view to correlation mode
+			if resultsView, ok := r.views[ViewResults].(*views.ResultsViewModel); ok {
+				resultsView.SetMode(mode)
+			}
 		}
 	case ViewConfig:
 		// Handle config view data (e.g., "settings" for settings mode)
@@ -290,11 +342,8 @@ func (r *ViewRouter) handleViewData(viewType ViewType, data interface{}) tea.Cmd
 // IsViewAvailable checks if a view type is available/implemented
 func (r *ViewRouter) IsViewAvailable(viewType ViewType) bool {
 	switch viewType {
-	case ViewMain:
+	case ViewMain, ViewScan, ViewResults, ViewConfig, ViewDiagrams, ViewQuery, ViewCompliance:
 		return true
-	case ViewScan, ViewResults, ViewConfig, ViewDiagrams, ViewQuery, ViewCompliance:
-		// These will be implemented in future phases
-		return false
 	default:
 		return false
 	}
@@ -303,7 +352,15 @@ func (r *ViewRouter) IsViewAvailable(viewType ViewType) bool {
 // GetAvailableViews returns a list of available view types
 func (r *ViewRouter) GetAvailableViews() []ViewType {
 	var available []ViewType
-	for viewType := ViewMain; viewType <= ViewCompliance; viewType++ {
+	for _, viewType := range []ViewType{
+		ViewMain,
+		ViewScan,
+		ViewResults,
+		ViewConfig,
+		ViewDiagrams,
+		ViewCompliance,
+		ViewQuery,
+	} {
 		if r.IsViewAvailable(viewType) {
 			available = append(available, viewType)
 		}
