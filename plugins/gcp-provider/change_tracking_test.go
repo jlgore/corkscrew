@@ -364,6 +364,37 @@ func TestDuckDBChangeStorage_Baselines(t *testing.T) {
 	})
 }
 
+func TestNewGCPChangeStorageUsesSharedStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database tests in short mode")
+	}
+
+	storage, err := NewGCPChangeStorage(":memory:")
+	require.NoError(t, err)
+	defer storage.Close()
+
+	change := &ChangeEvent{
+		ID:           "legacy-constructor-change",
+		Provider:     "gcp",
+		ResourceID:   "test-resource",
+		ResourceType: "Instance",
+		Service:      "compute",
+		Project:      "test-project",
+		ChangeType:   ChangeTypeUpdate,
+		Severity:     SeverityLow,
+		Timestamp:    time.Now().Truncate(time.Second),
+		DetectedAt:   time.Now().Truncate(time.Second),
+	}
+
+	require.NoError(t, storage.StoreChange(change))
+
+	retrieved, err := storage.GetChange(change.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retrieved)
+	assert.Equal(t, change.ID, retrieved.ID)
+	assert.Equal(t, change.Project, retrieved.Project)
+}
+
 // Test Change Analytics
 
 func TestChangeAnalytics_BasicStats(t *testing.T) {

@@ -15,7 +15,7 @@ type DuckDBChangeStorage struct {
 
 // NewDuckDBChangeStorage creates a new DuckDB-based change storage.
 func NewDuckDBChangeStorage(dbPath string) (*DuckDBChangeStorage, error) {
-	store, err := changestore.NewDuckDBStore(dbPath, "change_tracking.db", "GCP")
+	store, err := changestore.NewDuckDBStore(dbPath, "gcp_change_tracking.db", "GCP")
 	if err != nil {
 		return nil, err
 	}
