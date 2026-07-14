@@ -5,11 +5,27 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/jlgore/corkscrew/internal/secrets"
 )
 
 // In-memory store for testing.
 type memStore struct {
 	data map[string]*OAuthProfile
+}
+
+type fakeSecretReader struct {
+	secret map[string]string
+	err    error
+	ref    secrets.Reference
+}
+
+func (f *fakeSecretReader) ReadSecret(_ context.Context, ref secrets.Reference) (map[string]string, error) {
+	f.ref = ref
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.secret, nil
 }
 
 func newMemStore() *memStore {
@@ -151,8 +167,8 @@ func TestResolveAutoFailsWhenNothingConfigured(t *testing.T) {
 
 func TestResolveValidationFailsForBadToken(t *testing.T) {
 	resolver := &DefaultAuthResolver{
-		Store:    newMemStore(),
-		Validate: true,
+		Store:     newMemStore(),
+		Validate:  true,
 		Validator: &badValidator{},
 	}
 	// No credentials anywhere
@@ -178,6 +194,103 @@ func TestResolveValidationSucceeds(t *testing.T) {
 	}
 	if auth.Method != AuthMethodAPIToken {
 		t.Fatalf("expected api_token, got %s", auth.Method)
+	}
+}
+
+func TestResolveSecretAPIToken(t *testing.T) {
+	cfg, err := LoadConfig(map[string]string{
+		"auth.secret.address": "https://vault.example.com",
+		"auth.secret.mount":   "secret",
+		"auth.secret.path":    "cloudflare/prod",
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	reader := &fakeSecretReader{secret: map[string]string{"api_token": "vault-cf-token"}}
+	resolver := &DefaultAuthResolver{Store: newMemStore(), SecretReader: reader}
+	auth, err := resolver.Resolve(context.Background(), ResolveAuthRequest{Config: cfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if auth.Method != AuthMethodAPIToken || auth.AccessToken != "vault-cf-token" {
+		t.Fatalf("unexpected auth: %#v", auth)
+	}
+	if auth.Source != "secret:vault:secret/cloudflare/prod" {
+		t.Fatalf("source = %q, want vault secret source", auth.Source)
+	}
+	if reader.ref.Mount != "secret" || reader.ref.Path != "cloudflare/prod" {
+		t.Fatalf("unexpected vault reference: %#v", reader.ref)
+	}
+}
+
+func TestResolveSecretAPIKeyFromMethodField(t *testing.T) {
+	cfg, err := LoadConfig(map[string]string{
+		"auth.secret.mount": "secret",
+		"auth.secret.path":  "cloudflare/prod",
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	reader := &fakeSecretReader{secret: map[string]string{
+		"method":  "api_key",
+		"api_key": "key",
+		"email":   "user@example.com",
+	}}
+	resolver := &DefaultAuthResolver{Store: newMemStore(), SecretReader: reader}
+	auth, err := resolver.Resolve(context.Background(), ResolveAuthRequest{Config: cfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if auth.Method != AuthMethodAPIKey || auth.APIKey != "key" || auth.Email != "user@example.com" {
+		t.Fatalf("unexpected auth: %#v", auth)
+	}
+}
+
+func TestResolveSecretFailureDoesNotFallbackByDefault(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_TOKEN", "fallback-token")
+	t.Setenv("CLOUDFLARE_API_KEY", "")
+	t.Setenv("CLOUDFLARE_EMAIL", "")
+
+	cfg, err := LoadConfig(map[string]string{
+		"auth.secret.mount": "secret",
+		"auth.secret.path":  "cloudflare/prod",
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	reader := &fakeSecretReader{err: errors.New("vault unavailable")}
+	resolver := &DefaultAuthResolver{Store: newMemStore(), SecretReader: reader, AllowFallback: true}
+	_, err = resolver.Resolve(context.Background(), ResolveAuthRequest{Config: cfg})
+	if err == nil {
+		t.Fatal("expected vault error")
+	}
+}
+
+func TestResolveSecretCanFallbackWhenConfigured(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_TOKEN", "fallback-token")
+	t.Setenv("CLOUDFLARE_API_KEY", "")
+	t.Setenv("CLOUDFLARE_EMAIL", "")
+
+	cfg, err := LoadConfig(map[string]string{
+		"auth.secret.mount":          "secret",
+		"auth.secret.path":           "cloudflare/prod",
+		"auth.secret.allow_fallback": "true",
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	reader := &fakeSecretReader{err: errors.New("vault unavailable")}
+	resolver := &DefaultAuthResolver{Store: newMemStore(), SecretReader: reader, AllowFallback: true}
+	auth, err := resolver.Resolve(context.Background(), ResolveAuthRequest{Config: cfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if auth.Method != AuthMethodAPIToken || auth.AccessToken != "fallback-token" {
+		t.Fatalf("unexpected fallback auth: %#v", auth)
 	}
 }
 
@@ -253,7 +366,7 @@ func (g *goodValidator) ValidateToken(_ context.Context, _ *ResolvedAuth) (*Vali
 }
 
 type fakeRefresher struct {
-	token string
+	token  string
 	called bool
 }
 

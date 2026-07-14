@@ -5,6 +5,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/jlgore/corkscrew/internal/secrets"
 )
 
 func LoadConfig(override map[string]string) (*CloudflareConfig, error) {
@@ -21,6 +23,7 @@ func LoadConfig(override map[string]string) (*CloudflareConfig, error) {
 			EmailEnv:        "CLOUDFLARE_EMAIL",
 			UseRefreshToken: true,
 			BaseURL:         os.Getenv("CLOUDFLARE_BASE_URL"),
+			Secret:          secrets.DefaultCredentialSource(),
 		},
 	}
 
@@ -58,6 +61,11 @@ func LoadConfig(override map[string]string) (*CloudflareConfig, error) {
 	if value := firstNonEmpty(override["auth.oauth_scopes"], override["oauth_scopes"]); value != "" {
 		cfg.Auth.OAuthScopes = ParseCSV(value)
 	}
+	secret, err := secrets.CredentialSourceFromConfig(override)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Auth.Secret = secret
 
 	cfg.Scope.AccountIDs = ParseCSV(firstNonEmpty(override["scope.account_ids"], override["account_ids"]))
 	cfg.Scope.ZoneIDs = ParseCSV(firstNonEmpty(override["scope.zone_ids"], override["zone_ids"]))
@@ -71,6 +79,9 @@ func LoadConfig(override map[string]string) (*CloudflareConfig, error) {
 
 	if cfg.Auth.Method != AuthMethodOAuth && cfg.Auth.Method != AuthMethodAPIToken && cfg.Auth.Method != AuthMethodAPIKey {
 		return nil, fmt.Errorf("unsupported auth method %q", cfg.Auth.Method)
+	}
+	if cfg.Auth.Secret.Kind != "" && AuthMethod(cfg.Auth.Secret.Kind) != AuthMethodOAuth && AuthMethod(cfg.Auth.Secret.Kind) != AuthMethodAPIToken && AuthMethod(cfg.Auth.Secret.Kind) != AuthMethodAPIKey {
+		return nil, fmt.Errorf("unsupported secret auth method %q", cfg.Auth.Secret.Kind)
 	}
 
 	return cfg, nil

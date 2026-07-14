@@ -23,10 +23,11 @@ type CorkscrewConfig struct {
 }
 
 type CloudProviderConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	DefaultRegion string   `yaml:"default_region,omitempty"`
-	Regions       []string `yaml:"regions,omitempty"`
-	Services      []string `yaml:"services"`
+	Enabled       bool              `yaml:"enabled"`
+	DefaultRegion string            `yaml:"default_region,omitempty"`
+	Regions       []string          `yaml:"regions,omitempty"`
+	Services      []string          `yaml:"services"`
+	Config        map[string]string `yaml:"config,omitempty"`
 }
 
 type DependenciesConfig struct {
@@ -108,6 +109,18 @@ providers:
     services:
       - pods
       - services
+
+  cloudflare:
+    enabled: false
+    regions:
+      - "global"
+    services:
+      - accounts
+      - zones
+      - dns
+      - workers
+      - storage
+      - data
 
 dependencies:
   protoc:
@@ -262,6 +275,21 @@ func (c *CorkscrewConfig) IsProviderEnabled(provider string) bool {
 	return exists && providerConfig.Enabled
 }
 
+// ProviderInitializationConfig returns an isolated copy of the provider's
+// flattened plugin configuration. Callers may safely add CLI-derived values
+// such as region without mutating the loaded YAML model.
+func (c *CorkscrewConfig) ProviderInitializationConfig(provider string) map[string]string {
+	providerConfig, exists := c.Providers[provider]
+	if !exists || len(providerConfig.Config) == 0 {
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(providerConfig.Config))
+	for key, value := range providerConfig.Config {
+		result[key] = value
+	}
+	return result
+}
+
 func (c *CorkscrewConfig) ShouldHideEmptyRegions() bool {
 	return c.Output.HideEmptyRegions
 }
@@ -274,13 +302,14 @@ func ValidateProviderName(provider string) error {
 	validProviders := map[string]bool{
 		"aws":        true,
 		"azure":      true,
+		"cloudflare": true,
 		"gcp":        true,
 		"kubernetes": true,
 	}
 	if validProviders[provider] {
 		return nil
 	}
-	return fmt.Errorf("unsupported provider: %s. Valid providers: %v", provider, []string{"aws", "azure", "gcp", "kubernetes"})
+	return fmt.Errorf("unsupported provider: %s. Valid providers: %v", provider, []string{"aws", "azure", "cloudflare", "gcp", "kubernetes"})
 }
 
 func DefaultRegionsForProvider(provider string) []string {
@@ -293,6 +322,8 @@ func DefaultRegionsForProvider(provider string) []string {
 		return []string{"us-central1-a", "us-west1-a"}
 	case "kubernetes":
 		return []string{"default"}
+	case "cloudflare":
+		return []string{"global"}
 	default:
 		return []string{}
 	}

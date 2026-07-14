@@ -78,3 +78,40 @@ func TestLoadConfigRejectsUnsupportedAuthMethod(t *testing.T) {
 		t.Fatal("expected error for unsupported auth method")
 	}
 }
+
+func TestLoadConfigParsesVaultSecret(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_KEY", "")
+	t.Setenv("CLOUDFLARE_EMAIL", "")
+
+	cfg, err := LoadConfig(map[string]string{
+		"auth.secret.address":        "https://vault.example.com",
+		"auth.secret.engine":         "kv-v1",
+		"auth.secret.mount":          "kv",
+		"auth.secret.path":           "cloudflare/prod",
+		"auth.secret.version":        "2",
+		"auth.secret.method":         "api_key",
+		"auth.secret.token_env":      "CORKSCREW_VAULT_TOKEN",
+		"auth.secret.api_key_field":  "global_key",
+		"auth.secret.email_field":    "account_email",
+		"auth.secret.allow_fallback": "true",
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	secret := cfg.Auth.Secret
+	if secret.Provider != "vault" {
+		t.Fatalf("secret.Provider = %q, want vault", secret.Provider)
+	}
+	if secret.Engine != "kv-v1" || secret.Mount != "kv" || secret.Path != "cloudflare/prod" {
+		t.Fatalf("unexpected secret config: %#v", secret)
+	}
+	if secret.Version != 2 || secret.Kind != string(AuthMethodAPIKey) {
+		t.Fatalf("unexpected secret method/version: %#v", secret)
+	}
+	if secret.TokenEnv != "CORKSCREW_VAULT_TOKEN" || secret.APIKeyField != "global_key" || secret.EmailField != "account_email" {
+		t.Fatalf("unexpected secret fields: %#v", secret)
+	}
+	if !secret.AllowFallback {
+		t.Fatalf("secret.AllowFallback = false, want true")
+	}
+}

@@ -323,13 +323,16 @@ func printUsage() {
 	fmt.Println("Supported Providers:")
 	fmt.Println("  aws         - Amazon Web Services")
 	fmt.Println("  azure       - Microsoft Azure")
+	fmt.Println("  cloudflare  - Cloudflare")
+	fmt.Println("  gcp         - Google Cloud Platform")
+	fmt.Println("  kubernetes  - Kubernetes")
 }
 
 func runScanE(args []string) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
+	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, cloudflare, gcp, kubernetes)")
 	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
 	regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
@@ -409,7 +412,7 @@ func runScanE(args []string) error {
 func runDiscover(args []string) {
 	fs := flag.NewFlagSet("discover", flag.ExitOnError)
 
-	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, gcp, kubernetes)")
+	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, cloudflare, gcp, kubernetes)")
 	verbose := fs.Bool("verbose", false, "Enable verbose logging")
 	outputFormat := fs.String("output", "table", "Output format (table, json)")
 

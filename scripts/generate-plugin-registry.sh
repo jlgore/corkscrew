@@ -68,6 +68,7 @@ for plugin_dir in plugins/*-provider; do
     case $PROVIDER_TYPE in
       aws) DESCRIPTION="Amazon Web Services provider" ;;
       azure) DESCRIPTION="Microsoft Azure provider" ;;
+      cloudflare) DESCRIPTION="Cloudflare provider" ;;
       gcp) DESCRIPTION="Google Cloud Platform provider" ;;
       kubernetes) DESCRIPTION="Kubernetes provider" ;;
     esac

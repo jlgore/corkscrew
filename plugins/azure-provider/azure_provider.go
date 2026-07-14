@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
@@ -147,7 +146,15 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 		}
 	}
 
-	log.Printf("Initializing Azure provider with subscription: %s", subscriptionID)
+	tenantID := req.Config["tenant_id"] // Optional
+
+	cred, subscriptionID, tenantID, authMethod, err := resolveAzureCredential(ctx, req.GetConfig(), subscriptionID, tenantID, nil)
+	if err != nil {
+		return &pb.InitializeResponse{
+			Success: false,
+			Error:   fmt.Sprintf("failed to create Azure credential: %v", err),
+		}, nil
+	}
 
 	if subscriptionID == "" {
 		return &pb.InitializeResponse{
@@ -156,19 +163,7 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 		}, nil
 	}
 
-	tenantID := req.Config["tenant_id"] // Optional
-
-	// Initialize Azure credentials using DefaultAzureCredential
-	// This supports multiple auth methods: MSI, Azure CLI, Environment Variables, etc.
-	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return &pb.InitializeResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to create Azure credential: %v", err),
-		}, nil
-	}
+	log.Printf("Initializing Azure provider with subscription: %s", subscriptionID)
 
 	p.credential = cred
 	p.subscriptionID = subscriptionID
@@ -245,7 +240,10 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 	}
 
 	// Get all subscriptions in scope for Resource Graph
-	subscriptions, _ := p.managementGroupClient.GetScopeForResourceGraph(p.currentScopes)
+	var subscriptions []string
+	if p.managementGroupClient != nil {
+		subscriptions, _ = p.managementGroupClient.GetScopeForResourceGraph(p.currentScopes)
+	}
 	if len(subscriptions) == 0 {
 		subscriptions = []string{subscriptionID}
 	}
@@ -268,7 +266,7 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 		Metadata: map[string]string{
 			"subscription_id":      subscriptionID,
 			"tenant_id":            tenantID,
-			"auth_method":          "DefaultAzureCredential",
+			"auth_method":          authMethod,
 			"resource_graph":       fmt.Sprintf("%t", p.resourceGraph != nil),
 			"management_groups":    fmt.Sprintf("%t", p.managementGroupClient != nil),
 			"entraid_app_deployer": fmt.Sprintf("%t", p.entraIDAppDeployer != nil),
@@ -297,6 +295,7 @@ func (p *AzureProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb
 			"entraid_app_deployment": "true",
 			"tenant_wide_access":     "true",
 			"hierarchical_scoping":   "true",
+			"vault_auth":             "true",
 		}, map[string]bool{
 			shared.OptionalGenerateServiceScanners: true,
 			shared.OptionalConfigureDiscovery:      true,

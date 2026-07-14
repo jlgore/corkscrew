@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
@@ -118,11 +117,11 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, authMethod, err := loadAWSConfig(ctx, req.GetConfig(), nil)
 	if err != nil {
 		return &pb.InitializeResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to load AWS config: %v", err),
+			Error:   err.Error(),
 		}, nil
 	}
 	p.config = cfg
@@ -161,6 +160,7 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 		Version: "4.0.0",
 		Metadata: map[string]string{
 			"region":            cfg.Region,
+			"auth_method":       authMethod,
 			"resource_explorer": fmt.Sprintf("%t", p.explorer != nil),
 			"scanner_mode":      "cloudcontrol",
 		},
@@ -185,6 +185,7 @@ func (p *AWSProvider) GetProviderInfo(ctx context.Context, _ *pb.Empty) (*pb.Pro
 		Capabilities: shared.WithOptionalCapabilities(map[string]string{
 			"discovery":  "cloudformation.ListTypes + Resource Explorer",
 			"enrichment": "cloudcontrol.GetResource",
+			"vault_auth": "true",
 		}, map[string]bool{
 			shared.OptionalGenerateServiceScanners: false,
 			shared.OptionalConfigureDiscovery:      false,

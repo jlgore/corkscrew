@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/jlgore/corkscrew/internal/secrets"
 )
 
 type ResolveAuthRequest struct {
@@ -26,16 +28,20 @@ type AuthResolver interface {
 // When Validate is true the resolver pings a Cloudflare endpoint to verify the
 // resolved credentials before returning them.
 type DefaultAuthResolver struct {
-	Planner  PermissionPlanner
-	Store    OAuthStore
-	Refresher TokenRefresher
-	Validator TokenValidator
+	Planner      PermissionPlanner
+	Store        OAuthStore
+	Refresher    TokenRefresher
+	Validator    TokenValidator
+	SecretReader secrets.Reader
 
 	AllowFallback bool // if true, attempt next auth method on failure
 	Validate      bool // if true, validate credentials against the API
 }
 
 func (r *DefaultAuthResolver) Resolve(ctx context.Context, req ResolveAuthRequest) (*ResolvedAuth, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if req.Config == nil {
 		return nil, fmt.Errorf("missing Cloudflare config")
 	}
@@ -50,6 +56,9 @@ func (r *DefaultAuthResolver) Resolve(ctx context.Context, req ResolveAuthReques
 	}
 	if r.Validator == nil {
 		r.Validator = &NoopTokenValidator{}
+	}
+	if r.SecretReader == nil {
+		r.SecretReader = &secrets.VaultReader{}
 	}
 
 	auth, err := r.resolveChained(ctx, req)
@@ -75,6 +84,16 @@ func (r *DefaultAuthResolver) Resolve(ctx context.Context, req ResolveAuthReques
 }
 
 func (r *DefaultAuthResolver) resolveChained(ctx context.Context, req ResolveAuthRequest) (*ResolvedAuth, error) {
+	if req.Config.Auth.Secret.Configured() {
+		auth, err := r.resolveSecret(ctx, req)
+		if err == nil {
+			return auth, nil
+		}
+		if !req.Config.Auth.Secret.AllowFallback {
+			return nil, err
+		}
+	}
+
 	switch req.Config.Auth.Method {
 	case AuthMethodOAuth:
 		auth, err := r.resolveOAuth(ctx, req)

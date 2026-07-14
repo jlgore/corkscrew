@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/asset/apiv1/assetpb"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -43,8 +44,8 @@ type IAMBinding struct {
 }
 
 // NewAssetInventoryClient creates a new Cloud Asset Inventory client
-func NewAssetInventoryClient(ctx context.Context) (*AssetInventoryClient, error) {
-	client, err := asset.NewClient(ctx)
+func NewAssetInventoryClient(ctx context.Context, opts ...option.ClientOption) (*AssetInventoryClient, error) {
+	client, err := asset.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create asset client: %w", err)
 	}

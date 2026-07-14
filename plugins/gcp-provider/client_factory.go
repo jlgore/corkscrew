@@ -22,6 +22,13 @@ import (
 	"google.golang.org/api/storage/v1"
 )
 
+var gcpOAuthScopes = []string{
+	"https://www.googleapis.com/auth/cloud-platform",
+	"https://www.googleapis.com/auth/cloud-asset",
+	"https://www.googleapis.com/auth/compute.readonly",
+	"https://www.googleapis.com/auth/storage.readonly",
+}
+
 // ClientFactory manages GCP API clients and credentials
 type ClientFactory struct {
 	mu         sync.RWMutex
@@ -41,23 +48,27 @@ func NewClientFactory() *ClientFactory {
 
 // Initialize sets up authentication using Application Default Credentials
 func (cf *ClientFactory) Initialize(ctx context.Context) error {
+	creds, err := google.FindDefaultCredentials(ctx, gcpOAuthScopes...)
+	if err != nil {
+		return fmt.Errorf("failed to find default credentials: %w", err)
+	}
+	return cf.InitializeWithCredentials(ctx, creds)
+}
+
+func (cf *ClientFactory) InitializeFromConfig(ctx context.Context, configMap map[string]string) (string, error) {
+	creds, authMethod, err := resolveGCPCredentials(ctx, configMap, nil)
+	if err != nil {
+		return "", err
+	}
+	return authMethod, cf.InitializeWithCredentials(ctx, creds)
+}
+
+func (cf *ClientFactory) InitializeWithCredentials(ctx context.Context, creds *google.Credentials) error {
 	cf.mu.Lock()
 	defer cf.mu.Unlock()
 
-	// Try to find default credentials
-	// This supports multiple authentication methods:
-	// 1. GOOGLE_APPLICATION_CREDENTIALS environment variable
-	// 2. gcloud auth application-default login
-	// 3. GCE metadata service
-	// 4. Cloud Shell built-in credentials
-	creds, err := google.FindDefaultCredentials(ctx,
-		"https://www.googleapis.com/auth/cloud-platform",
-		"https://www.googleapis.com/auth/cloud-asset",
-		"https://www.googleapis.com/auth/compute.readonly",
-		"https://www.googleapis.com/auth/storage.readonly",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to find default credentials: %w", err)
+	if creds == nil {
+		return fmt.Errorf("credentials not initialized")
 	}
 
 	cf.credential = creds
@@ -70,6 +81,15 @@ func (cf *ClientFactory) Initialize(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (cf *ClientFactory) ClientOptions() []option.ClientOption {
+	cf.mu.RLock()
+	defer cf.mu.RUnlock()
+	if cf.credential == nil {
+		return nil
+	}
+	return []option.ClientOption{option.WithCredentials(cf.credential)}
 }
 
 // SetProjectIDs sets the project IDs to use

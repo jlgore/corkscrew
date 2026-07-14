@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -80,6 +81,7 @@ func (p *CloudflareProvider) GetProviderInfo(ctx context.Context, req *pb.Empty)
 			"scanning":        "partial",
 			"oauth_planned":   "true",
 			"token_auth":      "true",
+			"vault_auth":      "true",
 			"read_only_focus": "true",
 		}, map[string]bool{
 			shared.OptionalGenerateServiceScanners: false,
@@ -184,7 +186,51 @@ func (p *CloudflareProvider) BatchScan(ctx context.Context, req *pb.BatchScanReq
 	if err := p.ensureInitialized(); err != nil {
 		return nil, err
 	}
-	return nil, fmt.Errorf(unsupportedReason)
+	services := req.GetServices()
+	if len(services) == 0 {
+		services = cloudflareauth.CanonicalServices
+	}
+	return batchScanServices(ctx, services, p.ScanService), nil
+}
+
+type scanServiceFunc func(context.Context, *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error)
+
+func batchScanServices(ctx context.Context, services []string, scan scanServiceFunc) *pb.BatchScanResponse {
+	start := time.Now()
+	response := &pb.BatchScanResponse{
+		Stats: &pb.ScanStats{
+			ResourceCounts: map[string]int32{},
+			ServiceCounts:  map[string]int32{},
+		},
+	}
+
+	for _, service := range services {
+		serviceResponse, err := scan(ctx, &pb.ScanServiceRequest{Service: service})
+		if err != nil {
+			response.Errors = append(response.Errors, fmt.Sprintf("service %s: %v", service, err))
+			response.Stats.FailedResources++
+			continue
+		}
+		if serviceResponse == nil {
+			response.Errors = append(response.Errors, fmt.Sprintf("service %s: empty response", service))
+			response.Stats.FailedResources++
+			continue
+		}
+
+		response.Resources = append(response.Resources, serviceResponse.Resources...)
+		response.Stats.ServiceCounts[service] += int32(len(serviceResponse.Resources))
+		for _, resource := range serviceResponse.Resources {
+			response.Stats.ResourceCounts[resource.GetType()]++
+		}
+		for _, scanError := range serviceResponse.Errors {
+			response.Errors = append(response.Errors, fmt.Sprintf("service %s: %s", service, scanError))
+			response.Stats.FailedResources++
+		}
+	}
+
+	response.Stats.TotalResources = int32(len(response.Resources))
+	response.Stats.DurationMs = time.Since(start).Milliseconds()
+	return response
 }
 
 func (p *CloudflareProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {

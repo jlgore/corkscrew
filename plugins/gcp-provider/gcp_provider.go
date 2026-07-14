@@ -66,9 +66,10 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 	log.Printf("Initializing GCP Provider")
 
-	// Initialize client factory with ADC
+	// Initialize client factory with ADC or configured secret engine credentials.
 	p.clientFactory = NewClientFactory()
-	if err := p.clientFactory.Initialize(ctx); err != nil {
+	authMethod, err := p.clientFactory.InitializeFromConfig(ctx, req.GetConfig())
+	if err != nil {
 		return &pb.InitializeResponse{
 			Success: false,
 			Error:   fmt.Sprintf("failed to initialize credentials: %v", err),
@@ -104,7 +105,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 	// Initialize Cloud Asset Inventory
 	var assetInventoryEnabled bool
-	assetClient, err := NewAssetInventoryClient(ctx)
+	assetClient, err := NewAssetInventoryClient(ctx, p.clientFactory.ClientOptions()...)
 	if err != nil {
 		log.Printf("Cloud Asset Inventory not available: %v", err)
 		log.Printf("Will use standard API scanning instead")
@@ -128,6 +129,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	// Build metadata for response
 	metadata := map[string]string{
 		"asset_inventory": fmt.Sprintf("%t", assetInventoryEnabled),
+		"auth_method":     authMethod,
 		"scope":           p.scope,
 		"max_concurrency": fmt.Sprintf("%d", p.maxConcurrency),
 	}
@@ -219,7 +221,7 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 
 // discoverOrganizations attempts to list accessible organizations
 func (p *GCPProvider) discoverOrganizations(ctx context.Context) ([]string, error) {
-	client, err := resourcemanager.NewOrganizationsClient(ctx)
+	client, err := resourcemanager.NewOrganizationsClient(ctx, p.clientFactory.ClientOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +256,7 @@ func (p *GCPProvider) discoverOrganizations(ctx context.Context) ([]string, erro
 
 // discoverProjects lists all accessible projects
 func (p *GCPProvider) discoverProjects(ctx context.Context) ([]string, error) {
-	client, err := resourcemanager.NewProjectsClient(ctx)
+	client, err := resourcemanager.NewProjectsClient(ctx, p.clientFactory.ClientOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -318,6 +320,7 @@ func (p *GCPProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.P
 			"change_history":     "true",
 			"organization_scope": "true",
 			"folder_scope":       "true",
+			"vault_auth":         "true",
 		}, map[string]bool{
 			shared.OptionalGenerateServiceScanners: true,
 			shared.OptionalConfigureDiscovery:      true,

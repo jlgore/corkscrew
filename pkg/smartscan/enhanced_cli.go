@@ -1,42 +1,43 @@
 package smartscan
 
 import (
-    "context"
-    "encoding/csv"
-    "encoding/json"
-    "fmt"
-    "os"
-    "sort"
-    "strings"
-    "text/tabwriter"
-    "time"
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"text/tabwriter"
+	"time"
 
-    "github.com/jlgore/corkscrew/internal/client"
-    "github.com/jlgore/corkscrew/internal/db"
-    pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/client"
+	"github.com/jlgore/corkscrew/internal/db"
+	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 )
 
 type EnhancedScanOptions struct {
-    Provider       string
-    Regions        []string
-    Services       []string
-    OutputFormat   string
-    SaveToFile     bool
-    ShowEmpty      bool
-    ConfigPath     string
-    MaxConcurrency int
-    DatabasePath   string
-    // QuackToken authenticates writes to a remote Quack server when DatabasePath
-    // is a quack: URI.
-    QuackToken     string
-    DBProviderTableOverride string
-    // Filters and provider-specific init options
-    Namespace      string
-    LabelSelector  string
-    FieldSelector  string
-    KubeconfigPath string
-    KubeContext    string
-    IncludeRelationships bool
+	Provider       string
+	Regions        []string
+	Services       []string
+	OutputFormat   string
+	SaveToFile     bool
+	ShowEmpty      bool
+	ConfigPath     string
+	MaxConcurrency int
+	DatabasePath   string
+	// QuackToken authenticates writes to a remote Quack server when DatabasePath
+	// is a quack: URI.
+	QuackToken              string
+	DBProviderTableOverride string
+	// Filters and provider-specific init options
+	Namespace            string
+	LabelSelector        string
+	FieldSelector        string
+	KubeconfigPath       string
+	KubeContext          string
+	IncludeRelationships bool
 }
 
 func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
@@ -85,26 +86,11 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 		return fmt.Errorf("failed to get provider: %w", err)
 	}
 
-	// Initialize provider
-    // Build provider initialization config
-    initCfg := map[string]string{
-        "region": func() string {
-            if len(regions) > 0 && regions[0] != "all" {
-                return regions[0]
-            }
-            return ""
-        }(),
-    }
-    if options.KubeconfigPath != "" {
-        initCfg["kubeconfig_path"] = options.KubeconfigPath
-    }
-    if options.KubeContext != "" {
-        initCfg["contexts"] = options.KubeContext
-    }
-    initReq := &pb.InitializeRequest{ Config: initCfg }
-	_, err = provider.Initialize(ctx, initReq)
-	if err != nil {
-		return fmt.Errorf("failed to initialize provider: %w", err)
+	// Initialize provider. Provider-specific config comes from YAML; explicit
+	// scan options below take precedence over those defaults.
+	initCfg := buildProviderInitializationConfig(config, options, regions)
+	if err := initializeProviderForScan(ctx, provider, options.Provider, initCfg); err != nil {
+		return err
 	}
 
 	// Create smart scan config
@@ -120,14 +106,14 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 	}
 
 	// Create multi-region scanner
-    // Pass include-relationships and filters via config and scanner
-    smartConfig.IncludeRelationships = options.IncludeRelationships
-    scanner := NewMultiRegionScanner(provider, options.Provider, smartConfig)
-    scanner.SetFilters(map[string]string{
-        "namespace":      options.Namespace,
-        "label_selector": options.LabelSelector,
-        "field_selector": options.FieldSelector,
-    })
+	// Pass include-relationships and filters via config and scanner
+	smartConfig.IncludeRelationships = options.IncludeRelationships
+	scanner := NewMultiRegionScanner(provider, options.Provider, smartConfig)
+	scanner.SetFilters(map[string]string{
+		"namespace":      options.Namespace,
+		"label_selector": options.LabelSelector,
+		"field_selector": options.FieldSelector,
+	})
 
 	// Print scan information
 	fmt.Printf("🔍 Enhanced scan starting:\n")
@@ -143,7 +129,7 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 		fmt.Printf("   Services: all configured services\n")
 	}
 	fmt.Printf("   Concurrency: %d regions\n", smartConfig.MaxConcurrency)
-	fmt.Printf("   Empty filtering: regions=%t, services=%t\n", 
+	fmt.Printf("   Empty filtering: regions=%t, services=%t\n",
 		smartConfig.HideEmptyRegions, smartConfig.HideEmptyServices)
 
 	// Execute multi-region scan
@@ -156,23 +142,23 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 	scanner.FilterEmptyServices(results)
 
 	// Store results to database if database path is specified
-    if options.DatabasePath != "" {
-        if err := storeResultsToDatabase(ctx, results, options.DatabasePath, options.DBProviderTableOverride, options.QuackToken); err != nil {
-            fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
-        } else {
-            fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
-        }
-    } else {
-        // Try to store to config database or default location
-        dbPath := getDefaultDatabasePath(config)
-        if dbPath != "" {
-            if err := storeResultsToDatabase(ctx, results, dbPath, options.DBProviderTableOverride, options.QuackToken); err != nil {
-                fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
-            } else {
-                fmt.Printf("💾 Results stored to database: %s\n", dbPath)
-            }
-        }
-    }
+	if options.DatabasePath != "" {
+		if err := storeResultsToDatabase(ctx, results, options.DatabasePath, options.DBProviderTableOverride, options.QuackToken); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
+		} else {
+			fmt.Printf("💾 Results stored to database: %s\n", options.DatabasePath)
+		}
+	} else {
+		// Try to store to config database or default location
+		dbPath := getDefaultDatabasePath(config)
+		if dbPath != "" {
+			if err := storeResultsToDatabase(ctx, results, dbPath, options.DBProviderTableOverride, options.QuackToken); err != nil {
+				fmt.Printf("⚠️ Warning: Failed to store results to database: %v\n", err)
+			} else {
+				fmt.Printf("💾 Results stored to database: %s\n", dbPath)
+			}
+		}
+	}
 
 	if options.SaveToFile {
 		filename, err := saveResultsToTimestampedFile(results, options.Provider)
@@ -193,10 +179,45 @@ func RunEnhancedScan(ctx context.Context, options EnhancedScanOptions) error {
 	}
 }
 
+func initializeProviderForScan(ctx context.Context, provider shared.CloudProvider, providerName string, config map[string]string) error {
+	response, err := provider.Initialize(ctx, &pb.InitializeRequest{
+		Provider: providerName,
+		Config:   config,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize provider %s: %w", providerName, err)
+	}
+	if response == nil {
+		return fmt.Errorf("failed to initialize provider %s: empty response", providerName)
+	}
+	if !response.Success {
+		detail := strings.TrimSpace(response.Error)
+		if detail == "" {
+			detail = "provider reported unsuccessful initialization"
+		}
+		return fmt.Errorf("failed to initialize provider %s: %s", providerName, detail)
+	}
+	return nil
+}
+
+func buildProviderInitializationConfig(config *SmartScanConfiguration, options EnhancedScanOptions, regions []string) map[string]string {
+	result := config.ProviderInitializationConfig(options.Provider)
+	if len(regions) > 0 && regions[0] != "all" {
+		result["region"] = regions[0]
+	}
+	if options.KubeconfigPath != "" {
+		result["kubeconfig_path"] = options.KubeconfigPath
+	}
+	if options.KubeContext != "" {
+		result["contexts"] = options.KubeContext
+	}
+	return result
+}
+
 func printTableResults(results *AggregatedResults, config *SmartScanConfig) error {
 	// Print summary
 	fmt.Printf("\n✅ Enhanced scan completed!\n")
-	
+
 	if results.Summary != nil {
 		fmt.Printf("📊 Summary:\n")
 		fmt.Printf("   Total resources: %d\n", results.Summary.TotalResources)
@@ -264,9 +285,9 @@ func printTableResults(results *AggregatedResults, config *SmartScanConfig) erro
 
 		// Sort services by resource count (descending)
 		type serviceStat struct {
-			name           string
-			count          int32
-			activeRegions  int
+			name          string
+			count         int32
+			activeRegions int
 		}
 
 		var serviceStats []serviceStat
@@ -318,10 +339,10 @@ func printTableResults(results *AggregatedResults, config *SmartScanConfig) erro
 
 func printJSONResults(results *AggregatedResults) error {
 	output := struct {
-		Summary       *ScanSummary                     `json:"summary"`
-		RegionResults map[string]*RegionScanResult     `json:"region_results"`
-		AllResources  []*pb.Resource                   `json:"all_resources"`
-		Errors        []string                         `json:"errors"`
+		Summary       *ScanSummary                 `json:"summary"`
+		RegionResults map[string]*RegionScanResult `json:"region_results"`
+		AllResources  []*pb.Resource               `json:"all_resources"`
+		Errors        []string                     `json:"errors"`
 	}{
 		Summary:       results.Summary,
 		RegionResults: results.RegionResults,
@@ -388,21 +409,21 @@ func saveResultsToTimestampedFile(results *AggregatedResults, provider string) (
 
 // storeResultsToDatabase stores scan results to the unified database
 func storeResultsToDatabase(ctx context.Context, results *AggregatedResults, dbPath string, overrideTable string, quackToken string) error {
-    // Initialize the unified database with custom path. For a remote quack:
-    // target, pass the auth token through to the connection.
-    var opts []db.Option
-    if quackToken != "" && db.IsRemoteTarget(dbPath) {
-        opts = append(opts, db.WithToken(quackToken))
-    }
-    dbConfig, err := db.InitializeUnifiedDatabaseWithOptions(dbPath, opts...)
-    if err != nil {
-        return fmt.Errorf("failed to initialize database: %w", err)
-    }
-    defer dbConfig.DB.Close()
+	// Initialize the unified database with custom path. For a remote quack:
+	// target, pass the auth token through to the connection.
+	var opts []db.Option
+	if quackToken != "" && db.IsRemoteTarget(dbPath) {
+		opts = append(opts, db.WithToken(quackToken))
+	}
+	dbConfig, err := db.InitializeUnifiedDatabaseWithOptions(dbPath, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+	defer dbConfig.DB.Close()
 
-    return db.NewGraphStore(dbConfig.DB).StoreScanResources(ctx, results.AllResources, db.StoreScanResourcesOptions{
-        ProviderTableOverride: overrideTable,
-    })
+	return db.NewGraphStore(dbConfig.DB).StoreScanResources(ctx, results.AllResources, db.StoreScanResourcesOptions{
+		ProviderTableOverride: overrideTable,
+	})
 }
 
 // getDefaultDatabasePath gets database path from config or returns default
@@ -410,11 +431,11 @@ func getDefaultDatabasePath(config *SmartScanConfiguration) string {
 	if config.Database.Path != "" {
 		return config.Database.Path
 	}
-	
+
 	// Try to get default path
 	if defaultPath, err := db.GetUnifiedDatabasePath(); err == nil {
 		return defaultPath
 	}
-	
+
 	return ""
 }

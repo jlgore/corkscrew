@@ -19,6 +19,7 @@ Supported methods:
 
 - `CLOUDFLARE_API_TOKEN` — recommended; use `corkscrew cloudflare login` for guidance
 - `CLOUDFLARE_API_KEY` + `CLOUDFLARE_EMAIL` — legacy Global API Key
+- Vault KV secrets — read Cloudflare API token, API key/email, or OAuth token material from Vault
 - OAuth profiles — stored in `~/.corkscrew/providers/cloudflare/profiles/<profile>.json`
 
 The resolver supports graceful fallback between methods. For example, if you configure `oauth` but the profile is missing or expired, the resolver can fall back to an API token or API key when available (enabled in the provider by default).
@@ -52,6 +53,38 @@ During initialization the provider resolves credentials in this order based on `
 4. **Auto** — when no method is specified, try OAuth profile, then API token, then API key.
 
 Validation against the Cloudflare API happens before the provider starts scanning when `Validate` is enabled (default in the plugin).
+
+### Vault Secrets
+
+Vault support uses Corkscrew's shared secrets adapter, which reads secret engine material into generic credential fields that any provider can consume. The first supported engine is KV v2 by default; KV v1/generic reads are available with `auth.secret.engine=kv-v1`.
+
+```yaml
+providers:
+  cloudflare:
+    enabled: true
+    regions: [global]
+    services: [zones, dns, workers, storage]
+    config:
+      auth.method: api_token
+      auth.secret.provider: vault
+      auth.secret.address: https://vault.example.com
+      auth.secret.token_env: VAULT_TOKEN
+      auth.secret.engine: kv-v2
+      auth.secret.mount: secret
+      auth.secret.path: cloudflare/prod
+      auth.secret.token_field: api_token
+```
+
+For KV v2, Corkscrew reads `/v1/<mount>/data/<path>`. For KV v1/generic, it reads `/v1/<mount>/<path>`. `auth.secret.namespace` sets `X-Vault-Namespace`, and `auth.secret.version` selects a KV v2 version.
+
+Supported Cloudflare secret fields:
+
+- API token: `api_token` by default; override with `auth.secret.token_field`
+- API key: `api_key` and `email` by default; override with `auth.secret.api_key_field` and `auth.secret.email_field`
+- OAuth: token from `api_token`, `token`, or `access_token`; scopes from `scopes`
+- Credential kind: optional `kind`, `method`, or `auth_method` field in Vault, or set `auth.secret.kind`/`auth.secret.method`
+
+When a Vault secret is configured, a failed Vault read fails initialization by default. Set `auth.secret.allow_fallback=true` to fall back to environment/config credentials.
 
 ## Scope Controls
 

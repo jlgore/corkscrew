@@ -141,6 +141,25 @@ gcloud iam service-accounts keys create corkscrew-key.json \
 export GOOGLE_APPLICATION_CREDENTIALS="/path/to/corkscrew-key.json"
 ```
 
+#### Vault Service Account
+
+GCP can read service account credentials through Corkscrew's shared secrets adapter. Store either the full key JSON in `service_account_json`, or store `project_id`, `client_email`, and `private_key` as separate fields.
+
+```yaml
+providers:
+  gcp:
+    config:
+      auth.secret.provider: vault
+      auth.secret.address: https://vault.example.com
+      auth.secret.token_env: VAULT_TOKEN
+      auth.secret.engine: kv-v2
+      auth.secret.mount: secret
+      auth.secret.path: gcp/prod
+      auth.secret.kind: gcp_service_account
+```
+
+Set `auth.secret.allow_fallback=true` to fall back to Application Default Credentials when the secret cannot be read.
+
 #### Google Cloud Shell / GKE Workload Identity
 Authentication is automatic when running in these environments.
 

@@ -59,6 +59,25 @@ are env-var-driven:
 | `CORKSCREW_AWS_ORG_EXCLUDE_ACCOUNTS` | _unset_ | CSV of account IDs to skip after the include filter. |
 | `CORKSCREW_AWS_ORG_MAX_CONCURRENCY` | `5` | Bounded parallelism across accounts. |
 
+### Vault Credentials
+
+AWS can read credentials through Corkscrew's shared secrets adapter. Static keys use `aws_access_key_id`, `aws_secret_access_key`, and optional `aws_session_token`. Add `aws_role_arn` and optional `external_id` to assume a role after loading the base credentials.
+
+```yaml
+providers:
+  aws:
+    config:
+      auth.secret.provider: vault
+      auth.secret.address: https://vault.example.com
+      auth.secret.token_env: VAULT_TOKEN
+      auth.secret.engine: kv-v2
+      auth.secret.mount: secret
+      auth.secret.path: aws/prod
+      auth.secret.kind: aws_static
+```
+
+For a role-only flow, set `auth.secret.kind: aws_role` and store `aws_role_arn`; the provider assumes the role using the default AWS credential chain unless static key material is also present.
+
 ## Diagnostics
 
 Cloud Control covers ~1,100 resource types but not every AWS resource is wired

@@ -40,6 +40,12 @@ providers:
       - s3
       - ec2
       - iam
+    config:
+      auth.secret.provider: vault
+      auth.secret.address: https://vault.example.com
+      auth.secret.token_env: VAULT_TOKEN
+      auth.secret.mount: secret
+      auth.secret.path: aws/prod
 
   azure:
     enabled: false
@@ -65,6 +71,15 @@ providers:
       - pods
       - services
 
+  cloudflare:
+    enabled: false
+    regions:
+      - global
+    services:
+      - zones
+      - dns
+      - workers
+
 database:
   path: ~/.corkscrew/db/corkscrew.duckdb
 
@@ -81,6 +96,9 @@ output:
 - `enabled`: enables/disables provider usage.
 - `regions`: list of regions/zones/contexts. Use `all` for full region discovery where supported.
 - `services`: list of provider service identifiers.
+- `config`: flattened string settings forwarded to the provider during initialization. CLI-derived settings such as the selected region override matching entries here.
+
+Provider-specific authentication belongs under `config`. Keep secret values in environment variables where possible; for Vault, configure the token variable name with `auth.secret.token_env` instead of placing the token in YAML.
 
 ## Database Defaults
 

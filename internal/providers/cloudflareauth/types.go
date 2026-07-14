@@ -1,6 +1,10 @@
 package cloudflareauth
 
-import "time"
+import (
+	"time"
+
+	"github.com/jlgore/corkscrew/internal/secrets"
+)
 
 type AuthMethod string
 
@@ -54,7 +58,10 @@ type AuthConfig struct {
 	OAuthScopes     []string
 	UseRefreshToken bool
 	BaseURL         string
+	Secret          SecretConfig
 }
+
+type SecretConfig = secrets.CredentialSource
 
 type ScopeConfig struct {
 	AccountIDs   []string

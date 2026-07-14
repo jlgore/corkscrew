@@ -183,19 +183,41 @@ export AZURE_CLIENT_SECRET="your-client-secret"
 # Use: az login
 ```
 
+### Vault Credentials
+Azure can read service principal material through Corkscrew's shared secrets adapter. Store `client_id`, `client_secret`, `tenant_id`, and optionally `subscription_id`.
+
+```yaml
+providers:
+  azure:
+    config:
+      auth.secret.provider: vault
+      auth.secret.address: https://vault.example.com
+      auth.secret.token_env: VAULT_TOKEN
+      auth.secret.engine: kv-v2
+      auth.secret.mount: secret
+      auth.secret.path: azure/prod
+      auth.secret.kind: azure_service_principal
+```
+
+If `auth.secret.allow_fallback=true`, the provider falls back to `DefaultAzureCredential` when the secret cannot be read.
+
 ### Provider Configuration
 ```yaml
 # corkscrew.yaml
 providers:
   azure:
-    # Scope configuration
-    scope_type: "management_group"  # or "subscription"
-    scope_id: "tenant-root-group"   # management group ID or subscription ID
-    
-    # Performance settings
-    max_concurrency: 10
-    enable_streaming: true
-    cache_ttl: "24h"
+    enabled: true
+    regions: [eastus]
+    services: [storage, compute]
+    config:
+      # Scope configuration
+      scope_type: "management_group"  # or "subscription"
+      scope_id: "tenant-root-group"   # management group ID or subscription ID
+
+      # Performance settings
+      max_concurrency: "10"
+      enable_streaming: "true"
+      cache_ttl: "24h"
     
     # Resource Graph settings
     enable_resource_graph: true
