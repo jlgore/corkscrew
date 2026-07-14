@@ -108,6 +108,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
+        file: ./docker/Dockerfile
         platforms: linux/amd64,linux/arm64
         push: true
         tags: ${{ steps.meta.outputs.tags }}
@@ -195,8 +196,82 @@ jobs:
         if-no-files-found: error
         retention-days: 30
 
+  build-cli-release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/')
+    name: build CLI (${{ matrix.goos }}_${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            archive: corkscrew_linux_amd64.tar.gz
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+            archive: corkscrew_linux_arm64.tar.gz
+          - goos: darwin
+            goarch: amd64
+            runner: macos-15-intel
+            archive: corkscrew_darwin_amd64.tar.gz
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+            archive: corkscrew_darwin_arm64.tar.gz
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            archive: corkscrew_windows_amd64.zip
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.2'
+
+    - name: Build native CLI
+      shell: bash
+      env:
+        CGO_ENABLED: '1'
+        TARGET_OS: ${{ matrix.goos }}
+        TARGET_ARCH: ${{ matrix.goarch }}
+      run: |
+        test "$(go env GOOS)" = "$TARGET_OS"
+        test "$(go env GOARCH)" = "$TARGET_ARCH"
+        binary=corkscrew
+        if [ "$TARGET_OS" = windows ]; then binary=corkscrew.exe; fi
+        mkdir -p package
+        go build -trimpath \
+          -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v} -X main.commit=$GITHUB_SHA -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          -o "package/$binary" ./cmd/corkscrew
+        cp README.md docs/AWS_SCANNING_DOCUMENTATION.md docs/AZURE_SCANNING_DOCUMENTATION.md package/
+        cp -R plugins package/
+
+    - name: Package Unix CLI
+      if: matrix.goos != 'windows'
+      shell: bash
+      run: tar -C package -czf "${{ matrix.archive }}" .
+
+    - name: Package Windows CLI
+      if: matrix.goos == 'windows'
+      shell: pwsh
+      run: Compress-Archive -Path package/* -DestinationPath "${{ matrix.archive }}"
+
+    - name: Upload CLI artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: ${{ matrix.archive }}
+        if-no-files-found: error
+        retention-days: 30
+
   release:
-    needs: [test, build-and-push, build-graph-extension]
+    needs: [test, build-and-push, build-graph-extension, build-cli-release]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -204,47 +279,22 @@ jobs:
       packages: write
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Download CLI artifacts
+      uses: actions/download-artifact@v4
       with:
-        fetch-depth: 0  # Needed for GoReleaser
+        pattern: cli-*
+        path: release-artifacts
+        merge-multiple: true
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.26.2'
+    - name: Create checksums
+      working-directory: release-artifacts
+      run: sha256sum * > checksums.txt
 
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
-
-    - name: Install Go protobuf plugins
-      run: |
-        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-    - name: Setup dependencies
-      run: make deps
-
-    - name: Generate protobuf code
-      run: make generate-proto
-
-    - name: Build plugins for current platform
-      run: |
-        echo "Building plugins for release..."
-        make build-plugins
-
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v5
-      with:
-        distribution: goreleaser
-        version: latest
-        args: release --clean
+    - name: Publish GitHub release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG_NAME: ${{ github.ref_name }}
+      run: gh release create "$TAG_NAME" release-artifacts/* --generate-notes --title "$TAG_NAME"
 
   upload-graph-extension-assets:
     needs: [release, build-graph-extension]

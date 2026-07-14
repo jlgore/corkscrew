@@ -2,19 +2,17 @@ project_name: corkscrew
 
 # Build configuration
 builds:
-  # Main CLI binary
+  # Native Linux snapshot build. Tagged releases use the native runner matrix
+  # in .github/workflows/build-and-publish.yml because DuckDB requires CGO.
   - id: corkscrew-cli
     main: ./cmd/corkscrew
     binary: corkscrew
     goos:
       - linux
-      - darwin
-      - windows
     goarch:
       - amd64
-      - arm64
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -38,13 +36,10 @@ archives:
     builds:
       - corkscrew-cli
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
-    format_overrides:
-      - goos: windows
-        format: zip
     files:
       - README.md
-      - AWS_SCANNING_DOCUMENTATION.md
-      - AZURE_SCANNING_DOCUMENTATION.md
+      - docs/AWS_SCANNING_DOCUMENTATION.md
+      - docs/AZURE_SCANNING_DOCUMENTATION.md
       - plugins/
   
   # No separate plugin archives - plugins built on-demand from source
@@ -122,4 +117,4 @@ brews:
     test: |
       system "#{bin}/corkscrew --version"
     install: |
-      bin.install "corkscrew" 
+      bin.install "corkscrew"

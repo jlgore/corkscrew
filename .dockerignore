@@ -25,20 +25,30 @@ Thumbs.db
 
 # Build artifacts
 build/
+**/target/
 cmd/*/corkscrew
 cmd/*/generator
 cmd/*/plugin-test
 plugins/**/build/
 plugins/**/*-provider
 plugins/**/corkscrew-*
+extensions/corkscrew-graph/corkscrew-graph
 release/
 output/
 corkscrew
+
+# Local dependency and compiler caches
+.gocache/
+.gomodcache/
+**/.gocache/
+**/.gomodcache/
 
 # Test files
 *_test.go
 test/
 coverage.out
+*.db
+*.duckdb
 
 # Development files
 docker-compose.yml

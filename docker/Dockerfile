@@ -1,8 +1,10 @@
 # Build stage
-FROM golang:1.26.2-alpine AS builder
+FROM golang:1.26.2-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make protobuf protobuf-dev
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential git make && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -13,23 +15,20 @@ COPY . .
 # Download dependencies (after copying source to resolve local replaces)
 RUN go mod download
 
-# Install protobuf Go plugins
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-# Generate protobuf code and build CLI only
-RUN make generate-proto
+# Build the CLI from the checked-in generated protobuf sources
 RUN make build-cli
 
 # Runtime stage
-FROM alpine:latest
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1001 -S corkscrew && \
-    adduser -u 1001 -S corkscrew -G corkscrew
+RUN groupadd --gid 1001 corkscrew && \
+    useradd --uid 1001 --gid corkscrew --create-home corkscrew
 
 # Set working directory
 WORKDIR /app
