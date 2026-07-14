@@ -1,0 +1,29 @@
+name: Repair v0.2.2 graph assets
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  upload-graph-assets:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download graph extension artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: corkscrew-graph-extension-*
+        path: graph-extension-artifacts
+        merge-multiple: true
+        repository: ${{ github.repository }}
+        run-id: 29345059105
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload graph extensions to v0.2.2
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: gh release upload v0.2.2 graph-extension-artifacts/*.duckdb_extension --clobber

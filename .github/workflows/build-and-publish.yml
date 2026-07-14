@@ -315,6 +315,7 @@ jobs:
     - name: Upload graph extensions to GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
         TAG_NAME: ${{ github.ref_name }}
       run: gh release upload "$TAG_NAME" graph-extension-artifacts/*.duckdb_extension --clobber
 
