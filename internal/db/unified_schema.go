@@ -28,6 +28,21 @@ type CrossCloudCorrelation struct {
 type UnifiedDatabaseConfig struct {
 	DatabasePath string
 	DB           *sql.DB
+	schemaRunner schemaExecer
+}
+
+// schemaExecer is the subset shared by *sql.DB and *sql.Tx that schema
+// creation needs. Migrations install a transaction here so every DDL statement
+// participates in the same commit or rollback.
+type schemaExecer interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
+func (c *UnifiedDatabaseConfig) schemaExec(query string, args ...interface{}) (sql.Result, error) {
+	if c.schemaRunner != nil {
+		return c.schemaRunner.Exec(query, args...)
+	}
+	return c.DB.Exec(query, args...)
 }
 
 // GetUnifiedDatabasePath returns the standardized path for the unified cloud database
@@ -94,17 +109,12 @@ func InitializeUnifiedDatabaseWithOptions(target string, opts ...Option) (*Unifi
 		return nil, fmt.Errorf("failed to load JSON extension: %w", err)
 	}
 
-	config := &UnifiedDatabaseConfig{
-		DatabasePath: dbPath,
-		DB:           db,
+	if err := EnsureSchema(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to ensure database schema: %w", err)
 	}
 
-	// Initialize all cloud provider tables
-	if err := config.createUnifiedTables(); err != nil {
-		return nil, fmt.Errorf("failed to create unified tables: %w", err)
-	}
-
-	return config, nil
+	return &UnifiedDatabaseConfig{DatabasePath: dbPath, DB: db}, nil
 }
 
 // createUnifiedTables creates all the tables for different cloud providers
@@ -127,6 +137,14 @@ func (c *UnifiedDatabaseConfig) createUnifiedTables() error {
 	// Create GCP tables
 	if err := c.createGCPTables(); err != nil {
 		return fmt.Errorf("failed to create GCP tables: %w", err)
+	}
+
+	if err := c.createGitHubTable(); err != nil {
+		return fmt.Errorf("failed to create GitHub tables: %w", err)
+	}
+
+	if err := c.createCloudflareTable(); err != nil {
+		return fmt.Errorf("failed to create Cloudflare tables: %w", err)
 	}
 
 	// Create unified relationships table
@@ -187,7 +205,7 @@ CREATE TABLE IF NOT EXISTS kubernetes_resources (
     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := c.DB.Exec(k8sTableSQL); err != nil {
+	if _, err := c.schemaExec(k8sTableSQL); err != nil {
 		return err
 	}
 
@@ -201,7 +219,7 @@ CREATE TABLE IF NOT EXISTS kubernetes_resources (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -241,7 +259,7 @@ CREATE TABLE IF NOT EXISTS aws_resources (
     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- When we discovered this resource
 );`
 
-	if _, err := c.DB.Exec(awsTableSQL); err != nil {
+	if _, err := c.schemaExec(awsTableSQL); err != nil {
 		return err
 	}
 
@@ -256,7 +274,7 @@ CREATE TABLE IF NOT EXISTS aws_resources (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -314,7 +332,7 @@ CREATE TABLE IF NOT EXISTS azure_resources (
     
 );`
 
-	if _, err := c.DB.Exec(azureTableSQL); err != nil {
+	if _, err := c.schemaExec(azureTableSQL); err != nil {
 		return err
 	}
 
@@ -331,7 +349,7 @@ CREATE TABLE IF NOT EXISTS azure_resources (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -359,7 +377,7 @@ CREATE TABLE IF NOT EXISTS gcp_resources (
     scan_id VARCHAR
 );`
 
-	if _, err := c.DB.Exec(gcpTableSQL); err != nil {
+	if _, err := c.schemaExec(gcpTableSQL); err != nil {
 		return err
 	}
 
@@ -374,12 +392,61 @@ CREATE TABLE IF NOT EXISTS gcp_resources (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func (c *UnifiedDatabaseConfig) createGitHubTable() error {
+	_, err := c.schemaExec(`
+CREATE TABLE IF NOT EXISTS github_resources (
+    id VARCHAR PRIMARY KEY,
+    org VARCHAR,
+    name VARCHAR NOT NULL,
+    type VARCHAR NOT NULL,
+    service VARCHAR,
+    region VARCHAR,
+    account_id VARCHAR,
+    arn VARCHAR,
+    parent_id VARCHAR,
+    tags JSON,
+    attributes JSON,
+    raw_data JSON,
+    state VARCHAR DEFAULT 'active',
+    created_at TIMESTAMP,
+    modified_at TIMESTAMP,
+    discovered_at TIMESTAMP,
+    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`)
+	return err
+}
+
+func (c *UnifiedDatabaseConfig) createCloudflareTable() error {
+	_, err := c.schemaExec(`
+CREATE TABLE IF NOT EXISTS cloudflare_resources (
+    id VARCHAR PRIMARY KEY,
+    provider VARCHAR DEFAULT 'cloudflare',
+    service VARCHAR,
+    type VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    region VARCHAR,
+    account_id VARCHAR,
+    parent_id VARCHAR,
+    arn VARCHAR,
+    tags JSON,
+    relationships JSON,
+    raw_data JSON,
+    attributes JSON,
+    state VARCHAR DEFAULT 'active',
+    created_at TIMESTAMP,
+    modified_at TIMESTAMP,
+    discovered_at TIMESTAMP,
+    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`)
+	return err
 }
 
 // createUnifiedRelationshipsTable creates a unified relationships table for all cloud providers
@@ -411,7 +478,7 @@ CREATE TABLE IF NOT EXISTS cloud_relationships (
     PRIMARY KEY (from_id, to_id, relationship_type, provider)
 );`
 
-	if _, err := c.DB.Exec(relationshipsSQL); err != nil {
+	if _, err := c.schemaExec(relationshipsSQL); err != nil {
 		return err
 	}
 
@@ -426,7 +493,7 @@ CREATE TABLE IF NOT EXISTS cloud_relationships (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -436,12 +503,6 @@ CREATE TABLE IF NOT EXISTS cloud_relationships (
 
 // createScanMetadataTable creates a unified scan metadata table
 func (c *UnifiedDatabaseConfig) createScanMetadataTable() error {
-	// Drop the table if it exists to ensure clean schema
-	if _, err := c.DB.Exec("DROP TABLE IF EXISTS scan_metadata"); err != nil {
-		// Log but don't fail - table might not exist
-		fmt.Printf("Note: Could not drop scan_metadata table: %v\n", err)
-	}
-
 	scanMetadataSQL := `
 CREATE TABLE IF NOT EXISTS scan_metadata (
     -- Scan identifiers
@@ -477,7 +538,7 @@ CREATE TABLE IF NOT EXISTS scan_metadata (
     status VARCHAR DEFAULT 'running'           -- Scan status (running, completed, failed)
 );`
 
-	if _, err := c.DB.Exec(scanMetadataSQL); err != nil {
+	if _, err := c.schemaExec(scanMetadataSQL); err != nil {
 		return err
 	}
 
@@ -490,7 +551,7 @@ CREATE TABLE IF NOT EXISTS scan_metadata (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -552,7 +613,7 @@ CREATE TABLE IF NOT EXISTS api_action_metadata (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := c.DB.Exec(apiMetadataSQL); err != nil {
+	if _, err := c.schemaExec(apiMetadataSQL); err != nil {
 		return err
 	}
 
@@ -568,7 +629,7 @@ CREATE TABLE IF NOT EXISTS api_action_metadata (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -594,37 +655,26 @@ func (c *UnifiedDatabaseConfig) CreateCrossCloudViews() error {
 	// Create a unified view of all cloud resources
 	unifiedResourcesView := `
 CREATE OR REPLACE VIEW all_cloud_resources AS
-SELECT 
-    'aws' as provider,
-    id,
-    name,
-    type,
-    arn as resource_identifier,
-    service,
-    region as location,
-    account_id,
-    parent_id,
-    tags,
-    raw_data,
-    scanned_at
+SELECT 'aws' AS provider, id, name, type, arn AS resource_identifier,
+       service, region AS location, account_id, parent_id, tags, raw_data, scanned_at
 FROM aws_resources
 UNION ALL
-SELECT 
-    'azure' as provider,
-    id,
-    name,
-    type,
-    id as resource_identifier,
-    service,
-    location,
-    subscription_id as account_id,
-    parent_id,
-    tags,
-    raw_data,
-    scanned_at
-FROM azure_resources;`
+SELECT 'azure', id, name, type, arn, service, region, account_id, parent_id, tags, raw_data, scanned_at
+FROM azure_resources
+UNION ALL
+SELECT 'gcp', id, name, type, arn, service, region, account_id, NULL, tags, raw_data, scanned_at
+FROM gcp_resources
+UNION ALL
+SELECT 'kubernetes', id, name, type, arn, service, region, account_id, parent_id, tags, raw_data, scanned_at
+FROM kubernetes_resources
+UNION ALL
+SELECT 'github', id, name, type, arn, service, region, account_id, parent_id, tags, raw_data, scanned_at
+FROM github_resources
+UNION ALL
+SELECT 'cloudflare', id, name, type, arn, service, region, account_id, parent_id, tags, raw_data, scanned_at
+FROM cloudflare_resources;`
 
-	if _, err := c.DB.Exec(unifiedResourcesView); err != nil {
+	if _, err := c.schemaExec(unifiedResourcesView); err != nil {
 		return fmt.Errorf("failed to create unified resources view: %w", err)
 	}
 
@@ -642,7 +692,7 @@ SELECT
 FROM all_cloud_resources
 GROUP BY provider;`
 
-	if _, err := c.DB.Exec(resourceCountsView); err != nil {
+	if _, err := c.schemaExec(resourceCountsView); err != nil {
 		return fmt.Errorf("failed to create resource counts view: %w", err)
 	}
 
@@ -712,7 +762,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_ip_addresses (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := c.DB.Exec(ipAddressSQL); err != nil {
+	if _, err := c.schemaExec(ipAddressSQL); err != nil {
 		return err
 	}
 
@@ -727,7 +777,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_ip_addresses (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -776,7 +826,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_dns_records (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := c.DB.Exec(dnsSQL); err != nil {
+	if _, err := c.schemaExec(dnsSQL); err != nil {
 		return err
 	}
 
@@ -791,7 +841,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_dns_records (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -847,7 +897,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_correlations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := c.DB.Exec(correlationSQL); err != nil {
+	if _, err := c.schemaExec(correlationSQL); err != nil {
 		return err
 	}
 
@@ -864,7 +914,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_correlations (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -924,7 +974,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_topology (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := c.DB.Exec(topologySQL); err != nil {
+	if _, err := c.schemaExec(topologySQL); err != nil {
 		return err
 	}
 
@@ -941,7 +991,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_topology (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}

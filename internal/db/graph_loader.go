@@ -30,8 +30,7 @@ func NewGraphLoader(dbPath string, opts ...Option) (*GraphLoader, error) {
 		return nil, err
 	}
 
-	// Initialize schema
-	if err := initializeGraphSchema(db); err != nil {
+	if err := EnsureSchema(context.Background(), db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -64,102 +63,6 @@ func dbInit(db *sql.DB) error {
 		fmt.Printf("Warning: SET autoload_known_extensions: %v\n", err)
 	}
 	return nil
-}
-
-func initializeGraphSchema(db *sql.DB) error {
-	// Create resource vertex table
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS aws_resources (
-			id VARCHAR PRIMARY KEY,
-			type VARCHAR NOT NULL,
-			service VARCHAR,
-			arn VARCHAR,
-			name VARCHAR,
-			region VARCHAR,
-			account_id VARCHAR,
-			parent_id VARCHAR,
-			raw_data JSON,
-			attributes JSON,
-			tags JSON,
-			created_at TIMESTAMP,
-			modified_at TIMESTAMP,
-			scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
-	// Create relationships edge table
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS aws_relationships (
-			from_id VARCHAR NOT NULL,
-			to_id VARCHAR NOT NULL,
-			relationship_type VARCHAR NOT NULL,
-			properties JSON,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (from_id, to_id, relationship_type)
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
-	// Create scan metadata table
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS scan_metadata (
-			id VARCHAR PRIMARY KEY,
-			service VARCHAR NOT NULL,
-			region VARCHAR NOT NULL,
-			scan_time TIMESTAMP NOT NULL,
-			total_resources INTEGER,
-			failed_resources INTEGER,
-			duration_ms BIGINT,
-			metadata JSON
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
-	// Create API action metadata table
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS api_action_metadata (
-			id VARCHAR PRIMARY KEY,
-			service VARCHAR NOT NULL,
-			operation_name VARCHAR NOT NULL,
-			operation_type VARCHAR, -- List, Describe, Get, etc.
-			execution_time TIMESTAMP NOT NULL,
-			region VARCHAR,
-			success BOOLEAN NOT NULL,
-			duration_ms BIGINT,
-			resource_count INTEGER DEFAULT 0,
-			error_message VARCHAR,
-			request_id VARCHAR,
-			metadata JSON,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
-	// Create indexes
-	_, err = db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_resources_type ON aws_resources(type);
-		CREATE INDEX IF NOT EXISTS idx_resources_service ON aws_resources(service);
-		CREATE INDEX IF NOT EXISTS idx_resources_region ON aws_resources(region);
-		CREATE INDEX IF NOT EXISTS idx_resources_parent ON aws_resources(parent_id);
-		CREATE INDEX IF NOT EXISTS idx_relationships_type ON aws_relationships(relationship_type);
-		CREATE INDEX IF NOT EXISTS idx_relationships_from ON aws_relationships(from_id);
-		CREATE INDEX IF NOT EXISTS idx_relationships_to ON aws_relationships(to_id);
-		CREATE INDEX IF NOT EXISTS idx_api_actions_service ON api_action_metadata(service);
-		CREATE INDEX IF NOT EXISTS idx_api_actions_operation ON api_action_metadata(operation_name);
-		CREATE INDEX IF NOT EXISTS idx_api_actions_time ON api_action_metadata(execution_time);
-		CREATE INDEX IF NOT EXISTS idx_api_actions_success ON api_action_metadata(success);
-	`)
-
-	return err
 }
 
 func (gl *GraphLoader) LoadResources(ctx context.Context, resources []*pb.Resource) error {

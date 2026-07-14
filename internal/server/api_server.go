@@ -14,6 +14,7 @@ import (
 	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	idmsdiscovery "github.com/jlgore/corkscrew/pkg/idmsdiscovery"
+	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -60,13 +61,13 @@ func NewAPIServer() *APIServer {
 func (s *APIServer) ListProviders(ctx context.Context, req *pb.APIListProvidersRequest) (*pb.APIListProvidersResponse, error) {
 	s.requestCount++
 
-	providers := []string{"aws", "azure", "gcp", "kubernetes"}
 	var providerInfos []*pb.APIProviderInfo
 
-	for _, providerName := range providers {
+	for _, catalogProvider := range providercatalog.Shipped() {
+		providerName := catalogProvider.Name
 		info := &pb.APIProviderInfo{
 			Name:        providerName,
-			Description: fmt.Sprintf("%s provider for Corkscrew", providerName),
+			Description: catalogProvider.Description,
 		}
 
 		if req.IncludeStatus {
@@ -239,8 +240,7 @@ func (s *APIServer) GetStatus(ctx context.Context, req *pb.APIGetStatusRequest) 
 
 	// Check provider status if requested
 	if req.IncludeProviders {
-		providers := []string{"aws", "azure", "gcp", "kubernetes"}
-		for _, provider := range providers {
+		for _, provider := range providercatalog.Names() {
 			status := s.getProviderStatus(provider)
 			response.ProviderStatus = append(response.ProviderStatus, status)
 		}

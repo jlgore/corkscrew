@@ -24,7 +24,6 @@ import (
 	"github.com/jlgore/corkscrew/pkg/plugins"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"github.com/jlgore/corkscrew/pkg/query/compliance"
-	"github.com/jlgore/corkscrew/pkg/smartscan"
 )
 
 // Build-time variables set by GoReleaser
@@ -34,57 +33,11 @@ var (
 	date    = "unknown"
 )
 
-// Service groups for easy selection
-var serviceGroups = map[string][]string{
-	"compute":    {"ec2", "lambda", "ecs", "eks", "batch"},
-	"storage":    {"s3", "ebs", "efs", "fsx", "backup"},
-	"database":   {"rds", "dynamodb", "elasticache", "redshift", "documentdb"},
-	"network":    {"vpc", "elb", "route53", "cloudfront", "apigateway"},
-	"security":   {"iam", "kms", "secretsmanager", "acm", "guardduty"},
-	"common":     {"s3", "ec2", "lambda", "rds", "iam"},
-	"monitoring": {"cloudwatch", "logs", "xray", "sns", "sqs"},
-}
-
 // parameterFlags implements flag.Value for collecting multiple --param flags
 type parameterFlags map[string]interface{}
 
 func (p parameterFlags) String() string {
 	return fmt.Sprintf("%v", map[string]interface{}(p))
-}
-
-// parseServices expands service groups and handles individual services
-func parseServices(servicesStr string) []string {
-	if servicesStr == "" {
-		return []string{}
-	}
-
-	parts := strings.Split(servicesStr, ",")
-	expanded := []string{}
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-
-		// Check if it's a group
-		if group, exists := serviceGroups[part]; exists {
-			fmt.Printf("📦 Expanding group '%s' to: %s\n",
-				part, strings.Join(group, ", "))
-			expanded = append(expanded, group...)
-		} else {
-			expanded = append(expanded, part)
-		}
-	}
-
-	// Remove duplicates
-	seen := make(map[string]bool)
-	result := []string{}
-	for _, svc := range expanded {
-		if !seen[svc] {
-			seen[svc] = true
-			result = append(result, svc)
-		}
-	}
-
-	return result
 }
 
 func defaultDatabasePath() string {
@@ -326,87 +279,6 @@ func printUsage() {
 	fmt.Println("  cloudflare  - Cloudflare")
 	fmt.Println("  gcp         - Google Cloud Platform")
 	fmt.Println("  kubernetes  - Kubernetes")
-}
-
-func runScanE(args []string) error {
-	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, cloudflare, gcp, kubernetes)")
-	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
-	regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
-	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
-	showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
-	configPath := fs.String("config", "", "Path to configuration file")
-	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
-	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
-	databasePath := fs.String("database", "", "Path to DuckDB database file, or a quack: URI for a remote server (default: config database.path or ~/.corkscrew/db/corkscrew.duckdb)")
-	quackToken := fs.String("token", "", "Auth token for a remote quack: database (or CORKSCREW_QUACK_TOKEN)")
-	dbProviderTable := fs.String("db-provider-table", "", "Override target table for persistence (routes all rows)")
-	// Kubernetes-specific and filter options
-	namespace := fs.String("namespace", "", "Kubernetes namespace filter (single)")
-	labelSelector := fs.String("label-selector", "", "Kubernetes label selector (e.g., app=myapp)")
-	fieldSelector := fs.String("field-selector", "", "Kubernetes field selector")
-	kubeconfig := fs.String("kubeconfig", "", "Path to kubeconfig file for Kubernetes provider")
-	kubeContext := fs.String("context", "", "Kubernetes context name")
-	includeRels := fs.Bool("include-relationships", true, "Include and persist basic relationships")
-
-	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
-			return nil
-		}
-		return fmt.Errorf("parse scan flags: %w", err)
-	}
-
-	// Resolve database target and quack auth from flags + environment.
-	scanDBPath := strings.TrimSpace(*databasePath)
-	if scanDBPath == "" {
-		if env := strings.TrimSpace(os.Getenv("CORKSCREW_QUACK_URL")); env != "" {
-			scanDBPath = env
-		}
-	}
-	scanToken := strings.TrimSpace(*quackToken)
-	if scanToken == "" && db.IsRemoteTarget(scanDBPath) {
-		scanToken = strings.TrimSpace(os.Getenv("CORKSCREW_QUACK_TOKEN"))
-	}
-
-	// Parse services - expand service groups
-	services := parseServices(*servicesStr)
-
-	// Parse regions
-	regions := []string{}
-	if *regionsStr != "" {
-		regions = strings.Split(*regionsStr, ",")
-		for i, r := range regions {
-			regions[i] = strings.TrimSpace(r)
-		}
-	}
-
-	// Run enhanced multi-region scan
-	options := smartscan.EnhancedScanOptions{
-		Provider:                *providerName,
-		Regions:                 regions,
-		Services:                services,
-		OutputFormat:            *outputFormat,
-		SaveToFile:              *saveToFile,
-		ShowEmpty:               *showEmpty,
-		ConfigPath:              *configPath,
-		MaxConcurrency:          *concurrency,
-		DatabasePath:            scanDBPath,
-		QuackToken:              scanToken,
-		DBProviderTableOverride: strings.TrimSpace(*dbProviderTable),
-		Namespace:               strings.TrimSpace(*namespace),
-		LabelSelector:           strings.TrimSpace(*labelSelector),
-		FieldSelector:           strings.TrimSpace(*fieldSelector),
-		KubeconfigPath:          strings.TrimSpace(*kubeconfig),
-		KubeContext:             strings.TrimSpace(*kubeContext),
-		IncludeRelationships:    *includeRels,
-	}
-
-	if err := smartscan.RunEnhancedScan(context.Background(), options); err != nil {
-		return err
-	}
-	return nil
 }
 
 func runDiscover(args []string) {

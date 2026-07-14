@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS identity_federation_relationships (
     tags JSON                                -- Tags for categorization
 );`
 
-	if _, err := c.DB.Exec(federationSQL); err != nil {
+	if _, err := c.schemaExec(federationSQL); err != nil {
 		return err
 	}
 
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS identity_federation_relationships (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS security_role_relationships (
     compliance_tags JSON                     -- Compliance framework tags
 );`
 
-	if _, err := c.DB.Exec(roleSQL); err != nil {
+	if _, err := c.schemaExec(roleSQL); err != nil {
 		return err
 	}
 
@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS security_role_relationships (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -301,7 +301,7 @@ CREATE TABLE IF NOT EXISTS policy_similarity_analysis (
     metadata JSON                            -- Additional metadata
 );`
 
-	if _, err := c.DB.Exec(policySQL); err != nil {
+	if _, err := c.schemaExec(policySQL); err != nil {
 		return err
 	}
 
@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS policy_similarity_analysis (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -407,7 +407,7 @@ CREATE TABLE IF NOT EXISTS certificate_correlations (
     metadata JSON                           -- Additional metadata
 );`
 
-	if _, err := c.DB.Exec(certSQL); err != nil {
+	if _, err := c.schemaExec(certSQL); err != nil {
 		return err
 	}
 
@@ -427,7 +427,7 @@ CREATE TABLE IF NOT EXISTS certificate_correlations (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -508,7 +508,7 @@ CREATE TABLE IF NOT EXISTS privilege_escalation_paths (
     analyst_notes TEXT                      -- Analyst notes
 );`
 
-	if _, err := c.DB.Exec(escalationSQL); err != nil {
+	if _, err := c.schemaExec(escalationSQL); err != nil {
 		return err
 	}
 
@@ -527,7 +527,7 @@ CREATE TABLE IF NOT EXISTS privilege_escalation_paths (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -614,7 +614,7 @@ CREATE TABLE IF NOT EXISTS security_risk_assessments (
     detailed_report_url VARCHAR             -- URL to detailed report
 );`
 
-	if _, err := c.DB.Exec(riskSQL); err != nil {
+	if _, err := c.schemaExec(riskSQL); err != nil {
 		return err
 	}
 
@@ -630,7 +630,7 @@ CREATE TABLE IF NOT EXISTS security_risk_assessments (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -694,7 +694,7 @@ CREATE TABLE IF NOT EXISTS compliance_mappings (
     metadata JSON                           -- Additional metadata
 );`
 
-	if _, err := c.DB.Exec(complianceSQL); err != nil {
+	if _, err := c.schemaExec(complianceSQL); err != nil {
 		return err
 	}
 
@@ -711,7 +711,7 @@ CREATE TABLE IF NOT EXISTS compliance_mappings (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -784,7 +784,7 @@ CREATE TABLE IF NOT EXISTS shared_secrets_correlation (
     metadata JSON                           -- Additional metadata
 );`
 
-	if _, err := c.DB.Exec(secretsSQL); err != nil {
+	if _, err := c.schemaExec(secretsSQL); err != nil {
 		return err
 	}
 
@@ -802,7 +802,7 @@ CREATE TABLE IF NOT EXISTS shared_secrets_correlation (
 	}
 
 	for _, idx := range indexes {
-		if _, err := c.DB.Exec(idx); err != nil {
+		if _, err := c.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
@@ -877,7 +877,7 @@ FROM certificate_correlations
 WHERE status = 'active'
 GROUP BY source_cloud_provider, target_cloud_provider;`
 
-	if _, err := c.DB.Exec(securitySummaryView); err != nil {
+	if _, err := c.schemaExec(securitySummaryView); err != nil {
 		return fmt.Errorf("failed to create security summary view: %w", err)
 	}
 
@@ -897,7 +897,7 @@ SELECT
 FROM privilege_escalation_paths
 GROUP BY source_cloud_provider, target_cloud_provider, path_type, risk_level;`
 
-	if _, err := c.DB.Exec(escalationSummaryView); err != nil {
+	if _, err := c.schemaExec(escalationSummaryView); err != nil {
 		return fmt.Errorf("failed to create escalation summary view: %w", err)
 	}
 

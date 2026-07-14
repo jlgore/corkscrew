@@ -406,6 +406,52 @@ fn load_graph_counts_nodes_and_edges() {
 }
 
 #[test]
+fn load_graph_accepts_versioned_schema_relationship_views() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE cloud_relationships (
+            from_id VARCHAR, to_id VARCHAR, relationship_type VARCHAR,
+            provider VARCHAR, properties VARCHAR
+        );",
+    )
+    .unwrap();
+
+    let providers = ["aws", "azure", "gcp", "kubernetes", "github", "cloudflare"];
+    for provider in providers {
+        conn.execute_batch(&format!(
+            "CREATE TABLE {provider}_resources (
+                id VARCHAR, type VARCHAR, name VARCHAR, region VARCHAR,
+                account_id VARCHAR, arn VARCHAR, tags VARCHAR
+            );
+            INSERT INTO {provider}_resources VALUES
+                ('{provider}:one', 'resource', 'one', 'global', 'account', NULL, NULL);
+            CREATE VIEW {provider}_relationships AS
+                SELECT from_id, to_id, relationship_type, properties
+                FROM cloud_relationships WHERE provider = '{provider}';"
+        ))
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO cloud_relationships VALUES
+            ('github:one', 'cloudflare:one', 'deploys_to', 'github', NULL)",
+        [],
+    )
+    .unwrap();
+
+    let detected = schema::detect_providers(&conn).unwrap();
+    let loaded = loader::load_graph(&conn, &detected).unwrap();
+    assert_eq!(detected.len(), 6);
+    assert_eq!(loaded.node_count, 6);
+    assert_eq!(loaded.edge_count, 1);
+    assert!(detected
+        .iter()
+        .any(|provider| provider.provider == "github"));
+    assert!(detected
+        .iter()
+        .any(|provider| provider.provider == "cloudflare"));
+}
+
+#[test]
 fn cache_get_or_load_then_invalidate() {
     let conn = Connection::open_in_memory().unwrap();
     make_fixture(&conn);

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	scanapp "github.com/jlgore/corkscrew/internal/app/scan"
+
 	"github.com/jlgore/corkscrew/internal/client"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/pkg/plugins"
@@ -186,7 +188,9 @@ func listServiceGroups() {
 	fmt.Fprintln(w, "Group\tServices")
 	fmt.Fprintln(w, "-----\t--------")
 
-	for group, services := range serviceGroups {
+	groups := scanapp.ServiceGroups()
+	for _, group := range scanapp.ServiceGroupNames() {
+		services := groups[group]
 		fmt.Fprintf(w, "%s\t%s\n", group, strings.Join(services, ", "))
 	}
 	w.Flush()

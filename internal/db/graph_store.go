@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/pkg/models"
+	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
 // GraphStore owns cross-cloud graph persistence over an existing database
@@ -39,6 +40,8 @@ const (
 var scanResourceTableAdapters = map[string]scanResourceAdapterKind{
 	"aws_resources":        scanResourceAdapterGeneric,
 	"kubernetes_resources": scanResourceAdapterGeneric,
+	"github_resources":     scanResourceAdapterGeneric,
+	"cloudflare_resources": scanResourceAdapterGeneric,
 	"azure_resources":      scanResourceAdapterAzure,
 	"gcp_resources":        scanResourceAdapterGCP,
 }
@@ -92,13 +95,6 @@ func (gs *GraphStore) StoreProtoResources(ctx context.Context, provider string, 
 	}
 	if provider == "" {
 		provider = "aws"
-	}
-
-	if err := gs.ensureAWSResourcesTable(ctx); err != nil {
-		return err
-	}
-	if err := gs.ensureCloudRelationshipsTable(ctx); err != nil {
-		return err
 	}
 
 	tx, err := gs.db.BeginTx(ctx, nil)
@@ -189,10 +185,6 @@ func (gs *GraphStore) StoreScanResources(ctx context.Context, resources []*pb.Re
 	if len(resources) == 0 {
 		return nil
 	}
-	if err := gs.ensureCloudRelationshipsTable(ctx); err != nil {
-		return err
-	}
-
 	seen := make(map[string]struct{})
 	for _, resource := range resources {
 		if resource == nil {
@@ -334,8 +326,9 @@ func (gs *GraphStore) storeAzureScanResource(ctx context.Context, resource *pb.R
 			location, parent_id, managed_by, service, kind,
 			sku_name, sku_tier, sku_size, sku_family, sku_capacity,
 			tags, properties, raw_data, provisioning_state, power_state,
-			created_time, changed_time, etag, api_version
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			created_time, changed_time, etag, api_version,
+			region, account_id, arn, attributes, state, created_at, modified_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		resource.Id,
 		scanStringOrFallback(resource.Name, resource.Id),
@@ -362,6 +355,13 @@ func (gs *GraphStore) storeAzureScanResource(ctx context.Context, resource *pb.R
 		changedTime,
 		scanStringValue(rawObject["etag"]),
 		scanStringValue(rawObject["apiVersion"]),
+		resource.Region,
+		resource.AccountId,
+		resource.Id,
+		scanStringJSONOrNil(resource.Attributes),
+		"active",
+		createdTime,
+		changedTime,
 	)
 	if err != nil {
 		return fmt.Errorf("insert azure resource: %w", err)
@@ -384,8 +384,9 @@ func (gs *GraphStore) storeGCPScanResource(ctx context.Context, resource *pb.Res
 		INSERT INTO gcp_resources (
 			id, name, type, service, project_id, location,
 			org_id, folder_id, tags, labels, raw_data,
-			discovered_at, scan_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			discovered_at, scan_id, region, account_id, arn,
+			attributes, state, created_at, modified_at, scanned_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			type = EXCLUDED.type,
@@ -398,7 +399,14 @@ func (gs *GraphStore) storeGCPScanResource(ctx context.Context, resource *pb.Res
 			raw_data = EXCLUDED.raw_data,
 			discovered_at = EXCLUDED.discovered_at,
 			updated_at = EXCLUDED.discovered_at,
-			scan_id = EXCLUDED.scan_id
+			scan_id = EXCLUDED.scan_id,
+			region = EXCLUDED.region,
+			account_id = EXCLUDED.account_id,
+			arn = EXCLUDED.arn,
+			attributes = EXCLUDED.attributes,
+			state = EXCLUDED.state,
+			modified_at = EXCLUDED.modified_at,
+			scanned_at = EXCLUDED.scanned_at
 	`,
 		resource.Id,
 		scanStringOrFallback(resource.Name, resource.Id),
@@ -413,6 +421,14 @@ func (gs *GraphStore) storeGCPScanResource(ctx context.Context, resource *pb.Res
 		scanStringOrFallback(resource.RawData, "{}"),
 		discoveredAt,
 		scanID,
+		resource.Region,
+		resource.AccountId,
+		resource.Id,
+		scanStringJSONOrNil(resource.Attributes),
+		"active",
+		discoveredAt,
+		discoveredAt,
+		discoveredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert gcp resource: %w", err)
@@ -486,22 +502,14 @@ func scanResourceTable(resource *pb.Resource, override string) (string, error) {
 	if table := scanResourceTableForProvider(resource.Provider); table != "" {
 		return table, nil
 	}
-	return "aws_resources", nil
+	return "", fmt.Errorf("unsupported provider %q: no resource table is registered", resource.Provider)
 }
 
 func scanResourceTableForProvider(provider string) string {
-	switch strings.ToLower(provider) {
-	case "aws":
-		return "aws_resources"
-	case "azure":
-		return "azure_resources"
-	case "kubernetes":
-		return "kubernetes_resources"
-	case "gcp":
-		return "gcp_resources"
-	default:
-		return ""
+	if catalogProvider, ok := providercatalog.Lookup(provider); ok {
+		return catalogProvider.ResourceTable
 	}
+	return ""
 }
 
 func scanResourceTableOverride(resource *pb.Resource) string {
@@ -686,8 +694,8 @@ func scanPathSegmentAfter(resourceID, marker string) string {
 	return ""
 }
 
-// StoreScanMetadata stores scan metadata against either the unified scan schema
-// or the older graph-loader schema.
+// StoreScanMetadata stores scan metadata against the canonical schema. Legacy
+// shapes are upgraded by EnsureSchema before a GraphStore is constructed.
 func (gs *GraphStore) StoreScanMetadata(ctx context.Context, provider, service, region string, stats *pb.ScanStats, metadata map[string]string) error {
 	if metadata == nil {
 		metadata = map[string]string{}
@@ -702,166 +710,28 @@ func (gs *GraphStore) StoreScanMetadata(ctx context.Context, provider, service, 
 		stats = &pb.ScanStats{}
 	}
 
-	columns, err := gs.scanMetadataColumns(ctx)
-	if err != nil {
-		if err := gs.ensureUnifiedScanMetadataTable(ctx); err != nil {
-			return err
-		}
-		columns, err = gs.scanMetadataColumns(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
 	metadataJSON, _ := json.Marshal(metadata)
 	id := uuid.New().String()
+	servicesJSON, _ := json.Marshal([]string{service})
+	regionsJSON, _ := json.Marshal([]string{region})
 
-	if columns["scan_start_time"] && columns["services"] && columns["regions"] {
-		servicesJSON, _ := json.Marshal([]string{service})
-		regionsJSON, _ := json.Marshal([]string{region})
-
-		_, err := gs.db.ExecContext(ctx, `
-			INSERT INTO scan_metadata (
-				id, provider, scan_type, services, regions,
-				total_resources, failed_resources,
-				scan_start_time, scan_end_time, duration_ms,
-				metadata
-			)
-			VALUES (?, ?, 'service', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
-		`, id, provider, string(servicesJSON), string(regionsJSON),
-			stats.TotalResources, stats.FailedResources, stats.DurationMs, string(metadataJSON))
-		return err
-	}
-
-	if columns["scan_time"] && columns["service"] && columns["region"] {
-		_, err := gs.db.ExecContext(ctx, `
-			INSERT INTO scan_metadata (
-				id, service, region, scan_time, total_resources, failed_resources, duration_ms, metadata
-			)
-			VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
-		`, id, service, region, stats.TotalResources, stats.FailedResources, stats.DurationMs, string(metadataJSON))
-		return err
-	}
-
-	return fmt.Errorf("scan_metadata table has unsupported schema")
-}
-
-func (gs *GraphStore) ensureAWSResourcesTable(ctx context.Context) error {
 	_, err := gs.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS aws_resources (
-			id VARCHAR PRIMARY KEY,
-			type VARCHAR NOT NULL,
-			service VARCHAR,
-			arn VARCHAR,
-			name VARCHAR,
-			region VARCHAR,
-			account_id VARCHAR,
-			parent_id VARCHAR,
-			raw_data JSON,
-			attributes JSON,
-			tags JSON,
-			created_at TIMESTAMP,
-			modified_at TIMESTAMP,
-			scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		INSERT INTO scan_metadata (
+			id, provider, scan_type, services, regions,
+			total_resources, failed_resources,
+			scan_start_time, scan_end_time, duration_ms,
+			metadata, status
 		)
-	`)
+		VALUES (?, ?, 'service', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, 'completed')
+	`, id, provider, string(servicesJSON), string(regionsJSON),
+		stats.TotalResources, stats.FailedResources, stats.DurationMs, string(metadataJSON))
 	return err
-}
-
-func (gs *GraphStore) ensureCloudRelationshipsTable(ctx context.Context) error {
-	_, err := gs.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS cloud_relationships (
-			from_id VARCHAR NOT NULL,
-			to_id VARCHAR NOT NULL,
-			relationship_type VARCHAR NOT NULL,
-			provider VARCHAR NOT NULL,
-			relationship_subtype VARCHAR,
-			properties JSON,
-			from_resource_type VARCHAR,
-			to_resource_type VARCHAR,
-			direction VARCHAR DEFAULT 'outbound',
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (from_id, to_id, relationship_type, provider)
-		)
-	`)
-	return err
-}
-
-func (gs *GraphStore) ensureUnifiedScanMetadataTable(ctx context.Context) error {
-	_, err := gs.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS scan_metadata (
-			id VARCHAR PRIMARY KEY,
-			provider VARCHAR NOT NULL,
-			scan_type VARCHAR NOT NULL,
-			services JSON,
-			regions JSON,
-			accounts JSON,
-			total_resources INTEGER DEFAULT 0,
-			new_resources INTEGER DEFAULT 0,
-			updated_resources INTEGER DEFAULT 0,
-			deleted_resources INTEGER DEFAULT 0,
-			failed_resources INTEGER DEFAULT 0,
-			scan_start_time TIMESTAMP NOT NULL,
-			scan_end_time TIMESTAMP,
-			duration_ms BIGINT,
-			initiated_by VARCHAR,
-			scan_reason VARCHAR,
-			error_messages JSON,
-			warnings JSON,
-			metadata JSON,
-			status VARCHAR DEFAULT 'running'
-		)
-	`)
-	return err
-}
-
-func (gs *GraphStore) scanMetadataColumns(ctx context.Context) (map[string]bool, error) {
-	rows, err := gs.db.QueryContext(ctx, "SELECT * FROM scan_metadata LIMIT 0")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]bool, len(columns))
-	for _, column := range columns {
-		result[column] = true
-	}
-	return result, nil
 }
 
 // StoreResources stores cross-cloud resources.
 func (gs *GraphStore) StoreResources(resources []*models.Resource) error {
 	if len(resources) == 0 {
 		return nil
-	}
-
-	createTableSQL := `
-		CREATE TABLE IF NOT EXISTS crosscloud_resources (
-			id VARCHAR PRIMARY KEY,
-			name VARCHAR,
-			type VARCHAR,
-			service VARCHAR,
-			provider VARCHAR,
-			region VARCHAR,
-			arn VARCHAR,
-			status VARCHAR,
-			created_at TIMESTAMP,
-			modified_at TIMESTAMP,
-			scanned_at TIMESTAMP,
-			tags JSON,
-			attributes JSON,
-			metadata JSON,
-			raw_data JSON,
-			cross_cloud_id VARCHAR
-		)`
-	if _, err := gs.db.Exec(createTableSQL); err != nil {
-		return fmt.Errorf("failed to create crosscloud_resources table: %w", err)
 	}
 
 	insertSQL := `
@@ -902,25 +772,10 @@ func (gs *GraphStore) StoreIPAddresses(addresses []*models.IPAddress) error {
 		return nil
 	}
 
-	createTableSQL := `
-		CREATE TABLE IF NOT EXISTS crosscloud_ip_addresses (
-			address VARCHAR,
-			type VARCHAR,
-			version VARCHAR,
-			provider VARCHAR,
-			region VARCHAR,
-			resource_id VARCHAR,
-			scope VARCHAR,
-			PRIMARY KEY (address, provider, resource_id)
-		)`
-	if _, err := gs.db.Exec(createTableSQL); err != nil {
-		return fmt.Errorf("failed to create crosscloud_ip_addresses table: %w", err)
-	}
-
 	insertSQL := `
-		INSERT OR REPLACE INTO crosscloud_ip_addresses 
-		(address, type, version, provider, region, resource_id, scope)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+			INSERT OR REPLACE INTO cross_cloud_ip_addresses
+			(id, ip_address, ip_type, ip_version, provider, region, resource_id, resource_type, ip_scope)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'unknown', ?)`
 
 	stmt, err := gs.db.Prepare(insertSQL)
 	if err != nil {
@@ -929,7 +784,9 @@ func (gs *GraphStore) StoreIPAddresses(addresses []*models.IPAddress) error {
 	defer stmt.Close()
 
 	for _, addr := range addresses {
-		_, err := stmt.Exec(addr.Address, addr.Type, addr.Version, addr.Provider, addr.Region, addr.ResourceID, addr.Scope)
+		id := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{addr.Provider, addr.ResourceID, addr.Address}, "|"))).String()
+		region := scanStringOrFallback(addr.Region, "global")
+		_, err := stmt.Exec(id, addr.Address, scanStringOrFallback(addr.Type, "unknown"), scanStringOrFallback(addr.Version, "unknown"), addr.Provider, region, addr.ResourceID, addr.Scope)
 		if err != nil {
 			return fmt.Errorf("failed to insert IP address %s: %w", addr.Address, err)
 		}
@@ -944,25 +801,10 @@ func (gs *GraphStore) StoreDNSRecords(records []*models.DNSRecord) error {
 		return nil
 	}
 
-	createTableSQL := `
-		CREATE TABLE IF NOT EXISTS crosscloud_dns_records (
-			name VARCHAR,
-			type VARCHAR,
-			values JSON,
-			ttl INTEGER,
-			provider VARCHAR,
-			zone VARCHAR,
-			resource_id VARCHAR,
-			PRIMARY KEY (name, type, provider, resource_id)
-		)`
-	if _, err := gs.db.Exec(createTableSQL); err != nil {
-		return fmt.Errorf("failed to create crosscloud_dns_records table: %w", err)
-	}
-
 	insertSQL := `
-		INSERT OR REPLACE INTO crosscloud_dns_records 
-		(name, type, values, ttl, provider, zone, resource_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+			INSERT OR REPLACE INTO cross_cloud_dns_records
+			(id, dns_name, record_type, record_values, ttl, provider, zone_name, resource_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	stmt, err := gs.db.Prepare(insertSQL)
 	if err != nil {
@@ -972,7 +814,8 @@ func (gs *GraphStore) StoreDNSRecords(records []*models.DNSRecord) error {
 
 	for _, record := range records {
 		values, _ := json.Marshal(record.Values)
-		_, err := stmt.Exec(record.Name, record.Type, string(values), record.TTL, record.Provider, record.Zone, record.ResourceID)
+		id := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{record.Provider, record.ResourceID, record.Name, record.Type}, "|"))).String()
+		_, err := stmt.Exec(id, record.Name, record.Type, string(values), record.TTL, record.Provider, record.Zone, record.ResourceID)
 		if err != nil {
 			return fmt.Errorf("failed to insert DNS record %s: %w", record.Name, err)
 		}
@@ -996,27 +839,13 @@ func (gs *GraphStore) storeResourceCorrelations(correlations []*models.ResourceC
 		return nil
 	}
 
-	createTableSQL := `
-		CREATE TABLE IF NOT EXISTS crosscloud_correlations (
-			id VARCHAR PRIMARY KEY,
-			source_id VARCHAR,
-			target_id VARCHAR,
-			type VARCHAR,
-			relation_type VARCHAR,
-			strength DOUBLE,
-			confidence DOUBLE,
-			description VARCHAR,
-			metadata JSON,
-			discovered_at TIMESTAMP
-		)`
-	if _, err := gs.db.Exec(createTableSQL); err != nil {
-		return fmt.Errorf("failed to create crosscloud_correlations table: %w", err)
-	}
-
 	insertSQL := `
-		INSERT OR REPLACE INTO crosscloud_correlations 
-		(id, source_id, target_id, type, relation_type, strength, confidence, description, metadata, discovered_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			INSERT OR REPLACE INTO cross_cloud_correlations
+			(id, source_resource_id, source_provider, source_region, source_resource_type,
+			 target_resource_id, target_provider, target_region, target_resource_type,
+			 correlation_type, correlation_subtype, correlation_method, confidence_score,
+			 description, metadata, discovered_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'legacy_store', ?, ?, ?, ?)`
 
 	stmt, err := gs.db.Prepare(insertSQL)
 	if err != nil {
@@ -1027,8 +856,11 @@ func (gs *GraphStore) storeResourceCorrelations(correlations []*models.ResourceC
 	for _, corr := range correlations {
 		metadata, _ := json.Marshal(corr.Metadata)
 		_, err := stmt.Exec(
-			corr.ID, corr.SourceID, corr.TargetID, corr.Type, corr.RelationType,
-			corr.Strength, corr.Confidence, corr.Description, string(metadata), corr.DiscoveredAt,
+			corr.ID,
+			corr.SourceID, scanStringOrFallback(corr.SourceResource.Provider, "unknown"), corr.SourceResource.Region, corr.SourceResource.Type,
+			corr.TargetID, scanStringOrFallback(corr.TargetResource.Provider, "unknown"), corr.TargetResource.Region, corr.TargetResource.Type,
+			scanStringOrFallback(corr.Type, "legacy"), corr.RelationType, corr.Confidence,
+			corr.Description, string(metadata), corr.DiscoveredAt,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert correlation %s: %w", corr.ID, err)
@@ -1042,16 +874,6 @@ func (gs *GraphStore) storeGenericCorrelations(correlations interface{}) error {
 	correlationsJSON, err := json.Marshal(correlations)
 	if err != nil {
 		return fmt.Errorf("failed to marshal correlations: %w", err)
-	}
-
-	createTableSQL := `
-		CREATE TABLE IF NOT EXISTS crosscloud_generic_correlations (
-			id VARCHAR PRIMARY KEY,
-			correlation_data JSON,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`
-	if _, err := gs.db.Exec(createTableSQL); err != nil {
-		return fmt.Errorf("failed to create crosscloud_generic_correlations table: %w", err)
 	}
 
 	id := uuid.New().String()
@@ -1115,8 +937,8 @@ func (gs *GraphStore) GetResourcesByProvider(provider string) ([]*models.Resourc
 // GetIPAddressesByProvider retrieves IP addresses for a specific provider.
 func (gs *GraphStore) GetIPAddressesByProvider(provider string) ([]*models.IPAddress, error) {
 	query := `
-		SELECT address, type, version, provider, region, resource_id, scope
-		FROM crosscloud_ip_addresses 
+		SELECT ip_address, ip_type, ip_version, provider, region, resource_id, ip_scope
+		FROM cross_cloud_ip_addresses
 		WHERE provider = ?`
 
 	rows, err := gs.db.Query(query, provider)
@@ -1141,8 +963,8 @@ func (gs *GraphStore) GetIPAddressesByProvider(provider string) ([]*models.IPAdd
 // GetDNSRecordsByProvider retrieves DNS records for a specific provider.
 func (gs *GraphStore) GetDNSRecordsByProvider(provider string) ([]*models.DNSRecord, error) {
 	query := `
-		SELECT name, type, values, ttl, provider, zone, resource_id
-		FROM crosscloud_dns_records 
+		SELECT dns_name, record_type, record_values, ttl, provider, zone_name, resource_id
+		FROM cross_cloud_dns_records
 		WHERE provider = ?`
 
 	rows, err := gs.db.Query(query, provider)

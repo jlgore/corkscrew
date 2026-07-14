@@ -22,6 +22,10 @@ func openTestGraphStore(t *testing.T) (*sql.DB, *GraphStore) {
 	if err != nil {
 		t.Fatalf("open duckdb: %v", err)
 	}
+	if err := EnsureSchema(context.Background(), database); err != nil {
+		_ = database.Close()
+		t.Fatalf("ensure schema: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = database.Close()
 	})
@@ -264,6 +268,46 @@ func TestGraphStoreScanResources(t *testing.T) {
 	}
 }
 
+func TestGraphStorePersistsEveryShippedProvider(t *testing.T) {
+	database, store := openTestGraphStore(t)
+	ctx := context.Background()
+	resources := []*pb.Resource{
+		{Provider: "aws", Id: "aws:bucket:one", Name: "one", Type: "AWS::S3::Bucket", Service: "s3", Region: "us-east-1", AccountId: "111"},
+		{Provider: "azure", Id: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/one", Name: "one", Type: "Microsoft.Compute/virtualMachines", Service: "compute", Region: "eastus", AccountId: "sub"},
+		{Provider: "gcp", Id: "//compute.googleapis.com/projects/project/zones/us-central1-a/instances/one", Name: "one", Type: "compute.googleapis.com/Instance", Service: "compute", Region: "us-central1-a", AccountId: "project"},
+		{Provider: "kubernetes", Id: "cluster/default/Pod/one", Name: "one", Type: "Pod", Service: "v1", Region: "default", AccountId: "cluster"},
+		{Provider: "github", Id: "github:repo:one", Name: "one", Type: "repository", Service: "repos", Region: "global", AccountId: "example"},
+		{Provider: "cloudflare", Id: "cloudflare:worker:one", Name: "one", Type: "worker", Service: "workers", Region: "global", AccountId: "account"},
+	}
+	if err := store.StoreScanResources(ctx, resources, StoreScanResourcesOptions{}); err != nil {
+		t.Fatalf("store resources: %v", err)
+	}
+
+	var total int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM all_cloud_resources`).Scan(&total); err != nil {
+		t.Fatalf("query unified resources: %v", err)
+	}
+	if total != len(resources) {
+		t.Fatalf("unified resource count = %d, want %d", total, len(resources))
+	}
+
+	for _, resource := range resources {
+		var count int
+		table := scanResourceTableForProvider(resource.Provider)
+		if err := database.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE id = ?`, resource.Id).Scan(&count); err != nil {
+			t.Fatalf("query %s: %v", resource.Provider, err)
+		}
+		if count != 1 {
+			t.Fatalf("%s resource count = %d, want 1", resource.Provider, count)
+		}
+	}
+
+	err := store.StoreScanResources(ctx, []*pb.Resource{{Provider: "third-party", Id: "one"}}, StoreScanResourcesOptions{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported provider") {
+		t.Fatalf("unknown provider error = %v", err)
+	}
+}
+
 func TestGraphStoreScanResourcesProviderAdapters(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "provider-adapters.duckdb")
 	cfg, err := InitializeUnifiedDatabase(dbPath)
@@ -383,7 +427,12 @@ func TestGraphStoreScanResourcesRejectsInvalidTableOverrides(t *testing.T) {
 }
 
 func TestGraphStoreScanMetadataSupportsLegacySchema(t *testing.T) {
-	db, store := openTestGraphStore(t)
+	dbPath := filepath.Join(t.TempDir(), "legacy-metadata.duckdb")
+	db, err := sql.Open("duckdb", dbPath)
+	if err != nil {
+		t.Fatalf("open duckdb: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx, `
@@ -400,23 +449,40 @@ func TestGraphStoreScanMetadataSupportsLegacySchema(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("create legacy scan metadata table: %v", err)
 	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO scan_metadata VALUES
+		('legacy-scan', 's3', 'us-east-1', CURRENT_TIMESTAMP, 5, 0, 42, '{"provider":"aws"}')
+	`); err != nil {
+		t.Fatalf("seed legacy scan metadata: %v", err)
+	}
+	if err := EnsureSchema(ctx, db); err != nil {
+		t.Fatalf("migrate legacy schema: %v", err)
+	}
+	store := NewGraphStore(db)
 
 	stats := &pb.ScanStats{TotalResources: 7, FailedResources: 1, DurationMs: 1234}
 	if err := store.StoreScanMetadata(ctx, "", "s3", "us-east-1", stats, map[string]string{"provider": "aws"}); err != nil {
 		t.Fatalf("store legacy scan metadata: %v", err)
 	}
 
-	var service, region string
+	var provider string
 	var totalResources int
 	if err := db.QueryRow(`
-		SELECT service, region, total_resources
+		SELECT provider, total_resources
 		FROM scan_metadata
-		LIMIT 1
-	`).Scan(&service, &region, &totalResources); err != nil {
+		WHERE id = 'legacy-scan'
+	`).Scan(&provider, &totalResources); err != nil {
 		t.Fatalf("query legacy scan metadata: %v", err)
 	}
-	if service != "s3" || region != "us-east-1" || totalResources != 7 {
-		t.Fatalf("unexpected legacy scan metadata: service=%q region=%q total=%d", service, region, totalResources)
+	if provider != "aws" || totalResources != 5 {
+		t.Fatalf("unexpected migrated metadata: provider=%q total=%d", provider, totalResources)
+	}
+	var archiveCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM scan_metadata_legacy_v0`).Scan(&archiveCount); err != nil {
+		t.Fatalf("query legacy archive: %v", err)
+	}
+	if archiveCount != 1 {
+		t.Fatalf("legacy archive count = %d, want 1", archiveCount)
 	}
 }
 
@@ -500,7 +566,7 @@ func TestGraphStoreCorrelations(t *testing.T) {
 	}
 
 	var typedCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM crosscloud_correlations WHERE id = ?`, "corr-1").Scan(&typedCount); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM cross_cloud_correlations WHERE id = ?`, "corr-1").Scan(&typedCount); err != nil {
 		t.Fatalf("query typed correlations: %v", err)
 	}
 	if typedCount != 1 {

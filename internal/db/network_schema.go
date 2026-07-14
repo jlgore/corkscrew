@@ -7,7 +7,8 @@ import (
 
 // NetworkSchemaExtensions extends the unified database schema with Phase 2 network topology features
 type NetworkSchemaExtensions struct {
-	db *sql.DB
+	db           *sql.DB
+	schemaRunner schemaExecer
 }
 
 // NewNetworkSchemaExtensions creates a new network schema extension manager
@@ -15,6 +16,17 @@ func NewNetworkSchemaExtensions(db *sql.DB) *NetworkSchemaExtensions {
 	return &NetworkSchemaExtensions{
 		db: db,
 	}
+}
+
+func newNetworkSchemaExtensionsWithRunner(db *sql.DB, runner schemaExecer) *NetworkSchemaExtensions {
+	return &NetworkSchemaExtensions{db: db, schemaRunner: runner}
+}
+
+func (n *NetworkSchemaExtensions) schemaExec(query string, args ...interface{}) (sql.Result, error) {
+	if n.schemaRunner != nil {
+		return n.schemaRunner.Exec(query, args...)
+	}
+	return n.db.Exec(query, args...)
 }
 
 // CreateNetworkTopologyExtensions creates additional tables for Phase 2 network topology features
@@ -129,7 +141,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_vpn_connections (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(vpnSQL); err != nil {
+	if _, err := n.schemaExec(vpnSQL); err != nil {
 		return err
 	}
 
@@ -143,7 +155,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_vpn_connections (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create VPN index: %w", err)
 		}
 	}
@@ -230,7 +242,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_peering (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(peeringSQL); err != nil {
+	if _, err := n.schemaExec(peeringSQL); err != nil {
 		return err
 	}
 
@@ -245,7 +257,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_network_peering (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create peering index: %w", err)
 		}
 	}
@@ -354,7 +366,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_direct_connections (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(directSQL); err != nil {
+	if _, err := n.schemaExec(directSQL); err != nil {
 		return err
 	}
 
@@ -370,7 +382,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_direct_connections (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create direct connection index: %w", err)
 		}
 	}
@@ -464,7 +476,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_enhanced_dns (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(enhancedDNSSQL); err != nil {
+	if _, err := n.schemaExec(enhancedDNSSQL); err != nil {
 		return err
 	}
 
@@ -481,7 +493,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_enhanced_dns (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create enhanced DNS index: %w", err)
 		}
 	}
@@ -568,7 +580,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_loadbalancer_topology (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(lbTopoSQL); err != nil {
+	if _, err := n.schemaExec(lbTopoSQL); err != nil {
 		return err
 	}
 
@@ -581,7 +593,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_loadbalancer_topology (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create LB topology index: %w", err)
 		}
 	}
@@ -662,7 +674,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_security_correlations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(securitySQL); err != nil {
+	if _, err := n.schemaExec(securitySQL); err != nil {
 		return err
 	}
 
@@ -680,7 +692,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_security_correlations (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create security correlation index: %w", err)
 		}
 	}
@@ -770,7 +782,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_visualization_metadata (
     last_accessed TIMESTAMP
 );`
 
-	if _, err := n.db.Exec(vizSQL); err != nil {
+	if _, err := n.schemaExec(vizSQL); err != nil {
 		return err
 	}
 
@@ -784,7 +796,7 @@ CREATE TABLE IF NOT EXISTS cross_cloud_visualization_metadata (
 	}
 
 	for _, idx := range indexes {
-		if _, err := n.db.Exec(idx); err != nil {
+		if _, err := n.schemaExec(idx); err != nil {
 			return fmt.Errorf("failed to create visualization metadata index: %w", err)
 		}
 	}
@@ -809,7 +821,7 @@ SELECT
 FROM cross_cloud_vpn_connections
 GROUP BY source_provider, target_provider, connection_type;`
 
-	if _, err := n.db.Exec(vpnSummaryView); err != nil {
+	if _, err := n.schemaExec(vpnSummaryView); err != nil {
 		return fmt.Errorf("failed to create VPN summary view: %w", err)
 	}
 
@@ -828,7 +840,7 @@ SELECT
 FROM cross_cloud_network_peering
 GROUP BY source_provider, target_provider, peering_type;`
 
-	if _, err := n.db.Exec(peeringSummaryView); err != nil {
+	if _, err := n.schemaExec(peeringSummaryView); err != nil {
 		return fmt.Errorf("failed to create peering summary view: %w", err)
 	}
 
@@ -849,7 +861,7 @@ FROM cross_cloud_correlations
 GROUP BY source_provider, target_provider, correlation_type
 ORDER BY correlation_count DESC;`
 
-	if _, err := n.db.Exec(correlationSummaryView); err != nil {
+	if _, err := n.schemaExec(correlationSummaryView); err != nil {
 		return fmt.Errorf("failed to create correlation summary view: %w", err)
 	}
 
