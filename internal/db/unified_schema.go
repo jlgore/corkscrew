@@ -6,23 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/jlgore/corkscrew/pkg/models"
 )
-
-// CrossCloudCorrelation represents a correlation between resources (local type to avoid circular import)
-type CrossCloudCorrelation struct {
-	ID              string                 `json:"id"`
-	Type            string                 `json:"type"`
-	Source          *models.Resource       `json:"source"`
-	Target          *models.Resource       `json:"target"`
-	ConfidenceScore float64                `json:"confidence_score"`
-	Description     string                 `json:"description"`
-	Properties      map[string]interface{} `json:"properties,omitempty"`
-	SourceProvider  string                 `json:"source_provider"`
-	TargetProvider  string                 `json:"target_provider"`
-	DiscoveredAt    string                 `json:"discovered_at"`
-}
 
 // UnifiedDatabaseConfig holds configuration for the unified cloud database
 type UnifiedDatabaseConfig struct {
@@ -74,47 +58,6 @@ func GetUnifiedDatabasePath(customPath ...string) (string, error) {
 	}
 
 	return filepath.Join(dbDir, "corkscrew.duckdb"), nil
-}
-
-// InitializeUnifiedDatabase creates and initializes the unified cloud database.
-// If customPath is provided, it will be used instead of the default location.
-// A `quack:` URI connects to a remote Quack server instead of a local file.
-func InitializeUnifiedDatabase(customPath ...string) (*UnifiedDatabaseConfig, error) {
-	target := ""
-	if len(customPath) > 0 {
-		target = customPath[0]
-	}
-	return InitializeUnifiedDatabaseWithOptions(target)
-}
-
-// InitializeUnifiedDatabaseWithOptions is like InitializeUnifiedDatabase but
-// accepts connection options (such as WithToken for remote Quack authentication).
-func InitializeUnifiedDatabaseWithOptions(target string, opts ...Option) (*UnifiedDatabaseConfig, error) {
-	dbPath := target
-	if !IsRemoteTarget(target) {
-		resolved, err := GetUnifiedDatabasePath(target)
-		if err != nil {
-			return nil, err
-		}
-		dbPath = resolved
-	}
-
-	db, err := OpenDuckDB(context.Background(), dbPath, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Install and load JSON extension for DuckDB
-	if _, err := db.Exec("INSTALL json; LOAD json;"); err != nil {
-		return nil, fmt.Errorf("failed to load JSON extension: %w", err)
-	}
-
-	if err := EnsureSchema(context.Background(), db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("failed to ensure database schema: %w", err)
-	}
-
-	return &UnifiedDatabaseConfig{DatabasePath: dbPath, DB: db}, nil
 }
 
 // createUnifiedTables creates all the tables for different cloud providers
@@ -672,7 +615,10 @@ SELECT 'github', id, name, type, arn, service, region, account_id, parent_id, ta
 FROM github_resources
 UNION ALL
 SELECT 'cloudflare', id, name, type, arn, service, region, account_id, parent_id, tags, raw_data, scanned_at
-FROM cloudflare_resources;`
+FROM cloudflare_resources
+UNION ALL
+SELECT provider, id, name, type, arn, service, region, account_id, parent_id, tags, raw_data, scanned_at
+FROM custom_provider_resources;`
 
 	if _, err := c.schemaExec(unifiedResourcesView); err != nil {
 		return fmt.Errorf("failed to create unified resources view: %w", err)
@@ -1007,43 +953,4 @@ func (c *UnifiedDatabaseConfig) QueryContext(ctx context.Context, query string, 
 // BeginTx starts a transaction
 func (c *UnifiedDatabaseConfig) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	return c.DB.BeginTx(ctx, opts)
-}
-
-func (c *UnifiedDatabaseConfig) graphStore() *GraphStore {
-	return NewGraphStore(c.DB)
-}
-
-// StoreResources stores resource data
-func (c *UnifiedDatabaseConfig) StoreResources(resources []*models.Resource) error {
-	return c.graphStore().StoreResources(resources)
-}
-
-// StoreIPAddresses stores IP address data
-func (c *UnifiedDatabaseConfig) StoreIPAddresses(addresses []*models.IPAddress) error {
-	return c.graphStore().StoreIPAddresses(addresses)
-}
-
-// StoreDNSRecords stores DNS record data
-func (c *UnifiedDatabaseConfig) StoreDNSRecords(records []*models.DNSRecord) error {
-	return c.graphStore().StoreDNSRecords(records)
-}
-
-// StoreCorrelations stores correlation data
-func (c *UnifiedDatabaseConfig) StoreCorrelations(correlations interface{}) error {
-	return c.graphStore().StoreCorrelations(correlations)
-}
-
-// GetResourcesByProvider retrieves resources by provider
-func (c *UnifiedDatabaseConfig) GetResourcesByProvider(provider string) ([]*models.Resource, error) {
-	return c.graphStore().GetResourcesByProvider(provider)
-}
-
-// GetIPAddressesByProvider retrieves IP addresses by provider
-func (c *UnifiedDatabaseConfig) GetIPAddressesByProvider(provider string) ([]*models.IPAddress, error) {
-	return c.graphStore().GetIPAddressesByProvider(provider)
-}
-
-// GetDNSRecordsByProvider retrieves DNS records by provider
-func (c *UnifiedDatabaseConfig) GetDNSRecordsByProvider(provider string) ([]*models.DNSRecord, error) {
-	return c.graphStore().GetDNSRecordsByProvider(provider)
 }

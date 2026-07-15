@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "name": "aws",
+  "display_name": "Amazon Web Services",
+  "description": "AWS provider backed by Cloud Control API",
+  "version": "4.0.0",
+  "protocol": 2,
+  "executable": "aws-provider",
+  "capabilities": ["discover", "list", "describe", "schemas", "batch_scan", "stream_scan"],
+  "default_scopes": ["us-east-1", "us-west-2", "eu-west-1"],
+  "storage": {"mode": "table", "table": "aws_resources"}
+}

@@ -87,8 +87,6 @@ output:
   default_format: table
   colors: true
   progress_bars: true
-  hide_empty_regions: true
-  hide_empty_services: true
 ```
 
 ## Provider Fields

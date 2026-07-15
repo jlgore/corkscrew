@@ -10,7 +10,6 @@ import (
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	pb "github.com/jlgore/corkscrew/internal/proto"
-	"github.com/jlgore/corkscrew/pkg/models"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -33,133 +32,15 @@ func openTestGraphStore(t *testing.T) (*sql.DB, *GraphStore) {
 	return database, NewGraphStore(database)
 }
 
-func TestGraphStoreResourceRoundTrip(t *testing.T) {
-	_, store := openTestGraphStore(t)
-
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	resources := []*models.Resource{
-		{
-			ID:           "aws:bucket:one",
-			Name:         "bucket-one",
-			Type:         "AWS::S3::Bucket",
-			Service:      "s3",
-			Provider:     "aws",
-			Region:       "us-east-1",
-			ARN:          "arn:aws:s3:::bucket-one",
-			Status:       "active",
-			CreatedAt:    &now,
-			ModifiedAt:   &now,
-			ScannedAt:    &now,
-			Tags:         map[string]string{"env": "test"},
-			Attributes:   map[string]interface{}{"versioning": true},
-			Metadata:     map[string]interface{}{"source": "unit"},
-			RawData:      map[string]interface{}{"name": "bucket-one"},
-			CrossCloudID: "cc:bucket-one",
-		},
-	}
-
-	if err := store.StoreResources(resources); err != nil {
-		t.Fatalf("store resources: %v", err)
-	}
-
-	got, err := store.GetResourcesByProvider("aws")
-	if err != nil {
-		t.Fatalf("get resources: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("expected 1 resource, got %d", len(got))
-	}
-	if got[0].ID != resources[0].ID || got[0].Provider != "aws" || got[0].CrossCloudID != "cc:bucket-one" {
-		t.Fatalf("unexpected resource: %#v", got[0])
-	}
-	if got[0].Tags["env"] != "test" {
-		t.Fatalf("expected tags to round-trip, got %#v", got[0].Tags)
-	}
-	if got[0].Attributes["versioning"] != true {
-		t.Fatalf("expected attributes to round-trip, got %#v", got[0].Attributes)
-	}
-}
-
-func TestGraphStoreProtoResources(t *testing.T) {
-	db, store := openTestGraphStore(t)
-
-	resources := []*pb.Resource{
-		{
-			Id:         "arn:aws:s3:::bucket-one",
-			Arn:        "arn:aws:s3:::bucket-one",
-			Name:       "bucket-one",
-			Type:       "AWS::S3::Bucket",
-			Service:    "s3",
-			Region:     "us-east-1",
-			AccountId:  "123456789012",
-			Tags:       map[string]string{"env": "test"},
-			RawData:    `{"name":"bucket-one"}`,
-			Attributes: `{"versioning":true}`,
-			Relationships: []*pb.Relationship{
-				{
-					TargetId:         "aws:kms:key-one",
-					RelationshipType: "uses",
-					Properties:       map[string]string{"reason": "encryption"},
-				},
-			},
-		},
-	}
-
-	if err := store.StoreProtoResources(context.Background(), "aws", resources); err != nil {
-		t.Fatalf("store proto resources: %v", err)
-	}
-
-	var arn string
-	if err := db.QueryRow(`SELECT arn FROM aws_resources WHERE id = ?`, resources[0].Id).Scan(&arn); err != nil {
-		t.Fatalf("query stored proto resource: %v", err)
-	}
-	if arn != "" {
-		t.Fatalf("expected duplicated ARN field to be blank, got %q", arn)
-	}
-
-	var relationshipCount int
-	if err := db.QueryRow(`
-		SELECT COUNT(*)
-		FROM cloud_relationships
-		WHERE from_id = ? AND to_id = ? AND relationship_type = ? AND provider = ?
-	`, resources[0].Id, "aws:kms:key-one", "uses", "aws").Scan(&relationshipCount); err != nil {
-		t.Fatalf("query stored relationship: %v", err)
-	}
-	if relationshipCount != 1 {
-		t.Fatalf("expected stored relationship count 1, got %d", relationshipCount)
-	}
-}
-
 func TestGraphStoreScanResources(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "scan-resources.duckdb")
-	cfg, err := InitializeUnifiedDatabase(dbPath)
+	cfg, err := initializeTestUnifiedDatabase(dbPath)
 	if err != nil {
 		t.Fatalf("initialize unified database: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = cfg.DB.Close()
 	})
-
-	if _, err := cfg.DB.Exec(`
-		CREATE TABLE custom_scan_resources (
-			id VARCHAR PRIMARY KEY,
-			arn VARCHAR,
-			name VARCHAR,
-			type VARCHAR,
-			service VARCHAR,
-			region VARCHAR,
-			account_id VARCHAR,
-			tags JSON,
-			attributes JSON,
-			raw_data JSON,
-			state VARCHAR,
-			created_at TIMESTAMP,
-			modified_at TIMESTAMP,
-			scanned_at TIMESTAMP
-		)
-	`); err != nil {
-		t.Fatalf("create custom scan table: %v", err)
-	}
 
 	store := NewGraphStore(cfg.DB)
 	discoveredAt := timestamppb.New(time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC))
@@ -234,11 +115,11 @@ func TestGraphStoreScanResources(t *testing.T) {
 	}
 
 	var customCount int
-	if err := cfg.DB.QueryRow(`SELECT COUNT(*) FROM custom_scan_resources WHERE id = ?`, "custom-1").Scan(&customCount); err != nil {
+	if err := cfg.DB.QueryRow(`SELECT COUNT(*) FROM custom_provider_resources WHERE provider = ? AND id = ?`, "custom", "custom-1").Scan(&customCount); err != nil {
 		t.Fatalf("count custom resources: %v", err)
 	}
 	if customCount != 1 {
-		t.Fatalf("expected custom table resource count 1, got %d", customCount)
+		t.Fatalf("expected generic custom resource count 1, got %d", customCount)
 	}
 
 	var relationshipCount int
@@ -302,15 +183,25 @@ func TestGraphStorePersistsEveryShippedProvider(t *testing.T) {
 		}
 	}
 
-	err := store.StoreScanResources(ctx, []*pb.Resource{{Provider: "third-party", Id: "one"}}, StoreScanResourcesOptions{})
-	if err == nil || !strings.Contains(err.Error(), "unsupported provider") {
-		t.Fatalf("unknown provider error = %v", err)
+	custom := []*pb.Resource{
+		{Provider: "third-party", Id: "shared-id", Name: "one", Type: "widget", Service: "inventory", Region: "global"},
+		{Provider: "another-party", Id: "shared-id", Name: "two", Type: "widget", Service: "inventory", Region: "global"},
+	}
+	if err := store.StoreScanResources(ctx, custom, StoreScanResourcesOptions{}); err != nil {
+		t.Fatalf("store custom resources: %v", err)
+	}
+	var customCount int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM custom_provider_resources WHERE id = 'shared-id'`).Scan(&customCount); err != nil {
+		t.Fatalf("query custom resources: %v", err)
+	}
+	if customCount != 2 {
+		t.Fatalf("custom resource count = %d, want provider-isolated count 2", customCount)
 	}
 }
 
 func TestGraphStoreScanResourcesProviderAdapters(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "provider-adapters.duckdb")
-	cfg, err := InitializeUnifiedDatabase(dbPath)
+	cfg, err := initializeTestUnifiedDatabase(dbPath)
 	if err != nil {
 		t.Fatalf("initialize unified database: %v", err)
 	}
@@ -387,7 +278,7 @@ func TestGraphStoreScanResourcesProviderAdapters(t *testing.T) {
 
 func TestGraphStoreScanResourcesRejectsInvalidTableOverrides(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "invalid-overrides.duckdb")
-	cfg, err := InitializeUnifiedDatabase(dbPath)
+	cfg, err := initializeTestUnifiedDatabase(dbPath)
 	if err != nil {
 		t.Fatalf("initialize unified database: %v", err)
 	}
@@ -411,10 +302,11 @@ func TestGraphStoreScanResourcesRejectsInvalidTableOverrides(t *testing.T) {
 		t.Fatalf("expected invalid provider table override error, got %v", err)
 	}
 
-	resource.Attributes = `{"_table":"bad-table"}`
-	err = store.StoreScanResources(context.Background(), []*pb.Resource{resource}, StoreScanResourcesOptions{})
-	if err == nil || !strings.Contains(err.Error(), "invalid resource _table attribute") {
-		t.Fatalf("expected invalid _table attribute error, got %v", err)
+	err = store.StoreScanResources(context.Background(), []*pb.Resource{resource}, StoreScanResourcesOptions{
+		ProviderTableOverride: "arbitrary_resources",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("expected unregistered table override error, got %v", err)
 	}
 
 	var count int
@@ -506,109 +398,5 @@ func TestGraphStoreScanMetadataCreatesUnifiedSchema(t *testing.T) {
 	}
 	if provider != "azure" || totalResources != 3 {
 		t.Fatalf("unexpected unified scan metadata: provider=%q total=%d", provider, totalResources)
-	}
-}
-
-func TestGraphStoreNetworkMetadataRoundTrip(t *testing.T) {
-	_, store := openTestGraphStore(t)
-
-	ips := []*models.IPAddress{
-		{Address: "203.0.113.10", Type: "public", Version: "ipv4", Provider: "aws", Region: "us-east-1", ResourceID: "aws:lb:one", Scope: "regional"},
-	}
-	dns := []*models.DNSRecord{
-		{Name: "app.example.com", Type: "A", Values: []string{"203.0.113.10"}, TTL: 300, Provider: "aws", Zone: "Z123", ResourceID: "aws:lb:one"},
-	}
-
-	if err := store.StoreIPAddresses(ips); err != nil {
-		t.Fatalf("store IP addresses: %v", err)
-	}
-	if err := store.StoreDNSRecords(dns); err != nil {
-		t.Fatalf("store DNS records: %v", err)
-	}
-
-	gotIPs, err := store.GetIPAddressesByProvider("aws")
-	if err != nil {
-		t.Fatalf("get IP addresses: %v", err)
-	}
-	if len(gotIPs) != 1 || gotIPs[0].Address != "203.0.113.10" || gotIPs[0].Scope != "regional" {
-		t.Fatalf("unexpected IP addresses: %#v", gotIPs)
-	}
-
-	gotDNS, err := store.GetDNSRecordsByProvider("aws")
-	if err != nil {
-		t.Fatalf("get DNS records: %v", err)
-	}
-	if len(gotDNS) != 1 || gotDNS[0].Name != "app.example.com" || len(gotDNS[0].Values) != 1 || gotDNS[0].Values[0] != "203.0.113.10" {
-		t.Fatalf("unexpected DNS records: %#v", gotDNS)
-	}
-}
-
-func TestGraphStoreCorrelations(t *testing.T) {
-	db, store := openTestGraphStore(t)
-
-	correlations := []*models.ResourceCorrelation{
-		{
-			ID:           "corr-1",
-			SourceID:     "aws:lb:one",
-			TargetID:     "azure:dns:one",
-			Type:         "cross_cloud",
-			RelationType: "dns_target",
-			Strength:     0.9,
-			Confidence:   0.8,
-			Description:  "DNS record points at load balancer",
-			Metadata:     map[string]interface{}{"method": "dns"},
-			DiscoveredAt: time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC),
-		},
-	}
-
-	if err := store.StoreCorrelations(correlations); err != nil {
-		t.Fatalf("store typed correlations: %v", err)
-	}
-
-	var typedCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cross_cloud_correlations WHERE id = ?`, "corr-1").Scan(&typedCount); err != nil {
-		t.Fatalf("query typed correlations: %v", err)
-	}
-	if typedCount != 1 {
-		t.Fatalf("expected typed correlation count 1, got %d", typedCount)
-	}
-
-	if err := store.StoreCorrelations(map[string]interface{}{"kind": "generic", "count": 1}); err != nil {
-		t.Fatalf("store generic correlations: %v", err)
-	}
-
-	var genericCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM crosscloud_generic_correlations`).Scan(&genericCount); err != nil {
-		t.Fatalf("query generic correlations: %v", err)
-	}
-	if genericCount != 1 {
-		t.Fatalf("expected generic correlation count 1, got %d", genericCount)
-	}
-}
-
-func TestUnifiedDatabaseConfigUsesGraphStore(t *testing.T) {
-	db, _ := openTestGraphStore(t)
-	cfg := &UnifiedDatabaseConfig{DatabasePath: "test", DB: db}
-
-	resource := &models.Resource{
-		ID:       "gcp:bucket:one",
-		Name:     "bucket-one",
-		Type:     "storage.googleapis.com/Bucket",
-		Service:  "storage",
-		Provider: "gcp",
-		Region:   "global",
-		Status:   "active",
-	}
-
-	if err := cfg.StoreResources([]*models.Resource{resource}); err != nil {
-		t.Fatalf("store resources through unified config: %v", err)
-	}
-
-	got, err := cfg.GetResourcesByProvider("gcp")
-	if err != nil {
-		t.Fatalf("get resources through unified config: %v", err)
-	}
-	if len(got) != 1 || got[0].ID != resource.ID {
-		t.Fatalf("unexpected resources through unified config: %#v", got)
 	}
 }

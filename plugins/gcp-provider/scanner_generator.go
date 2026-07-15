@@ -83,6 +83,16 @@ func NewGCPScannerGenerator(opts GCPGenerationOptions) (*GCPScannerGenerator, er
 }
 
 // GenerateService generates scanner code for a single GCP service
+// contains reports whether item is present in slice.
+func contains(slice []string, item string) bool {
+	for _, value := range slice {
+		if value == item {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *GCPScannerGenerator) GenerateService(service *GCPServiceInfo, opts GCPGenerationOptions) error {
 	// Skip if specific services requested and this isn't one of them
 	if len(opts.Services) > 0 && !contains(opts.Services, service.Name) && !contains(opts.Services, "all") {

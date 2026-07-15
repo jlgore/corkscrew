@@ -9,11 +9,6 @@ import (
 )
 
 type IDMSDiscovery struct {
-	smartEngine   *SmartDiscoveryEngine
-	awsProvider   CloudProvider
-	gcpProvider   CloudProvider
-	azureProvider CloudProvider
-	k8sProvider   CloudProvider
 	mutex         sync.RWMutex
 	lastDiscovery time.Time
 }
@@ -39,18 +34,7 @@ type IDMSDiscoveryResult struct {
 }
 
 func NewIDMSDiscovery() *IDMSDiscovery {
-	config := SmartDiscoveryConfig{
-		EnableRegionDetection:    true,
-		EnableServiceDetection:   true,
-		EnableCrossProviderCorre: true,
-		ParallelDiscoveryWorkers: 4,
-		DiscoveryTimeout:         5 * time.Minute,
-		CacheExpiration:          30 * time.Minute,
-	}
-
-	return &IDMSDiscovery{
-		smartEngine: NewSmartDiscoveryEngine(config),
-	}
+	return &IDMSDiscovery{}
 }
 
 func (id *IDMSDiscovery) DiscoverIDMSServices(ctx context.Context) (*IDMSDiscoveryResult, error) {

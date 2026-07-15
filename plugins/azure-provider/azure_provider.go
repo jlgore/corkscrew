@@ -87,9 +87,6 @@ type AzureProvider struct {
 	currentScopes         []*ManagementGroupScope
 	scopeType             string // "subscription", "management_group", "tenant"
 
-	// Database integration
-	database *AzureDatabaseIntegration
-
 	// Performance components
 	cache        *ResourceCache
 	rateLimiter  *rate.Limiter
@@ -196,16 +193,6 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 		log.Printf("Entra ID app deployer initialized successfully")
 	}
 
-	// Initialize database integration
-	database, err := NewAzureDatabaseIntegration()
-	if err != nil {
-		log.Printf("Warning: Failed to initialize database integration: %v", err)
-		// Continue without database integration
-	} else {
-		p.database = database
-		log.Printf("Azure database integration initialized successfully")
-	}
-
 	// Discover management group scopes if available
 	if p.managementGroupClient != nil {
 		scopes, err := p.managementGroupClient.DiscoverManagementGroupHierarchy(ctx)
@@ -288,7 +275,6 @@ func (p *AzureProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb
 			"streaming":              "true",
 			"multi_region":           "true",
 			"resource_graph":         "true",
-			"change_tracking":        "true",
 			"batch_operations":       "true",
 			"arm_integration":        "true",
 			"management_groups":      "true",
@@ -512,17 +498,6 @@ func (p *AzureProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest)
 			errors = append(errors, fmt.Sprintf("Batch scan failed: %v", err))
 		} else {
 			allResources = resources
-		}
-	}
-
-	// Store resources in database if available
-	if p.database != nil && len(allResources) > 0 {
-		log.Printf("Storing %d Azure resources in database", len(allResources))
-		if err := p.database.StoreResources(allResources); err != nil {
-			log.Printf("Warning: Failed to store resources in database: %v", err)
-			errors = append(errors, fmt.Sprintf("Database storage failed: %v", err))
-		} else {
-			log.Printf("Successfully stored %d Azure resources in database", len(allResources))
 		}
 	}
 

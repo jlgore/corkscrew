@@ -2,13 +2,14 @@ package query
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 )
 
 func TestNewDuckDBQueryEngine(t *testing.T) {
-	engine, err := NewDuckDBQueryEngine()
+	engine, err := newTestQueryEngine(t)
 	if err != nil {
 		t.Fatalf("Failed to create query engine: %v", err)
 	}
@@ -19,8 +20,31 @@ func TestNewDuckDBQueryEngine(t *testing.T) {
 	}
 }
 
+func TestQueryEngineOpensCurrentStorageSchema(t *testing.T) {
+	engine, err := newTestQueryEngine(t)
+	if err != nil {
+		t.Fatalf("create query engine: %v", err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+
+	result, err := engine.Execute(context.Background(), "SELECT COUNT(*) AS resources FROM all_cloud_resources")
+	if err != nil {
+		t.Fatalf("query normalized inventory: %v", err)
+	}
+	if len(result.Rows) != 1 || result.Rows[0]["resources"] != int64(0) {
+		t.Fatalf("normalized inventory result = %#v", result.Rows)
+	}
+	helpers, err := engine.Execute(context.Background(), `SELECT safe_json_extract('{"name":"fixture"}', '$.name', 'missing') AS name`)
+	if err != nil {
+		t.Fatalf("query storage JSON helper: %v", err)
+	}
+	if len(helpers.Rows) != 1 || helpers.Rows[0]["name"] != "fixture" {
+		t.Fatalf("JSON helper result = %#v", helpers.Rows)
+	}
+}
+
 func TestQueryEngineValidation(t *testing.T) {
-	engine, err := NewDuckDBQueryEngine()
+	engine, err := newTestQueryEngine(t)
 	if err != nil {
 		t.Fatalf("Failed to create query engine: %v", err)
 	}
@@ -43,10 +67,17 @@ func TestQueryEngineValidation(t *testing.T) {
 	if err == nil {
 		t.Error("Dangerous query should fail validation")
 	}
+
+	if _, err := engine.Execute(context.Background(), "SELECT 1; SELECT 2"); err == nil {
+		t.Error("multiple statements should fail execution")
+	}
+	if _, err := engine.Execute(context.Background(), "WITH changed AS (DELETE FROM test RETURNING *) SELECT * FROM changed"); err == nil {
+		t.Error("mutation hidden in a CTE should fail execution")
+	}
 }
 
 func TestQueryExecution(t *testing.T) {
-	engine, err := NewDuckDBQueryEngine()
+	engine, err := newTestQueryEngine(t)
 	if err != nil {
 		t.Fatalf("Failed to create query engine: %v", err)
 	}
@@ -98,7 +129,7 @@ func TestQueryExecution(t *testing.T) {
 }
 
 func TestQueryEngineWithParams(t *testing.T) {
-	engine, err := NewDuckDBQueryEngine()
+	engine, err := newTestQueryEngine(t)
 	if err != nil {
 		t.Fatalf("Failed to create query engine: %v", err)
 	}
@@ -167,7 +198,7 @@ func TestConvertNamedParamsPreservesSQLOrderAndRepeats(t *testing.T) {
 }
 
 func TestPing(t *testing.T) {
-	engine, err := NewDuckDBQueryEngine()
+	engine, err := newTestQueryEngine(t)
 	if err != nil {
 		t.Fatalf("Failed to create query engine: %v", err)
 	}
@@ -183,7 +214,7 @@ func TestPing(t *testing.T) {
 }
 
 func TestCloseEngine(t *testing.T) {
-	engine, err := NewDuckDBQueryEngine()
+	engine, err := newTestQueryEngine(t)
 	if err != nil {
 		t.Fatalf("Failed to create query engine: %v", err)
 	}
@@ -206,4 +237,9 @@ func TestCloseEngine(t *testing.T) {
 	if err == nil {
 		t.Error("Ping should fail after close")
 	}
+}
+
+func newTestQueryEngine(t *testing.T) (*DuckDBQueryEngine, error) {
+	t.Helper()
+	return NewDuckDBQueryEngineForTarget(filepath.Join(t.TempDir(), "query.duckdb"))
 }

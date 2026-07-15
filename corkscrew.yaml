@@ -83,5 +83,3 @@ output:
   default_format: "table"  # table, json, csv
   colors: true
   progress_bars: true
-  hide_empty_regions: true    # Don't show regions with 0 resources
-  hide_empty_services: true   # Don't show services with 0 resources

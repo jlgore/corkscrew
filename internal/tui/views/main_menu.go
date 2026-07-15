@@ -2,17 +2,16 @@ package views
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
-	"reflect"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
+	dataaccess "github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui/styles"
 	"github.com/jlgore/corkscrew/internal/tui/types"
 )
@@ -23,9 +22,9 @@ type MainMenuModel struct {
 	state ViewState
 
 	// Components
-	list     list.Model
-	database interface{} // *db.GraphLoader
-	config   interface{} // *config.Config
+	list    list.Model
+	session *dataaccess.Session
+	config  *appconfig.CorkscrewConfig
 
 	// State
 	lastScanTime  string
@@ -60,19 +59,6 @@ type SystemStatus struct {
 	LastScanTime        string
 	TotalResources      int
 	HasErrors           bool
-}
-
-type databaseQueryer interface {
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
-}
-
-var inventoryResourceTables = []string{
-	"aws_resources",
-	"azure_resources",
-	"gcp_resources",
-	"kubernetes_resources",
-	"cloudflare_resources",
-	"github_resources",
 }
 
 // Implement list.Item interface for MenuItem
@@ -256,14 +242,14 @@ func (m *MainMenuModel) Update(msg tea.Msg) (BaseView, tea.Cmd) {
 		}
 
 	case types.DatabaseConnectedMsg:
-		m.database = msg.Database
+		m.session = msg.Database
 		m.systemStatus.DatabaseConnected = true
 		return m, m.loadSystemStatus()
 
 	case types.ConfigLoadedMsg:
 		if msg.Error == nil {
 			m.config = msg.Config
-			m.systemStatus.ProvidersConfigured = m.countConfiguredProviders(msg.Config)
+			m.systemStatus.ProvidersConfigured = m.countConfiguredProviders()
 		}
 		return m, nil
 
@@ -443,7 +429,7 @@ func (m *MainMenuModel) loadSystemStatus() tea.Cmd {
 
 		status := SystemStatus{
 			DatabaseConnected:   dbOK,
-			ProvidersConfigured: m.countConfiguredProviders(m.config),
+			ProvidersConfigured: m.countConfiguredProviders(),
 			LastScanTime:        lastScanTime,
 			TotalResources:      totalResources,
 			HasErrors:           false,
@@ -459,31 +445,30 @@ func (m *MainMenuModel) loadRecentScans() tea.Cmd {
 	}
 }
 
-// countConfiguredProviders counts configured providers
-func (m *MainMenuModel) countConfiguredProviders(config interface{}) int {
-	return len(configuredProviderNames(config, true))
+// countConfiguredProviders counts enabled providers in the typed config.
+func (m *MainMenuModel) countConfiguredProviders() int {
+	if m.config == nil {
+		return 0
+	}
+	count := 0
+	for _, provider := range m.config.Providers {
+		if provider.Enabled {
+			count++
+		}
+	}
+	return count
 }
 
 func (m *MainMenuModel) countStoredResources() (int, bool) {
-	queryer, ok := m.database.(databaseQueryer)
-	if !ok || queryer == nil {
+	if m.session == nil {
 		return 0, false
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	total := 0
-	foundAnyTable := false
-	for _, table := range inventoryResourceTables {
-		count, err := countRows(ctx, queryer, table)
-		if err != nil {
-			continue
-		}
-		foundAnyTable = true
-		total += count
-	}
-	return total, foundAnyTable
+	total, err := m.session.Inventory().Count(ctx, dataaccess.InventoryFilter{})
+	return total, err == nil
 }
 
 func (m *MainMenuModel) latestScanTime() string {
@@ -495,123 +480,26 @@ func (m *MainMenuModel) latestScanTime() string {
 }
 
 func (m *MainMenuModel) queryRecentScans() []ScanInfo {
-	queryer, ok := m.database.(databaseQueryer)
-	if !ok || queryer == nil {
+	if m.session == nil {
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	columns, err := queryColumns(ctx, queryer, "scan_metadata")
+	summaries, err := m.session.RecentScans(ctx, 5)
 	if err != nil {
 		return nil
 	}
 
-	if columns["scan_start_time"] {
-		return queryUnifiedRecentScans(ctx, queryer)
-	}
-	if columns["scan_time"] {
-		return queryLegacyRecentScans(ctx, queryer)
-	}
-	return nil
-}
-
-func countRows(ctx context.Context, queryer databaseQueryer, table string) (int, error) {
-	rows, err := queryer.QueryContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", table))
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-
-	var count int
-	if rows.Next() {
-		if err := rows.Scan(&count); err != nil {
-			return 0, err
-		}
-	}
-	return count, rows.Err()
-}
-
-func queryColumns(ctx context.Context, queryer databaseQueryer, table string) (map[string]bool, error) {
-	rows, err := queryer.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s LIMIT 0", table))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]bool, len(columns))
-	for _, column := range columns {
-		result[column] = true
-	}
-	return result, nil
-}
-
-func queryUnifiedRecentScans(ctx context.Context, queryer databaseQueryer) []ScanInfo {
-	rows, err := queryer.QueryContext(ctx, `
-		SELECT id, provider, scan_start_time, total_resources, duration_ms
-		FROM scan_metadata
-		ORDER BY scan_start_time DESC
-		LIMIT 5
-	`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var scans []ScanInfo
-	for rows.Next() {
-		var id, provider string
-		var scanTime time.Time
-		var resources int
-		var duration sql.NullInt64
-		if err := rows.Scan(&id, &provider, &scanTime, &resources, &duration); err != nil {
-			continue
-		}
+	scans := make([]ScanInfo, 0, len(summaries))
+	for _, summary := range summaries {
 		scans = append(scans, ScanInfo{
-			ID:        id,
-			Timestamp: formatScanTime(scanTime),
-			Resources: resources,
-			Providers: splitProviderList(provider),
-			Duration:  formatDurationMillis(duration),
-		})
-	}
-	return scans
-}
-
-func queryLegacyRecentScans(ctx context.Context, queryer databaseQueryer) []ScanInfo {
-	rows, err := queryer.QueryContext(ctx, `
-		SELECT id, service, region, scan_time, total_resources, duration_ms
-		FROM scan_metadata
-		ORDER BY scan_time DESC
-		LIMIT 5
-	`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var scans []ScanInfo
-	for rows.Next() {
-		var id, service, region string
-		var scanTime time.Time
-		var resources int
-		var duration sql.NullInt64
-		if err := rows.Scan(&id, &service, &region, &scanTime, &resources, &duration); err != nil {
-			continue
-		}
-		label := strings.Trim(strings.Join([]string{service, region}, " "), " ")
-		scans = append(scans, ScanInfo{
-			ID:        id,
-			Timestamp: formatScanTime(scanTime),
-			Resources: resources,
-			Providers: splitProviderList(label),
-			Duration:  formatDurationMillis(duration),
+			ID:        summary.ID,
+			Timestamp: formatScanTime(summary.StartedAt),
+			Resources: summary.Resources,
+			Providers: splitProviderList(summary.Label),
+			Duration:  formatDuration(summary.Duration),
 		})
 	}
 	return scans
@@ -624,11 +512,11 @@ func formatScanTime(scanTime time.Time) string {
 	return scanTime.Format("2006-01-02 15:04")
 }
 
-func formatDurationMillis(duration sql.NullInt64) string {
-	if !duration.Valid || duration.Int64 <= 0 {
+func formatDuration(duration time.Duration) string {
+	if duration <= 0 {
 		return ""
 	}
-	return (time.Duration(duration.Int64) * time.Millisecond).Round(time.Millisecond).String()
+	return duration.Round(time.Millisecond).String()
 }
 
 func splitProviderList(provider string) []string {
@@ -645,70 +533,13 @@ func splitProviderList(provider string) []string {
 	return result
 }
 
-func configuredProviderNames(config interface{}, enabledOnly bool) []string {
-	providers := providerMapValue(reflect.ValueOf(config))
-	if !providers.IsValid() || providers.Kind() != reflect.Map {
-		return nil
-	}
-
-	names := make([]string, 0, providers.Len())
-	for _, key := range providers.MapKeys() {
-		if key.Kind() != reflect.String {
-			continue
-		}
-		value := providers.MapIndex(key)
-		if enabledOnly && !providerEnabled(value) {
-			continue
-		}
-		names = append(names, key.String())
-	}
-	sort.Strings(names)
-	return names
-}
-
-func providerMapValue(value reflect.Value) reflect.Value {
-	if !value.IsValid() {
-		return reflect.Value{}
-	}
-	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
-		if value.IsNil() {
-			return reflect.Value{}
-		}
-		value = value.Elem()
-	}
-	if value.Kind() != reflect.Struct {
-		return reflect.Value{}
-	}
-	if providers := value.FieldByName("Providers"); providers.IsValid() {
-		return providers
-	}
-	if embedded := value.FieldByName("CorkscrewConfig"); embedded.IsValid() {
-		return providerMapValue(embedded)
-	}
-	return reflect.Value{}
-}
-
-func providerEnabled(value reflect.Value) bool {
-	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
-		if value.IsNil() {
-			return false
-		}
-		value = value.Elem()
-	}
-	if value.Kind() != reflect.Struct {
-		return false
-	}
-	enabled := value.FieldByName("Enabled")
-	return enabled.IsValid() && enabled.Kind() == reflect.Bool && enabled.Bool()
-}
-
-// SetDatabase updates the database dependency.
-func (m *MainMenuModel) SetDatabase(database interface{}) {
-	m.database = database
+// SetDatabase updates the data session dependency.
+func (m *MainMenuModel) SetDatabase(session *dataaccess.Session) {
+	m.session = session
 }
 
 // SetConfig updates the config dependency.
-func (m *MainMenuModel) SetConfig(config interface{}) {
+func (m *MainMenuModel) SetConfig(config *appconfig.CorkscrewConfig) {
 	m.config = config
 }
 

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "name": "gcp",
+  "display_name": "Google Cloud Platform",
+  "description": "Google Cloud Platform provider",
+  "version": "1.0.0",
+  "protocol": 2,
+  "executable": "gcp-provider",
+  "capabilities": ["discover", "list", "describe", "schemas", "batch_scan", "stream_scan"],
+  "default_scopes": ["us-central1-a", "us-west1-a"],
+  "storage": {"mode": "table", "table": "gcp_resources"}
+}

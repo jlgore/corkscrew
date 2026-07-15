@@ -145,7 +145,7 @@ func TestVersionZeroMigrationFixtures(t *testing.T) {
 
 			// Use the production entry point rather than invoking EnsureSchema
 			// directly. This verifies automatic migration during normal opens.
-			config, err := InitializeUnifiedDatabase(path)
+			config, err := initializeTestUnifiedDatabase(path)
 			if err != nil {
 				t.Fatalf("open and migrate fixture: %v", err)
 			}
@@ -181,14 +181,14 @@ func TestVersionZeroMigrationFixtures(t *testing.T) {
 			if err := config.DB.QueryRow(`SELECT COUNT(*) FROM corkscrew_schema_migrations`).Scan(&migrationRows); err != nil {
 				t.Fatalf("count migration rows: %v", err)
 			}
-			if migrationRows != 1 {
-				t.Fatalf("migration rows = %d, want 1", migrationRows)
+			if migrationRows != LatestSchemaVersion {
+				t.Fatalf("migration rows = %d, want %d", migrationRows, LatestSchemaVersion)
 			}
 
 			if err := config.Close(); err != nil {
 				t.Fatalf("close migrated fixture: %v", err)
 			}
-			config, err = InitializeUnifiedDatabase(path)
+			config, err = initializeTestUnifiedDatabase(path)
 			if err != nil {
 				t.Fatalf("reopen migrated fixture: %v", err)
 			}
@@ -200,8 +200,8 @@ func TestVersionZeroMigrationFixtures(t *testing.T) {
 			if err := config.DB.QueryRow(`SELECT COUNT(*) FROM corkscrew_schema_migrations`).Scan(&migrationRows); err != nil {
 				t.Fatalf("count migration rows after reopen: %v", err)
 			}
-			if migrationRows != 1 {
-				t.Fatalf("migration rows after reopen = %d, want 1", migrationRows)
+			if migrationRows != LatestSchemaVersion {
+				t.Fatalf("migration rows after reopen = %d, want %d", migrationRows, LatestSchemaVersion)
 			}
 		})
 	}

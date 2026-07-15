@@ -2,6 +2,8 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
+	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui/views"
 )
 
@@ -13,9 +15,8 @@ type ViewRouter struct {
 	history     []ViewType
 
 	// Dependencies
-	database interface{} // *db.GraphLoader
-	config   interface{} // *config.Config
-	scanner  interface{}
+	database *data.Session
+	config   *appconfig.CorkscrewConfig
 
 	// Layout state
 	width  int
@@ -39,10 +40,9 @@ func NewViewRouter() *ViewRouter {
 }
 
 // SetDependencies sets the required dependencies
-func (r *ViewRouter) SetDependencies(database, config, scanner interface{}) {
+func (r *ViewRouter) SetDependencies(database *data.Session, config *appconfig.CorkscrewConfig) {
 	r.database = database
 	r.config = config
-	r.scanner = scanner
 
 	// Update existing views with dependencies
 	for _, view := range r.views {
@@ -318,10 +318,7 @@ func (r *ViewRouter) handleViewData(viewType ViewType, data interface{}) tea.Cmd
 	case ViewScan:
 		// Handle scan view data (e.g., "quick" for quick scan)
 		if scanType, ok := data.(string); ok && scanType == "quick" {
-			// Return command to start quick scan
-			return func() tea.Msg {
-				return ScanStartedMsg{ScanID: "quick-scan"}
-			}
+			return func() tea.Msg { return quickScanRequestedMsg{} }
 		}
 	case ViewResults:
 		// Handle results view data (e.g., "correlate" for correlation mode)

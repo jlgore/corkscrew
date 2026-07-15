@@ -18,10 +18,9 @@ import (
 	// tea "github.com/charmbracelet/bubbletea"
 	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
 	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/ui"
-	"github.com/jlgore/corkscrew/internal/client"
+	providerapp "github.com/jlgore/corkscrew/internal/app/providers"
 	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
-	"github.com/jlgore/corkscrew/pkg/plugins"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"github.com/jlgore/corkscrew/pkg/query/compliance"
 )
@@ -53,20 +52,12 @@ func defaultDatabasePath() string {
 	return filepath.Join(home, ".corkscrew", "db", "corkscrew.duckdb")
 }
 
-// createPluginClient creates a plugin client with consistent error handling
-func createPluginClient(providerName string) (*client.PluginClient, error) {
-	pc, err := client.NewPluginClient(providerName)
+func mustProviderApplication() *providerapp.Application {
+	application, err := providerapp.OpenDefault(os.Stderr)
 	if err != nil {
-		// Provide helpful error message with suggestions
-		pm := plugins.NewPluginManager()
-		if pm.CanBuildPlugin(providerName) {
-			return nil, fmt.Errorf("plugin not found: %s\n\n💡 To build this plugin, run:\n   corkscrew plugin build %s\n   corkscrew plugin install %s",
-				providerName, providerName, providerName)
-		} else {
-			return nil, fmt.Errorf("plugin not found: %s\n\n💡 Available plugins:\n   corkscrew plugin list", providerName)
-		}
+		log.Fatalf("Failed to load provider runtime: %v", err)
 	}
-	return pc, nil
+	return application
 }
 
 func groupServicesByCategory(services []*pb.ServiceInfo) map[string][]*pb.ServiceInfo {
@@ -197,7 +188,7 @@ func printUsage() {
 	fmt.Println("  corkscrew scan --provider aws --services common --region us-east-1,us-west-2")
 	fmt.Println("  corkscrew scan --provider aws --services compute,storage --region us-east-1")
 	fmt.Println("  corkscrew scan --provider azure --region eastus,westus2 --concurrency 5")
-	fmt.Println("  corkscrew scan --provider aws --show-empty --output json")
+	fmt.Println("  corkscrew scan --provider aws --output json")
 	fmt.Println()
 	fmt.Println("  # Other Commands")
 	fmt.Println("  corkscrew discover --provider aws")
@@ -213,9 +204,9 @@ func printUsage() {
 	fmt.Println("  corkscrew schemas --provider azure --services storage,compute")
 	fmt.Println()
 	fmt.Println("  # Query Examples")
-	fmt.Println("  corkscrew query \"SELECT COUNT(*) FROM aws_resources GROUP BY service\"")
-	fmt.Println("  corkscrew query \"SELECT * FROM aws_resources WHERE type='Bucket'\" --output csv")
-	fmt.Println("  echo \"SELECT * FROM azure_resources\" | corkscrew query --stdin --output json")
+	fmt.Println("  corkscrew query \"SELECT provider, COUNT(*) FROM all_cloud_resources GROUP BY provider\"")
+	fmt.Println("  corkscrew query \"SELECT * FROM all_cloud_resources WHERE type='Bucket'\" --output csv")
+	fmt.Println("  echo \"SELECT * FROM all_cloud_resources WHERE provider='azure'\" | corkscrew query --stdin --output json")
 	fmt.Println("  corkscrew query --file analysis.sql --verbose")
 	fmt.Println()
 	fmt.Println("  # Compliance Query Examples")
@@ -259,7 +250,6 @@ func printUsage() {
 	fmt.Println("  config              - Manage Corkscrew configuration (init, show, validate)")
 	fmt.Println("  scan                - Full resource scanning (supports service groups)")
 	fmt.Println("  discover            - Discover available services")
-	fmt.Println("  orchestrator-discover - Advanced discovery using orchestrator")
 	fmt.Println("  list                - List resources")
 	fmt.Println("  describe            - Describe specific resources")
 	fmt.Println("  info                - Show provider information")
@@ -294,22 +284,8 @@ func runDiscover(args []string) {
 
 	fmt.Printf("🔍 Discovering services for provider: %s\n", *providerName)
 
-	// Initialize plugin client
-	pc, err := createPluginClient(*providerName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
-	// Ensure provider is initialized (required for some providers like Kubernetes)
-	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
-		// Non-fatal for providers that don't require initialization for discovery
-		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
-	}
+	providers := mustProviderApplication()
+	defer providers.Close()
 
 	// Create discover request
 	req := &pb.DiscoverServicesRequest{
@@ -317,7 +293,7 @@ func runDiscover(args []string) {
 	}
 
 	// Execute discovery
-	resp, err := provider.DiscoverServices(context.Background(), req)
+	resp, err := providers.DiscoverServices(context.Background(), *providerName, nil, req)
 	if err != nil {
 		log.Fatalf("Discovery failed: %v", err)
 	}
@@ -415,24 +391,11 @@ func runList(args []string) {
 		fmt.Printf("   Resource type: %s\n", *resourceType)
 	}
 
-	// Initialize plugin client
-	pc, err := createPluginClient(*providerName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
-	// Initialize provider with basic hints (region if provided)
+	providers := mustProviderApplication()
+	defer providers.Close()
 	initCfg := map[string]string{}
 	if len(regions) > 0 {
 		initCfg["region"] = regions[0]
-	}
-	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
-		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
 	}
 
 	// Create list request
@@ -450,7 +413,7 @@ func runList(args []string) {
 	}
 
 	// Execute list
-	resp, err := provider.ListResources(context.Background(), req)
+	resp, err := providers.ListResources(context.Background(), *providerName, initCfg, req)
 	if err != nil {
 		log.Fatalf("List failed: %v", err)
 	}
@@ -554,24 +517,11 @@ func runDescribe(args []string) {
 
 	fmt.Printf("🔍 Describing resource: %s\n", *resourceID)
 
-	// Initialize plugin client
-	pc, err := createPluginClient(*providerName)
-	if err != nil {
-		log.Fatalf("Failed to initialize plugin client: %v", err)
-	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
-	// Initialize provider to ensure describe path works for all providers
+	providers := mustProviderApplication()
+	defer providers.Close()
 	initCfg := map[string]string{}
 	if *region != "" {
 		initCfg["region"] = *region
-	}
-	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: initCfg}); err != nil {
-		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
 	}
 
 	// Create describe request
@@ -584,7 +534,7 @@ func runDescribe(args []string) {
 	}
 
 	// Execute describe
-	resp, err := provider.DescribeResource(context.Background(), req)
+	resp, err := providers.DescribeResource(context.Background(), *providerName, initCfg, req)
 	if err != nil {
 		log.Fatalf("Describe failed: %v", err)
 	}
@@ -669,27 +619,15 @@ func runInfo(args []string) {
 
 	fmt.Printf("ℹ️  Getting info for provider: %s\n", *providerName)
 
-	// Initialize plugin client
-	pc, err := createPluginClient(*providerName)
-	if err != nil {
-		log.Fatalf("Failed to initialize plugin client: %v", err)
-	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
-	// Best-effort initialization (important for Kubernetes)
-	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
-		// Not fatal; some providers support GetProviderInfo without init
-	}
+	providers := mustProviderApplication()
+	defer providers.Close()
 
 	// Get info
-	resp, err := provider.GetProviderInfo(context.Background(), &pb.Empty{})
+	info, err := providers.GetInfo(context.Background(), *providerName, nil)
 	if err != nil {
 		log.Fatalf("GetProviderInfo failed: %v", err)
 	}
+	resp := info.Runtime
 
 	// Handle results based on output format
 	switch *outputFormat {
@@ -756,21 +694,8 @@ func runSchemas(args []string) {
 		fmt.Printf("   Services: all\n")
 	}
 
-	// Initialize plugin client
-	pc, err := createPluginClient(*providerName)
-	if err != nil {
-		log.Fatalf("Failed to initialize plugin client: %v", err)
-	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		log.Fatalf("Failed to get provider: %v", err)
-	}
-	// Initialize provider to ensure schema generation works for all providers
-	if _, err := provider.Initialize(context.Background(), &pb.InitializeRequest{Config: map[string]string{}}); err != nil {
-		fmt.Printf("⚠️  Warning: Provider initialization failed: %v\n", err)
-	}
+	providers := mustProviderApplication()
+	defer providers.Close()
 
 	// Get schemas
 	req := &pb.GetSchemasRequest{
@@ -778,7 +703,7 @@ func runSchemas(args []string) {
 		Format:   "sql",
 	}
 
-	resp, err := provider.GetSchemas(context.Background(), req)
+	resp, err := providers.GetSchemas(context.Background(), *providerName, nil, req)
 	if err != nil {
 		log.Fatalf("GetSchemas failed: %v", err)
 	}
@@ -1216,16 +1141,10 @@ func handleQueryError(err error, sqlQuery, dbPath string) {
 func suggestTableNames(tableName string) []string {
 	// Common table names in corkscrew
 	commonTables := []string{
-		"aws_resources",
-		"aws_s3_buckets",
-		"aws_ec2_instances",
-		"aws_iam_users",
-		"aws_iam_roles",
-		"aws_lambda_functions",
-		"aws_rds_instances",
-		"azure_resources",
-		"gcp_resources",
-		"kubernetes_resources",
+		"all_cloud_resources",
+		"cloud_relationships",
+		"resource_counts_by_provider",
+		"scan_metadata",
 	}
 
 	suggestions := []string{}

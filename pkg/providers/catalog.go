@@ -6,6 +6,8 @@ package providers
 
 import "strings"
 
+const CustomResourceTable = "custom_provider_resources"
+
 // Provider describes a provider shipped with Corkscrew.
 type Provider struct {
 	Name          string
@@ -47,4 +49,27 @@ func Lookup(name string) (Provider, bool) {
 		}
 	}
 	return Provider{}, false
+}
+
+// LookupByResourceTable returns the official provider that owns a canonical
+// specialized resource table.
+func LookupByResourceTable(table string) (Provider, bool) {
+	table = strings.TrimSpace(table)
+	for _, provider := range shipped {
+		if provider.ResourceTable == table {
+			return provider, true
+		}
+	}
+	return Provider{}, false
+}
+
+// IsRegisteredResourceTable reports whether persistence owns the table's row
+// mapping. Custom providers may use the generic table or an official provider's
+// registered specialized table.
+func IsRegisteredResourceTable(table string) bool {
+	if strings.TrimSpace(table) == CustomResourceTable {
+		return true
+	}
+	_, ok := LookupByResourceTable(table)
+	return ok
 }

@@ -337,8 +337,6 @@ output:
   default_format: "table"
   colors: true
   progress_bars: true
-  hide_empty_regions: true
-  hide_empty_services: true
 ```
 
 ### Provider Configuration
@@ -561,8 +559,6 @@ Minimum IAM policy for scanning:
    # JSON output
    corkscrew scan --provider aws --output json
    
-   # Include empty services
-   corkscrew scan --provider aws --show-empty
    ```
 
 #### Service Discovery
@@ -864,24 +860,24 @@ corkscrew scan --provider aws --output table
 
 # JSON format for processing
 corkscrew scan --provider aws --output json
+# Emits the application Outcome as one JSON value on stdout.
 
 # CSV format for spreadsheets
 corkscrew scan --provider aws --output csv > resources.csv
+# Columns: Provider,Scope,Service,Type,Name,ID
 
 # Save to timestamped file
 corkscrew scan --provider aws --save
-# Creates: scan_results_aws_20240115_143022.json
+# Creates: enhanced-scan-aws-20240115-143022.json
 ```
+
+JSON and CSV stdout contain only machine-readable data. Progress, persistence
+notices, and warnings are written to stderr. Saved files use the same Outcome
+JSON contract as `--output json`.
 
 #### Filtering Results
 
 ```bash
-# Show only non-empty services
-corkscrew scan --provider aws --hide-empty
-
-# Show empty services too
-corkscrew scan --provider aws --show-empty
-
 # Filter by tags (AWS)
 corkscrew scan --provider aws --tag-filter "Environment=production"
 
@@ -2015,7 +2011,6 @@ Optional Flags:
   --output string      Output format: table, json, csv (default "table")
   --save              Save results to timestamped file
   --concurrency int    Number of concurrent operations (default 3)
-  --show-empty        Show services with no resources
   --use-cache         Use cached results if available
   --cache-ttl string  Cache time-to-live (e.g., "1h", "24h")
   --stream            Stream results for large datasets

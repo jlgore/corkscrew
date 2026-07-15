@@ -903,23 +903,3 @@ GROUP BY source_cloud_provider, target_cloud_provider, path_type, risk_level;`
 
 	return nil
 }
-
-// UpdateUnifiedTablesForSecurity updates the main createUnifiedTables function to include security tables
-func (c *UnifiedDatabaseConfig) createUnifiedTablesWithSecurity() error {
-	// Call original method first
-	if err := c.createUnifiedTables(); err != nil {
-		return err
-	}
-
-	// Add security tables
-	if err := c.createSecurityTables(); err != nil {
-		return fmt.Errorf("failed to create security tables: %w", err)
-	}
-
-	// Create security views
-	if err := c.CreateSecurityViews(); err != nil {
-		return fmt.Errorf("failed to create security views: %w", err)
-	}
-
-	return nil
-}

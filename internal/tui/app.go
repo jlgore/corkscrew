@@ -1,15 +1,32 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	scanapp "github.com/jlgore/corkscrew/internal/app/scan"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
+	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui/components"
 	"github.com/jlgore/corkscrew/internal/tui/styles"
 )
+
+// ScanRunFunc is the TUI-owned seam to the transport-neutral scan application.
+type ScanRunFunc func(context.Context, scanapp.Request) (scanapp.Outcome, error)
+
+type quickScanRequestedMsg struct{}
+
+type providerScanCompleteMsg struct {
+	provider string
+	outcome  scanapp.Outcome
+	err      error
+}
 
 // CorkscrewApp represents the main TUI application
 type CorkscrewApp struct {
@@ -21,9 +38,9 @@ type CorkscrewApp struct {
 	keyBindings KeyBindings
 
 	// Dependencies
-	database interface{} // *db.GraphLoader
-	scanner  interface{}
-	config   interface{} // *config.Config
+	database   *data.Session
+	config     *appconfig.CorkscrewConfig
+	scanRunner ScanRunFunc
 
 	// Application state
 	width     int
@@ -34,8 +51,12 @@ type CorkscrewApp struct {
 	startView ViewType
 
 	// Scan state
-	scanStatus *ScanStatus
-	scanning   bool
+	scanStatus         *ScanStatus
+	scanning           bool
+	quickScanProviders []string
+	quickScanCompleted int
+	quickScanErrors    []error
+	quickScanStarted   time.Time
 
 	// Ticker for periodic updates
 	ticker *time.Ticker
@@ -65,13 +86,13 @@ func NewCorkscrewApp() *CorkscrewApp {
 }
 
 // SetDependencies sets the application dependencies
-func (app *CorkscrewApp) SetDependencies(database, config, scanner interface{}) {
+func (app *CorkscrewApp) SetDependencies(database *data.Session, config *appconfig.CorkscrewConfig, scanRunner ScanRunFunc) {
 	app.database = database
 	app.config = config
-	app.scanner = scanner
+	app.scanRunner = scanRunner
 
 	// Inject dependencies into router
-	app.router.SetDependencies(database, config, scanner)
+	app.router.SetDependencies(database, config)
 
 	// Update status bar with initial provider info
 	if config != nil {
@@ -171,6 +192,16 @@ func (app *CorkscrewApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, tea.Tick(time.Second, func(t time.Time) tea.Msg {
 			return TickMsg{Time: t}
 		}))
+
+	case quickScanRequestedMsg:
+		if cmd := app.beginQuickScan(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+	case providerScanCompleteMsg:
+		if cmd := app.handleProviderScanComplete(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case ScanStartedMsg:
 		app.handleScanStarted(msg)
@@ -375,6 +406,12 @@ func (app *CorkscrewApp) handleScanComplete(msg ScanCompleteMsg) {
 	app.scanning = false
 	app.scanStatus = nil
 	app.statusBar.SetScanStatus(nil)
+	if msg.Error != nil {
+		app.lastError = msg.Error
+		app.statusBar.SetStatusMessage(msg.Error.Error(), StatusError)
+		return
+	}
+	app.statusBar.SetStatusMessage(fmt.Sprintf("Scan completed: %d resources", msg.Resources), StatusSuccess)
 }
 
 func (app *CorkscrewApp) updateBreadcrumb() {
@@ -404,15 +441,72 @@ func (app *CorkscrewApp) loadInitialData() tea.Cmd {
 
 // StartQuickScan starts a quick scan with default settings
 func (app *CorkscrewApp) StartQuickScan() tea.Cmd {
-	if app.scanner == nil {
-		return func() tea.Msg {
-			return ErrorMsg{Error: fmt.Errorf("scanner not available")}
+	return func() tea.Msg { return quickScanRequestedMsg{} }
+}
+
+func (app *CorkscrewApp) beginQuickScan() tea.Cmd {
+	if app.scanRunner == nil {
+		return func() tea.Msg { return ErrorMsg{Error: fmt.Errorf("scan application is not available")} }
+	}
+	if app.config == nil {
+		return func() tea.Msg { return ErrorMsg{Error: fmt.Errorf("scan configuration is not available")} }
+	}
+	providers := make([]string, 0, len(app.config.Providers))
+	for name, provider := range app.config.Providers {
+		if provider.Enabled {
+			providers = append(providers, name)
 		}
 	}
+	sort.Strings(providers)
+	if len(providers) == 0 {
+		return func() tea.Msg { return ErrorMsg{Error: fmt.Errorf("no providers are enabled")} }
+	}
 
+	app.quickScanProviders = providers
+	app.quickScanCompleted = 0
+	app.quickScanErrors = nil
+	app.quickScanStarted = time.Now()
+	app.handleScanStarted(ScanStartedMsg{ScanID: "quick-scan"})
+	app.scanStatus.Providers = append([]string(nil), providers...)
+	app.scanStatus.Operation = fmt.Sprintf("Scanning %s", providers[0])
+	return app.runQuickScanProvider(providers[0])
+}
+
+func (app *CorkscrewApp) runQuickScanProvider(provider string) tea.Cmd {
 	return func() tea.Msg {
-		// This would start a scan using the orchestrator
-		return ScanStartedMsg{ScanID: "quick-scan"}
+		outcome, err := app.scanRunner(context.Background(), scanapp.Request{Provider: provider})
+		return providerScanCompleteMsg{provider: provider, outcome: outcome, err: err}
+	}
+}
+
+func (app *CorkscrewApp) handleProviderScanComplete(msg providerScanCompleteMsg) tea.Cmd {
+	app.quickScanCompleted++
+	if app.scanStatus != nil {
+		app.scanStatus.Resources += len(msg.outcome.Resources)
+		app.scanStatus.Progress = float64(app.quickScanCompleted) / float64(len(app.quickScanProviders))
+	}
+	if msg.err != nil {
+		app.quickScanErrors = append(app.quickScanErrors, fmt.Errorf("%s: %w", msg.provider, msg.err))
+		if app.scanStatus != nil {
+			app.scanStatus.Errors++
+		}
+	}
+	if app.quickScanCompleted < len(app.quickScanProviders) {
+		next := app.quickScanProviders[app.quickScanCompleted]
+		if app.scanStatus != nil {
+			app.scanStatus.Operation = fmt.Sprintf("Scanning %s", next)
+		}
+		return app.runQuickScanProvider(next)
+	}
+
+	resources := 0
+	if app.scanStatus != nil {
+		resources = app.scanStatus.Resources
+	}
+	duration := time.Since(app.quickScanStarted)
+	combined := errors.Join(app.quickScanErrors...)
+	return func() tea.Msg {
+		return ScanCompleteMsg{ScanID: "quick-scan", Resources: resources, Duration: duration, Error: combined}
 	}
 }
 

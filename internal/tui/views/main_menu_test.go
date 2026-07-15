@@ -1,12 +1,15 @@
 package views
 
 import (
-	"database/sql"
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	_ "github.com/duckdb/duckdb-go/v2"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
+	dataaccess "github.com/jlgore/corkscrew/internal/data"
+	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/tui/types"
 )
 
@@ -39,35 +42,19 @@ func TestMainMenuQIsReservedForGlobalQuit(t *testing.T) {
 }
 
 func TestMainMenuLoadsLiveSystemStatus(t *testing.T) {
-	database := openMainMenuTestDB(t)
-	mustExec(t, database, `
-		CREATE TABLE aws_resources (
-			id VARCHAR PRIMARY KEY
-		)
-	`)
-	mustExec(t, database, `
-		INSERT INTO aws_resources (id)
-		VALUES ('bucket-1'), ('bucket-2')
-	`)
-	mustExec(t, database, `
-		CREATE TABLE scan_metadata (
-			id VARCHAR PRIMARY KEY,
-			service VARCHAR NOT NULL,
-			region VARCHAR NOT NULL,
-			scan_time TIMESTAMP NOT NULL,
-			total_resources INTEGER,
-			failed_resources INTEGER,
-			duration_ms BIGINT,
-			metadata JSON
-		)
-	`)
-	mustExec(t, database, `
-		INSERT INTO scan_metadata (id, service, region, scan_time, total_resources, failed_resources, duration_ms)
-		VALUES ('scan-1', 's3', 'us-east-1', TIMESTAMP '2026-07-12 10:30:00', 2, 0, 1500)
-	`)
+	session := openViewTestSession(t)
+	startedAt := time.Date(2026, 7, 12, 10, 30, 0, 0, time.UTC)
+	seedScanOutcome(t, session, dataaccess.ScanOutcome{
+		ID: "scan-1", Provider: "aws", Services: []string{"s3"}, Scopes: []string{"us-east-1"},
+		Status: dataaccess.ScanStatusCompleted, StartedAt: startedAt, EndedAt: startedAt.Add(1500 * time.Millisecond),
+		Resources: []*pb.Resource{
+			{Provider: "aws", Id: "bucket-1", Name: "bucket-one", Type: "AWS::S3::Bucket", Service: "s3", Region: "us-east-1"},
+			{Provider: "aws", Id: "bucket-2", Name: "bucket-two", Type: "AWS::S3::Bucket", Service: "s3", Region: "us-east-1"},
+		},
+	})
 
-	config := testMenuConfig{
-		Providers: map[string]testMenuProvider{
+	config := &appconfig.CorkscrewConfig{
+		Providers: map[string]appconfig.CloudProviderConfig{
 			"aws":   {Enabled: true},
 			"azure": {Enabled: false},
 			"gcp":   {Enabled: true},
@@ -75,7 +62,7 @@ func TestMainMenuLoadsLiveSystemStatus(t *testing.T) {
 	}
 
 	model := NewMainMenuModel()
-	model.SetDatabase(database)
+	model.SetDatabase(session)
 	model.SetConfig(config)
 
 	msg := model.loadSystemStatus()()
@@ -98,33 +85,23 @@ func TestMainMenuLoadsLiveSystemStatus(t *testing.T) {
 	}
 }
 
-func TestMainMenuLoadsRecentScansFromUnifiedMetadata(t *testing.T) {
-	database := openMainMenuTestDB(t)
-	mustExec(t, database, `
-		CREATE TABLE scan_metadata (
-			id VARCHAR PRIMARY KEY,
-			provider VARCHAR NOT NULL,
-			scan_type VARCHAR NOT NULL,
-			services JSON,
-			regions JSON,
-			total_resources INTEGER DEFAULT 0,
-			failed_resources INTEGER DEFAULT 0,
-			scan_start_time TIMESTAMP NOT NULL,
-			scan_end_time TIMESTAMP,
-			duration_ms BIGINT,
-			metadata JSON,
-			status VARCHAR DEFAULT 'completed'
-		)
-	`)
-	mustExec(t, database, `
-		INSERT INTO scan_metadata (
-			id, provider, scan_type, total_resources, scan_start_time, duration_ms
-		)
-		VALUES ('scan-2', 'aws', 'service', 17, TIMESTAMP '2026-07-12 11:45:00', 2500)
-	`)
+func TestMainMenuLoadsRecentScansFromMetadata(t *testing.T) {
+	session := openViewTestSession(t)
+	startedAt := time.Date(2026, 7, 12, 11, 45, 0, 0, time.UTC)
+	resources := make([]*pb.Resource, 0, 17)
+	for i := 0; i < 17; i++ {
+		resources = append(resources, &pb.Resource{
+			Provider: "aws", Id: "res-" + string(rune('a'+i)), Name: "res", Type: "AWS::S3::Bucket", Service: "s3", Region: "us-east-1",
+		})
+	}
+	seedScanOutcome(t, session, dataaccess.ScanOutcome{
+		ID: "scan-2", Provider: "aws", Services: []string{"s3"}, Scopes: []string{"us-east-1"},
+		Status: dataaccess.ScanStatusCompleted, StartedAt: startedAt, EndedAt: startedAt.Add(2500 * time.Millisecond),
+		Resources: resources,
+	})
 
 	model := NewMainMenuModel()
-	model.SetDatabase(database)
+	model.SetDatabase(session)
 
 	msg := model.loadRecentScans()()
 	scansMsg, ok := msg.(RecentScansLoadedMsg)
@@ -143,31 +120,19 @@ func TestMainMenuLoadsRecentScansFromUnifiedMetadata(t *testing.T) {
 	}
 }
 
-type testMenuConfig struct {
-	Providers map[string]testMenuProvider
-}
-
-type testMenuProvider struct {
-	Enabled bool
-}
-
-func openMainMenuTestDB(t *testing.T) *sql.DB {
+func openViewTestSession(t *testing.T) *dataaccess.Session {
 	t.Helper()
-
-	database, err := sql.Open("duckdb", "")
+	session, err := dataaccess.OpenSession(context.Background(), filepath.Join(t.TempDir(), "views.duckdb"))
 	if err != nil {
-		t.Fatalf("open duckdb: %v", err)
+		t.Fatalf("open data session: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = database.Close()
-	})
-	return database
+	t.Cleanup(func() { _ = session.Close() })
+	return session
 }
 
-func mustExec(t *testing.T, database *sql.DB, query string) {
+func seedScanOutcome(t *testing.T, session *dataaccess.Session, outcome dataaccess.ScanOutcome) {
 	t.Helper()
-
-	if _, err := database.Exec(query); err != nil {
-		t.Fatalf("exec query: %v\n%s", err, query)
+	if err := session.PersistScanOutcome(context.Background(), outcome, dataaccess.PersistScanOptions{}); err != nil {
+		t.Fatalf("seed scan outcome: %v", err)
 	}
 }

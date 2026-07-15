@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "name": "azure",
+  "display_name": "Microsoft Azure",
+  "description": "Microsoft Azure provider",
+  "version": "1.0.0",
+  "protocol": 2,
+  "executable": "azure-provider",
+  "capabilities": ["discover", "list", "describe", "schemas", "batch_scan", "stream_scan"],
+  "default_scopes": ["eastus", "eastus2", "westus2"],
+  "storage": {"mode": "table", "table": "azure_resources"}
+}

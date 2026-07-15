@@ -317,7 +317,6 @@ func (p *GCPProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.P
 			"dynamic_services":   "true",
 			"batch_operations":   "true",
 			"relationship_graph": "true",
-			"change_history":     "true",
 			"organization_scope": "true",
 			"folder_scope":       "true",
 			"vault_auth":         "true",

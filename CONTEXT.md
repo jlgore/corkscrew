@@ -39,9 +39,9 @@ An old table preserved as `<name>_legacy_v0` during migration. Rows are copied i
 ## Ownership boundaries
 
 - `pkg/providers` owns the catalog of providers shipped with Corkscrew.
-- Provider plugins own discovery behavior and provider discovery schemas.
+- Provider plugins own discovery behavior and provider discovery schemas, but never open or mutate Corkscrew storage.
 - `internal/db` schema lifecycle owns all persistent storage DDL and migrations.
-- Graph loaders and stores consume the storage schema; they do not create it opportunistically.
+- Normalized readers and graph stores consume the storage schema; they do not create it opportunistically.
 - CLI and API handlers orchestrate reusable packages and should not contain storage or provider business rules.
 - Application workflows under `internal/app` accept adapter requests, apply precedence and normalization, and invoke domain packages.
-- CLI, TUI, and API adapters own transport syntax and rendering, not workflow policy.
+- CLI, TUI, and API adapters own transport syntax and rendering, not workflow policy. TUI Quick Scan invokes the same single-provider application workflow once per enabled provider.

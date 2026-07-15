@@ -12,7 +12,7 @@ shift
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGIN_DIR="$PROJECT_ROOT/plugins/$PROVIDER-provider"
-INSTALL_DIR="$HOME/.corkscrew/plugins"
+INSTALL_DIR="$HOME/.corkscrew/plugins/official/$PROVIDER"
 PLUGIN_BINARY="$PROVIDER-provider"
 
 if [[ ! -d "$PLUGIN_DIR" ]]; then
@@ -36,7 +36,9 @@ mkdir -p "$INSTALL_DIR"
 )
 
 chmod +x "$INSTALL_DIR/$PLUGIN_BINARY"
+cp "$PLUGIN_DIR/plugin.json" "$INSTALL_DIR/plugin.json"
 
 echo "✅ $PROVIDER provider built successfully"
 echo "📁 Binary location: $INSTALL_DIR/$PLUGIN_BINARY"
+echo "📄 Manifest location: $INSTALL_DIR/plugin.json"
 echo "📊 Size: $(du -h "$INSTALL_DIR/$PLUGIN_BINARY" | cut -f1)"

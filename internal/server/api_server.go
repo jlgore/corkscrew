@@ -10,11 +10,10 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/jlgore/corkscrew/internal/client"
+	providerapp "github.com/jlgore/corkscrew/internal/app/providers"
 	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	idmsdiscovery "github.com/jlgore/corkscrew/pkg/idmsdiscovery"
-	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 	"github.com/jlgore/corkscrew/pkg/query"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,6 +30,7 @@ type APIServer struct {
 	dbPath        string
 	queryEngine   query.QueryEngine
 	idmsDiscovery *idmsdiscovery.IDMSDiscovery
+	providers     *providerapp.Application
 }
 
 func NewAPIServer() *APIServer {
@@ -50,12 +50,20 @@ func NewAPIServer() *APIServer {
 	// Initialize IDMS discovery
 	idmsDiscovery := idmsdiscovery.NewIDMSDiscovery()
 
-	return &APIServer{
+	runtimeProviders, runtimeErr := providerapp.OpenDefault(os.Stderr)
+	if runtimeErr != nil {
+		log.Printf("Warning: Failed to initialize provider runtime: %v", runtimeErr)
+	}
+	server := &APIServer{
 		startTime:     time.Now(),
 		dbPath:        dbPath,
 		queryEngine:   engine,
 		idmsDiscovery: idmsDiscovery,
 	}
+	if runtimeProviders != nil {
+		server.providers = runtimeProviders
+	}
+	return server
 }
 
 func (s *APIServer) ListProviders(ctx context.Context, req *pb.APIListProvidersRequest) (*pb.APIListProvidersResponse, error) {
@@ -63,11 +71,14 @@ func (s *APIServer) ListProviders(ctx context.Context, req *pb.APIListProvidersR
 
 	var providerInfos []*pb.APIProviderInfo
 
-	for _, catalogProvider := range providercatalog.Shipped() {
-		providerName := catalogProvider.Name
+	if s.providers == nil {
+		return &pb.APIListProvidersResponse{}, nil
+	}
+	for _, descriptor := range s.providers.List() {
+		providerName := descriptor.Name
 		info := &pb.APIProviderInfo{
 			Name:        providerName,
-			Description: catalogProvider.Description,
+			Description: descriptor.Description,
 		}
 
 		if req.IncludeStatus {
@@ -239,9 +250,9 @@ func (s *APIServer) GetStatus(ctx context.Context, req *pb.APIGetStatusRequest) 
 	}
 
 	// Check provider status if requested
-	if req.IncludeProviders {
-		for _, provider := range providercatalog.Names() {
-			status := s.getProviderStatus(provider)
+	if req.IncludeProviders && s.providers != nil {
+		for _, provider := range s.providers.List() {
+			status := s.getProviderStatus(provider.Name)
 			response.ProviderStatus = append(response.ProviderStatus, status)
 		}
 	}
@@ -306,49 +317,26 @@ func (s *APIServer) getProviderStatus(providerName string) *pb.APIProviderStatus
 		LastCheck: timestamppb.Now(),
 	}
 
-	pc, err := client.NewPluginClient(providerName)
-	if err != nil {
-		status.Available = false
-		status.Error = err.Error()
+	if s.providers == nil {
+		status.Error = "provider runtime is unavailable"
 		return status
 	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		status.Available = true
-		status.Initialized = false
-		status.Error = err.Error()
-		return status
-	}
-
-	// Try to get provider info to verify it's working
-	_, err = provider.GetProviderInfo(context.Background(), &pb.Empty{})
-	if err != nil {
-		status.Available = true
-		status.Initialized = false
-		status.Error = err.Error()
-		return status
-	}
-
-	status.Available = true
-	status.Initialized = true
+	applicationStatus := s.providers.Status(context.Background(), providerName, nil)
+	status.Available = applicationStatus.Available
+	status.Initialized = applicationStatus.Initialized
+	status.Error = applicationStatus.Error
 	return status
 }
 
 func (s *APIServer) getDetailedProviderInfo(providerName string) (*pb.ProviderInfoResponse, error) {
-	pc, err := client.NewPluginClient(providerName)
+	if s.providers == nil {
+		return nil, fmt.Errorf("provider runtime is unavailable")
+	}
+	info, err := s.providers.GetInfo(context.Background(), providerName, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer pc.Close()
-
-	provider, err := pc.GetProvider()
-	if err != nil {
-		return nil, err
-	}
-
-	return provider.GetProviderInfo(context.Background(), &pb.Empty{})
+	return info.Runtime, nil
 }
 
 // StartAPIServer starts the gRPC API server on the specified port
@@ -361,6 +349,9 @@ func StartAPIServer(port int) error {
 	s := grpc.NewServer()
 
 	server := NewAPIServer()
+	if server.providers != nil {
+		defer server.providers.Close()
+	}
 	pb.RegisterCorkscrewAPIServer(s, server)
 
 	// Enable reflection for tools like grpcurl

@@ -62,11 +62,9 @@ type LoggingConfig struct {
 }
 
 type OutputConfig struct {
-	DefaultFormat     string `yaml:"default_format"`
-	Colors            bool   `yaml:"colors"`
-	ProgressBars      bool   `yaml:"progress_bars"`
-	HideEmptyRegions  bool   `yaml:"hide_empty_regions"`
-	HideEmptyServices bool   `yaml:"hide_empty_services"`
+	DefaultFormat string `yaml:"default_format"`
+	Colors        bool   `yaml:"colors"`
+	ProgressBars  bool   `yaml:"progress_bars"`
 }
 
 const defaultConfigYAML = `# Corkscrew Configuration File
@@ -138,8 +136,6 @@ output:
   default_format: "table"
   colors: true
   progress_bars: true
-  hide_empty_regions: true
-  hide_empty_services: true
 `
 
 func DefaultCorkscrewYAML() string {
@@ -254,7 +250,7 @@ func (c *CorkscrewConfig) GetRegionsForProvider(provider string) ([]string, erro
 		return nil, fmt.Errorf("provider %s is disabled", provider)
 	}
 	if len(providerConfig.Regions) == 0 {
-		return DefaultRegionsForProvider(provider), nil
+		return nil, nil
 	}
 	return providerConfig.Regions, nil
 }
@@ -288,43 +284,4 @@ func (c *CorkscrewConfig) ProviderInitializationConfig(provider string) map[stri
 		result[key] = value
 	}
 	return result
-}
-
-func (c *CorkscrewConfig) ShouldHideEmptyRegions() bool {
-	return c.Output.HideEmptyRegions
-}
-
-func (c *CorkscrewConfig) ShouldHideEmptyServices() bool {
-	return c.Output.HideEmptyServices
-}
-
-func ValidateProviderName(provider string) error {
-	validProviders := map[string]bool{
-		"aws":        true,
-		"azure":      true,
-		"cloudflare": true,
-		"gcp":        true,
-		"kubernetes": true,
-	}
-	if validProviders[provider] {
-		return nil
-	}
-	return fmt.Errorf("unsupported provider: %s. Valid providers: %v", provider, []string{"aws", "azure", "cloudflare", "gcp", "kubernetes"})
-}
-
-func DefaultRegionsForProvider(provider string) []string {
-	switch provider {
-	case "aws":
-		return []string{"us-east-1", "us-west-2"}
-	case "azure":
-		return []string{"eastus", "westus2"}
-	case "gcp":
-		return []string{"us-central1-a", "us-west1-a"}
-	case "kubernetes":
-		return []string{"default"}
-	case "cloudflare":
-		return []string{"global"}
-	default:
-		return []string{}
-	}
 }

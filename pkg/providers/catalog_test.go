@@ -13,9 +13,16 @@ func TestCatalogIncludesEveryShippedProvider(t *testing.T) {
 			t.Fatalf("Names() = %v, want %v", got, want)
 		}
 		provider, ok := Lookup(want[i])
-		if !ok || provider.ResourceTable == "" {
+		if !ok || provider.Description == "" || provider.ResourceTable == "" {
 			t.Fatalf("Lookup(%q) = %#v, %v", want[i], provider, ok)
 		}
+		byTable, ok := LookupByResourceTable(provider.ResourceTable)
+		if !ok || byTable.Name != provider.Name {
+			t.Fatalf("LookupByResourceTable(%q) = %#v, %v", provider.ResourceTable, byTable, ok)
+		}
+	}
+	if !IsRegisteredResourceTable(CustomResourceTable) || IsRegisteredResourceTable("arbitrary_resources") {
+		t.Fatal("registered resource table classification is incorrect")
 	}
 }
 

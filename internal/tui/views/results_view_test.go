@@ -3,44 +3,28 @@ package views
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	dataaccess "github.com/jlgore/corkscrew/internal/data"
+	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/tui/types"
 )
 
-func TestResultsViewLoadsResourcesFromProviderTables(t *testing.T) {
-	database := openMainMenuTestDB(t)
-	mustExec(t, database, `
-		CREATE TABLE aws_resources (
-			id VARCHAR PRIMARY KEY,
-			name VARCHAR,
-			type VARCHAR,
-			service VARCHAR,
-			region VARCHAR,
-			scanned_at TIMESTAMP
-		)
-	`)
-	mustExec(t, database, `
-		INSERT INTO aws_resources (id, name, type, service, region, scanned_at)
-		VALUES ('bucket-1', 'bucket-one', 'AWS::S3::Bucket', 's3', 'us-east-1', TIMESTAMP '2026-07-12 12:00:00')
-	`)
-	mustExec(t, database, `
-		CREATE TABLE gcp_resources (
-			id VARCHAR PRIMARY KEY,
-			name VARCHAR,
-			type VARCHAR,
-			service VARCHAR,
-			location VARCHAR,
-			discovered_at TIMESTAMP
-		)
-	`)
-	mustExec(t, database, `
-		INSERT INTO gcp_resources (id, name, type, service, location, discovered_at)
-		VALUES ('instance-1', 'instance-one', 'compute.googleapis.com/Instance', 'compute', 'us-central1', TIMESTAMP '2026-07-12 12:01:00')
-	`)
+func TestResultsViewLoadsResourcesFromNormalizedInventory(t *testing.T) {
+	session := openViewTestSession(t)
+	startedAt := time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC)
+	seedScanOutcome(t, session, dataaccess.ScanOutcome{
+		ID: "results-scan", Provider: "aws", Services: []string{"s3"}, Scopes: []string{"us-east-1"},
+		Status: dataaccess.ScanStatusCompleted, StartedAt: startedAt, EndedAt: startedAt.Add(time.Second),
+		Resources: []*pb.Resource{
+			{Provider: "aws", Id: "bucket-1", Name: "bucket-one", Type: "AWS::S3::Bucket", Service: "s3", Region: "us-east-1"},
+			{Provider: "acme", Id: "widget-1", Name: "widget-one", Type: "Widget", Service: "inventory", Region: "lab-1"},
+		},
+	})
 
 	model := NewResultsViewModel()
-	model.SetDatabase(database)
+	model.SetDatabase(session)
 
 	msg := model.Init()()
 	loaded, ok := msg.(types.ResourcesLoadedMsg)
@@ -58,7 +42,7 @@ func TestResultsViewLoadsResourcesFromProviderTables(t *testing.T) {
 	model = updated.(*ResultsViewModel)
 
 	view := model.View()
-	for _, want := range []string{"bucket-one", "instance-one", "aws", "gcp"} {
+	for _, want := range []string{"bucket-one", "widget-one", "aws", "acme"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("results view missing %q:\n%s", want, view)
 		}

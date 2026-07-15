@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	scanapp "github.com/jlgore/corkscrew/internal/app/scan"
 )
@@ -20,7 +21,6 @@ func runScanE(args []string) error {
 	servicesStr := fs.String("services", "", "Comma-separated list of services (default: from config)")
 	regionsStr := fs.String("region", "", "Comma-separated regions or 'all' (default: from config)")
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
-	showEmpty := fs.Bool("show-empty", false, "Show empty regions and services")
 	configPath := fs.String("config", "", "Path to configuration file")
 	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
 	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
@@ -41,16 +41,16 @@ func runScanE(args []string) error {
 		return fmt.Errorf("parse scan flags: %w", err)
 	}
 
-	return scanapp.Run(context.Background(), scanapp.Request{
+	request := scanapp.Request{
 		Provider:                *providerName,
 		Regions:                 *regionsStr,
 		Services:                *servicesStr,
 		OutputFormat:            *outputFormat,
 		SaveToFile:              *saveToFile,
-		ShowEmpty:               *showEmpty,
 		ConfigPath:              *configPath,
 		MaxConcurrency:          *concurrency,
 		DatabasePath:            *databasePath,
+		DatabaseExplicit:        strings.TrimSpace(*databasePath) != "",
 		QuackToken:              *quackToken,
 		DBProviderTableOverride: *dbProviderTable,
 		Namespace:               *namespace,
@@ -59,5 +59,12 @@ func runScanE(args []string) error {
 		KubeconfigPath:          *kubeconfig,
 		KubeContext:             *kubeContext,
 		IncludeRelationships:    *includeRels,
-	}, scanapp.Dependencies{})
+	}
+	outcome, workflowErr := scanapp.Run(context.Background(), request, scanapp.Dependencies{})
+	if outcome.Status != "" {
+		if err := renderScanOutcome(os.Stdout, os.Stderr, request, outcome); err != nil {
+			return err
+		}
+	}
+	return workflowErr
 }

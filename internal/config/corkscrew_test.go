@@ -48,15 +48,3 @@ database:
 		t.Fatal("ProviderInitializationConfig() returned the mutable config map")
 	}
 }
-
-func TestValidateProviderNameIncludesCloudflare(t *testing.T) {
-	if err := ValidateProviderName("cloudflare"); err != nil {
-		t.Fatalf("ValidateProviderName(cloudflare) error = %v", err)
-	}
-}
-
-func TestCloudflareDefaultRegionIsGlobal(t *testing.T) {
-	if got := DefaultRegionsForProvider("cloudflare"); !reflect.DeepEqual(got, []string{"global"}) {
-		t.Fatalf("DefaultRegionsForProvider(cloudflare) = %#v, want [global]", got)
-	}
-}

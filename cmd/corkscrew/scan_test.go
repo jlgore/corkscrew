@@ -63,8 +63,8 @@ func TestRunScanEValidationErrorsReturnError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runScanE returned nil, want provider validation error")
 	}
-	if !strings.Contains(err.Error(), "unsupported provider: digitalocean") {
-		t.Fatalf("runScanE error = %q, want unsupported provider", err)
+	if !strings.Contains(err.Error(), "provider digitalocean is not configured and enabled") {
+		t.Fatalf("runScanE error = %q, want unconfigured provider", err)
 	}
 }
 

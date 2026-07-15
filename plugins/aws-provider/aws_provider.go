@@ -93,10 +93,9 @@ type AWSProvider struct {
 	initialized bool
 	config      aws.Config
 
-	scanner       activeScanner
-	explorer      *ResourceExplorer
-	schemaGen     *SchemaGenerator
-	changeStorage *DuckDBChangeStorage
+	scanner   activeScanner
+	explorer  *ResourceExplorer
+	schemaGen *SchemaGenerator
 
 	rateLimiter    *rate.Limiter
 	maxConcurrency int
@@ -128,13 +127,6 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 	p.scanner = buildScanner(cfg)
 	p.schemaGen = NewSchemaGenerator()
-
-	if cs, err := NewDuckDBChangeStorage("aws_scans.db"); err == nil {
-		p.changeStorage = cs
-		log.Printf("Database auto-save initialized: aws_scans.db")
-	} else {
-		log.Printf("Warning: change storage init failed (continuing without auto-save): %v", err)
-	}
 
 	if viewArn := p.checkResourceExplorer(ctx); viewArn != "" {
 		p.explorer = NewResourceExplorer(cfg, viewArn, "")
@@ -314,10 +306,6 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	stats.TotalResources = int32(len(allResources))
 	stats.DurationMs = time.Since(scanStartTime).Milliseconds()
 
-	if p.changeStorage != nil && len(allResources) > 0 {
-		go p.autoSaveScanResults(scanID, scanStartTime, allResources, services)
-	}
-
 	for typeName, reason := range p.scanner.UnsupportedTypes() {
 		errs = append(errs, fmt.Sprintf("unsupported_type:%s: %s", typeName, reason))
 	}
@@ -474,10 +462,6 @@ func (p *AWSProvider) Cleanup() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.changeStorage != nil {
-		_ = p.changeStorage.Close()
-		p.changeStorage = nil
-	}
 	p.explorer = nil
 	p.scanner = nil
 	p.initialized = false
@@ -493,43 +477,3 @@ func (p *AWSProvider) GetScanProgress() *ProgressReport {
 	return p.currentProgressTracker.GetProgressReport()
 }
 
-// autoSaveScanResults saves scan results to the database asynchronously.
-func (p *AWSProvider) autoSaveScanResults(scanID string, startTime time.Time, resources []*pb.Resource, services []string) {
-	if p.changeStorage == nil {
-		return
-	}
-
-	events := make([]*ChangeEvent, 0, len(resources))
-	for _, r := range resources {
-		events = append(events, &ChangeEvent{
-			ID:           fmt.Sprintf("%s_%s", scanID, r.Id),
-			Provider:     "aws",
-			ResourceID:   r.Id,
-			ResourceName: r.Name,
-			ResourceType: r.Type,
-			Service:      r.Service,
-			Region:       r.Region,
-			ChangeType:   ChangeTypeCreate,
-			Severity:     SeverityLow,
-			Timestamp:    startTime,
-			DetectedAt:   time.Now(),
-			CurrentState: &ResourceState{
-				ResourceID: r.Id,
-				Timestamp:  time.Now(),
-				Properties: map[string]interface{}{
-					"arn":           r.Arn,
-					"resource_type": r.Type,
-					"region":        r.Region,
-				},
-				Tags: r.Tags,
-			},
-			ChangeMetadata: map[string]interface{}{
-				"scan_id":  scanID,
-				"services": services,
-			},
-		})
-	}
-	if err := p.changeStorage.StoreChanges(events); err != nil {
-		log.Printf("autoSaveScanResults: %v", err)
-	}
-}

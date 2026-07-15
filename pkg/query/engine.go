@@ -2,7 +2,6 @@ package query
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
+	dataaccess "github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/db"
 )
 
@@ -69,9 +69,9 @@ type StreamingRow struct {
 
 // DuckDBQueryEngine implements QueryEngine using DuckDB
 type DuckDBQueryEngine struct {
-	db     *sql.DB
-	dbPath string
-	mutex  sync.RWMutex
+	session *dataaccess.Session
+	dbPath  string
+	mutex   sync.RWMutex
 }
 
 // NewDuckDBQueryEngine creates a new DuckDB-based query engine against the
@@ -85,61 +85,19 @@ func NewDuckDBQueryEngine() (*DuckDBQueryEngine, error) {
 // URI (e.g. "quack:host:9494"). An empty target resolves to the default unified
 // database path. Options (such as db.WithToken) apply only to remote targets.
 func NewDuckDBQueryEngineForTarget(target string, opts ...db.Option) (*DuckDBQueryEngine, error) {
-	dbPath := target
-	if !db.IsRemoteTarget(target) {
-		resolved, err := db.GetUnifiedDatabasePath(target)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get database path: %w", err)
-		}
-		dbPath = resolved
-	}
-
-	database, err := db.OpenDuckDB(context.Background(), dbPath, opts...)
+	session, err := dataaccess.OpenSession(
+		context.Background(),
+		target,
+		dataaccess.WithDatabaseOptions(opts...),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Configure connection pool settings
-	database.SetMaxOpenConns(10)
-	database.SetMaxIdleConns(2)
-	database.SetConnMaxLifetime(30 * time.Minute)
-
-	// Initialize database with required extensions
-	if err := initializeQueryEngine(database); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("failed to initialize query engine: %w", err)
-	}
-
-	// Register JSON helper functions
-	ctx := context.Background()
-	if err := InitializeJSONHelpers(ctx, database); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("failed to initialize JSON helpers: %w", err)
+		return nil, fmt.Errorf("failed to open data session: %w", err)
 	}
 
 	return &DuckDBQueryEngine{
-		db:     database,
-		dbPath: dbPath,
+		session: session,
+		dbPath:  session.Target(),
 	}, nil
-}
-
-// initializeQueryEngine sets up the database with required extensions and settings
-func initializeQueryEngine(db *sql.DB) error {
-	// Install and load JSON extension
-	if _, err := db.Exec("INSTALL json; LOAD json;"); err != nil {
-		return fmt.Errorf("failed to load JSON extension: %w", err)
-	}
-
-	// Set autoinstall and autoload for known extensions
-	if _, err := db.Exec("SET autoinstall_known_extensions=1;"); err != nil {
-		return fmt.Errorf("failed to set autoinstall: %w", err)
-	}
-
-	if _, err := db.Exec("SET autoload_known_extensions=1;"); err != nil {
-		return fmt.Errorf("failed to set autoload: %w", err)
-	}
-
-	return nil
 }
 
 // Execute runs a SQL query and returns structured results
@@ -152,7 +110,7 @@ func (e *DuckDBQueryEngine) ExecuteWithParams(ctx context.Context, query string,
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	if e.db == nil {
+	if e.session == nil {
 		return nil, fmt.Errorf("query engine is closed")
 	}
 
@@ -165,70 +123,24 @@ func (e *DuckDBQueryEngine) ExecuteWithParams(ctx context.Context, query string,
 		query, args = e.convertNamedParams(query, params)
 	}
 
-	// Validate query after parameter conversion
-	if err := e.validateSyntax(query); err != nil {
+	if err := dataaccess.ValidateReadOnlyStatement(query); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
-
-	// Execute the query
-	rows, err := e.db.QueryContext(ctx, query, args...)
+	result, err := e.session.ReadOnly(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query execution failed: %w", err)
 	}
-	defer rows.Close()
-
-	// Get column information
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get column info: %w", err)
+	columnInfo := make([]ColumnInfo, len(result.Columns))
+	for index, column := range result.Columns {
+		columnInfo[index] = ColumnInfo{Name: column.Name, Type: column.Type}
 	}
-
-	columnTypes, err := rows.ColumnTypes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get column types: %w", err)
-	}
-
-	// Build column metadata
-	columnInfo := make([]ColumnInfo, len(columns))
-	for i, col := range columns {
-		columnInfo[i] = ColumnInfo{
-			Name: col,
-			Type: columnTypes[i].DatabaseTypeName(),
-			Nullable: func() bool {
-				nullable, ok := columnTypes[i].Nullable()
-				return ok && nullable
-			}(),
-		}
-	}
-
-	// Scan all rows
-	var results []map[string]interface{}
-	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		row := make(map[string]interface{})
-		for i, col := range columns {
-			val := values[i]
-			// Convert byte slices to strings for JSON compatibility
-			if b, ok := val.([]byte); ok {
-				row[col] = string(b)
-			} else {
-				row[col] = val
-			}
+	results := make([]map[string]interface{}, 0, len(result.Rows))
+	for _, values := range result.Rows {
+		row := make(map[string]interface{}, len(result.Columns))
+		for index, column := range result.Columns {
+			row[column.Name] = values[index]
 		}
 		results = append(results, row)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error while iterating rows: %w", err)
 	}
 
 	duration := time.Since(startTime)
@@ -251,153 +163,40 @@ func (e *DuckDBQueryEngine) ExecuteStreaming(ctx context.Context, query string) 
 
 // ExecuteStreamingWithParams runs a SQL query with parameters and returns a channel of rows
 func (e *DuckDBQueryEngine) ExecuteStreamingWithParams(ctx context.Context, query string, params map[string]interface{}) (<-chan StreamingRow, error) {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
-
-	if e.db == nil {
-		return nil, fmt.Errorf("query engine is closed")
-	}
-
-	// Prepare parameters if provided
-	var args []interface{}
-	if params != nil {
-		// Convert named parameters to positional parameters
-		query, args = e.convertNamedParams(query, params)
-	}
-
-	// Validate query after parameter conversion
-	if err := e.validateSyntax(query); err != nil {
+	if err := dataaccess.ValidateReadOnlyStatement(query); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
-
-	// Create result channel
-	resultChan := make(chan StreamingRow, 100) // Buffer for performance
-
-	// Start streaming in a goroutine
+	resultChan := make(chan StreamingRow, 100)
 	go func() {
 		defer close(resultChan)
-
-		startTime := time.Now()
-		rowCount := 0
-
-		// Execute the query
-		rows, err := e.db.QueryContext(ctx, query, args...)
+		result, err := e.ExecuteWithParams(ctx, query, params)
 		if err != nil {
-			resultChan <- StreamingRow{Error: fmt.Errorf("query execution failed: %w", err)}
+			resultChan <- StreamingRow{Error: err}
 			return
 		}
-		defer rows.Close()
-
-		// Get column information
-		columns, err := rows.Columns()
-		if err != nil {
-			resultChan <- StreamingRow{Error: fmt.Errorf("failed to get column info: %w", err)}
-			return
-		}
-
-		columnTypes, err := rows.ColumnTypes()
-		if err != nil {
-			resultChan <- StreamingRow{Error: fmt.Errorf("failed to get column types: %w", err)}
-			return
-		}
-
-		// Build column metadata
-		columnInfo := make([]ColumnInfo, len(columns))
-		for i, col := range columns {
-			columnInfo[i] = ColumnInfo{
-				Name: col,
-				Type: columnTypes[i].DatabaseTypeName(),
-				Nullable: func() bool {
-					nullable, ok := columnTypes[i].Nullable()
-					return ok && nullable
-				}(),
-			}
-		}
-
-		// Stream rows one by one
-		firstRow := true
-		for rows.Next() {
+		for index, row := range result.Rows {
 			select {
 			case <-ctx.Done():
 				resultChan <- StreamingRow{Error: ctx.Err()}
 				return
 			default:
 			}
-
-			values := make([]interface{}, len(columns))
-			valuePtrs := make([]interface{}, len(columns))
-			for i := range values {
-				valuePtrs[i] = &values[i]
-			}
-
-			if err := rows.Scan(valuePtrs...); err != nil {
-				resultChan <- StreamingRow{Error: fmt.Errorf("failed to scan row: %w", err)}
-				return
-			}
-
-			row := make(map[string]interface{})
-			for i, col := range columns {
-				val := values[i]
-				// Convert byte slices to strings for JSON compatibility
-				if b, ok := val.([]byte); ok {
-					row[col] = string(b)
-				} else {
-					row[col] = val
-				}
-			}
-
 			streamingRow := StreamingRow{Data: row}
-
-			// Include column info in first row
-			if firstRow {
-				streamingRow.Columns = columnInfo
-				firstRow = false
+			if index == 0 {
+				streamingRow.Columns = result.Columns
 			}
-
 			resultChan <- streamingRow
-			rowCount++
 		}
-
-		if err := rows.Err(); err != nil {
-			resultChan <- StreamingRow{Error: fmt.Errorf("error while iterating rows: %w", err)}
-			return
-		}
-
-		// Send final row with statistics
-		duration := time.Since(startTime)
-		stats := QueryStats{
-			Duration:      duration,
-			RowsReturned:  rowCount,
-			ExecutionTime: startTime,
-		}
-
-		resultChan <- StreamingRow{
-			EOF:   true,
-			Stats: &stats,
-		}
+		resultChan <- StreamingRow{EOF: true, Stats: &result.Stats}
 	}()
-
 	return resultChan, nil
 }
 
 // Validate checks if a SQL query is syntactically valid (for public API)
 func (e *DuckDBQueryEngine) Validate(query string) error {
-	// Basic validation - check for empty query
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return fmt.Errorf("query cannot be empty")
+	if err := dataaccess.ValidateReadOnlyStatement(query); err != nil {
+		return err
 	}
-
-	// Check for dangerous operations
-	upperQuery := strings.ToUpper(query)
-	dangerous := []string{"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
-
-	for _, op := range dangerous {
-		if strings.Contains(upperQuery, op) {
-			return fmt.Errorf("query contains potentially dangerous operation: %s", op)
-		}
-	}
-
 	return e.validateSyntax(query)
 }
 
@@ -413,14 +212,14 @@ func (e *DuckDBQueryEngine) validateSyntax(query string) error {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	if e.db == nil {
+	if e.session == nil {
 		return fmt.Errorf("query engine is closed")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := e.db.QueryContext(ctx, "EXPLAIN "+validationQuery)
+	_, err := e.session.ReadOnly(ctx, "EXPLAIN "+validationQuery)
 	if err != nil {
 		return fmt.Errorf("query syntax validation failed: %w", err)
 	}
@@ -474,9 +273,9 @@ func (e *DuckDBQueryEngine) Close() error {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
-	if e.db != nil {
-		err := e.db.Close()
-		e.db = nil
+	if e.session != nil {
+		err := e.session.Close()
+		e.session = nil
 		return err
 	}
 	return nil
@@ -492,9 +291,9 @@ func (e *DuckDBQueryEngine) Ping(ctx context.Context) error {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	if e.db == nil {
+	if e.session == nil {
 		return fmt.Errorf("query engine is closed")
 	}
 
-	return e.db.PingContext(ctx)
+	return e.session.Ping(ctx)
 }

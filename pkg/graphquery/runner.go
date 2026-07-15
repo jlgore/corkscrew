@@ -1,19 +1,18 @@
 package graphquery
 
 import (
-	"bytes"
+	"context"
 	"encoding/csv"
-	"errors"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
+	dataaccess "github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/db"
 )
 
@@ -225,7 +224,7 @@ func (r *Runner) runTraverse(args []string) error {
 	)
 
 	if *outputFormat == "dot" {
-		rows, columns, err := executeGraphQuery(query, *extensionPath)
+		rows, columns, err := executeGraphQuery(*dbPath, query, *extensionPath)
 		if err != nil {
 			return err
 		}
@@ -348,34 +347,50 @@ func (r *Runner) runSQL(dbPath, extensionPath, sqlQuery, outputFormat string, no
 	if err != nil {
 		return err
 	}
+	rows, columns, err := executeGraphQuery(dbPath, sqlQuery, resolvedExtensionPath)
+	if err != nil {
+		return err
+	}
 
 	switch outputFormat {
 	case "json":
-		output, err := runDuckDBQuery(sqlQuery, resolvedExtensionPath, []string{"-json"})
-		if err != nil {
-			return err
+		objects := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			object := make(map[string]any, len(columns))
+			for index, column := range columns {
+				object[column] = row[index]
+			}
+			objects = append(objects, object)
 		}
-		_, _ = io.WriteString(r.Stdout, output)
+		encoder := json.NewEncoder(r.Stdout)
+		if err := encoder.Encode(objects); err != nil {
+			return fmt.Errorf("encode graph JSON: %w", err)
+		}
 	case "csv":
-		flags := []string{"-csv"}
-		if noHeader {
-			flags = append(flags, "-noheader")
+		writer := csv.NewWriter(r.Stdout)
+		if !noHeader {
+			if err := writer.Write(columns); err != nil {
+				return err
+			}
 		}
-		output, err := runDuckDBQuery(sqlQuery, resolvedExtensionPath, flags)
-		if err != nil {
+		for _, row := range rows {
+			record := make([]string, len(row))
+			for index, value := range row {
+				record[index] = stringValue(value)
+			}
+			if err := writer.Write(record); err != nil {
+				return err
+			}
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil {
 			return err
 		}
-		_, _ = io.WriteString(r.Stdout, output)
 	case "table":
-		rows, columns, err := executeGraphQuery(sqlQuery, resolvedExtensionPath)
-		if err != nil {
-			return err
-		}
 		printTable(r.Stdout, rows, columns, noHeader)
 	default:
 		return fmt.Errorf("unsupported output format %q", outputFormat)
 	}
-	_ = dbPath
 	return nil
 }
 
@@ -387,56 +402,21 @@ func defaultDatabasePath() string {
 	return ".corkscrew.duckdb"
 }
 
-func executeGraphQuery(sqlQuery, extensionPath string) ([][]interface{}, []string, error) {
-	output, err := runDuckDBQuery(sqlQuery, extensionPath, []string{"-csv"})
+func executeGraphQuery(dbPath, sqlQuery, extensionPath string) ([][]interface{}, []string, error) {
+	session, err := dataaccess.OpenSession(context.Background(), dbPath, dataaccess.WithGraphExtension(extensionPath))
 	if err != nil {
 		return nil, nil, err
 	}
-	reader := csv.NewReader(strings.NewReader(output))
-	records, err := reader.ReadAll()
+	defer session.Close()
+	result, err := session.ReadOnly(context.Background(), sqlQuery)
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(records) == 0 {
-		return nil, nil, nil
+	columns := make([]string, len(result.Columns))
+	for index, column := range result.Columns {
+		columns[index] = column.Name
 	}
-	columns := records[0]
-	rows := make([][]interface{}, 0, max(len(records)-1, 0))
-	for _, record := range records[1:] {
-		row := make([]interface{}, len(record))
-		for i, value := range record {
-			if value == "NULL" {
-				row[i] = nil
-			} else {
-				row[i] = value
-			}
-		}
-		rows = append(rows, row)
-	}
-	return rows, columns, nil
-}
-
-func runDuckDBQuery(sqlQuery, extensionPath string, formatFlags []string) (string, error) {
-	duckdbPath, err := exec.LookPath("duckdb")
-	if err != nil {
-		return "", fmt.Errorf("duckdb CLI not found on PATH")
-	}
-	loadSQL := fmt.Sprintf("LOAD '%s'; %s", strings.ReplaceAll(extensionPath, "'", "''"), sqlQuery)
-	args := []string{":memory:", "-unsigned", "-batch"}
-	args = append(args, formatFlags...)
-	args = append(args, "-c", loadSQL)
-	cmd := exec.Command(duckdbPath, args...)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
-			return "", errors.New(strings.TrimSpace(stderr.String()))
-		}
-		return "", err
-	}
-	return stdout.String(), nil
+	return result.Rows, columns, nil
 }
 
 func decodeTraverseRows(rows [][]interface{}, columns []string) ([]traverseRow, error) {
@@ -458,11 +438,26 @@ func decodeTraverseRows(rows [][]interface{}, columns []string) ([]traverseRow, 
 			NodeType:          stringValue(row[indices["node_type"]]),
 			NodeName:          stringValue(row[indices["node_name"]]),
 			HopCount:          stringValue(row[indices["hop_count"]]),
-			PathIDs:           parseDuckDBList(stringValue(row[indices["path_ids"]])),
-			RelationshipTypes: parseDuckDBList(stringValue(row[indices["relationship_types"]])),
+			PathIDs:           listValue(row[indices["path_ids"]]),
+			RelationshipTypes: listValue(row[indices["relationship_types"]]),
 		})
 	}
 	return decoded, nil
+}
+
+func listValue(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		result := make([]string, 0, len(values))
+		for _, item := range values {
+			result = append(result, stringValue(item))
+		}
+		return result
+	default:
+		return parseDuckDBList(stringValue(value))
+	}
 }
 
 func RenderTraverseDOT(sourceID string, rows []traverseRow) string {
@@ -571,29 +566,7 @@ func normalizeArgs(args []string, boolFlags map[string]bool) []string {
 }
 
 func resolveExtensionPath(explicitPath string) (string, error) {
-	if strings.TrimSpace(explicitPath) != "" {
-		return filepath.Abs(strings.TrimSpace(explicitPath))
-	}
-	if envPath := strings.TrimSpace(os.Getenv("CORKSCREW_GRAPH_EXTENSION")); envPath != "" {
-		return filepath.Abs(envPath)
-	}
-	candidates := []string{
-		"extensions/corkscrew-graph/build/corkscrew_graph.duckdb_extension",
-		"extensions/corkscrew-graph/target/release/corkscrew_graph.duckdb_extension",
-		"build/corkscrew_graph.duckdb_extension",
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".corkscrew", "extensions", "corkscrew_graph.duckdb_extension"))
-	}
-	for _, candidate := range candidates {
-		abs, err := filepath.Abs(candidate)
-		if err == nil {
-			if _, statErr := os.Stat(abs); statErr == nil {
-				return abs, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("could not find corkscrew_graph.duckdb_extension; use --extension or CORKSCREW_GRAPH_EXTENSION")
+	return dataaccess.ResolveGraphExtension(explicitPath)
 }
 
 func printTable(w io.Writer, rows [][]interface{}, columns []string, noHeader bool) {
@@ -637,11 +610,4 @@ func stringValue(val interface{}) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

@@ -19,3 +19,7 @@ Replace the current mixture of hard-coded lists, source-directory probing, and r
 - Define manifest fields, discovery paths, precedence, trust/signature policy, and name collision behavior.
 - Decide how custom providers declare storage compatibility with the shared graph contract.
 - Migrate existing official plugins through the same runtime registry used by custom plugins.
+
+## Comments
+
+Superseded by the decision-complete architecture program in `scratch/architecture-deepening/` on 2026-07-14.

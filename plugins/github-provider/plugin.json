@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "name": "github",
+  "display_name": "GitHub",
+  "description": "GitHub organization and repository posture provider",
+  "version": "0.1.0",
+  "protocol": 2,
+  "executable": "github-provider",
+  "capabilities": ["discover", "list", "describe", "schemas", "batch_scan"],
+  "default_scopes": ["global"],
+  "storage": {"mode": "table", "table": "github_resources"}
+}

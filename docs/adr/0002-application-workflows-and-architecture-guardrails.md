@@ -11,10 +11,12 @@ Command handlers accumulated option precedence, service expansion, persistence r
 ## Decision
 
 - CLI, TUI, and API code are adapters. They own flags, transport syntax, and presentation.
-- Reusable orchestration lives under `internal/app`. The scan workflow owns service-group expansion, list normalization, Quack environment precedence, and mapping into smart-scan options.
+- Reusable orchestration lives under `internal/app`. The scan workflow owns configuration precedence, provider lifecycle, multi-scope execution, and atomic persistence.
 - Core persistent table, view, and index DDL in `internal/db` has an explicit allowlist of schema-lifecycle owners enforced by tests.
 - Command and presentation packages are forbidden from embedding persistent DDL.
-- Provider plugin discovery-schema strings are outside that DDL rule because `GetSchemas` is metadata. Legacy plugins that execute their own storage DDL are separate cleanup work.
+- Provider plugin discovery-schema strings are outside that DDL rule because `GetSchemas` is metadata. Provider plugins may not import a database implementation, open storage, or execute persistent DDL themselves.
+- Concurrent scan results are aggregated in requested scope order so first-wins resource deduplication is deterministic.
+- The application-owned `Outcome` is the sole scan rendering contract. Machine-readable stdout contains only JSON or CSV; human notices use stderr.
 - The official-provider catalog describes Corkscrew-supported providers; it must not become an execution allowlist. Custom provider names pass through application workflows to runtime configuration and plugin resolution.
 
 ## Consequences

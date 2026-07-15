@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "name": "kubernetes",
+  "display_name": "Kubernetes",
+  "description": "Kubernetes cluster provider",
+  "version": "1.0.0",
+  "protocol": 2,
+  "executable": "kubernetes-provider",
+  "capabilities": ["discover", "list", "describe", "schemas", "batch_scan", "stream_scan"],
+  "default_scopes": ["default"],
+  "storage": {"mode": "table", "table": "kubernetes_resources"}
+}

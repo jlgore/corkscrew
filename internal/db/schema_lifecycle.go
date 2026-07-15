@@ -10,7 +10,7 @@ import (
 	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
-const LatestSchemaVersion = 1
+const LatestSchemaVersion = 3
 
 var schemaIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -52,10 +52,116 @@ CREATE TABLE IF NOT EXISTS corkscrew_schema_migrations (
 		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (1, 'authoritative_schema_lifecycle')`); err != nil {
 			return fmt.Errorf("record schema version 1: %w", err)
 		}
+		version = 1
+	}
+
+	if version < 2 {
+		if err := migrateSchemaV2(ctx, db, tx); err != nil {
+			return fmt.Errorf("migrate schema to version 2: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (2, 'custom_provider_resources')`); err != nil {
+			return fmt.Errorf("record schema version 2: %w", err)
+		}
+		version = 2
+	}
+
+	if version < 3 {
+		if err := migrateSchemaV3(ctx, tx); err != nil {
+			return fmt.Errorf("migrate schema to version 3: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (3, 'normalized_query_helpers')`); err != nil {
+			return fmt.Errorf("record schema version 3: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit schema migration: %w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV3(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+CREATE OR REPLACE MACRO extract_json(json_data, json_path) AS
+    CASE
+        WHEN json_data IS NULL OR json_path IS NULL THEN NULL
+        WHEN json_data = '' OR json_data = 'null' THEN NULL
+        WHEN NOT json_valid(json_data) THEN NULL
+        ELSE json_extract_string(json_data, json_path)
+    END;
+CREATE OR REPLACE MACRO json_path(json_data, json_path) AS
+    CASE
+        WHEN json_data IS NULL OR json_path IS NULL THEN NULL
+        WHEN json_data = '' OR json_data = 'null' THEN NULL
+        WHEN NOT json_valid(json_data) THEN NULL
+        ELSE json_extract(json_data, json_path)
+    END;
+CREATE OR REPLACE MACRO has_tag(tags_data, tag_key, tag_value) AS
+    CASE
+        WHEN tags_data IS NULL OR tag_key IS NULL THEN FALSE
+        WHEN tags_data = '' OR tags_data = 'null' OR tags_data = '{}' THEN FALSE
+        WHEN NOT json_valid(tags_data) THEN FALSE
+        WHEN tag_value IS NULL THEN
+            COALESCE(json_extract_string(tags_data, '$.' || tag_key) IS NOT NULL, FALSE)
+        ELSE
+            COALESCE(json_extract_string(tags_data, '$.' || tag_key) = tag_value, FALSE)
+    END;
+CREATE OR REPLACE MACRO count_tags(tags_data) AS
+    CASE
+        WHEN tags_data IS NULL OR tags_data = '' OR tags_data = 'null' THEN 0
+        WHEN NOT json_valid(tags_data) THEN 0
+        ELSE COALESCE(array_length(json_keys(tags_data)), 0)
+    END;
+CREATE OR REPLACE MACRO safe_json_extract(json_data, json_path, default_value) AS
+    CASE
+        WHEN json_data IS NULL OR json_path IS NULL THEN default_value
+        WHEN json_data = '' OR json_data = 'null' THEN default_value
+        WHEN NOT json_valid(json_data) THEN default_value
+        ELSE COALESCE(json_extract_string(json_data, json_path), default_value)
+    END;
+`); err != nil {
+		return fmt.Errorf("create normalized query helpers: %w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV2(ctx context.Context, db *sql.DB, tx *sql.Tx) error {
+	if err := createCustomProviderResources(ctx, tx); err != nil {
+		return err
+	}
+	config := &UnifiedDatabaseConfig{DB: db, schemaRunner: tx}
+	if err := config.CreateCrossCloudViews(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createCustomProviderResources(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS custom_provider_resources (
+    provider VARCHAR NOT NULL,
+    id VARCHAR NOT NULL,
+    name VARCHAR,
+    type VARCHAR NOT NULL,
+    service VARCHAR,
+    region VARCHAR,
+    account_id VARCHAR,
+    arn VARCHAR,
+    parent_id VARCHAR,
+    tags JSON,
+    attributes JSON,
+    raw_data JSON,
+    state VARCHAR,
+    created_at TIMESTAMP,
+    modified_at TIMESTAMP,
+    scanned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (provider, id)
+);
+CREATE INDEX IF NOT EXISTS idx_custom_provider_resources_provider ON custom_provider_resources(provider);
+CREATE INDEX IF NOT EXISTS idx_custom_provider_resources_type ON custom_provider_resources(type);
+CREATE INDEX IF NOT EXISTS idx_custom_provider_resources_region ON custom_provider_resources(region);
+`); err != nil {
+		return fmt.Errorf("create custom provider resources: %w", err)
 	}
 	return nil
 }
@@ -121,6 +227,12 @@ func migrateSchemaV1(ctx context.Context, db *sql.DB, tx *sql.Tx) error {
 		return err
 	}
 	if err := ensureProviderGraphColumns(ctx, tx); err != nil {
+		return err
+	}
+	// Fresh databases create the normalized inventory view during version 1.
+	// Add the version-2 table before that view; existing version-1 databases
+	// receive the same table transactionally in migrateSchemaV2.
+	if err := createCustomProviderResources(ctx, tx); err != nil {
 		return err
 	}
 

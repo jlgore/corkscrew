@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "name": "cloudflare",
+  "display_name": "Cloudflare",
+  "description": "Cloudflare edge, Workers, storage, and Zero Trust provider",
+  "version": "0.1.0",
+  "protocol": 2,
+  "executable": "cloudflare-provider",
+  "capabilities": ["discover", "list", "describe", "schemas", "batch_scan"],
+  "default_scopes": ["global"],
+  "storage": {"mode": "table", "table": "cloudflare_resources"}
+}

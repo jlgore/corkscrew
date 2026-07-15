@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	providerapp "github.com/jlgore/corkscrew/internal/app/providers"
 	appconfig "github.com/jlgore/corkscrew/internal/config"
-	"github.com/jlgore/corkscrew/pkg/smartscan"
 )
 
 // runConfig handles configuration management commands
@@ -83,7 +83,7 @@ func runConfigShowE() error {
 		return fmt.Errorf("failed to read configuration: %w", err)
 	}
 
-	cfg, err := smartscan.LoadSmartScanConfig(configPath)
+	cfg, err := appconfig.LoadCorkscrewConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse configuration: %w", err)
 	}
@@ -124,7 +124,7 @@ func runConfigValidateE() error {
 		return fmt.Errorf("configuration is invalid: %w", err)
 	}
 
-	cfg, err := smartscan.LoadSmartScanConfig(configPath)
+	cfg, err := appconfig.LoadCorkscrewConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("configuration is invalid: %w", err)
 	}
@@ -137,28 +137,14 @@ func runConfigValidateE() error {
 
 	var validationErrors []string
 	enabledProviders := 0
-	for _, provider := range providers {
-		if err := cfg.ValidateProvider(provider); err != nil {
-			validationErrors = append(validationErrors, err.Error())
-			continue
-		}
-
-		providerConfig := cfg.Providers[provider]
-		if providerConfig.Enabled {
-			enabledProviders++
-		}
-
-		for _, region := range providerConfig.Regions {
-			if strings.TrimSpace(region) == "" {
-				validationErrors = append(validationErrors, fmt.Sprintf("provider %s has an empty region entry", provider))
-			}
-		}
-
-		for _, service := range providerConfig.Services {
-			if strings.TrimSpace(service) == "" {
-				validationErrors = append(validationErrors, fmt.Sprintf("provider %s has an empty service entry", provider))
-			}
-		}
+	application, runtimeErr := providerapp.OpenDefault(os.Stderr)
+	if runtimeErr != nil {
+		validationErrors = append(validationErrors, runtimeErr.Error())
+	} else {
+		defer application.Close()
+		validation := application.ValidateConfig(cfg)
+		validationErrors = append(validationErrors, validation.Errors...)
+		enabledProviders = validation.EnabledProviders
 	}
 
 	if len(validationErrors) > 0 {

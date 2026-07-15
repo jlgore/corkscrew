@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/db"
 )
 
@@ -78,18 +79,16 @@ func runQuackServe(args []string) {
 
 	ctx := context.Background()
 
-	// Resolve and open the local database we want to expose. We reuse the
-	// unified initializer so a fresh database gets its schema created.
-	cfg, err := db.InitializeUnifiedDatabase(*database)
+	session, err := data.OpenSession(ctx, *database)
 	if err != nil {
 		fatalf("failed to open database: %v", err)
 	}
-	defer cfg.DB.Close()
+	defer session.Close()
 
 	// Pin a single connection for the lifetime of the server. The Quack listener
 	// runs on a background thread of the DuckDB instance; holding one connection
 	// open keeps the instance (and therefore the listener) alive.
-	conn, err := cfg.DB.Conn(ctx)
+	conn, err := session.Connection(ctx)
 	if err != nil {
 		fatalf("failed to acquire connection: %v", err)
 	}
@@ -110,7 +109,7 @@ func runQuackServe(args []string) {
 		fatalf("quack_serve failed: %v", err)
 	}
 	cols, _ := rows.Columns()
-	fmt.Printf("🦆 Quack server started, exposing %s\n", cfg.DatabasePath)
+	fmt.Printf("🦆 Quack server started, exposing %s\n", session.Target())
 	for rows.Next() {
 		vals := make([]any, len(cols))
 		ptrs := make([]any, len(cols))

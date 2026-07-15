@@ -93,8 +93,9 @@ func ParseTarget(s string) (Target, error) {
 
 // connectOptions holds resolved connection options applied by OpenDuckDB.
 type connectOptions struct {
-	token      string
-	disableSSL bool
+	token                   string
+	disableSSL              bool
+	allowUnsignedExtensions bool
 }
 
 // Option customizes how OpenDuckDB establishes a connection.
@@ -120,6 +121,15 @@ func WithDisableSSL(disable bool) Option {
 	}
 }
 
+// WithUnsignedExtensions allows a connection to load locally packaged,
+// unsigned DuckDB extensions. Keep this scoped to callers that explicitly load
+// a trusted extension path.
+func WithUnsignedExtensions() Option {
+	return func(o *connectOptions) {
+		o.allowUnsignedExtensions = true
+	}
+}
+
 // OpenDuckDB opens a *sql.DB for the given target. For a local path it behaves
 // exactly like sql.Open("duckdb", path). For a `quack:` URI it opens an
 // in-memory local DuckDB, loads the quack extension, attaches the remote server,
@@ -134,19 +144,30 @@ func OpenDuckDB(ctx context.Context, target string, opts ...Option) (*sql.DB, er
 		return nil, err
 	}
 
-	if !t.IsRemote {
-		// Local file (or in-memory): preserve existing behavior precisely.
-		return sql.Open("duckdb", target)
-	}
-
 	o := connectOptions{token: t.Token, disableSSL: t.DisableSSL}
 	for _, fn := range opts {
 		fn(&o)
 	}
 
+	if !t.IsRemote {
+		if !o.allowUnsignedExtensions {
+			// Local file (or in-memory): preserve existing behavior precisely.
+			return sql.Open("duckdb", target)
+		}
+		connector, err := duckdb.NewConnector(withDuckDBOption(target, "allow_unsigned_extensions", "true"), nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create DuckDB connector: %w", err)
+		}
+		return sql.OpenDB(connector), nil
+	}
+
 	attach := buildAttachStatement(t, o)
 
-	connector, err := duckdb.NewConnector("", func(execer driver.ExecerContext) error {
+	dsn := ""
+	if o.allowUnsignedExtensions {
+		dsn = "?allow_unsigned_extensions=true"
+	}
+	connector, err := duckdb.NewConnector(dsn, func(execer driver.ExecerContext) error {
 		return initRemoteConn(ctx, execer, attach)
 	})
 	if err != nil {
@@ -154,6 +175,14 @@ func OpenDuckDB(ctx context.Context, target string, opts ...Option) (*sql.DB, er
 	}
 
 	return sql.OpenDB(connector), nil
+}
+
+func withDuckDBOption(dsn, key, value string) string {
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + url.QueryEscape(key) + "=" + url.QueryEscape(value)
 }
 
 // buildAttachStatement renders the ATTACH statement that connects the local

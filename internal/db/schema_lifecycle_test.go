@@ -43,8 +43,8 @@ func TestEnsureSchemaFreshDatabase(t *testing.T) {
 	if err := database.QueryRow(`SELECT COUNT(*) FROM corkscrew_schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 1 {
-		t.Fatalf("migration count = %d, want 1", migrationCount)
+	if migrationCount != LatestSchemaVersion {
+		t.Fatalf("migration count = %d, want %d", migrationCount, LatestSchemaVersion)
 	}
 
 	for _, provider := range providercatalog.Names() {
@@ -75,6 +75,32 @@ func TestEnsureSchemaFreshDatabase(t *testing.T) {
 		if graphColumnCount != 7 {
 			t.Fatalf("%s graph column count = %d, want 7", provider, graphColumnCount)
 		}
+	}
+}
+
+func TestEnsureSchemaCreatesNormalizedCustomProviderStorage(t *testing.T) {
+	database := openLifecycleTestDB(t)
+	ctx := context.Background()
+
+	if err := EnsureSchema(ctx, database); err != nil {
+		t.Fatalf("ensure schema: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO custom_provider_resources
+		(provider, id, type, name, service, region, account_id, arn, tags)
+		VALUES ('acme', 'resource-1', 'widget', 'Widget', 'inventory', 'global', 'acct', 'acme:resource-1', '{}')
+	`); err != nil {
+		t.Fatalf("insert custom resource: %v", err)
+	}
+	var provider, id string
+	if err := database.QueryRowContext(ctx, `
+		SELECT provider, id FROM all_cloud_resources
+		WHERE provider = 'acme' AND id = 'resource-1'
+	`).Scan(&provider, &id); err != nil {
+		t.Fatalf("query normalized custom resource: %v", err)
+	}
+	if provider != "acme" || id != "resource-1" {
+		t.Fatalf("normalized custom resource = %q/%q", provider, id)
 	}
 }
 
@@ -121,7 +147,7 @@ func TestEnsureSchemaQuackIntegration(t *testing.T) {
 		t.Skip("set CORKSCREW_TEST_QUACK_URL to run against a disposable Quack database")
 	}
 
-	config, err := InitializeUnifiedDatabase(target)
+	config, err := initializeTestUnifiedDatabase(target)
 	if err != nil {
 		t.Fatalf("initialize Quack database: %v", err)
 	}

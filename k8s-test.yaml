@@ -9,7 +9,5 @@ providers:
       - deployments
 output:
   default_format: "table"
-  hide_empty_regions: true
-  hide_empty_services: true
 database:
   path: "~/.corkscrew/db/corkscrew.duckdb"

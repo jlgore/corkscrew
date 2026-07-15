@@ -3,8 +3,14 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+
+	providerRuntime "github.com/jlgore/corkscrew/internal/provider"
+	"github.com/jlgore/corkscrew/internal/testutil/providerfixture"
+	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
 func TestRunCLIReturnsTopLevelExitCodes(t *testing.T) {
@@ -32,7 +38,83 @@ func TestRunCLIReturnsTopLevelExitCodes(t *testing.T) {
 	}
 }
 
+func TestRunCLIListsManagedCustomProvider(t *testing.T) {
+	fixture := providerfixture.Build(t, "1.0.0")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	managedRoot := filepath.Join(home, ".corkscrew", "plugins")
+	if _, err := providerRuntime.InstallCustom(fixture.ManifestPath, managedRoot, providercatalog.Shipped(), nil); err != nil {
+		t.Fatalf("install fixture provider: %v", err)
+	}
+
+	code, output := captureCLIOutputText(t, func() int {
+		return runCLI([]string{"plugin", "list"})
+	})
+	if code != 0 {
+		t.Fatalf("plugin list exit code = %d, output = %q", code, output)
+	}
+	if !strings.Contains(output, "fixture-cloud") || !strings.Contains(output, "custom") || !strings.Contains(output, "Installed") {
+		t.Fatalf("plugin list output = %q, want installed custom fixture provider", output)
+	}
+}
+
+func TestRunCLIPluginBuildAutomaticallyInstallsRuntimeVisibleProvider(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join(workspace, "plugins", "fixture-cloud-provider")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"go.mod":  "module example.test/fixture-cloud\n\ngo 1.24.0\n",
+		"main.go": "package main\nfunc main() {}\n",
+		"plugin.yaml": `schema_version: "1"
+name: fixture-cloud
+version: "2.0.0"
+protocol: 2
+executable: fixture-cloud-provider
+capabilities: [batch_scan]
+default_scopes: [global]
+storage:
+  mode: generic
+`,
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workspace); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	code, output := captureCLIOutputText(t, func() int {
+		return runCLI([]string{"plugin", "build", "fixture-cloud"})
+	})
+	if code != 0 || !strings.Contains(output, "Built and installed fixture-cloud 2.0.0 (custom)") {
+		t.Fatalf("plugin build exit=%d output=%q", code, output)
+	}
+	code, output = captureCLIOutputText(t, func() int {
+		return runCLI([]string{"plugin", "list"})
+	})
+	if code != 0 || !strings.Contains(output, "fixture-cloud") || !strings.Contains(output, "Installed") {
+		t.Fatalf("plugin list after build exit=%d output=%q", code, output)
+	}
+}
+
 func captureCLIOutput(t *testing.T, fn func() int) int {
+	t.Helper()
+	code, _ := captureCLIOutputText(t, fn)
+	return code
+}
+
+func captureCLIOutputText(t *testing.T, fn func() int) (int, string) {
 	t.Helper()
 
 	oldStdout := os.Stdout
@@ -51,14 +133,15 @@ func captureCLIOutput(t *testing.T, fn func() int) int {
 	os.Stderr = stderrW
 
 	var wg sync.WaitGroup
+	var stdoutData, stderrData []byte
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(io.Discard, stdoutR)
+		stdoutData, _ = io.ReadAll(stdoutR)
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(io.Discard, stderrR)
+		stderrData, _ = io.ReadAll(stderrR)
 	}()
 
 	code := fn()
@@ -72,5 +155,5 @@ func captureCLIOutput(t *testing.T, fn func() int) int {
 	_ = stdoutR.Close()
 	_ = stderrR.Close()
 
-	return code
+	return code, string(append(stdoutData, stderrData...))
 }

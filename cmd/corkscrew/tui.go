@@ -1,13 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jlgore/corkscrew/internal/db"
+	scanapp "github.com/jlgore/corkscrew/internal/app/scan"
+	appconfig "github.com/jlgore/corkscrew/internal/config"
+	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui"
-	"github.com/jlgore/corkscrew/pkg/smartscan"
 )
 
 // runTUIMode starts the interactive TUI interface
@@ -43,6 +45,9 @@ func runTUIMode(args []string) error {
 	database, cfg, scanner, err := initializeTUIDependencies(dbPath, configPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize TUI dependencies: %w", err)
+	}
+	if database != nil {
+		defer database.Close()
 	}
 
 	// Create TUI application
@@ -89,25 +94,30 @@ func runTUIMode(args []string) error {
 }
 
 // initializeTUIDependencies initializes all required dependencies for the TUI
-// Returns (database, config, scanner, error) as interfaces to decouple TUI from specific implementations
-func initializeTUIDependencies(dbPath, configPath string) (interface{}, interface{}, interface{}, error) {
+// Returns the authoritative data session plus optional TUI dependencies.
+func initializeTUIDependencies(dbPath, configPath string) (*data.Session, *appconfig.CorkscrewConfig, tui.ScanRunFunc, error) {
 	// Initialize database
-	database, err := db.NewGraphLoader(dbPath)
+	database, err := data.OpenSession(context.Background(), dbPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to initialize database (%v), some features may be limited\n", err)
 		database = nil
 	}
 
 	// Load configuration
-	cfg, err := smartscan.LoadSmartScanConfig(configPath)
+	cfg, err := appconfig.LoadCorkscrewConfig(configPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to load configuration (%v), using defaults\n", err)
 		cfg = nil
 	}
 
-	var scanner interface{}
+	runner := tui.ScanRunFunc(func(ctx context.Context, request scanapp.Request) (scanapp.Outcome, error) {
+		if request.ConfigPath == "" {
+			request.ConfigPath = configPath
+		}
+		return scanapp.Run(ctx, request, scanapp.Dependencies{})
+	})
 
-	return database, cfg, scanner, nil
+	return database, cfg, runner, nil
 }
 
 // setupTUISignalHandling sets up graceful shutdown for the TUI

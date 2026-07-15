@@ -1,0 +1,18 @@
+schema_version: "1"
+name: fixture-cloud
+display_name: Fixture Cloud
+description: Hermetic protocol-v2 fixture provider
+version: VERSION
+protocol: 2
+executable: fixture-provider
+capabilities:
+  - discover
+  - list
+  - describe
+  - schemas
+  - batch_scan
+default_scopes:
+  - scope-a
+  - scope-b
+storage:
+  mode: generic

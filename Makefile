@@ -90,14 +90,17 @@ build-cli: create-dirs
 	@echo "✅ CLI built: $(LOCAL_BIN_DIR)/corkscrew"
 
 .PHONY: build-plugins
-build-plugins: build-aws-plugin build-azure-plugin build-gcp-plugin build-kubernetes-plugin build-cloudflare-plugin
+build-plugins: build-aws-plugin build-azure-plugin build-gcp-plugin build-kubernetes-plugin build-github-plugin build-cloudflare-plugin
 	@echo "✅ All plugins built"
 
 .PHONY: build-aws-plugin
 build-aws-plugin: create-dirs
 	@echo "🔨 Building AWS plugin..."
 	@if [ -d "plugins/aws-provider" ]; then \
-		cd plugins/aws-provider && go mod tidy && go build -tags="aws_services" -o ../../$(LOCAL_BIN_DIR)/aws-provider .; \
+		(cd plugins/aws-provider && go mod tidy && go build -tags="aws_services" -o ../../$(LOCAL_BIN_DIR)/aws-provider .); \
+		mkdir -p $(LOCAL_BIN_DIR)/plugins/official/aws; \
+		cp $(LOCAL_BIN_DIR)/aws-provider $(LOCAL_BIN_DIR)/plugins/official/aws/aws-provider; \
+		cp plugins/aws-provider/plugin.json $(LOCAL_BIN_DIR)/plugins/official/aws/plugin.json; \
 		echo "✅ AWS plugin built: $(LOCAL_BIN_DIR)/aws-provider"; \
 	else \
 		echo "⚠️  AWS plugin directory not found, skipping..."; \
@@ -107,7 +110,10 @@ build-aws-plugin: create-dirs
 build-azure-plugin: create-dirs
 	@echo "🔨 Building Azure plugin..."
 	@if [ -d "plugins/azure-provider" ]; then \
-		cd plugins/azure-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/azure-provider .; \
+		(cd plugins/azure-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/azure-provider .); \
+		mkdir -p $(LOCAL_BIN_DIR)/plugins/official/azure; \
+		cp $(LOCAL_BIN_DIR)/azure-provider $(LOCAL_BIN_DIR)/plugins/official/azure/azure-provider; \
+		cp plugins/azure-provider/plugin.json $(LOCAL_BIN_DIR)/plugins/official/azure/plugin.json; \
 		echo "✅ Azure plugin built: $(LOCAL_BIN_DIR)/azure-provider"; \
 	else \
 		echo "⚠️  Azure plugin directory not found, skipping..."; \
@@ -117,7 +123,10 @@ build-azure-plugin: create-dirs
 build-gcp-plugin: create-dirs
 	@echo "🔨 Building GCP plugin..."
 	@if [ -d "plugins/gcp-provider" ]; then \
-		cd plugins/gcp-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/gcp-provider .; \
+		(cd plugins/gcp-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/gcp-provider .); \
+		mkdir -p $(LOCAL_BIN_DIR)/plugins/official/gcp; \
+		cp $(LOCAL_BIN_DIR)/gcp-provider $(LOCAL_BIN_DIR)/plugins/official/gcp/gcp-provider; \
+		cp plugins/gcp-provider/plugin.json $(LOCAL_BIN_DIR)/plugins/official/gcp/plugin.json; \
 		echo "✅ GCP plugin built: $(LOCAL_BIN_DIR)/gcp-provider"; \
 	else \
 		echo "⚠️  GCP plugin directory not found, skipping..."; \
@@ -127,17 +136,36 @@ build-gcp-plugin: create-dirs
 build-kubernetes-plugin: create-dirs
 	@echo "🔨 Building Kubernetes plugin..."
 	@if [ -d "plugins/kubernetes-provider" ]; then \
-		cd plugins/kubernetes-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/kubernetes-provider .; \
+		(cd plugins/kubernetes-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/kubernetes-provider .); \
+		mkdir -p $(LOCAL_BIN_DIR)/plugins/official/kubernetes; \
+		cp $(LOCAL_BIN_DIR)/kubernetes-provider $(LOCAL_BIN_DIR)/plugins/official/kubernetes/kubernetes-provider; \
+		cp plugins/kubernetes-provider/plugin.json $(LOCAL_BIN_DIR)/plugins/official/kubernetes/plugin.json; \
 		echo "✅ Kubernetes plugin built: $(LOCAL_BIN_DIR)/kubernetes-provider"; \
 	else \
 		echo "⚠️  Kubernetes plugin directory not found, skipping..."; \
+	fi
+
+.PHONY: build-github-plugin
+build-github-plugin: create-dirs
+	@echo "🔨 Building GitHub plugin..."
+	@if [ -d "plugins/github-provider" ]; then \
+		(cd plugins/github-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/github-provider .); \
+		mkdir -p $(LOCAL_BIN_DIR)/plugins/official/github; \
+		cp $(LOCAL_BIN_DIR)/github-provider $(LOCAL_BIN_DIR)/plugins/official/github/github-provider; \
+		cp plugins/github-provider/plugin.json $(LOCAL_BIN_DIR)/plugins/official/github/plugin.json; \
+		echo "✅ GitHub plugin built: $(LOCAL_BIN_DIR)/github-provider"; \
+	else \
+		echo "⚠️  GitHub plugin directory not found, skipping..."; \
 	fi
 
 .PHONY: build-cloudflare-plugin
 build-cloudflare-plugin: create-dirs
 	@echo "🔨 Building Cloudflare plugin..."
 	@if [ -d "plugins/cloudflare-provider" ]; then \
-		cd plugins/cloudflare-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/cloudflare-provider .; \
+		(cd plugins/cloudflare-provider && go mod tidy && go build -o ../../$(LOCAL_BIN_DIR)/cloudflare-provider .); \
+		mkdir -p $(LOCAL_BIN_DIR)/plugins/official/cloudflare; \
+		cp $(LOCAL_BIN_DIR)/cloudflare-provider $(LOCAL_BIN_DIR)/plugins/official/cloudflare/cloudflare-provider; \
+		cp plugins/cloudflare-provider/plugin.json $(LOCAL_BIN_DIR)/plugins/official/cloudflare/plugin.json; \
 		echo "✅ Cloudflare plugin built: $(LOCAL_BIN_DIR)/cloudflare-provider"; \
 	else \
 		echo "⚠️  Cloudflare plugin directory not found, skipping..."; \
@@ -193,31 +221,9 @@ install-cli: build-cli create-dirs
 .PHONY: install-plugins
 install-plugins: build-plugins create-dirs
 	@echo "📦 Installing plugins to $(PLUGIN_DIR)..."
-	@if [ -f "$(LOCAL_BIN_DIR)/aws-provider" ]; then \
-		cp $(LOCAL_BIN_DIR)/aws-provider $(PLUGIN_DIR)/aws-provider; \
-		chmod +x $(PLUGIN_DIR)/aws-provider; \
-		echo "✅ AWS plugin installed: $(PLUGIN_DIR)/aws-provider"; \
-	fi
-	@if [ -f "$(LOCAL_BIN_DIR)/azure-provider" ]; then \
-		cp $(LOCAL_BIN_DIR)/azure-provider $(PLUGIN_DIR)/azure-provider; \
-		chmod +x $(PLUGIN_DIR)/azure-provider; \
-		echo "✅ Azure plugin installed: $(PLUGIN_DIR)/azure-provider"; \
-	fi
-	@if [ -f "$(LOCAL_BIN_DIR)/gcp-provider" ]; then \
-		cp $(LOCAL_BIN_DIR)/gcp-provider $(PLUGIN_DIR)/gcp-provider; \
-		chmod +x $(PLUGIN_DIR)/gcp-provider; \
-		echo "✅ GCP plugin installed: $(PLUGIN_DIR)/gcp-provider"; \
-	fi
-	@if [ -f "$(LOCAL_BIN_DIR)/kubernetes-provider" ]; then \
-		cp $(LOCAL_BIN_DIR)/kubernetes-provider $(PLUGIN_DIR)/kubernetes-provider; \
-		chmod +x $(PLUGIN_DIR)/kubernetes-provider; \
-		echo "✅ Kubernetes plugin installed: $(PLUGIN_DIR)/kubernetes-provider"; \
-	fi
-	@if [ -f "$(LOCAL_BIN_DIR)/cloudflare-provider" ]; then \
-		cp $(LOCAL_BIN_DIR)/cloudflare-provider $(PLUGIN_DIR)/cloudflare-provider; \
-		chmod +x $(PLUGIN_DIR)/cloudflare-provider; \
-		echo "✅ Cloudflare plugin installed: $(PLUGIN_DIR)/cloudflare-provider"; \
-	fi
+	@mkdir -p $(PLUGIN_DIR)/official
+	@cp -R $(LOCAL_BIN_DIR)/plugins/official/. $(PLUGIN_DIR)/official/
+	@echo "✅ Official plugin manifests installed under $(PLUGIN_DIR)/official"
 
 # =============================================================================
 # TESTING

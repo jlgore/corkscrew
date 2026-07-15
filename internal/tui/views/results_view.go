@@ -2,13 +2,13 @@ package views
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	dataaccess "github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui/styles"
 	"github.com/jlgore/corkscrew/internal/tui/types"
 )
@@ -18,28 +18,13 @@ const resultsPageSize = 200
 // ResultsViewModel renders a read-only inventory table backed by the scan DB.
 type ResultsViewModel struct {
 	state     ViewState
-	database  interface{}
+	session   *dataaccess.Session
 	resources []types.Resource
 	total     int
 	selected  int
 	offset    int
 	mode      string
 	loadError error
-}
-
-type resourceTableSource struct {
-	table          string
-	provider       string
-	locationColumn string
-}
-
-var inventoryTableSources = []resourceTableSource{
-	{table: "aws_resources", provider: "aws", locationColumn: "region"},
-	{table: "azure_resources", provider: "azure", locationColumn: "location"},
-	{table: "gcp_resources", provider: "gcp", locationColumn: "location"},
-	{table: "kubernetes_resources", provider: "kubernetes", locationColumn: "region"},
-	{table: "cloudflare_resources", provider: "cloudflare", locationColumn: "region"},
-	{table: "github_resources", provider: "github", locationColumn: "org"},
 }
 
 // NewResultsViewModel creates a results inventory view.
@@ -168,9 +153,9 @@ func (m *ResultsViewModel) ViewType() types.ViewType {
 	return m.state.ViewType
 }
 
-// SetDatabase updates the database dependency.
-func (m *ResultsViewModel) SetDatabase(database interface{}) {
-	m.database = database
+// SetDatabase updates the data session dependency.
+func (m *ResultsViewModel) SetDatabase(session *dataaccess.Session) {
+	m.session = session
 }
 
 // SetMode updates the result workspace mode.
@@ -183,7 +168,7 @@ func (m *ResultsViewModel) SetMode(mode string) {
 
 func (m *ResultsViewModel) loadResources() tea.Cmd {
 	return func() tea.Msg {
-		resources, err := queryInventoryResources(m.database, resultsPageSize)
+		resources, err := queryInventoryResources(m.session, resultsPageSize)
 		return types.ResourcesLoadedMsg{
 			Resources: resources,
 			Total:     len(resources),
@@ -323,9 +308,8 @@ func resultColumns(width int) resultColumnWidths {
 	return cols
 }
 
-func queryInventoryResources(database interface{}, limit int) ([]types.Resource, error) {
-	queryer, ok := database.(databaseQueryer)
-	if !ok || queryer == nil {
+func queryInventoryResources(session *dataaccess.Session, limit int) ([]types.Resource, error) {
+	if session == nil {
 		return nil, nil
 	}
 	if limit <= 0 {
@@ -335,103 +319,22 @@ func queryInventoryResources(database interface{}, limit int) ([]types.Resource,
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	resources := make([]types.Resource, 0, limit)
-	for _, source := range inventoryTableSources {
-		if len(resources) >= limit {
-			break
-		}
-		tableResources, err := queryInventoryTable(ctx, queryer, source, limit-len(resources))
-		if err != nil {
-			continue
-		}
-		resources = append(resources, tableResources...)
-	}
-	return resources, nil
-}
-
-func queryInventoryTable(ctx context.Context, queryer databaseQueryer, source resourceTableSource, limit int) ([]types.Resource, error) {
-	columns, err := queryColumns(ctx, queryer, source.table)
+	rows, err := session.Inventory().List(ctx, dataaccess.InventoryFilter{}, dataaccess.Page{Limit: limit})
 	if err != nil {
 		return nil, err
 	}
-	if !columns["id"] {
-		return nil, fmt.Errorf("%s missing id column", source.table)
-	}
-
-	providerExpr := sqlStringLiteral(source.provider)
-	if columns["provider"] {
-		providerExpr = "provider"
-	}
-
-	query := fmt.Sprintf(`
-		SELECT %s, %s, %s, %s, %s, id
-		FROM %s
-		%s
-		LIMIT ?
-	`,
-		providerExpr,
-		columnExpr(columns, "service", ""),
-		columnExpr(columns, "type", ""),
-		columnExpr(columns, "name", "id"),
-		columnExpr(columns, source.locationColumn, ""),
-		source.table,
-		orderClause(columns))
-
-	rows, err := queryer.QueryContext(ctx, query, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var resources []types.Resource
-	for rows.Next() {
-		var provider, service, resourceType, name, location, id sql.NullString
-		if err := rows.Scan(&provider, &service, &resourceType, &name, &location, &id); err != nil {
-			continue
-		}
+	resources := make([]types.Resource, 0, len(rows))
+	for _, resource := range rows {
 		resources = append(resources, types.Resource{
-			ID:       nullString(id),
-			Provider: nullString(provider),
-			Service:  nullString(service),
-			Type:     nullString(resourceType),
-			Name:     nullString(name),
-			Region:   nullString(location),
+			ID:       resource.ID,
+			Provider: resource.Provider,
+			Service:  resource.Service,
+			Type:     resource.Type,
+			Name:     resource.Name,
+			Region:   resource.Location,
 		})
 	}
-	return resources, rows.Err()
-}
-
-func columnExpr(columns map[string]bool, preferred, fallback string) string {
-	if preferred != "" && columns[preferred] {
-		return preferred
-	}
-	if fallback != "" && columns[fallback] {
-		return fallback
-	}
-	return "''"
-}
-
-func orderClause(columns map[string]bool) string {
-	for _, column := range []string{"scanned_at", "discovered_at", "updated_at", "created_at"} {
-		if columns[column] {
-			return "ORDER BY " + column + " DESC"
-		}
-	}
-	if columns["name"] {
-		return "ORDER BY name ASC"
-	}
-	return "ORDER BY id ASC"
-}
-
-func sqlStringLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
-}
-
-func nullString(value sql.NullString) string {
-	if !value.Valid {
-		return ""
-	}
-	return value.String
+	return resources, nil
 }
 
 func truncateCell(value string, width int) string {

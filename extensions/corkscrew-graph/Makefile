@@ -5,7 +5,7 @@ TARGET_DIR := target/release
 EXT := $(BUILD_DIR)/$(CRATE).duckdb_extension
 DUCKDB ?= duckdb
 CARGO_DUCKDB_EXT ?= cargo duckdb-ext
-DUCKDB_EXT_VERSION ?= v1.5.3
+DUCKDB_EXT_VERSION ?= v1.5.4
 FIXTURE_DB := __test_graph_info.db
 MULTI_PROVIDER_DB := __test_graph_info_multi.db
 

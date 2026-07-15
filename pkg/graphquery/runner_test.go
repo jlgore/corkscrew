@@ -2,9 +2,9 @@ package graphquery
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,18 +45,18 @@ func TestRenderTraverseDOT(t *testing.T) {
 }
 
 func TestTraverseRunnerAgainstFixtureDB(t *testing.T) {
-	if _, err := exec.LookPath("duckdb"); err != nil {
-		t.Skip("duckdb CLI not available")
-	}
-
-	extensionPath, err := resolveExtensionPath("")
+	extensionPath, err := filepath.Abs("../../extensions/corkscrew-graph/build/corkscrew_graph.duckdb_extension")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(extensionPath); err != nil {
 		t.Skipf("graph extension not available: %v", err)
 	}
 
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "fixture.duckdb")
 	setupGraphFixture(t, dbPath)
+	t.Setenv("PATH", "")
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -95,22 +95,20 @@ func setupGraphFixture(t *testing.T, dbPath string) {
 	}
 	defer database.Close()
 
-	config, err := db.InitializeUnifiedDatabase(dbPath)
-	if err != nil {
+	if err := db.EnsureSchema(context.Background(), database); err != nil {
 		t.Fatalf("initialize unified db failed: %v", err)
 	}
-	defer config.DB.Close()
 
-	if _, err := config.DB.Exec(`
+	if _, err := database.Exec(`
 		INSERT INTO aws_resources (id, type, name, region, account_id, service, tags, attributes, raw_data)
 		VALUES
 			('r1', 'aws::ec2::Instance', 'i-1', 'us-east-1', '123', 'ec2', NULL, NULL, NULL),
 			('r2', 'aws::ec2::Instance', 'i-2', 'us-east-1', '123', 'ec2', NULL, NULL, NULL),
 			('r3', 'aws::s3::Bucket', 'b-1', 'us-east-1', '123', 's3', NULL, NULL, NULL);
-		INSERT INTO aws_relationships (from_id, to_id, relationship_type, properties)
+		INSERT INTO cloud_relationships (from_id, to_id, relationship_type, provider, properties)
 		VALUES
-			('r1', 'r2', 'peer', NULL),
-			('r1', 'r3', 'reads', NULL);
+			('r1', 'r2', 'peer', 'aws', NULL),
+			('r1', 'r3', 'reads', 'aws', NULL);
 	`); err != nil {
 		t.Fatalf("insert fixture failed: %v", err)
 	}

@@ -1,12 +1,8 @@
 package scan
 
 import (
-	"bytes"
-	"context"
 	"reflect"
 	"testing"
-
-	"github.com/jlgore/corkscrew/pkg/smartscan"
 )
 
 func TestPrepareExpandsAndNormalizesScanRequest(t *testing.T) {
@@ -30,14 +26,14 @@ func TestPrepareExpandsAndNormalizesScanRequest(t *testing.T) {
 		IncludeRelationships:    true,
 	}, func(key string) string { return environment[key] })
 
-	if options.Provider != "acme" {
-		t.Fatalf("provider = %q, want custom provider acme", options.Provider)
+	if options.ProviderName != "acme" {
+		t.Fatalf("provider = %q, want custom provider acme", options.ProviderName)
 	}
-	if want := []string{"s3", "ec2", "lambda", "rds", "iam", "custom"}; !reflect.DeepEqual(options.Services, want) {
-		t.Fatalf("services = %v, want %v", options.Services, want)
+	if want := []string{"s3", "ec2", "lambda", "rds", "iam", "custom"}; !reflect.DeepEqual(options.ServiceList, want) {
+		t.Fatalf("services = %v, want %v", options.ServiceList, want)
 	}
-	if want := []string{"us-east-1", "us-west-2"}; !reflect.DeepEqual(options.Regions, want) {
-		t.Fatalf("regions = %v, want %v", options.Regions, want)
+	if want := []string{"us-east-1", "us-west-2"}; !reflect.DeepEqual(options.ScopeList, want) {
+		t.Fatalf("regions = %v, want %v", options.ScopeList, want)
 	}
 	if options.DatabasePath != "quack:db.example:9494" || options.QuackToken != "environment-token" {
 		t.Fatalf("remote database = %q token=%q", options.DatabasePath, options.QuackToken)
@@ -62,32 +58,13 @@ func TestPrepareExplicitDatabaseCredentialsOverrideEnvironment(t *testing.T) {
 	}
 }
 
-func TestRunDelegatesPreparedOptions(t *testing.T) {
-	var output bytes.Buffer
-	var received smartscan.EnhancedScanOptions
-	err := Run(context.Background(), Request{
-		Provider: "custom-provider",
-		Services: "storage,s3",
-		Regions:  "global",
-	}, Dependencies{
-		Getenv: func(string) string { return "" },
-		Output: &output,
-		Run: func(_ context.Context, options smartscan.EnhancedScanOptions) error {
-			received = options
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+func TestPrepareReturnsStructuredServiceExpansions(t *testing.T) {
+	prepared, expansions := Prepare(Request{Provider: "custom-provider", Services: "storage,s3", Regions: "global"}, nil)
+	if want := []string{"s3", "ebs", "efs", "fsx", "backup"}; !reflect.DeepEqual(prepared.ServiceList, want) {
+		t.Fatalf("services = %v, want %v", prepared.ServiceList, want)
 	}
-	if received.Provider != "custom-provider" {
-		t.Fatalf("delegated provider = %q", received.Provider)
-	}
-	if want := []string{"s3", "ebs", "efs", "fsx", "backup"}; !reflect.DeepEqual(received.Services, want) {
-		t.Fatalf("delegated services = %v, want %v", received.Services, want)
-	}
-	if output.String() != "📦 Expanding group 'storage' to: s3, ebs, efs, fsx, backup\n" {
-		t.Fatalf("expansion output = %q", output.String())
+	if len(expansions) != 1 || expansions[0].Name != "storage" {
+		t.Fatalf("expansions = %#v", expansions)
 	}
 }
 

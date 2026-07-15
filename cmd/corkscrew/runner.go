@@ -36,11 +36,6 @@ func runCLI(args []string) int {
 		}
 	case "discover":
 		runDiscover(commandArgs)
-	case "orchestrator-discover":
-		if err := runOrchestratorDiscovery(commandArgs); err != nil {
-			fmt.Fprintf(os.Stderr, "Orchestrator discovery failed: %v\n", err)
-			return 1
-		}
 	case "list":
 		runList(commandArgs)
 	case "describe":
@@ -60,7 +55,10 @@ func runCLI(args []string) int {
 			return 1
 		}
 	case "plugin":
-		runPlugin(commandArgs)
+		if err := runPluginE(commandArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Plugin failed: %v\n", err)
+			return 1
+		}
 	case "pack":
 		runPack(commandArgs)
 	case "aws-org":

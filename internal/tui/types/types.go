@@ -2,6 +2,9 @@ package types
 
 import (
 	"time"
+
+	appconfig "github.com/jlgore/corkscrew/internal/config"
+	"github.com/jlgore/corkscrew/internal/data"
 )
 
 // ViewType represents different TUI views
@@ -81,7 +84,7 @@ type (
 
 	// Database messages
 	DatabaseConnectedMsg struct {
-		Database interface{} // *db.GraphLoader
+		Database *data.Session
 	}
 
 	DatabaseErrorMsg struct {
@@ -90,7 +93,7 @@ type (
 
 	// Config messages
 	ConfigLoadedMsg struct {
-		Config interface{} // *config.Config
+		Config *appconfig.CorkscrewConfig
 		Error  error
 	}
 
