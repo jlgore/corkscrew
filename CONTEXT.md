@@ -36,12 +36,17 @@ The canonical `<provider>_resources` table for a provider shipped with Corkscrew
 
 An old table preserved as `<name>_legacy_v0` during migration. Rows are copied into the canonical schema before the migration commits.
 
+### Graph-extension correlation tables
+
+The cross-cloud correlation tables created by the schema lifecycle (VPN, peering, direct-connect, load-balancer topology, security, identity-federation, security-role, certificate, shared-secret, and policy-similarity) are the input contract for the packaged graph extension. Core Go code does not write them; the extension's correlation table functions read them to answer `corkscrew graph correlate`. They are created empty and are **not** dead schema — removing one breaks the corresponding correlation. See [ADR 0005](docs/adr/0005-graph-extension-correlation-tables.md).
+
 ## Ownership boundaries
 
 - `pkg/providers` owns the catalog of providers shipped with Corkscrew.
 - Provider plugins own discovery behavior and provider discovery schemas, but never open or mutate Corkscrew storage.
 - `internal/db` schema lifecycle owns all persistent storage DDL and migrations.
 - Normalized readers and graph stores consume the storage schema; they do not create it opportunistically.
+- The packaged graph extension owns the read side of the cross-cloud correlation tables; the schema lifecycle creates them and must keep them even while no Go writer populates them.
 - CLI and API handlers orchestrate reusable packages and should not contain storage or provider business rules.
 - Application workflows under `internal/app` accept adapter requests, apply precedence and normalization, and invoke domain packages.
 - CLI, TUI, and API adapters own transport syntax and rendering, not workflow policy. TUI Quick Scan invokes the same single-provider application workflow once per enabled provider.
