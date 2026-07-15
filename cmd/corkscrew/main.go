@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/jlgore/corkscrew/internal/app/crosscloud"
 	providerapp "github.com/jlgore/corkscrew/internal/app/providers"
 	appquery "github.com/jlgore/corkscrew/internal/app/query"
 	"github.com/jlgore/corkscrew/internal/db"
@@ -1353,7 +1354,7 @@ func runCrossCloudCorrelate(args []string) {
 	fmt.Println()
 
 	options := NetworkAnalysisOptions{
-		CorrelationTypes: parseCorrelationTypes(*types),
+		CorrelationTypes: crosscloud.ParseCorrelationTypes(*types),
 		MinConfidence:    *confidence,
 		OutputFormat:     *output,
 	}
@@ -1417,18 +1418,12 @@ func runCrossCloudExport(args []string) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("📤 Exporting cross-cloud data...\n")
-	fmt.Printf("📄 Format: %s\n", *format)
-	if *output != "" {
-		fmt.Printf("📁 Output file: %s\n", *output)
-	}
-	if *includeRaw {
-		fmt.Println("📋 Including raw data")
-	}
-	fmt.Println()
+	_ = format
+	_ = output
+	_ = includeRaw
 
-	// Implementation would go here
-	fmt.Println("✅ Export completed")
+	fmt.Fprintln(os.Stderr, "crosscloud export is not implemented; export cross-cloud data with `corkscrew query` against all_cloud_resources / cloud_relationships")
+	os.Exit(1)
 }
 
 // IP correlation implementation
@@ -1559,7 +1554,7 @@ func runCorrelateAll(args []string) {
 	fmt.Println()
 
 	options := NetworkAnalysisOptions{
-		CorrelationTypes: allGraphCorrelationKinds(),
+		CorrelationTypes: crosscloud.AllCorrelationKinds(),
 		MinConfidence:    *confidence,
 		OutputFormat:     *output,
 	}
