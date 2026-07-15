@@ -4,25 +4,21 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"text/tabwriter"
 	"time"
 
-	// tea "github.com/charmbracelet/bubbletea"
-	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/renderer"
-	// "github.com/jlgore/corkscrew/pkg/diagrams/pkg/ui"
 	providerapp "github.com/jlgore/corkscrew/internal/app/providers"
+	appquery "github.com/jlgore/corkscrew/internal/app/query"
 	"github.com/jlgore/corkscrew/internal/db"
 	pb "github.com/jlgore/corkscrew/internal/proto"
-	"github.com/jlgore/corkscrew/pkg/query"
-	"github.com/jlgore/corkscrew/pkg/query/compliance"
 )
 
 // Build-time variables set by GoReleaser
@@ -741,64 +737,6 @@ func printSchemaSQL(resp *pb.SchemaResponse, dialect string) {
 	}
 }
 
-func getSQLType(protoType string, dialect string) string {
-	switch dialect {
-	case "postgres":
-		switch protoType {
-		case "string":
-			return "TEXT"
-		case "int", "int32", "int64":
-			return "BIGINT"
-		case "float", "double":
-			return "DOUBLE PRECISION"
-		case "bool":
-			return "BOOLEAN"
-		case "timestamp":
-			return "TIMESTAMP"
-		case "json":
-			return "JSONB"
-		default:
-			return "TEXT"
-		}
-	case "sqlite":
-		switch protoType {
-		case "string", "json":
-			return "TEXT"
-		case "int", "int32", "int64":
-			return "INTEGER"
-		case "float", "double":
-			return "REAL"
-		case "bool":
-			return "INTEGER"
-		case "timestamp":
-			return "TEXT"
-		default:
-			return "TEXT"
-		}
-	default: // duckdb
-		switch protoType {
-		case "string":
-			return "VARCHAR"
-		case "int", "int32":
-			return "INTEGER"
-		case "int64":
-			return "BIGINT"
-		case "float":
-			return "FLOAT"
-		case "double":
-			return "DOUBLE"
-		case "bool":
-			return "BOOLEAN"
-		case "timestamp":
-			return "TIMESTAMP"
-		case "json":
-			return "JSON"
-		default:
-			return "VARCHAR"
-		}
-	}
-}
-
 // runQuery executes SQL queries or compliance checks
 func runQuery(args []string) {
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
@@ -884,42 +822,37 @@ func runQuery(args []string) {
 		os.Exit(1)
 	}
 
-	// Execute query
-	engine, err := query.NewEngineWithOptions(resolvedDBPath, quackOpts...)
+	// Execute query through the application workflow
+	result, err := appquery.Run(context.Background(), appquery.Request{
+		Target:  resolvedDBPath,
+		Options: quackOpts,
+		SQL:     sqlQuery,
+	})
 	if err != nil {
-		log.Fatalf("Failed to create query engine: %v", err)
-	}
-	defer engine.Close()
-
-	// Execute the query
-	rows, columns, err := query.ExecuteQuery(engine, sqlQuery)
-	if err != nil {
-		handleQueryError(err, sqlQuery, resolvedDBPath)
+		var queryErr *appquery.Error
+		if errors.As(err, &queryErr) {
+			handleQueryError(queryErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "❌ Query execution failed: %v\n", err)
+		}
 		os.Exit(1)
 	}
 
 	// Format and display results
 	switch *outputFormat {
 	case "json":
-		printJSONResults(rows, columns)
+		printJSONResults(result.Rows, result.Columns)
 	case "csv":
-		printCSVQueryResults(rows, columns, *noHeader)
+		printCSVQueryResults(result.Rows, result.Columns, *noHeader)
 	default:
-		printTableResults(rows, columns, *noHeader)
+		printTableResults(result.Rows, result.Columns, *noHeader)
 	}
 }
 
 // runComplianceQuery handles compliance-specific queries
 func runComplianceQuery(dbPath, controlID, packName, tags string, params map[string]interface{}, dryRun bool, outputFormat string, verbose bool) {
-	// Initialize compliance executor
-	executor, err := compliance.NewExecutor(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to create compliance executor: %v", err)
-	}
-	defer executor.Close()
-
-	// Build options
-	options := compliance.ExecuteOptions{
+	request := appquery.ComplianceRequest{
+		Target:     dbPath,
 		ControlID:  controlID,
 		PackName:   packName,
 		Tags:       parseTags(tags),
@@ -928,10 +861,10 @@ func runComplianceQuery(dbPath, controlID, packName, tags string, params map[str
 	}
 
 	// Show what we're about to do
-	printComplianceOptions(options)
+	printComplianceOptions(request)
 
-	// Execute compliance check
-	results, err := executor.Execute(options)
+	// Execute compliance check through the application workflow
+	results, err := appquery.RunCompliance(context.Background(), request)
 	if err != nil {
 		log.Fatalf("Compliance check failed: %v", err)
 	}
@@ -958,7 +891,7 @@ func parseTags(tagStr string) []string {
 	return tags
 }
 
-func printComplianceTable(results []compliance.SimpleQueryResult, verbose bool) {
+func printComplianceTable(results []appquery.ComplianceResult, verbose bool) {
 	if len(results) == 0 {
 		fmt.Println("No compliance checks were executed")
 		return
@@ -1022,7 +955,7 @@ func printComplianceTable(results []compliance.SimpleQueryResult, verbose bool) 
 	}
 }
 
-func printComplianceJSON(results []compliance.SimpleQueryResult) {
+func printComplianceJSON(results []appquery.ComplianceResult) {
 	output := struct {
 		Summary struct {
 			Total  int `json:"total"`
@@ -1030,7 +963,7 @@ func printComplianceJSON(results []compliance.SimpleQueryResult) {
 			Failed int `json:"failed"`
 			Errors int `json:"errors"`
 		} `json:"summary"`
-		Results []compliance.SimpleQueryResult `json:"results"`
+		Results []appquery.ComplianceResult `json:"results"`
 	}{}
 
 	output.Results = results
@@ -1050,7 +983,7 @@ func printComplianceJSON(results []compliance.SimpleQueryResult) {
 	fmt.Println(string(data))
 }
 
-func printComplianceCSV(results []compliance.SimpleQueryResult) {
+func printComplianceCSV(results []appquery.ComplianceResult) {
 	w := csv.NewWriter(os.Stdout)
 	defer w.Flush()
 
@@ -1079,153 +1012,49 @@ func printComplianceCSV(results []compliance.SimpleQueryResult) {
 	}
 }
 
-func handleQueryError(err error, sqlQuery, dbPath string) {
-	fmt.Fprintf(os.Stderr, "❌ Query execution failed: %v\n", err)
+func handleQueryError(qerr *appquery.Error) {
+	fmt.Fprintf(os.Stderr, "❌ Query execution failed: %v\n", qerr)
 
-	// Try to provide helpful error messages
-	errorMsg := err.Error()
-
-	// Check for common SQL errors
-	if strings.Contains(errorMsg, "no such table") || strings.Contains(errorMsg, "does not exist") {
+	switch qerr.Kind {
+	case appquery.ErrorTableNotFound:
 		fmt.Fprintf(os.Stderr, "\n💡 Hint: Make sure you've run 'corkscrew scan' to populate the database.\n")
-		fmt.Fprintf(os.Stderr, "Available tables:\n")
-
-		// List available tables
-		if engine, err := query.NewEngine(dbPath); err == nil {
-			defer engine.Close()
-			if tables, _, err := query.ExecuteQuery(engine, "SELECT DISTINCT table_name FROM information_schema.tables WHERE table_schema = 'main'"); err == nil {
-				for _, row := range tables {
-					if tableName, ok := row[0].(string); ok {
-						fmt.Fprintf(os.Stderr, "  - %s\n", tableName)
-					}
-				}
+		if len(qerr.AvailableTables) > 0 {
+			fmt.Fprintf(os.Stderr, "Available tables:\n")
+			for _, table := range qerr.AvailableTables {
+				fmt.Fprintf(os.Stderr, "  - %s\n", table)
 			}
 		}
-
-		// Check for table not found (DuckDB format)
-		tableNotFoundRegex := regexp.MustCompile(`Table with name ([a-zA-Z_][a-zA-Z0-9_]*) does not exist`)
-		if matches := tableNotFoundRegex.FindStringSubmatch(errorMsg); len(matches) > 1 {
-			tableName := matches[1]
-			fmt.Fprintf(os.Stderr, "  🔍 Table '%s' not found\n", tableName)
-
-			// Suggest similar table names
-			if suggestions := suggestTableNames(tableName); len(suggestions) > 0 {
+		if qerr.MissingTable != "" {
+			fmt.Fprintf(os.Stderr, "  🔍 Table '%s' not found\n", qerr.MissingTable)
+			if len(qerr.Suggestions) > 0 {
 				fmt.Fprintf(os.Stderr, "  💡 Did you mean one of these?\n")
-				for _, suggestion := range suggestions {
+				for _, suggestion := range qerr.Suggestions {
 					fmt.Fprintf(os.Stderr, "     - %s\n", suggestion)
 				}
 			}
 		}
-	} else if strings.Contains(errorMsg, "syntax error") {
+	case appquery.ErrorSyntax:
 		fmt.Fprintf(os.Stderr, "\n💡 Hint: Check your SQL syntax. DuckDB uses standard SQL.\n")
-
-		// Try to highlight the error position if available
-		if pos := extractErrorPosition(errorMsg); pos > 0 {
-			lines := strings.Split(sqlQuery, "\n")
-			lineNo := 1
-			charCount := 0
-			for _, line := range lines {
-				if charCount+len(line) >= pos {
-					fmt.Fprintf(os.Stderr, "Error near line %d:\n", lineNo)
-					fmt.Fprintf(os.Stderr, "  %s\n", line)
-					fmt.Fprintf(os.Stderr, "  %s^\n", strings.Repeat(" ", pos-charCount-1))
-					break
-				}
-				charCount += len(line) + 1 // +1 for newline
-				lineNo++
-			}
+		if qerr.Position > 0 {
+			printSyntaxErrorPosition(qerr.SQL, qerr.Position)
 		}
 	}
 }
 
-func suggestTableNames(tableName string) []string {
-	// Common table names in corkscrew
-	commonTables := []string{
-		"all_cloud_resources",
-		"cloud_relationships",
-		"resource_counts_by_provider",
-		"scan_metadata",
-	}
-
-	suggestions := []string{}
-	lowerInput := strings.ToLower(tableName)
-
-	for _, table := range commonTables {
-		lowerTable := strings.ToLower(table)
-		// Check if input is a substring or vice versa
-		if strings.Contains(lowerTable, lowerInput) || strings.Contains(lowerInput, lowerTable) {
-			suggestions = append(suggestions, table)
+func printSyntaxErrorPosition(sqlQuery string, position int) {
+	lines := strings.Split(sqlQuery, "\n")
+	lineNo := 1
+	charCount := 0
+	for _, line := range lines {
+		if charCount+len(line) >= position {
+			fmt.Fprintf(os.Stderr, "Error near line %d:\n", lineNo)
+			fmt.Fprintf(os.Stderr, "  %s\n", line)
+			fmt.Fprintf(os.Stderr, "  %s^\n", strings.Repeat(" ", position-charCount-1))
+			return
 		}
-		// Check for common typos (simple edit distance)
-		if levenshteinDistance(lowerInput, lowerTable) <= 3 {
-			suggestions = append(suggestions, table)
-		}
+		charCount += len(line) + 1 // +1 for newline
+		lineNo++
 	}
-
-	return suggestions
-}
-
-func levenshteinDistance(s1, s2 string) int {
-	if len(s1) == 0 {
-		return len(s2)
-	}
-	if len(s2) == 0 {
-		return len(s1)
-	}
-
-	// Create matrix
-	matrix := make([][]int, len(s1)+1)
-	for i := range matrix {
-		matrix[i] = make([]int, len(s2)+1)
-	}
-
-	// Initialize first column and row
-	for i := 0; i <= len(s1); i++ {
-		matrix[i][0] = i
-	}
-	for j := 0; j <= len(s2); j++ {
-		matrix[0][j] = j
-	}
-
-	// Fill matrix
-	for i := 1; i <= len(s1); i++ {
-		for j := 1; j <= len(s2); j++ {
-			cost := 0
-			if s1[i-1] != s2[j-1] {
-				cost = 1
-			}
-
-			matrix[i][j] = min(
-				matrix[i-1][j]+1,      // deletion
-				matrix[i][j-1]+1,      // insertion
-				matrix[i-1][j-1]+cost, // substitution
-			)
-		}
-	}
-
-	return matrix[len(s1)][len(s2)]
-}
-
-func min(nums ...int) int {
-	minVal := nums[0]
-	for _, n := range nums[1:] {
-		if n < minVal {
-			minVal = n
-		}
-	}
-	return minVal
-}
-
-func extractErrorPosition(errorMsg string) int {
-	// Try to extract position from error message
-	// DuckDB format: "at or near position X"
-	posRegex := regexp.MustCompile(`at or near position (\d+)`)
-	if matches := posRegex.FindStringSubmatch(errorMsg); len(matches) > 1 {
-		if pos, err := fmt.Sscanf(matches[1], "%d"); err == nil {
-			return pos
-		}
-	}
-	return 0
 }
 
 func printTableResults(rows [][]interface{}, columns []string, noHeader bool) {
@@ -1366,29 +1195,29 @@ func generateStaticDiagram(provider, resourceType, outputFile, format string) {
 }
 */
 
-func printComplianceOptions(options compliance.ExecuteOptions) {
+func printComplianceOptions(request appquery.ComplianceRequest) {
 	fmt.Println("\n🔍 Compliance Check Configuration:")
 
-	if options.ControlID != "" {
-		fmt.Printf("📌 Control: %s\n", options.ControlID)
+	if request.ControlID != "" {
+		fmt.Printf("📌 Control: %s\n", request.ControlID)
 	}
 
-	if options.PackName != "" {
-		fmt.Printf("📦 Pack: %s\n", options.PackName)
+	if request.PackName != "" {
+		fmt.Printf("📦 Pack: %s\n", request.PackName)
 	}
 
-	if len(options.Tags) > 0 {
-		fmt.Printf("🏷️  Tags: %s\n", strings.Join(options.Tags, ", "))
+	if len(request.Tags) > 0 {
+		fmt.Printf("🏷️  Tags: %s\n", strings.Join(request.Tags, ", "))
 	}
 
-	if len(options.Parameters) > 0 {
+	if len(request.Parameters) > 0 {
 		fmt.Printf("🔧 Parameters:\n")
-		for key, value := range options.Parameters {
+		for key, value := range request.Parameters {
 			fmt.Printf("  %s = %v\n", key, value)
 		}
 	}
 
-	if options.DryRun {
+	if request.DryRun {
 		fmt.Printf("✅ Dry-run validation would be performed for tagged queries\n")
 	}
 }
