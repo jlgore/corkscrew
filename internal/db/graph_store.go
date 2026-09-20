@@ -35,17 +35,19 @@ type StoreScanResourcesOptions struct {
 // ScanOutcomeMetadata is the canonical metadata committed with one resource
 // and relationship outcome.
 type ScanOutcomeMetadata struct {
-	ID              string
-	Provider        string
-	Services        []string
-	Regions         []string
-	TotalResources  int
-	FailedResources int
-	StartedAt       time.Time
-	EndedAt         time.Time
-	DurationMS      int64
-	Metadata        map[string]interface{}
-	Status          string
+	ID               string
+	Provider         string
+	Services         []string
+	Regions          []string
+	TotalResources   int
+	FailedResources  int
+	StartedAt        time.Time
+	EndedAt          time.Time
+	DurationMS       int64
+	Metadata         map[string]interface{}
+	Status           string
+	ScopeKey         string
+	SnapshotComplete bool
 }
 
 type scanResourceAdapterKind int
@@ -112,6 +114,9 @@ func (gs *GraphStore) StoreScanOutcome(ctx context.Context, resources []*pb.Reso
 	transactionStore := gs.withScanWriter(writer)
 	if err := transactionStore.storeScanResources(ctx, resources, resourceOptions); err != nil {
 		return err
+	}
+	if err := transactionStore.storeScanObservations(ctx, resources, metadata); err != nil {
+		return fmt.Errorf("store scan observations: %w", err)
 	}
 	if err := transactionStore.storeScanOutcomeMetadata(ctx, metadata); err != nil {
 		return fmt.Errorf("store scan metadata: %w", err)
@@ -711,9 +716,9 @@ func (gs *GraphStore) storeScanOutcomeMetadata(ctx context.Context, metadata Sca
 			id, provider, scan_type, services, regions,
 			total_resources, failed_resources,
 			scan_start_time, scan_end_time, duration_ms,
-			metadata, status
+			metadata, status, scope_key, snapshot_complete
 		)
-		VALUES (?, ?, 'multi_scope', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, 'multi_scope', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			provider = excluded.provider, services = excluded.services,
 			regions = excluded.regions, total_resources = excluded.total_resources,
@@ -721,10 +726,45 @@ func (gs *GraphStore) storeScanOutcomeMetadata(ctx context.Context, metadata Sca
 			scan_start_time = excluded.scan_start_time,
 			scan_end_time = excluded.scan_end_time,
 			duration_ms = excluded.duration_ms, metadata = excluded.metadata,
-			status = excluded.status
+			status = excluded.status, scope_key = excluded.scope_key,
+			snapshot_complete = excluded.snapshot_complete
 	`, metadata.ID, metadata.Provider, string(servicesJSON), string(regionsJSON),
 		metadata.TotalResources, metadata.FailedResources,
 		metadata.StartedAt, metadata.EndedAt, metadata.DurationMS,
-		string(metadataJSON), metadata.Status)
+		string(metadataJSON), metadata.Status, metadata.ScopeKey, metadata.SnapshotComplete)
+	if err != nil {
+		return err
+	}
+	if !metadata.SnapshotComplete {
+		return nil
+	}
+	_, err = gs.scanExecContext(ctx, `
+WITH previous AS (
+    SELECT id FROM scan_metadata
+    WHERE provider = ? AND scope_key = ? AND snapshot_complete = TRUE
+      AND status = 'completed' AND id <> ? AND scan_start_time <= ?
+    ORDER BY scan_start_time DESC, id DESC LIMIT 1
+), counts AS (
+    SELECT
+      (SELECT COUNT(*) FROM resource_observations current
+       LEFT JOIN resource_observations prior ON prior.scan_id = (SELECT id FROM previous)
+         AND prior.provider = current.provider AND prior.resource_id = current.resource_id
+       WHERE current.scan_id = ? AND prior.resource_id IS NULL) AS new_count,
+      (SELECT COUNT(*) FROM resource_observations current
+       JOIN resource_observations prior ON prior.scan_id = (SELECT id FROM previous)
+         AND prior.provider = current.provider AND prior.resource_id = current.resource_id
+       WHERE current.scan_id = ? AND current.semantic_hash <> prior.semantic_hash) AS updated_count,
+      (SELECT COUNT(*) FROM resource_observations prior
+       LEFT JOIN resource_observations current ON current.scan_id = ?
+         AND current.provider = prior.provider AND current.resource_id = prior.resource_id
+       WHERE prior.scan_id = (SELECT id FROM previous) AND current.resource_id IS NULL) AS deleted_count
+)
+UPDATE scan_metadata SET
+  new_resources = counts.new_count,
+  updated_resources = counts.updated_count,
+  deleted_resources = counts.deleted_count
+FROM counts WHERE scan_metadata.id = ?
+`, metadata.Provider, metadata.ScopeKey, metadata.ID, metadata.StartedAt,
+		metadata.ID, metadata.ID, metadata.ID, metadata.ID)
 	return err
 }

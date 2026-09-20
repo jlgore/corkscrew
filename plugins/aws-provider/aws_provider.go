@@ -312,6 +312,7 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 
 	log.Printf("Batch scan %s: %d resources across %d services (%d unsupported types)",
 		scanID, len(allResources), len(services), len(p.scanner.UnsupportedTypes()))
+	enrichCorrelationEvidence(allResources)
 
 	return &pb.BatchScanResponse{
 		Resources: allResources,
@@ -476,4 +477,3 @@ func (p *AWSProvider) GetScanProgress() *ProgressReport {
 	}
 	return p.currentProgressTracker.GetProgressReport()
 }
-

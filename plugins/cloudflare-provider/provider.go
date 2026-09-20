@@ -230,6 +230,7 @@ func batchScanServices(ctx context.Context, services []string, scan scanServiceF
 
 	response.Stats.TotalResources = int32(len(response.Resources))
 	response.Stats.DurationMs = time.Since(start).Milliseconds()
+	enrichCorrelationEvidence(response.Resources)
 	return response
 }
 

@@ -158,6 +158,20 @@ export PATH="$HOME/.corkscrew/bin:$PATH"
 ./corkscrew scan --provider gcp --services compute,storage,container
 ./corkscrew scan --provider kubernetes --all-namespaces
 
+# Historical inventory and CI drift policy
+./corkscrew scans list --provider aws
+./corkscrew drift --provider aws
+./corkscrew drift --to <scan-id> --output json --fail-on-change
+
+# Materialize provider evidence for graph correlation commands
+./corkscrew graph refresh-correlations --kinds all --output json
+./corkscrew graph correlation-status
+
+# Evaluate a completed snapshot and manage durable findings
+./corkscrew findings evaluate --scan <scan-id> --pack cfi/ccc/ccc-storage
+./corkscrew findings list --status open --min-severity high
+./corkscrew findings suppress <fingerprint> --reason "accepted risk"
+
 # Cross-cloud correlation scanning
 ./corkscrew crosscloud scan --providers aws,azure --regions us-east-1,eastus
 

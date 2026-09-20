@@ -509,6 +509,7 @@ func (p *AzureProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest)
 		stats.ResourceCounts[resource.Type]++
 		stats.ServiceCounts[resource.Service]++
 	}
+	enrichCorrelationEvidence(allResources)
 
 	return &pb.BatchScanResponse{
 		Resources: allResources,

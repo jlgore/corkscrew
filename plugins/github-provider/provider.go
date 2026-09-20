@@ -223,6 +223,7 @@ func (p *GitHubProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest
 		resources = append(resources, resp.Resources...)
 		errors = append(errors, resp.Errors...)
 	}
+	enrichCorrelationEvidence(resources)
 
 	return &pb.BatchScanResponse{
 		Resources: resources,

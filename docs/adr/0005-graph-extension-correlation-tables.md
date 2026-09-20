@@ -45,3 +45,11 @@ dead DDL. A future change that populates them belongs in a schema-lifecycle
 migration plus a core writer; a future change that removes the abandoned
 security/compliance tables belongs in its own migration version with the graph
 extension confirmed not to depend on them.
+
+## Implementation update (2026-07-15)
+
+Schema version 5 and the correlation materialization application workflow now
+provide the anticipated core writer. Provider plugins emit versioned
+correlation evidence; the workflow transactionally replaces only rows recorded
+as Corkscrew-owned, preserving legacy and externally managed rows. The graph
+extension remains the read-side owner described by this decision.

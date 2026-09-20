@@ -2,7 +2,12 @@ package data
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jlgore/corkscrew/internal/db"
@@ -60,8 +65,27 @@ func (w graphStoreWriter) StoreScanOutcome(ctx context.Context, outcome ScanOutc
 			TotalResources: len(outcome.Resources), FailedResources: len(failedScopes),
 			StartedAt: outcome.StartedAt, EndedAt: outcome.EndedAt,
 			Metadata: metadata, Status: string(outcome.Status),
+			ScopeKey:         ScanScopeKey(outcome.Provider, outcome.Services, outcome.Scopes),
+			SnapshotComplete: outcome.Status == ScanStatusCompleted,
 		},
 	)
+}
+
+// ScanScopeKey identifies scans whose provider coverage is directly comparable.
+func ScanScopeKey(provider string, services, scopes []string) string {
+	normalize := func(values []string) []string {
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if value = strings.TrimSpace(value); value != "" {
+				result = append(result, value)
+			}
+		}
+		sort.Strings(result)
+		return result
+	}
+	payload, _ := json.Marshal([]any{strings.ToLower(strings.TrimSpace(provider)), normalize(services), normalize(scopes)})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 // PersistScanOutcome atomically commits resources, relationships, and scan

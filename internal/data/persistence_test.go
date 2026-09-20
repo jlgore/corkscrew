@@ -86,6 +86,8 @@ func TestPersistScanOutcomeCommitsResourcesRelationshipsAndMetadata(t *testing.T
 	assertSessionCount(t, session, `SELECT COUNT(*) FROM custom_provider_resources WHERE provider = 'fixture-cloud'`, 2)
 	assertSessionCount(t, session, `SELECT COUNT(*) FROM cloud_relationships WHERE provider = 'fixture-cloud'`, 1)
 	assertSessionCount(t, session, `SELECT COUNT(*) FROM scan_metadata WHERE id = 'fixture-scan' AND status = 'partial'`, 1)
+	assertSessionCount(t, session, `SELECT COUNT(*) FROM resource_observations WHERE scan_id = 'fixture-scan'`, 2)
+	assertSessionCount(t, session, `SELECT COUNT(*) FROM relationship_observations WHERE scan_id = 'fixture-scan'`, 1)
 
 	count, err := session.Inventory().Count(context.Background(), InventoryFilter{Provider: "fixture-cloud"})
 	if err != nil || count != 2 {
@@ -180,6 +182,8 @@ func assertEmptyScanOutcome(t *testing.T, session *Session) {
 	assertSessionCount(t, session, `SELECT COUNT(*) FROM custom_provider_resources WHERE provider = 'fixture-cloud'`, 0)
 	assertSessionCount(t, session, `SELECT COUNT(*) FROM cloud_relationships WHERE provider = 'fixture-cloud'`, 0)
 	assertSessionCount(t, session, `SELECT COUNT(*) FROM scan_metadata WHERE id = 'fixture-scan'`, 0)
+	assertSessionCount(t, session, `SELECT COUNT(*) FROM resource_observations WHERE scan_id = 'fixture-scan'`, 0)
+	assertSessionCount(t, session, `SELECT COUNT(*) FROM relationship_observations WHERE scan_id = 'fixture-scan'`, 0)
 }
 
 func assertSessionCount(t *testing.T, session *Session, query string, want int) {

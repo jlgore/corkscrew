@@ -90,12 +90,14 @@ type ExecuteOptions struct {
 
 // SimpleQueryResult represents a compliance query result for the CLI
 type SimpleQueryResult struct {
+	PackRef         string
 	ControlID       string
 	Title           string
 	Description     string
 	Passed          bool
 	ResourceCount   int
 	FailedResources []string
+	Rows            []ComplianceResult
 	Error           error
 }
 
@@ -114,6 +116,7 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 	for _, selection := range selections {
 		parameters := parametersWithDefaults(selection.pack, options.Parameters)
 		result := SimpleQueryResult{
+			PackRef:     canonicalPackRef(selection.pack),
 			ControlID:   selection.query.ID,
 			Title:       selection.query.Title,
 			Description: selection.query.Description,
@@ -136,6 +139,7 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 			results = append(results, result)
 			continue
 		}
+		result.Rows = append(result.Rows, complianceResults...)
 
 		result.ResourceCount = len(complianceResults)
 		for _, complianceResult := range complianceResults {
@@ -156,6 +160,17 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 	}
 
 	return results, nil
+}
+
+func canonicalPackRef(pack *QueryPack) string {
+	if pack == nil {
+		return ""
+	}
+	namespace := strings.Trim(pack.Metadata.Namespace, "/")
+	if namespace == "" {
+		return pack.Metadata.Name
+	}
+	return namespace + "/" + pack.Metadata.Name
 }
 
 type querySelection struct {

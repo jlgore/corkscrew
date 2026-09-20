@@ -10,7 +10,7 @@ import (
 	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
-const LatestSchemaVersion = 3
+const LatestSchemaVersion = 6
 
 var schemaIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -72,10 +72,192 @@ CREATE TABLE IF NOT EXISTS corkscrew_schema_migrations (
 		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (3, 'normalized_query_helpers')`); err != nil {
 			return fmt.Errorf("record schema version 3: %w", err)
 		}
+		version = 3
+	}
+
+	if version < 4 {
+		if err := migrateSchemaV4(ctx, tx); err != nil {
+			return fmt.Errorf("migrate schema to version 4: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (4, 'historical_scan_observations')`); err != nil {
+			return fmt.Errorf("record schema version 4: %w", err)
+		}
+		version = 4
+	}
+
+	if version < 5 {
+		if err := migrateSchemaV5(ctx, tx); err != nil {
+			return fmt.Errorf("migrate schema to version 5: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (5, 'correlation_materialization')`); err != nil {
+			return fmt.Errorf("record schema version 5: %w", err)
+		}
+		version = 5
+	}
+
+	if version < 6 {
+		if err := migrateSchemaV6(ctx, tx); err != nil {
+			return fmt.Errorf("migrate schema to version 6: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO corkscrew_schema_migrations(version, name) VALUES (6, 'durable_findings')`); err != nil {
+			return fmt.Errorf("record schema version 6: %w", err)
+		}
+	}
+	// Query helpers are replaceable session contracts. Re-establish them even
+	// when a manually repaired migration ledger contains a later version.
+	if err := migrateSchemaV3(ctx, tx); err != nil {
+		return fmt.Errorf("ensure normalized query helpers: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit schema migration: %w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV6(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS finding_evaluations (
+    id VARCHAR PRIMARY KEY,
+    scan_id VARCHAR NOT NULL,
+    pack_ref VARCHAR,
+    control_selector VARCHAR,
+    scope_key VARCHAR NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    ended_at TIMESTAMP,
+    status VARCHAR NOT NULL,
+    error_message VARCHAR
+);
+CREATE INDEX IF NOT EXISTS idx_finding_evaluations_scan ON finding_evaluations(scan_id);
+
+CREATE TABLE IF NOT EXISTS findings (
+    fingerprint VARCHAR PRIMARY KEY,
+    pack_ref VARCHAR NOT NULL,
+    control_id VARCHAR NOT NULL,
+    provider VARCHAR NOT NULL,
+    resource_id VARCHAR NOT NULL,
+    scope_key VARCHAR NOT NULL,
+    title VARCHAR,
+    severity VARCHAR NOT NULL,
+    details TEXT,
+    remediation TEXT,
+    status VARCHAR NOT NULL,
+    first_seen_scan VARCHAR NOT NULL,
+    last_seen_scan VARCHAR NOT NULL,
+    first_seen_at TIMESTAMP NOT NULL,
+    last_seen_at TIMESTAMP NOT NULL,
+    resolved_at TIMESTAMP,
+    occurrence_count INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);
+CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);
+CREATE INDEX IF NOT EXISTS idx_findings_resource ON findings(provider, resource_id);
+CREATE INDEX IF NOT EXISTS idx_findings_control_scope ON findings(pack_ref, control_id, scope_key);
+
+CREATE TABLE IF NOT EXISTS finding_occurrences (
+    evaluation_id VARCHAR NOT NULL,
+    fingerprint VARCHAR NOT NULL,
+    scan_id VARCHAR NOT NULL,
+    result_status VARCHAR NOT NULL,
+    severity VARCHAR NOT NULL,
+    details TEXT,
+    observed_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (evaluation_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_finding_occurrences_fingerprint ON finding_occurrences(fingerprint);
+
+CREATE TABLE IF NOT EXISTS finding_suppressions (
+    id VARCHAR PRIMARY KEY,
+    fingerprint VARCHAR NOT NULL,
+    reason TEXT NOT NULL,
+    actor VARCHAR NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP,
+    revoked_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_finding_suppressions_fingerprint ON finding_suppressions(fingerprint);
+`); err != nil {
+		return fmt.Errorf("create durable findings storage: %w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV5(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS correlation_materialization_runs (
+    id VARCHAR PRIMARY KEY,
+    started_at TIMESTAMP NOT NULL,
+    ended_at TIMESTAMP,
+    status VARCHAR NOT NULL,
+    kinds JSON NOT NULL,
+    evidence_count INTEGER DEFAULT 0,
+    rejected_count INTEGER DEFAULT 0,
+    row_count INTEGER DEFAULT 0,
+    coverage JSON,
+    error_message VARCHAR
+);
+CREATE INDEX IF NOT EXISTS idx_correlation_runs_started ON correlation_materialization_runs(started_at);
+
+CREATE TABLE IF NOT EXISTS correlation_materialized_rows (
+    run_id VARCHAR NOT NULL,
+    kind VARCHAR NOT NULL,
+    table_name VARCHAR NOT NULL,
+    row_id VARCHAR NOT NULL,
+    PRIMARY KEY (table_name, row_id)
+);
+CREATE INDEX IF NOT EXISTS idx_correlation_owned_kind ON correlation_materialized_rows(kind);
+`); err != nil {
+		return fmt.Errorf("create correlation materialization metadata: %w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV4(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+ALTER TABLE scan_metadata ADD COLUMN IF NOT EXISTS scope_key VARCHAR;
+ALTER TABLE scan_metadata ADD COLUMN IF NOT EXISTS snapshot_complete BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS resource_observations (
+    scan_id VARCHAR NOT NULL,
+    provider VARCHAR NOT NULL,
+    resource_id VARCHAR NOT NULL,
+    name VARCHAR,
+    type VARCHAR NOT NULL,
+    service VARCHAR,
+    location VARCHAR,
+    account_id VARCHAR,
+    arn VARCHAR,
+    parent_id VARCHAR,
+    tags JSON,
+    attributes JSON,
+    raw_data JSON,
+    semantic_hash VARCHAR NOT NULL,
+    observed_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (scan_id, provider, resource_id)
+);
+CREATE INDEX IF NOT EXISTS idx_resource_observations_scan ON resource_observations(scan_id);
+CREATE INDEX IF NOT EXISTS idx_resource_observations_identity ON resource_observations(provider, resource_id);
+CREATE INDEX IF NOT EXISTS idx_resource_observations_hash ON resource_observations(semantic_hash);
+
+CREATE TABLE IF NOT EXISTS relationship_observations (
+    scan_id VARCHAR NOT NULL,
+    provider VARCHAR NOT NULL,
+    from_id VARCHAR NOT NULL,
+    to_id VARCHAR NOT NULL,
+    relationship_type VARCHAR NOT NULL,
+    relationship_subtype VARCHAR,
+    properties JSON,
+    from_resource_type VARCHAR,
+    to_resource_type VARCHAR,
+    direction VARCHAR DEFAULT 'outbound',
+    observed_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (scan_id, provider, from_id, to_id, relationship_type)
+);
+CREATE INDEX IF NOT EXISTS idx_relationship_observations_scan ON relationship_observations(scan_id);
+CREATE INDEX IF NOT EXISTS idx_relationship_observations_from ON relationship_observations(provider, from_id);
+CREATE INDEX IF NOT EXISTS idx_relationship_observations_to ON relationship_observations(provider, to_id);
+`); err != nil {
+		return fmt.Errorf("create historical scan observations: %w", err)
 	}
 	return nil
 }

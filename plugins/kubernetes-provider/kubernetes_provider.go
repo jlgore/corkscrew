@@ -645,6 +645,7 @@ func (p *KubernetesProvider) BatchScan(ctx context.Context, req *pb.BatchScanReq
 			p.enrichServicePodRelationships(resources)
 		}
 	}
+	enrichCorrelationEvidence(allResources)
 
 	return &pb.BatchScanResponse{
 		Resources: allResources,

@@ -34,6 +34,12 @@ func runCLI(args []string) int {
 			fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
 			return 1
 		}
+	case "scans":
+		return runScans(commandArgs)
+	case "drift":
+		return runDrift(commandArgs)
+	case "findings":
+		return runFindings(commandArgs)
 	case "discover":
 		runDiscover(commandArgs)
 	case "list":
@@ -68,7 +74,7 @@ func runCLI(args []string) int {
 	case "quack":
 		runQuack(commandArgs)
 	case "graph":
-		runGraph(commandArgs)
+		return runGraph(commandArgs)
 	case "github":
 		runGitHub(commandArgs)
 	case "cloudflare":
