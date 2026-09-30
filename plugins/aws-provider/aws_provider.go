@@ -97,6 +97,14 @@ type AWSProvider struct {
 	explorer  *ResourceExplorer
 	schemaGen *SchemaGenerator
 
+	// regional holds a scanner per region other than config.Region, built
+	// on first use: a BatchScanRequest names its region, and the scanner
+	// built at Initialize only reaches the region it was configured for.
+	regional map[string]activeScanner
+	// wireExplorer attaches a region's Resource Explorer default view to a
+	// scanner built for that region. A field so tests can stub the lookup.
+	wireExplorer func(ctx context.Context, cfg aws.Config, s activeScanner) *ResourceExplorer
+
 	rateLimiter    *rate.Limiter
 	maxConcurrency int
 
@@ -127,24 +135,11 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 	p.scanner = buildScanner(cfg)
 	p.schemaGen = NewSchemaGenerator()
-
-	if viewArn := p.checkResourceExplorer(ctx); viewArn != "" {
-		p.explorer = NewResourceExplorer(cfg, viewArn, "")
-		if p.explorer.IsHealthy(ctx) {
-			// RE indexes are per-account. In org-scan mode, member-account
-			// scanners run without an RE handoff (they fall back to per-
-			// type ListResources). Single-account mode wires it through.
-			if cc, ok := p.scanner.(*scanner.CloudControlScanner); ok {
-				cc.SetResourceExplorer(p.explorer)
-			}
-			log.Printf("Resource Explorer wired with view: %s", viewArn)
-		} else {
-			log.Printf("Resource Explorer view found but unhealthy; ignoring")
-			p.explorer = nil
-		}
-	} else {
-		log.Printf("Resource Explorer view not found; using per-type ListResources")
+	p.regional = map[string]activeScanner{}
+	if p.wireExplorer == nil {
+		p.wireExplorer = wireResourceExplorer
 	}
+	p.explorer = p.wireExplorer(ctx, cfg, p.scanner)
 
 	p.initialized = true
 	return &pb.InitializeResponse{
@@ -159,14 +154,71 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	}, nil
 }
 
-// checkResourceExplorer returns the default view ARN for the region, or "".
-func (p *AWSProvider) checkResourceExplorer(ctx context.Context) string {
-	client := resourceexplorer2.NewFromConfig(p.config)
+// wireResourceExplorer looks up the default Resource Explorer view in
+// cfg.Region and, when it is healthy, hands it to s for discovery. Returns
+// the explorer, or nil when the region has no usable view.
+//
+// A view only searches the index of its own region unless the account has
+// an aggregator index, so every region needs its own lookup.
+func wireResourceExplorer(ctx context.Context, cfg aws.Config, s activeScanner) *ResourceExplorer {
+	viewArn := defaultViewArn(ctx, cfg)
+	if viewArn == "" {
+		log.Printf("Resource Explorer view not found in %s; using per-type ListResources", cfg.Region)
+		return nil
+	}
+	explorer := NewResourceExplorer(cfg, viewArn, "")
+	if !explorer.IsHealthy(ctx) {
+		log.Printf("Resource Explorer view found in %s but unhealthy; ignoring", cfg.Region)
+		return nil
+	}
+	// RE indexes are per-account. In org-scan mode, member-account
+	// scanners run without an RE handoff (they fall back to per-type
+	// ListResources). Single-account mode wires it through.
+	if cc, ok := s.(*scanner.CloudControlScanner); ok {
+		cc.SetResourceExplorer(explorer)
+	}
+	log.Printf("Resource Explorer wired with view: %s", viewArn)
+	return explorer
+}
+
+// defaultViewArn returns the default view ARN for cfg.Region, or "".
+func defaultViewArn(ctx context.Context, cfg aws.Config) string {
+	client := resourceexplorer2.NewFromConfig(cfg)
 	out, err := client.GetDefaultView(ctx, &resourceexplorer2.GetDefaultViewInput{})
 	if err != nil || out.ViewArn == nil {
 		return ""
 	}
 	return *out.ViewArn
+}
+
+// scannerFor returns the scanner for region: the one built at Initialize
+// when region is empty or the configured region, otherwise one built for
+// that region on first use and kept for the rest of the process.
+func (p *AWSProvider) scannerFor(ctx context.Context, region string) activeScanner {
+	p.mu.RLock()
+	base, home := p.scanner, p.config.Region
+	cached, ok := p.regional[region]
+	p.mu.RUnlock()
+	if region == "" || region == home {
+		return base
+	}
+	if ok {
+		return cached
+	}
+
+	cfg := p.config.Copy()
+	cfg.Region = region
+	built := buildScanner(cfg)
+	p.wireExplorer(ctx, cfg, built)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Two scopes of one region can race here; the first one kept wins.
+	if existing, ok := p.regional[region]; ok {
+		return existing
+	}
+	p.regional[region] = built
+	return built
 }
 
 func (p *AWSProvider) GetProviderInfo(ctx context.Context, _ *pb.Empty) (*pb.ProviderInfoResponse, error) {
@@ -207,13 +259,14 @@ func (p *AWSProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 		return nil, fmt.Errorf("rate limit exceeded: %w", err)
 	}
 
+	regional := p.scannerFor(ctx, req.Region)
 	var refs []*pb.ResourceRef
 	var err error
 	if req.Service != "" {
-		refs, err = p.scanner.ScanService(ctx, req.Service)
+		refs, err = regional.ScanService(ctx, req.Service)
 	} else {
-		for _, svc := range p.scanner.SupportedServices() {
-			r, e := p.scanner.ScanService(ctx, svc)
+		for _, svc := range regional.SupportedServices() {
+			r, e := regional.ScanService(ctx, svc)
 			if e != nil {
 				log.Printf("ListResources(%s) error: %v", svc, e)
 				continue
@@ -252,9 +305,10 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	var allResources []*pb.Resource
 	var errs []string
 
+	regional := p.scannerFor(ctx, req.Region)
 	services := req.Services
 	if len(services) == 0 {
-		services = p.scanner.SupportedServices()
+		services = regional.SupportedServices()
 	}
 
 	// describeConcurrency caps in-flight GetResource calls. Empirically 20 is
@@ -266,7 +320,7 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 
 	for _, svc := range services {
 		p.currentProgressTracker.StartService(svc)
-		refs, err := p.scanner.ScanService(ctx, svc)
+		refs, err := regional.ScanService(ctx, svc)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("Service %s: %v", svc, err))
 			p.currentProgressTracker.CompleteService(svc, 0, err)
@@ -283,10 +337,14 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 			go func(r *pb.ResourceRef) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				res, derr := p.scanner.DescribeResource(ctx, r)
+				res, derr := regional.DescribeResource(ctx, r)
 				if derr != nil {
 					log.Printf("Describe %s/%s failed: %v", r.Type, r.Id, derr)
-					return
+					// Discovery already found the resource; losing it
+					// because enrichment failed would make the inventory
+					// silently incomplete. Keep what the ref knows, as
+					// ScanService does.
+					res = unenrichedResource(r, res)
 				}
 				results <- res
 			}(ref)
@@ -306,12 +364,12 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	stats.TotalResources = int32(len(allResources))
 	stats.DurationMs = time.Since(scanStartTime).Milliseconds()
 
-	for typeName, reason := range p.scanner.UnsupportedTypes() {
+	for typeName, reason := range regional.UnsupportedTypes() {
 		errs = append(errs, fmt.Sprintf("unsupported_type:%s: %s", typeName, reason))
 	}
 
 	log.Printf("Batch scan %s: %d resources across %d services (%d unsupported types)",
-		scanID, len(allResources), len(services), len(p.scanner.UnsupportedTypes()))
+		scanID, len(allResources), len(services), len(regional.UnsupportedTypes()))
 	enrichCorrelationEvidence(allResources)
 
 	return &pb.BatchScanResponse{
@@ -326,18 +384,19 @@ func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 		return fmt.Errorf("provider not initialized")
 	}
 	ctx := stream.Context()
+	regional := p.scannerFor(ctx, req.Region)
 	services := req.Services
 	if len(services) == 0 {
-		services = p.scanner.SupportedServices()
+		services = regional.SupportedServices()
 	}
 	for _, svc := range services {
-		refs, err := p.scanner.ScanService(ctx, svc)
+		refs, err := regional.ScanService(ctx, svc)
 		if err != nil {
 			log.Printf("Stream scan(%s) error: %v", svc, err)
 			continue
 		}
 		for _, ref := range refs {
-			res, err := p.scanner.DescribeResource(ctx, ref)
+			res, err := regional.DescribeResource(ctx, ref)
 			if err != nil {
 				continue
 			}
@@ -363,7 +422,7 @@ func (p *AWSProvider) DescribeResource(ctx context.Context, req *pb.DescribeReso
 	if req.ResourceRef == nil {
 		return &pb.DescribeResourceResponse{Error: "resource_ref is required"}, nil
 	}
-	res, err := p.scanner.DescribeResource(ctx, req.ResourceRef)
+	res, err := p.scannerFor(ctx, req.ResourceRef.Region).DescribeResource(ctx, req.ResourceRef)
 	if err != nil {
 		return &pb.DescribeResourceResponse{Error: err.Error()}, nil
 	}
@@ -378,23 +437,17 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 		return nil, fmt.Errorf("rate limit exceeded: %w", err)
 	}
 
-	refs, err := p.scanner.ScanService(ctx, req.Service)
+	regional := p.scannerFor(ctx, req.Region)
+	refs, err := regional.ScanService(ctx, req.Service)
 	if err != nil {
 		return nil, fmt.Errorf("scan service %s: %w", req.Service, err)
 	}
 	var resources []*pb.Resource
 	if req.IncludeRelationships {
 		for _, ref := range refs {
-			res, err := p.scanner.DescribeResource(ctx, ref)
+			res, err := regional.DescribeResource(ctx, ref)
 			if err != nil {
-				res = &pb.Resource{
-					Service:      ref.Service,
-					Type:         ref.Type,
-					Id:           ref.Id,
-					Name:         ref.Name,
-					Region:       ref.Region,
-					DiscoveredAt: timestamppb.Now(),
-				}
+				res = unenrichedResource(ref, res)
 			}
 			resources = append(resources, res)
 		}
@@ -423,12 +476,13 @@ func (p *AWSProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 		return fmt.Errorf("provider not initialized")
 	}
 	ctx := stream.Context()
-	refs, err := p.scanner.ScanService(ctx, req.Service)
+	regional := p.scannerFor(ctx, req.Region)
+	refs, err := regional.ScanService(ctx, req.Service)
 	if err != nil {
 		return err
 	}
 	for _, ref := range refs {
-		res, err := p.scanner.DescribeResource(ctx, ref)
+		res, err := regional.DescribeResource(ctx, ref)
 		if err != nil {
 			continue
 		}
@@ -465,8 +519,33 @@ func (p *AWSProvider) Cleanup() error {
 
 	p.explorer = nil
 	p.scanner = nil
+	p.regional = nil
 	p.initialized = false
 	return nil
+}
+
+// unenrichedResource is what is known of a resource whose GetResource call
+// failed: the partial resource the scanner returned alongside the error,
+// if any, otherwise the discovery ref's own fields. A discovered ARN is
+// kept as the resource's ARN, since that is what identifies it elsewhere.
+func unenrichedResource(ref *pb.ResourceRef, partial *pb.Resource) *pb.Resource {
+	res := partial
+	if res == nil {
+		res = &pb.Resource{
+			Provider:     "aws",
+			Service:      ref.Service,
+			Type:         ref.Type,
+			Id:           ref.Id,
+			Name:         ref.Name,
+			Region:       ref.Region,
+			AccountId:    ref.AccountId,
+			DiscoveredAt: timestamppb.Now(),
+		}
+	}
+	if res.Arn == "" && strings.HasPrefix(res.Id, "arn:") {
+		res.Arn = res.Id
+	}
+	return res
 }
 
 func (p *AWSProvider) GetScanProgress() *ProgressReport {
