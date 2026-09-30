@@ -898,7 +898,7 @@ spec:
 
 ## License
 
-[License information here]
+MIT — see [LICENSE](LICENSE).
 
 ## Complete Cloud Posture Analysis Example
 

@@ -14,7 +14,7 @@ env:
   GITHUB_REPOSITORY: ${{ github.repository }}
   GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
   CARGO_DUCKDB_EXT_VERSION: '0.5.0'
-  DUCKDB_EXT_VERSION: 'v1.5.3'
+  DUCKDB_EXT_VERSION: 'v1.5.6'
 
 jobs:
   test:
