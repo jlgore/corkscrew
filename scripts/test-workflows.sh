@@ -50,15 +50,10 @@ echo "Testing build-and-publish.yml with workflow_dispatch..."
 run_workflow "build-and-publish.yml" "workflow_dispatch"
 
 echo ""
-echo "Testing provider-test.yml..."
-run_workflow "provider-test.yml" "workflow_dispatch" '--input provider=aws --input scenario=simple'
-
-echo ""
 echo "🎉 All workflow tests completed!"
 echo ""
 echo "📋 Summary:"
 echo "- build-and-publish.yml: Tests CLI and plugin building"
-echo "- provider-test.yml: Tests provider integration"
 echo ""
 echo "💡 To run a specific workflow without dry-run:"
 echo "   act push -W .github/workflows/build-and-publish.yml -s GITHUB_TOKEN=\"\$(gh auth token)\""

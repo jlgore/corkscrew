@@ -1,3 +1,0 @@
-name: corkscrew-test-harness
-runtime: go
-description: Corkscrew integration test harness using Pulumi automation API

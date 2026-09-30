@@ -28,14 +28,6 @@ act -j detect-changes -s GITHUB_TOKEN="$(gh auth token)"
 ```bash
 # Test push event
 act push -W .github/workflows/build-and-publish.yml -s GITHUB_TOKEN="$(gh auth token)" --dryrun
-
-# Test workflow dispatch with inputs
-act workflow_dispatch -W .github/workflows/provider-test.yml \
-  -s GITHUB_TOKEN="$(gh auth token)" \
-  --input provider=aws --input scenario=simple --dryrun
-
-# Test pull request event
-act pull_request -W .github/workflows/provider-test.yml -s GITHUB_TOKEN="$(gh auth token)" --dryrun
 ```
 
 ### Comprehensive Testing
@@ -65,7 +57,6 @@ act pull_request -W .github/workflows/provider-test.yml -s GITHUB_TOKEN="$(gh au
 | Workflow | Purpose | Act Compatibility |
 |----------|---------|-------------------|
 | `build-and-publish.yml` | Main CI/CD pipeline | ⚠️ Limited (GitHub Actions dependencies) |
-| `provider-test.yml` | Provider integration tests | ✅ Good (detection logic works) |
 | `test-offline.yml` | Self-contained build test | ✅ Excellent (fully working) |
 
 ## Limitations with Act

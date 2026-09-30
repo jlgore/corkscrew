@@ -84,14 +84,6 @@ test_individual_jobs() {
         print_error "test job validation failed"
     fi
     
-    # Test provider test detection
-    print_step "Testing provider-test.yml detect-changes job"
-    if timeout 60s act -j detect-changes --secret-file .secrets --dryrun --quiet; then
-        print_success "detect-changes job validation passed"
-    else
-        print_error "detect-changes job validation failed"
-    fi
-    
     # Test offline workflow
     print_step "Testing test-offline.yml"
     if timeout 60s act -W .github/workflows/test-offline.yml --dryrun --quiet; then
@@ -120,38 +112,6 @@ test_workflow_events() {
         print_success "workflow_dispatch event works"
     else
         print_error "workflow_dispatch event failed"
-    fi
-    
-    # Test pull_request event for provider tests
-    print_step "Testing pull_request event for provider tests"
-    if timeout 60s act pull_request -W .github/workflows/provider-test.yml --dryrun --quiet; then
-        print_success "pull_request event for provider tests works"
-    else
-        print_error "pull_request event for provider tests failed"
-    fi
-    echo ""
-}
-
-# Test with different inputs
-test_workflow_inputs() {
-    print_header "📝 Testing Workflow Inputs"
-    
-    # Test provider test with specific provider
-    print_step "Testing provider-test.yml with AWS provider input"
-    if timeout 60s act workflow_dispatch -W .github/workflows/provider-test.yml \
-        --input provider=aws --input scenario=simple --dryrun --quiet; then
-        print_success "provider input handling works"
-    else
-        print_error "provider input handling failed"
-    fi
-    
-    # Test with multiple providers
-    print_step "Testing provider-test.yml with all providers"
-    if timeout 60s act workflow_dispatch -W .github/workflows/provider-test.yml \
-        --input provider=all --input scenario=complex --dryrun --quiet; then
-        print_success "multiple provider input works"
-    else
-        print_error "multiple provider input failed"
     fi
     echo ""
 }
@@ -212,13 +172,11 @@ generate_report() {
     echo ""
     echo "🚀 Ready for Production:"
     echo "- Build and publish workflow will create plugin binaries"
-    echo "- Provider tests will validate plugin functionality"
     echo "- Registry will be auto-generated with correct versions"
     echo ""
     echo "💡 Recommendations:"
     echo "- Run 'act -j test' to test build job in Docker container"
     echo "- Use 'act push -W .github/workflows/build-and-publish.yml' for full release test"
-    echo "- Test provider workflows with 'act workflow_dispatch -W .github/workflows/provider-test.yml'"
     echo "- Monitor workflow execution times and optimize if needed"
 }
 
@@ -231,7 +189,6 @@ main() {
     test_workflow_validation
     test_individual_jobs
     test_workflow_events
-    test_workflow_inputs
     test_environment
     test_local_simulation
     generate_report

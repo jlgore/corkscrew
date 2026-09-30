@@ -168,8 +168,6 @@ tmp/
 coverage.html
 coverage.out
 
-# Test harness runtime output
-test/harness/results/
 test-results/
 
 # Examples archive
