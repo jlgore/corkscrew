@@ -49,3 +49,8 @@ per entry. Binaries 512 MiB for download, total and entry. The retry cap is name
 (a `time.Duration`, not ms), plus `retryCountMax = 10`. A missing checksum is now a hard error.
 `--allow-unverified` was not added because no flag or option path reaches `DownloadPack`. A
 registry namespace that escapes `destDir` is also rejected.
+
+2026-10-21: Maintainer decision: a missing pack checksum warns instead of failing. Registry versions
+come from GitHub release tarballs and never carry one, so a hard requirement would make every pack
+uninstallable. A present checksum is still verified, and a mismatch is fatal. Real verification is
+tracked in issue 19.

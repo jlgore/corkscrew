@@ -53,20 +53,43 @@ func registryWithPack(serverURL, checksum string) *RegistryClient {
 	return client
 }
 
-func TestDownloadPackRequiresChecksum(t *testing.T) {
+// Registry versions carry no checksum yet (scratch issue 19), so a missing one must not block
+// the install, but it must be announced.
+func TestDownloadPackWarnsWithoutChecksum(t *testing.T) {
+	tarball := packTarball(t, map[string]string{"root/manifest.yaml": "name: acme"})
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		_, _ = w.Write(tarball)
 	}))
 	defer server.Close()
 
+	var warnings bytes.Buffer
 	client := registryWithPack(server.URL, "")
+	client.warnings = &warnings
 	_, err := client.DownloadPack(context.Background(), "acme", "", t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "no checksum") {
-		t.Fatalf("err = %v, want missing checksum error", err)
+	if err != nil && strings.Contains(err.Error(), "verify") {
+		t.Fatalf("err = %v, want no verification failure without a checksum", err)
 	}
-	if requests.Load() != 0 {
-		t.Fatalf("made %d requests before checking the checksum", requests.Load())
+	if requests.Load() != 1 {
+		t.Fatalf("made %d requests, want the download to proceed", requests.Load())
+	}
+	if !strings.Contains(warnings.String(), "UNVERIFIED") {
+		t.Fatalf("warnings = %q, want an unverified-download warning", warnings.String())
+	}
+}
+
+func TestDownloadPackRejectsChecksumMismatch(t *testing.T) {
+	tarball := packTarball(t, map[string]string{"root/manifest.yaml": "name: acme"})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(tarball)
+	}))
+	defer server.Close()
+
+	client := registryWithPack(server.URL, strings.Repeat("0", 64))
+	_, err := client.DownloadPack(context.Background(), "acme", "", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "checksum verification failed") {
+		t.Fatalf("err = %v, want checksum verification failure", err)
 	}
 }
 

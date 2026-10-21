@@ -32,6 +32,7 @@ type RegistryClient struct {
 	userAgent     string
 	baseURLs      []string // Support multiple registry URLs
 	offlineMode   bool
+	warnings      io.Writer // receives unverified-download warnings; os.Stderr by default
 }
 
 // RegistryCache represents the local registry cache structure
@@ -217,6 +218,7 @@ func NewRegistryClient() *RegistryClient {
 			Backoff:    2.0,
 		},
 		userAgent: "Corkscrew-Registry-Client/1.0",
+		warnings:  os.Stderr,
 		baseURLs: []string{
 			"https://api.github.com", // Default GitHub API
 		},
@@ -758,13 +760,13 @@ const (
 
 // downloadAndExtract downloads and extracts a pack tarball
 func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackInfo, version RegistryPackVersion, destDir string) (*QueryPack, error) {
-	// An unverified tarball would let whoever serves the URL choose the pack's SQL.
+	// An unverified tarball lets whoever serves the URL choose the pack's SQL. Versions built
+	// from GitHub release tarballs carry no checksum yet (scratch issue 19), so refusing them
+	// would make every registry pack uninstallable; install them, but say so loudly.
 	if version.Checksum == "" {
-		return nil, RegistryError{
-			Operation: "verify",
-			URL:       version.TarballURL,
-			Message:   "pack version has no checksum; refusing unverified download",
-		}
+		_, _ = fmt.Fprintf(c.warnings,
+			"⚠️  WARNING: pack %s %s has no checksum; installing an UNVERIFIED download from %s\n",
+			packInfo.Namespace, version.Version, version.TarballURL)
 	}
 
 	extractDir, err := packExtractDir(destDir, packInfo.Namespace)
@@ -788,12 +790,14 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 	}
 	defer os.Remove(tmpPath)
 
-	if err := c.verifyChecksum(tmpPath, version.Checksum); err != nil {
-		return nil, RegistryError{
-			Operation: "verify",
-			URL:       version.TarballURL,
-			Message:   "checksum verification failed",
-			Cause:     err,
+	if version.Checksum != "" {
+		if err := c.verifyChecksum(tmpPath, version.Checksum); err != nil {
+			return nil, RegistryError{
+				Operation: "verify",
+				URL:       version.TarballURL,
+				Message:   "checksum verification failed",
+				Cause:     err,
+			}
 		}
 	}
 
