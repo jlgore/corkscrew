@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/orgscan"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
 	"golang.org/x/time/rate"
 )
@@ -273,5 +274,18 @@ func TestConvertResultsKeepsResourceExplorerType(t *testing.T) {
 	}
 	if refs[0].Region != "us-east-1" {
 		t.Fatalf("Region = %q", refs[0].Region)
+	}
+}
+
+// A scan in org mode must use a per-scan view, which lists the organization's
+// accounts once for all services; a single-account scanner passes through.
+func TestForScanScopesOrgScanner(t *testing.T) {
+	cfg := aws.Config{Region: "us-east-1"}
+	if _, ok := forScan(orgscan.New(cfg, orgscan.Config{})).(*orgscan.Scan); !ok {
+		t.Fatal("forScan(OrgScanner) is not an orgscan.Scan")
+	}
+	single := scanner.NewCloudControlScanner(cfg)
+	if got := forScan(single); got != activeScanner(single) {
+		t.Fatalf("forScan(single account) = %T, want the scanner itself", got)
 	}
 }
