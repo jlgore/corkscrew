@@ -1,6 +1,6 @@
 # Graph extension: limit work, results and cache
 
-Status: ready-for-agent
+Status: complete
 Phase: P4
 Depends on: 04
 
@@ -23,3 +23,27 @@ Depends on: 04
 - Hot loop: `common.rs:332-371` allocates a `HashSet` and a `Vec` per visited node, and lowercases
   both strings for every comparison. Use a reusable `FixedBitSet`, lowercase the filter once, and
   compare with `eq_ignore_ascii_case`.
+
+## Comments
+
+2026-10-21: Implemented on `perf/p4`; 23 new tests in `corkscrew-graph-tests` (76 total), written
+first and seen failing.
+
+- Limits: `PATTERN_NODES_MAX` 8, `PATTERN_EDGES_MAX` 56, `MATCH_STEPS_MAX` 100M, `MATCHES_MAX`
+  256, `GROUP_SIZE_MAX` 1024, `CORRELATION_ROWS_MAX` and `TRAVERSE_ROWS_MAX` 1M (match the core's
+  ReadOnly cap), `NODE_COUNT_MAX` 10M, `EDGE_COUNT_MAX` 50M, cache 1..=16, 16 load-lock stripes.
+  Compile-time asserts tie them together and keep counts under `u32::MAX`.
+- Surfacing: hard caps fail the query with a message naming the limit. The match cap is a new
+  last column `was_truncated` on `graph_match_pattern` (the name the stale
+  `test/graph_match.test` already expected). Oversize correlation groups produce a
+  `correlation_type = 'group_skipped'` row (confidence 0, evidence has kind/value/size) that
+  ignores `min_confidence`. `pkg/graphquery` uses `SELECT *`, so both show in CLI output.
+- Behaviour change: `cache_max_entries` 0 used to mean the default (4); it now clamps to 1.
+- Cache: fingerprint (`mtime_ns`, size) before and after load; a changed file is returned but
+  not cached. Striped per-key locks replace the global load lock.
+- Traverse: `for_each_neighbor` with a `FixedBitSet` and parent arrays; `cheapest_edge` for
+  parallel edges; `eq_ignore_ascii_case` byte-window match, so no lowercasing at all.
+- Caveat: the VF2 step budget counts `node_eq` calls only; candidates rejected structurally
+  don't count. vf2 1.0 still sees only one of several parallel edges for edge labels.
+- Clippy `-D warnings` on the extension still fails only on the 4 `dead_code` items issue 04
+  recorded.
