@@ -137,40 +137,9 @@ func Evaluate(ctx context.Context, request EvaluateRequest) (Evaluation, error) 
 			continue
 		}
 		successfulControls++
-		observed := map[string]bool{}
-		for _, row := range result.Rows {
-			status := strings.ToUpper(row.Status)
-			if status != "FAIL" && status != "WARNING" {
-				continue
-			}
-			fingerprint := findingFingerprint(result.PackRef, row.ControlID, scan.Provider, row.ResourceID, scan.ScopeKey)
-			observed[fingerprint] = true
-			finding := Finding{Fingerprint: fingerprint, PackRef: result.PackRef, ControlID: row.ControlID,
-				Provider: scan.Provider, ResourceID: row.ResourceID, ScopeKey: scan.ScopeKey, Title: row.ControlName,
-				Severity: strings.ToUpper(row.Severity), Details: row.Details, Status: "open",
-				FirstSeenScan: scan.ID, LastSeenScan: scan.ID, FirstSeenAt: scan.StartedAt, LastSeenAt: scan.StartedAt}
-			if row.Remediation != nil {
-				finding.Remediation = *row.Remediation
-			}
-			existed, err := findingExists(ctx, tx, fingerprint)
-			if err != nil {
-				return Evaluation{}, err
-			}
-			if existed {
-				evaluation.Recurred++
-			} else {
-				evaluation.Opened++
-			}
-			if err := upsertFinding(ctx, tx, finding); err != nil {
-				return Evaluation{}, err
-			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO finding_occurrences
-(evaluation_id, fingerprint, scan_id, result_status, severity, details, observed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(evaluation_id, fingerprint) DO NOTHING`, evaluation.ID, fingerprint,
-				scan.ID, status, finding.Severity, finding.Details, scan.StartedAt); err != nil {
-				return Evaluation{}, err
-			}
-			evaluation.Findings = append(evaluation.Findings, finding)
+		observed, err := recordResult(ctx, tx, &evaluation, scan, result)
+		if err != nil {
+			return Evaluation{}, err
 		}
 		resolved, err := resolveAbsent(ctx, tx, result.PackRef, result.ControlID, scan, observed)
 		if err != nil {
@@ -246,23 +215,161 @@ func hydrateSnapshot(ctx context.Context, target string, scan dataaccess.ScanRec
 		Scopes: scopes, Status: dataaccess.ScanStatusCompleted, StartedAt: scan.StartedAt, EndedAt: scan.EndedAt, Resources: resources}, dataaccess.PersistScanOptions{})
 }
 
-// rowQuerier is the part of *sql.Tx findingExists needs, so tests can pass
-// a connection whose queries fail.
-type rowQuerier interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+// findingBatchCountMax bounds the rows in one multi-row statement. 256 rows of
+// 16 parameters stays far below driver parameter limits while turning
+// thousands of per-row round trips into a handful.
+const findingBatchCountMax = 256
+
+// findingRecord is one fingerprint's rows from a single control result,
+// folded into what the old one-statement-per-row loop left in the database:
+// the finding carries the last row's values (each upsert overwrote the one
+// before), the occurrence the first row's (later inserts did nothing), and
+// rowCount the number of occurrence_count increments.
+type findingRecord struct {
+	finding          Finding
+	occurrenceStatus string
+	occurrenceFirst  Finding
+	rowCount         int
 }
 
-// findingExists reports whether fingerprint has been seen before. A failed
-// query must not read as "new": that would count a recurring finding as
-// opened.
-func findingExists(ctx context.Context, q rowQuerier, fingerprint string) (bool, error) {
-	var existed bool
-	err := q.QueryRowContext(ctx, `SELECT COUNT(*) > 0 FROM findings WHERE fingerprint = ?`,
-		fingerprint).Scan(&existed)
-	if err != nil {
-		return false, fmt.Errorf("check finding %s: %w", fingerprint, err)
+// recordResult stores the failing rows of one successful control result and
+// returns the fingerprints it observed, for resolveAbsent. Rows are folded
+// per fingerprint, existence is read with batched queries, and findings and
+// occurrences are written with batched statements. It runs once per result,
+// before that result's resolveAbsent, so ordering matches the per-row loop.
+func recordResult(ctx context.Context, tx *sql.Tx, evaluation *Evaluation,
+	scan dataaccess.ScanRecord, result compliance.SimpleQueryResult) (map[string]bool, error) {
+	if result.Error != nil {
+		panic("findings: recordResult called for a failed control")
 	}
-	return existed, nil
+	records, order := foldFailingRows(evaluation, scan, result)
+	existing := make(map[string]bool, len(order))
+	for start := 0; start < len(order); start += findingBatchCountMax {
+		chunk := order[start:min(start+findingBatchCountMax, len(order))]
+		if err := existingFingerprints(ctx, tx, chunk, existing); err != nil {
+			return nil, err
+		}
+	}
+	observed := make(map[string]bool, len(order))
+	for _, fingerprint := range order {
+		record := records[fingerprint]
+		if existing[fingerprint] {
+			evaluation.Recurred += record.rowCount
+		} else {
+			evaluation.Opened++
+			evaluation.Recurred += record.rowCount - 1
+		}
+		observed[fingerprint] = true
+	}
+	for start := 0; start < len(order); start += findingBatchCountMax {
+		chunk := order[start:min(start+findingBatchCountMax, len(order))]
+		if err := upsertFindings(ctx, tx, records, chunk); err != nil {
+			return nil, err
+		}
+		if err := insertOccurrences(ctx, tx, evaluation.ID, scan, records, chunk); err != nil {
+			return nil, err
+		}
+	}
+	if len(observed) != len(records) {
+		panic("findings: observed set disagrees with folded records")
+	}
+	return observed, nil
+}
+
+// foldFailingRows groups the FAIL and WARNING rows of result by fingerprint,
+// in first-seen order, and appends every such row to evaluation.Findings as
+// the per-row loop did, duplicates included.
+func foldFailingRows(evaluation *Evaluation, scan dataaccess.ScanRecord,
+	result compliance.SimpleQueryResult) (map[string]*findingRecord, []string) {
+	records := map[string]*findingRecord{}
+	var order []string
+	for _, row := range result.Rows {
+		status := strings.ToUpper(row.Status)
+		if status != "FAIL" && status != "WARNING" {
+			continue
+		}
+		fingerprint := findingFingerprint(result.PackRef, row.ControlID, scan.Provider,
+			row.ResourceID, scan.ScopeKey)
+		finding := Finding{Fingerprint: fingerprint, PackRef: result.PackRef,
+			ControlID: row.ControlID, Provider: scan.Provider, ResourceID: row.ResourceID,
+			ScopeKey: scan.ScopeKey, Title: row.ControlName,
+			Severity: strings.ToUpper(row.Severity), Details: row.Details, Status: "open",
+			FirstSeenScan: scan.ID, LastSeenScan: scan.ID, FirstSeenAt: scan.StartedAt,
+			LastSeenAt: scan.StartedAt}
+		if row.Remediation != nil {
+			finding.Remediation = *row.Remediation
+		}
+		evaluation.Findings = append(evaluation.Findings, finding)
+		record, seen := records[fingerprint]
+		if seen {
+			record.finding = finding
+			record.rowCount++
+			continue
+		}
+		records[fingerprint] = &findingRecord{finding: finding, occurrenceStatus: status,
+			occurrenceFirst: finding, rowCount: 1}
+		order = append(order, fingerprint)
+	}
+	if len(order) != len(records) {
+		panic("findings: fingerprint order disagrees with folded records")
+	}
+	return records, order
+}
+
+// rowsQuerier is the part of *sql.Tx existingFingerprints needs, so tests can
+// pass a connection whose queries fail.
+type rowsQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// existingFingerprints marks in existing each of fingerprints that is already
+// stored. A failed query must not read as "new": that would count a
+// recurring finding as opened.
+func existingFingerprints(ctx context.Context, q rowsQuerier, fingerprints []string,
+	existing map[string]bool) error {
+	if len(fingerprints) == 0 {
+		return nil
+	}
+	if len(fingerprints) > findingBatchCountMax {
+		panic("findings: existence query exceeds findingBatchCountMax")
+	}
+	args := make([]any, len(fingerprints))
+	for index, fingerprint := range fingerprints {
+		args[index] = fingerprint
+	}
+	rows, err := q.QueryContext(ctx, `SELECT fingerprint FROM findings WHERE fingerprint IN (`+
+		placeholders(len(fingerprints), 1)+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("check %d findings: %w", len(fingerprints), err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fingerprint string
+		if err := rows.Scan(&fingerprint); err != nil {
+			return fmt.Errorf("check findings: %w", err)
+		}
+		existing[fingerprint] = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("check findings: %w", err)
+	}
+	return nil
+}
+
+// placeholders returns count comma-separated groups of width "?" markers,
+// such as "(?, ?), (?, ?)" for count 2 and width 2, or "?, ?" for width 1.
+func placeholders(count, width int) string {
+	if count <= 0 {
+		panic("findings: placeholders needs a positive count")
+	}
+	if width <= 0 {
+		panic("findings: placeholders needs a positive width")
+	}
+	group := strings.TrimSuffix(strings.Repeat("?, ", width), ", ")
+	if width > 1 {
+		group = "(" + group + ")"
+	}
+	return strings.TrimSuffix(strings.Repeat(group+", ", count), ", ")
 }
 
 // decodeJSONColumn unmarshals a JSON text column into dst. An empty column
@@ -274,18 +381,67 @@ func decodeJSONColumn(raw string, dst any) error {
 	return json.Unmarshal([]byte(raw), dst)
 }
 
-func upsertFinding(ctx context.Context, tx *sql.Tx, finding Finding) error {
+// upsertFindings writes one statement for chunk. occurrence_count carries
+// the row count, so a new finding starts at it and a stored one grows by it,
+// matching the per-row upserts that added one each.
+func upsertFindings(ctx context.Context, tx *sql.Tx, records map[string]*findingRecord,
+	chunk []string) error {
+	if len(chunk) == 0 || len(chunk) > findingBatchCountMax {
+		panic("findings: upsert chunk outside 1..findingBatchCountMax")
+	}
+	args := make([]any, 0, len(chunk)*16)
+	for _, fingerprint := range chunk {
+		record := records[fingerprint]
+		if record.rowCount <= 0 {
+			panic("findings: folded record without rows")
+		}
+		finding := record.finding
+		args = append(args, finding.Fingerprint, finding.PackRef, finding.ControlID,
+			finding.Provider, finding.ResourceID, finding.ScopeKey, finding.Title,
+			finding.Severity, finding.Details, nullString(finding.Remediation), "open",
+			finding.FirstSeenScan, finding.LastSeenScan, finding.FirstSeenAt,
+			finding.LastSeenAt, record.rowCount)
+	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO findings
-(fingerprint, pack_ref, control_id, provider, resource_id, scope_key, title, severity, details, remediation,
- status, first_seen_scan, last_seen_scan, first_seen_at, last_seen_at, occurrence_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, 1)
+(fingerprint, pack_ref, control_id, provider, resource_id, scope_key, title, severity, details,
+ remediation, status, first_seen_scan, last_seen_scan, first_seen_at, last_seen_at,
+ occurrence_count)
+VALUES `+placeholders(len(chunk), 16)+`
 ON CONFLICT(fingerprint) DO UPDATE SET title = excluded.title, severity = excluded.severity,
-details = excluded.details, remediation = excluded.remediation, status = 'open', last_seen_scan = excluded.last_seen_scan,
-last_seen_at = excluded.last_seen_at, resolved_at = NULL, occurrence_count = findings.occurrence_count + 1
-WHERE excluded.last_seen_at >= findings.last_seen_at`, finding.Fingerprint, finding.PackRef, finding.ControlID,
-		finding.Provider, finding.ResourceID, finding.ScopeKey, finding.Title, finding.Severity, finding.Details,
-		nullString(finding.Remediation), finding.FirstSeenScan, finding.LastSeenScan, finding.FirstSeenAt, finding.LastSeenAt)
-	return err
+details = excluded.details, remediation = excluded.remediation, status = 'open',
+last_seen_scan = excluded.last_seen_scan, last_seen_at = excluded.last_seen_at,
+resolved_at = NULL, occurrence_count = findings.occurrence_count + excluded.occurrence_count
+WHERE excluded.last_seen_at >= findings.last_seen_at`, args...)
+	if err != nil {
+		return fmt.Errorf("upsert %d findings: %w", len(chunk), err)
+	}
+	return nil
+}
+
+// insertOccurrences writes one statement for chunk, with each fingerprint's
+// first row, as the per-row inserts kept the first and ignored the rest.
+func insertOccurrences(ctx context.Context, tx *sql.Tx, evaluationID string,
+	scan dataaccess.ScanRecord, records map[string]*findingRecord, chunk []string) error {
+	if len(chunk) == 0 || len(chunk) > findingBatchCountMax {
+		panic("findings: occurrence chunk outside 1..findingBatchCountMax")
+	}
+	if evaluationID == "" {
+		panic("findings: occurrences need an evaluation id")
+	}
+	args := make([]any, 0, len(chunk)*7)
+	for _, fingerprint := range chunk {
+		record := records[fingerprint]
+		args = append(args, evaluationID, fingerprint, scan.ID, record.occurrenceStatus,
+			record.occurrenceFirst.Severity, record.occurrenceFirst.Details, scan.StartedAt)
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO finding_occurrences
+(evaluation_id, fingerprint, scan_id, result_status, severity, details, observed_at)
+VALUES `+placeholders(len(chunk), 7)+` ON CONFLICT(evaluation_id, fingerprint) DO NOTHING`,
+		args...)
+	if err != nil {
+		return fmt.Errorf("insert %d finding occurrences: %w", len(chunk), err)
+	}
+	return nil
 }
 
 func resolveAbsent(ctx context.Context, tx *sql.Tx, packRef, controlID string, scan dataaccess.ScanRecord, observed map[string]bool) (int, error) {
