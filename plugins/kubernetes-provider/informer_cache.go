@@ -11,103 +11,260 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 )
 
+const (
+	// informerResyncPeriod is how often informers replay their cache as MODIFIED events.
+	informerResyncPeriod = 30 * time.Second
+
+	// cacheSyncTimeout bounds the initial list of a watch stream. A reflector whose list is
+	// forbidden by RBAC retries forever, so without a bound the stream would neither deliver
+	// the initial state nor report why.
+	cacheSyncTimeout = 2 * time.Minute
+
+	// watchEventBufferSize bounds how far informer handlers may run ahead of the gRPC sender.
+	// Handlers block when it is full rather than drop: a dropped ADDED event is a resource the
+	// client never observes.
+	watchEventBufferSize = 1000
+)
+
+// errInformerCacheStopped ends a watch stream that Stop closed while the client was connected.
+var errInformerCacheStopped = errors.New("informer cache stopped")
+
 // InformerCache manages Kubernetes informers for efficient resource watching
 type InformerCache struct {
-	clientFactory     *ClientFactory
-	informerFactory   dynamicinformer.DynamicSharedInformerFactory
+	// watchClient must not carry a per-request timeout: informers hold their watch requests
+	// open for minutes, and an http.Client timeout would cut every one of them short.
+	watchClient dynamic.Interface
+	// syncTimeout is cacheSyncTimeout in production; tests shorten it.
+	syncTimeout time.Duration
+
+	// resourceInformers holds the informers of the streams currently running, for
+	// GetCachedResources and SyncStatus.
 	resourceInformers map[string]cache.SharedIndexInformer
 	mu                sync.RWMutex
-	stopCh            chan struct{}
+	// stopCh is closed by Stop to end every running stream. No stream holds mu while it
+	// waits, so Stop never waits on a stream.
+	stopCh chan struct{}
 }
 
-// NewInformerCache creates a new informer cache
-func NewInformerCache(clientFactory *ClientFactory) *InformerCache {
+// informerSet is the informers of one stream. Each stream gets its own factory because a
+// factory starts an informer at most once: informers stopped when one client disconnected
+// could never serve the next.
+type informerSet struct {
+	factory   dynamicinformer.DynamicSharedInformerFactory
+	informers map[string]cache.SharedIndexInformer
+}
+
+// NewInformerCache creates a new informer cache that watches through watchClient.
+func NewInformerCache(watchClient dynamic.Interface) *InformerCache {
 	return &InformerCache{
-		clientFactory:     clientFactory,
+		watchClient:       watchClient,
+		syncTimeout:       cacheSyncTimeout,
 		resourceInformers: make(map[string]cache.SharedIndexInformer),
 		stopCh:            make(chan struct{}),
 	}
 }
 
-// SetupInformers sets up informers for the specified resource types. A type it cannot resolve
-// would never be watched, so it is reported rather than skipped; the informers that could be
-// built are returned alongside the joined error.
-func (ic *InformerCache) SetupInformers(ctx context.Context, resourceTypes []string) (map[string]cache.SharedIndexInformer, error) {
-	ic.mu.Lock()
-	defer ic.mu.Unlock()
-
-	// Create informer factory if not exists
-	if ic.informerFactory == nil {
-		ic.informerFactory = dynamicinformer.NewDynamicSharedInformerFactory(
-			ic.clientFactory.GetDynamicClient(),
-			30*time.Second, // Resync period
-		)
+// SetupInformers builds one stream's informers for the specified resource types. A type it
+// cannot resolve would never be watched, so it is reported rather than skipped; the informers
+// that could be built are returned alongside the joined error.
+func (ic *InformerCache) SetupInformers(resourceTypes []string) (*informerSet, error) {
+	if ic.watchClient == nil {
+		return nil, errors.New("informer cache has no watch client")
 	}
-
-	informers := make(map[string]cache.SharedIndexInformer)
+	set := &informerSet{
+		factory: dynamicinformer.NewDynamicSharedInformerFactory(
+			ic.watchClient, informerResyncPeriod,
+		),
+		informers: make(map[string]cache.SharedIndexInformer, len(resourceTypes)),
+	}
 	var errs []error
-
 	for _, resourceType := range resourceTypes {
-		// Get resource definition
 		resourceDef, err := ic.getResourceDefinition(resourceType)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("informer for %s: %w", resourceType, err))
 			continue
 		}
-
-		// Create GVR
 		gvr := schema.GroupVersionResource{
 			Group:    resourceDef.Group,
 			Version:  resourceDef.Version,
 			Resource: resourceDef.Name,
 		}
-
-		// Create informer
-		informer := ic.informerFactory.ForResource(gvr).Informer()
-
-		// Store informer
-		key := fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource)
-		ic.resourceInformers[key] = informer
-		informers[resourceType] = informer
+		set.informers[resourceType] = set.factory.ForResource(gvr).Informer()
 	}
-
-	return informers, errors.Join(errs...)
+	return set, errors.Join(errs...)
 }
 
-// StartInformers starts the informers and begins streaming events
-func (ic *InformerCache) StartInformers(ctx context.Context, informers map[string]cache.SharedIndexInformer, eventChan chan<- *pb.Resource) {
+// StreamInformers runs set until parent is done, Stop is called, send fails, or the caches do
+// not sync within syncTimeout, and passes every event to send. The informers run on a stop
+// channel derived from parent, so they end with the client's stream instead of outliving it.
+// It returns only after every informer goroutine has exited and its handlers are removed.
+func (ic *InformerCache) StreamInformers(
+	parent context.Context, set *informerSet, send func(*pb.Resource) error,
+) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
 	ic.mu.RLock()
-	defer ic.mu.RUnlock()
+	cacheStop := ic.stopCh
+	ic.mu.RUnlock()
 
-	// Add event handlers to each informer
+	eventChan := make(chan *pb.Resource, watchEventBufferSize)
+	registrations, err := ic.addHandlers(ctx, set.informers, eventChan)
+	if err != nil {
+		removeHandlers(set.informers, registrations)
+		return err
+	}
+	ic.trackInformers(set.informers, true)
+	set.factory.Start(ctx.Done())
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		select {
+		case <-cacheStop:
+			cancel()
+		case <-ctx.Done():
+		}
+	})
+	// The sync wait runs beside the reader: the initial ADDED events can outnumber the buffer,
+	// and the handlers only make progress while something receives.
+	syncErr := make(chan error, 1)
+	wg.Go(func() {
+		syncErr <- ic.waitForSync(ctx, registrations)
+	})
+	err = forwardEvents(ctx, eventChan, syncErr, send)
+
+	// Cancel first: Shutdown waits for the informers, which stop only once ctx is done, and
+	// handlers blocked on a full eventChan are released by the same cancel.
+	cancel()
+	set.factory.Shutdown()
+	removeHandlers(set.informers, registrations)
+	ic.trackInformers(set.informers, false)
+	wg.Wait()
+
+	if err != nil {
+		return err
+	}
+	if parent.Err() != nil {
+		return parent.Err()
+	}
+	return errInformerCacheStopped
+}
+
+// forwardEvents sends events until ctx is done, send fails, or the sync wait fails. A nil
+// return means ctx is done.
+func forwardEvents(
+	ctx context.Context,
+	eventChan <-chan *pb.Resource,
+	syncErr <-chan error,
+	send func(*pb.Resource) error,
+) error {
+	for {
+		select {
+		case resource := <-eventChan:
+			if err := send(resource); err != nil {
+				return err
+			}
+		case err := <-syncErr:
+			if err != nil {
+				return err
+			}
+			// Synced; a nil channel is never ready, so stop selecting on it.
+			syncErr = nil
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+// addHandlers registers one event handler per informer. It returns the registrations made so
+// far even on error, so the caller can remove them.
+func (ic *InformerCache) addHandlers(
+	ctx context.Context,
+	informers map[string]cache.SharedIndexInformer,
+	eventChan chan<- *pb.Resource,
+) (map[string]cache.ResourceEventHandlerRegistration, error) {
+	registrations := make(map[string]cache.ResourceEventHandlerRegistration, len(informers))
 	for resourceType, informer := range informers {
-		rt := resourceType // Capture for closure
-		informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		rt := resourceType
+		registration, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				ic.handleEvent("ADDED", rt, obj, eventChan)
+				ic.handleEvent(ctx, "ADDED", rt, obj, eventChan)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				ic.handleEvent("MODIFIED", rt, newObj, eventChan)
+				ic.handleEvent(ctx, "MODIFIED", rt, newObj, eventChan)
 			},
 			DeleteFunc: func(obj interface{}) {
-				ic.handleEvent("DELETED", rt, obj, eventChan)
+				ic.handleEvent(ctx, "DELETED", rt, obj, eventChan)
 			},
 		})
+		if err != nil {
+			return registrations, fmt.Errorf("event handler for %s: %w", resourceType, err)
+		}
+		registrations[resourceType] = registration
 	}
-
-	// Start the informer factory
-	ic.informerFactory.Start(ic.stopCh)
-
-	// Wait for caches to sync
-	ic.informerFactory.WaitForCacheSync(ic.stopCh)
+	return registrations, nil
 }
 
-// handleEvent processes informer events and sends them to the event channel
-func (ic *InformerCache) handleEvent(eventType, resourceType string, obj interface{}, eventChan chan<- *pb.Resource) {
+// removeHandlers removes the handlers addHandlers registered. A removal can only fail for an
+// informer that is already stopped, which delivers nothing more, so the error is ignored.
+func removeHandlers(
+	informers map[string]cache.SharedIndexInformer,
+	registrations map[string]cache.ResourceEventHandlerRegistration,
+) {
+	for resourceType, registration := range registrations {
+		_ = informers[resourceType].RemoveEventHandler(registration)
+	}
+}
+
+// waitForSync waits until every handler has received its informer's initial list, or until
+// syncTimeout passes. It waits on the handler registrations rather than the informers, so
+// sync means the initial events were delivered, not only cached.
+func (ic *InformerCache) waitForSync(
+	ctx context.Context, registrations map[string]cache.ResourceEventHandlerRegistration,
+) error {
+	syncCtx, cancel := context.WithTimeout(ctx, ic.syncTimeout)
+	defer cancel()
+	synced := make([]cache.InformerSynced, 0, len(registrations))
+	for _, registration := range registrations {
+		synced = append(synced, registration.HasSynced)
+	}
+	if cache.WaitForCacheSync(syncCtx.Done(), synced...) {
+		return nil
+	}
+	if ctx.Err() != nil {
+		// The stream ended first; that is not a sync failure.
+		return nil
+	}
+	return fmt.Errorf("informer caches did not sync within %s (is list permitted?)",
+		ic.syncTimeout)
+}
+
+// trackInformers adds or removes a stream's informers from resourceInformers. A key another
+// stream has since replaced is left alone.
+func (ic *InformerCache) trackInformers(informers map[string]cache.SharedIndexInformer, add bool) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	for resourceType, informer := range informers {
+		if add {
+			ic.resourceInformers[resourceType] = informer
+		} else if ic.resourceInformers[resourceType] == informer {
+			delete(ic.resourceInformers, resourceType)
+		}
+	}
+}
+
+// handleEvent converts an informer event and sends it to eventChan. The send blocks, so a slow
+// client slows the informer down instead of losing events; ctx releases it when the stream
+// ends. Blocking here does not stall the informer itself, because client-go queues each
+// handler's notifications separately.
+func (ic *InformerCache) handleEvent(
+	ctx context.Context, eventType, resourceType string, obj interface{},
+	eventChan chan<- *pb.Resource,
+) {
 	unstructuredObj, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		// Try to handle DeletedFinalStateUnknown
@@ -130,9 +287,7 @@ func (ic *InformerCache) handleEvent(eventType, resourceType string, obj interfa
 
 	select {
 	case eventChan <- resource:
-	default:
-		// Channel full, drop event
-		fmt.Printf("Warning: dropping event for %s/%s\n", resourceType, unstructuredObj.GetName())
+	case <-ctx.Done():
 	}
 }
 
@@ -206,7 +361,8 @@ func (ic *InformerCache) GetCachedResources(resourceType string) ([]*pb.Resource
 	return resources, nil
 }
 
-// Stop stops all informers
+// Stop ends every running stream. Streams hold mu only briefly and never across a sync wait,
+// so Stop cannot block behind one; the streams themselves shut down asynchronously.
 func (ic *InformerCache) Stop() {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
@@ -292,54 +448,42 @@ func (ic *InformerCache) getResourceDefinition(resourceType string) (*ResourceDe
 	return nil, fmt.Errorf("resource type %s not found", resourceType)
 }
 
-// WatchResource sets up a watch for a specific resource type
-func (ic *InformerCache) WatchResource(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (<-chan *pb.Resource, error) {
+// WatchResource watches one resource type until ctx is done, then closes the returned channel.
+// Each call builds its own informer: a shared one is started at most once, so a second watch
+// of the same type would end immediately.
+func (ic *InformerCache) WatchResource(
+	ctx context.Context, gvr schema.GroupVersionResource, namespace string,
+) (<-chan *pb.Resource, error) {
+	if ic.watchClient == nil {
+		return nil, errors.New("informer cache has no watch client")
+	}
 	eventChan := make(chan *pb.Resource, 100)
+	informer := dynamicinformer.NewFilteredDynamicInformer(
+		ic.watchClient, gvr, namespace, informerResyncPeriod, cache.Indexers{}, nil,
+	).Informer()
 
-	// Create a specific informer for this resource
-	var informer cache.SharedIndexInformer
-	if namespace != "" {
-		// Namespace-scoped informer
-		informer = ic.informerFactory.ForResource(gvr).Informer()
-	} else {
-		// Cluster-scoped informer
-		informer = ic.informerFactory.ForResource(gvr).Informer()
+	emit := func(eventType string, obj interface{}) {
+		if resource := ic.processWatchEvent(eventType, obj); resource != nil {
+			select {
+			case eventChan <- resource:
+			case <-ctx.Done():
+			}
+		}
+	}
+	registration, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { emit("ADDED", obj) },
+		UpdateFunc: func(oldObj, newObj interface{}) { emit("MODIFIED", newObj) },
+		DeleteFunc: func(obj interface{}) { emit("DELETED", obj) },
+	})
+	if err != nil {
+		return nil, fmt.Errorf("event handler for %s: %w", gvr.Resource, err)
 	}
 
-	// Add event handler
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if resource := ic.processWatchEvent("ADDED", obj); resource != nil {
-				select {
-				case eventChan <- resource:
-				case <-ctx.Done():
-					return
-				}
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if resource := ic.processWatchEvent("MODIFIED", newObj); resource != nil {
-				select {
-				case eventChan <- resource:
-				case <-ctx.Done():
-					return
-				}
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if resource := ic.processWatchEvent("DELETED", obj); resource != nil {
-				select {
-				case eventChan <- resource:
-				case <-ctx.Done():
-					return
-				}
-			}
-		},
-	})
-
-	// Start watching in background
 	go func() {
+		// Run returns after its handlers have finished, so nothing sends after the close.
 		informer.Run(ctx.Done())
+		// The informer is stopped, so a removal error has nothing left to stop.
+		_ = informer.RemoveEventHandler(registration)
 		close(eventChan)
 	}()
 

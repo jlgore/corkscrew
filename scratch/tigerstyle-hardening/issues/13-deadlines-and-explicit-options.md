@@ -43,3 +43,12 @@ per-call deadline, and a timed-out describe keeps its ListResources properties. 
 far reset failing promptly (also through go-github into `appendAPIError`), a cancelled wait,
 client timeouts, the Cloudflare timeout against a hung server and its retry count, the AWS
 retryer bounds, and a GetResource that blocks until its ctx is done.
+
+2026-10-21: Kubernetes item done (with issue 14). `initializePrimaryCluster` and `addCluster` in
+`plugins/kubernetes-provider/kubernetes_provider.go` set `rest.Config.Timeout = apiRequestTimeout`
+(60 s). client-go makes this the `http.Client` timeout, which also covers reading the response
+body, so it would cut every informer watch short. The primary cluster therefore builds a second
+dynamic client (`watchClient`) from a `rest.CopyConfig` taken before the timeout is set, and only
+the informers use it. Those watches are bounded by the reflector's server-side watch timeout and
+by `cacheSyncTimeout`. Additional clusters are never watched, so they get only the bounded config.
+The other items in this issue are still open.

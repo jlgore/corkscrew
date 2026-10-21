@@ -34,6 +34,8 @@ type KubernetesProvider struct {
 	kubeConfig    *rest.Config
 	clientset     kubernetes.Interface
 	dynamicClient dynamic.Interface
+	// watchClient reaches the primary cluster without a per-request timeout, for informers.
+	watchClient dynamic.Interface
 
 	// Core components (following cloud provider patterns)
 	discovery     *APIDiscovery
@@ -60,6 +62,14 @@ type KubernetesProvider struct {
 }
 
 const unsupportedCodegenReason = "Kubernetes provider discovers API resources dynamically"
+
+// apiRequestTimeout bounds every non-watch API request. client-go has no default, so a stalled
+// API server or a half-open connection would hang a scan forever. It becomes the http.Client
+// timeout, which covers reading the whole response body, so it also cuts off watches; informers
+// therefore use a copy of the config without it (see KubernetesProvider.watchClient), where the
+// reflector's server-side watch timeout and cacheSyncTimeout provide the bounds instead. A page
+// of a list call returns in well under this on a healthy cluster.
+const apiRequestTimeout = 60 * time.Second
 
 // ProviderConfig holds configuration for the Kubernetes provider
 type ProviderConfig struct {
@@ -142,7 +152,7 @@ func (p *KubernetesProvider) Initialize(ctx context.Context, req *pb.InitializeR
 	p.scanner = NewResourceScanner(p.clientFactory, p.rateLimiter)
 	p.schemaGen = NewK8sSchemaGenerator()
 	p.relationships = NewRelationshipMapper()
-	p.informerCache = NewInformerCache(p.clientFactory)
+	p.informerCache = NewInformerCache(p.watchClient)
 
 	p.initialized.Store(true)
 
@@ -170,6 +180,8 @@ func (p *KubernetesProvider) initializePrimaryCluster(ctx context.Context) error
 			return fmt.Errorf("failed to create Kubernetes config: %w", err)
 		}
 	}
+	watchConfig := rest.CopyConfig(config)
+	config.Timeout = apiRequestTimeout
 
 	// Create clientset
 	clientset, err := kubernetes.NewForConfig(config)
@@ -183,6 +195,11 @@ func (p *KubernetesProvider) initializePrimaryCluster(ctx context.Context) error
 		return fmt.Errorf("failed to create dynamic client: %w", err)
 	}
 
+	watchClient, err := dynamic.NewForConfig(watchConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create watch client: %w", err)
+	}
+
 	// Test connection
 	_, err = clientset.Discovery().ServerVersion()
 	if err != nil {
@@ -192,6 +209,7 @@ func (p *KubernetesProvider) initializePrimaryCluster(ctx context.Context) error
 	p.kubeConfig = config
 	p.clientset = clientset
 	p.dynamicClient = dynamicClient
+	p.watchClient = watchClient
 
 	// Add to clusters map
 	p.clusters["default"] = &ClusterConnection{
@@ -231,6 +249,8 @@ func (p *KubernetesProvider) addCluster(ctx context.Context, contextName string)
 	if err != nil {
 		return err
 	}
+	// Additional clusters are only scanned, never watched, so they need no unbounded copy.
+	config.Timeout = apiRequestTimeout
 
 	// Create clients
 	clientset, err := kubernetes.NewForConfig(config)
@@ -796,31 +816,14 @@ func (p *KubernetesProvider) clusterStreamer(cluster *ClusterConnection) resourc
 	return NewResourceScannerForCluster(cluster)
 }
 
-// streamWithInformers uses Kubernetes informers for real-time streaming
+// streamWithInformers uses Kubernetes informers for real-time streaming. It runs until the
+// client disconnects, so it never ends with a clean result.
 func (p *KubernetesProvider) streamWithInformers(ctx context.Context, req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	// Set up informers for requested resource types
-	informers, err := p.informerCache.SetupInformers(ctx, req.Services)
+	set, err := p.informerCache.SetupInformers(req.Services)
 	if err != nil {
 		return fmt.Errorf("failed to setup informers: %w", err)
 	}
-
-	// Create event channel
-	eventChan := make(chan *pb.Resource, 1000)
-
-	// Start informers
-	p.informerCache.StartInformers(ctx, informers, eventChan)
-
-	// Stream events
-	for {
-		select {
-		case resource := <-eventChan:
-			if err := stream.Send(resource); err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	return p.informerCache.StreamInformers(ctx, set, stream.Send)
 }
 
 // Helper functions
@@ -1044,37 +1047,21 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 
 // streamWithInformersForService uses informers to stream real-time updates for a specific API group
 func (p *KubernetesProvider) streamWithInformersForService(ctx context.Context, apiGroup string, resourceTypes []string, req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	// Set up informers for the specific resource types
-	informers, err := p.informerCache.SetupInformers(ctx, resourceTypes)
+	set, err := p.informerCache.SetupInformers(resourceTypes)
 	if err != nil {
 		return fmt.Errorf("failed to setup informers: %w", err)
 	}
-
-	// Create event channel
-	eventChan := make(chan *pb.Resource, 1000)
-
-	// Start informers
-	p.informerCache.StartInformers(ctx, informers, eventChan)
-
-	// Stream events
-	for {
-		select {
-		case resource := <-eventChan:
-			// Only send resources from the requested API group
-			if p.getAPIGroupForResource(resource) == apiGroup {
-				// Enrich with relationships if requested
-				if req.IncludeRelationships && p.relationships != nil {
-					resource.Relationships = p.extractBasicRelationships(resource)
-				}
-
-				if err := stream.Send(resource); err != nil {
-					return err
-				}
-			}
-		case <-ctx.Done():
-			return ctx.Err()
+	return p.informerCache.StreamInformers(ctx, set, func(resource *pb.Resource) error {
+		// Only send resources from the requested API group
+		if p.getAPIGroupForResource(resource) != apiGroup {
+			return nil
 		}
-	}
+		// Enrich with relationships if requested
+		if req.IncludeRelationships && p.relationships != nil {
+			resource.Relationships = p.extractBasicRelationships(resource)
+		}
+		return stream.Send(resource)
+	})
 }
 
 // getAPIGroupForResource extracts the API group from a resource
