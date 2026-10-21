@@ -1,6 +1,6 @@
 # Fix fan-out cancellation and small CLI correctness bugs
 
-Status: ready-for-agent
+Status: complete
 Phase: P0
 
 ## Fan-out
@@ -46,3 +46,19 @@ Return an error from `scannerFor` when the provider is not initialized.
   (`-race`).
 - Test: `pack install jlgore/cfi-ccc --dry-run` goes to the registry path.
 - Test: the findings evaluator returns an error when the existence query fails.
+
+## Comments
+
+**2026-10-21:** Implemented.
+- Fan-out: `parallelRepos` breaks out of a labelled loop before `wg.Add`. AWS `BatchScan`
+  (now in `describeAll`) and `orgscan.ScanService` acquire the semaphore with a `select` on
+  `ctx.Done()` and report the cancellation as an error. `initialized` is an `atomic.Bool`,
+  the progress tracker is set under `p.mu`, and `scannerFor` returns `errNotInitialized`
+  after `Cleanup` (all call sites already return errors).
+- `pack install`: `isGitHubPackRef` routes only explicit `github.com/` refs to GitHub. The
+  registry path now refuses to overwrite an installed pack unless `--force` is set; the check
+  lives in `cmd/corkscrew/pack.go`, since `registry.go` belongs to issue 05.
+- `crosscloud scan`: `runNetworkScan` is a removed-command stub, so the three ignored flags
+  were deleted rather than wired through.
+- Findings existence-query test goes through the `findingExists` seam using a closed
+  connection. Making only that query fail inside a full `Evaluate` wasn't practical.
