@@ -134,8 +134,9 @@ either per session:
 Each entry holds a whole graph, so `corkscrew_graph_cache_max_entries` is
 clamped to 1 through 16.
 
-Cache entries auto-invalidate when the backing DuckDB file's mtime (in
-nanoseconds) or size changes, so re-running a scan into the same path doesn't
+Cache entries auto-invalidate when the mtime (in nanoseconds) or size of the
+backing DuckDB file or its `<db>.wal` write-ahead log changes, or the WAL
+appears or disappears, so re-running a scan into the same path doesn't
 need an explicit `graph_cache_invalidate` call. The fingerprint is taken before
 the load starts. A graph whose file changed during its own load goes back to
 that caller but is not cached. Loads of different databases run in parallel.

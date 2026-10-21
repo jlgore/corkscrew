@@ -2588,6 +2588,64 @@ fn fingerprint_distinguishes_rewrites_within_one_second() {
 }
 
 #[test]
+fn fingerprint_covers_the_write_ahead_log() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    // DuckDB appends committed writes to `<db>.wal` and leaves the main file alone
+    // until a checkpoint, so the main file's stat alone misses a rescan.
+    let temp_dir = TempDir::new().unwrap();
+    let database = temp_dir.path().join("fixture.duckdb");
+    let wal = temp_dir.path().join("fixture.duckdb.wal");
+    std::fs::write(&database, b"main").unwrap();
+    let file = std::fs::File::options().write(true).open(&database).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 0)).unwrap();
+    let path = database.to_string_lossy().into_owned();
+
+    let without_wal = loader::fingerprint_path(&path);
+    assert!(without_wal.is_some());
+
+    std::fs::write(&wal, b"wal-1").unwrap();
+    let with_wal = loader::fingerprint_path(&path);
+    assert_ne!(without_wal, with_wal, "a WAL appearing is a new state");
+
+    std::fs::write(&wal, b"wal-1 wal-2").unwrap();
+    let grown_wal = loader::fingerprint_path(&path);
+    assert_ne!(with_wal, grown_wal, "a WAL growing is a new state");
+
+    std::fs::remove_file(&wal).unwrap();
+    assert_eq!(loader::fingerprint_path(&path), without_wal);
+}
+
+#[test]
+fn cache_reloads_when_only_the_write_ahead_log_changes() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp_dir = TempDir::new().unwrap();
+    let database = temp_dir.path().join("wal-only.duckdb");
+    std::fs::write(&database, b"main").unwrap();
+    let file = std::fs::File::options().write(true).open(&database).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(2_000, 0)).unwrap();
+    let path = database.to_string_lossy().into_owned();
+
+    let conn = Connection::open_in_memory().unwrap();
+    let load_count = AtomicUsize::new(0);
+    let load = |conn: &Connection| {
+        load_count.fetch_add(1, Ordering::Relaxed);
+        loader::load_graph(conn, &[])
+    };
+    let first = cache::get_or_load_with(&conn, &path, load).unwrap();
+    let cached = cache::get_or_load_with(&conn, &path, load).unwrap();
+    assert!(Arc::ptr_eq(&first, &cached));
+    assert_eq!(load_count.load(Ordering::Relaxed), 1);
+
+    std::fs::write(temp_dir.path().join("wal-only.duckdb.wal"), b"rescan").unwrap();
+    let reloaded = cache::get_or_load_with(&conn, &path, load).unwrap();
+    assert!(!Arc::ptr_eq(&first, &reloaded), "a WAL-only write must invalidate");
+    assert_eq!(load_count.load(Ordering::Relaxed), 2);
+}
+
+#[test]
 fn cache_does_not_store_a_graph_whose_file_changed_during_load() {
     use std::time::{Duration, UNIX_EPOCH};
 

@@ -5,6 +5,8 @@ use duckdb::Connection;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// Metadata attached to each graph node
@@ -57,11 +59,20 @@ pub struct LoadedGraph {
     pub file_fingerprint: Option<FileFingerprint>,
 }
 
-/// Identity of a file's contents as cheaply observable from `stat`. The mtime
-/// keeps full nanosecond precision: two rewrites within one second that keep
-/// the same size must still compare different.
+/// Identity of a DuckDB database's contents as cheaply observable from `stat`:
+/// the main file plus its write-ahead log. Committed writes land in `<db>.wal`
+/// and reach the main file only at a checkpoint, so a rescan can change the WAL
+/// alone; `wal` is `None` while no WAL exists, which differs from every WAL.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileFingerprint {
+    pub database: StatFingerprint,
+    pub wal: Option<StatFingerprint>,
+}
+
+/// One file's `stat` identity. The mtime keeps full nanosecond precision: two
+/// rewrites within one second that keep the same size must still compare different.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatFingerprint {
     pub mtime_ns: u128,
     pub size_bytes: u64,
 }
@@ -232,13 +243,29 @@ fn load_edges(
     Ok(added)
 }
 
-/// Stats `path` and returns its fingerprint, or `None` if it cannot be stat'd
-/// (for example `:memory:` or a missing file).
+/// Stats the database at `path` and its write-ahead log `<path>.wal`, or returns
+/// `None` if the database cannot be stat'd (for example `:memory:` or a missing
+/// file). A missing WAL is recorded as `None`, a state distinct from any WAL.
 pub fn fingerprint_path(path: &str) -> Option<FileFingerprint> {
+    let database = stat_fingerprint(Path::new(path))?;
+    let wal = stat_fingerprint(&wal_path(path));
+    Some(FileFingerprint { database, wal })
+}
+
+/// DuckDB's write-ahead log for the database at `path`: the same name plus `.wal`.
+fn wal_path(path: &str) -> PathBuf {
+    let mut wal = OsString::from(path);
+    wal.push(".wal");
+    let wal = PathBuf::from(wal);
+    assert!(wal.as_os_str().len() == path.len() + ".wal".len());
+    wal
+}
+
+fn stat_fingerprint(path: &Path) -> Option<StatFingerprint> {
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
     let mtime_ns = mtime.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
-    Some(FileFingerprint {
+    Some(StatFingerprint {
         mtime_ns,
         size_bytes: meta.len(),
     })
