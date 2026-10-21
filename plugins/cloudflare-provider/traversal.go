@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,40 +16,41 @@ import (
 
 func (p *CloudflareProvider) scanAccounts(ctx context.Context) ([]*pb.Resource, []string) {
 	accountsList, err := p.listAccounts(ctx)
+	var errs []string
 	if err != nil {
-		return nil, []string{fmt.Sprintf("accounts list failed: %v", err)}
+		errs = append(errs, fmt.Sprintf("accounts list failed: %v", err))
 	}
 	resources := make([]*pb.Resource, 0, len(accountsList))
 	for _, account := range accountsList {
 		resources = append(resources, p.accountResource(account))
 	}
-	return resources, nil
+	return resources, errs
 }
 
 func (p *CloudflareProvider) scanZones(ctx context.Context) ([]*pb.Resource, []string) {
 	zonesList, err := p.listZones(ctx)
+	var errs []string
 	if err != nil {
-		return nil, []string{fmt.Sprintf("zones list failed: %v", err)}
+		errs = append(errs, fmt.Sprintf("zones list failed: %v", err))
 	}
 	resources := make([]*pb.Resource, 0, len(zonesList))
 	for _, zone := range zonesList {
 		resources = append(resources, p.zoneResource(zone))
 	}
-	return resources, nil
+	return resources, errs
 }
 
 func (p *CloudflareProvider) scanDNS(ctx context.Context) ([]*pb.Resource, []string) {
 	zonesList, err := p.listZones(ctx)
-	if err != nil {
-		return nil, []string{fmt.Sprintf("zones list failed: %v", err)}
-	}
 	resources := make([]*pb.Resource, 0)
 	var errs []string
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("zones list failed: %v", err))
+	}
 	for _, zone := range zonesList {
 		records, err := p.listDNSRecords(ctx, zone.ID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("dns records list failed for zone %s: %v", zone.Name, err))
-			continue
 		}
 		for _, record := range records {
 			resources = append(resources, p.dnsRecordResource(zone, record))
@@ -57,12 +59,43 @@ func (p *CloudflareProvider) scanDNS(ctx context.Context) ([]*pb.Resource, []str
 	return resources, errs
 }
 
+// listItemsMax caps the items collected from one ListAutoPaging listing. The SDK pagers keep
+// requesting pages until one comes back empty, so a server that repeats a page would loop until
+// the deadline; 100k is far beyond any real account's count for one listing. A variable so tests
+// can lower it.
+var listItemsMax = 100_000
+
+// errListItemCap means a listing reached listItemsMax; the items collected are incomplete.
+var errListItemCap = errors.New("listing reached item cap")
+
+// autoPager is the iteration surface shared by the SDK's ListAutoPaging pagers.
+type autoPager[T any] interface {
+	Next() bool
+	Current() T
+	Err() error
+}
+
+// collectAutoPaging drains iter, stopping with errListItemCap once listItemsMax items have been
+// collected. Items gathered before an error are returned with it, so callers keep what they
+// observed and report the listing as incomplete.
+func collectAutoPaging[T any](iter autoPager[T]) ([]T, error) {
+	itemsMax := listItemsMax
+	results := make([]T, 0)
+	for iter.Next() {
+		if len(results) >= itemsMax {
+			return results, fmt.Errorf("%w (%d items)", errListItemCap, itemsMax)
+		}
+		results = append(results, iter.Current())
+	}
+	return results, iter.Err()
+}
+
 func (p *CloudflareProvider) listAccounts(ctx context.Context) ([]accounts.Account, error) {
 	iter := p.client.Accounts.ListAutoPaging(ctx, accounts.AccountListParams{})
+	listed, err := collectAutoPaging(iter)
 	allowedIDs := stringSet(p.config.Scope.AccountIDs)
-	results := make([]accounts.Account, 0)
-	for iter.Next() {
-		account := iter.Current()
+	results := make([]accounts.Account, 0, len(listed))
+	for _, account := range listed {
 		if len(allowedIDs) > 0 {
 			if _, ok := allowedIDs[account.ID]; !ok {
 				continue
@@ -70,10 +103,7 @@ func (p *CloudflareProvider) listAccounts(ctx context.Context) ([]accounts.Accou
 		}
 		results = append(results, account)
 	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return results, err
 }
 
 func (p *CloudflareProvider) listZones(ctx context.Context) ([]zones.Zone, error) {
@@ -94,42 +124,31 @@ func (p *CloudflareProvider) listZones(ctx context.Context) ([]zones.Zone, error
 	if len(p.config.Scope.AccountIDs) > 0 {
 		for _, accountID := range p.config.Scope.AccountIDs {
 			iter := p.client.Zones.ListAutoPaging(ctx, zones.ZoneListParams{Account: cloudflare.F(zones.ZoneListParamsAccount{ID: cloudflare.F(accountID)})})
-			for iter.Next() {
-				zone := iter.Current()
-				if p.zoneAllowed(zone) {
-					zoneByID[zone.ID] = zone
-				}
-			}
-			if err := iter.Err(); err != nil {
-				return nil, err
+			listed, err := collectAutoPaging(iter)
+			p.addAllowedZones(zoneByID, listed)
+			if err != nil {
+				return mapZoneValues(zoneByID), err
 			}
 		}
 		return mapZoneValues(zoneByID), nil
 	}
 
-	iter := p.client.Zones.ListAutoPaging(ctx, zones.ZoneListParams{})
-	for iter.Next() {
-		zone := iter.Current()
+	listed, err := collectAutoPaging(p.client.Zones.ListAutoPaging(ctx, zones.ZoneListParams{}))
+	p.addAllowedZones(zoneByID, listed)
+	return mapZoneValues(zoneByID), err
+}
+
+func (p *CloudflareProvider) addAllowedZones(zoneByID map[string]zones.Zone, listed []zones.Zone) {
+	for _, zone := range listed {
 		if p.zoneAllowed(zone) {
 			zoneByID[zone.ID] = zone
 		}
 	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return mapZoneValues(zoneByID), nil
 }
 
 func (p *CloudflareProvider) listDNSRecords(ctx context.Context, zoneID string) ([]dns.RecordResponse, error) {
 	iter := p.client.DNS.Records.ListAutoPaging(ctx, dns.RecordListParams{ZoneID: cloudflare.F(zoneID)})
-	results := make([]dns.RecordResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) zoneAllowed(zone zones.Zone) bool {

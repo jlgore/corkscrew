@@ -15,39 +15,35 @@ import (
 
 func (p *CloudflareProvider) scanStorage(ctx context.Context) ([]*pb.Resource, []string) {
 	accountIDs, err := p.accountIDsForWorkers(ctx)
-	if err != nil {
-		return nil, []string{fmt.Sprintf("accounts list failed: %v", err)}
-	}
-
 	resources := make([]*pb.Resource, 0)
 	var errs []string
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("accounts list failed: %v", err))
+	}
 
 	for _, accountID := range accountIDs {
 		buckets, err := p.listR2Buckets(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("r2 buckets list failed for account %s: %v", accountID, err))
-		} else {
-			for _, bucket := range buckets {
-				resources = append(resources, p.r2BucketResource(accountID, bucket))
-			}
+		}
+		for _, bucket := range buckets {
+			resources = append(resources, p.r2BucketResource(accountID, bucket))
 		}
 
 		namespaces, err := p.listKVNamespaces(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("kv namespaces list failed for account %s: %v", accountID, err))
-		} else {
-			for _, namespace := range namespaces {
-				resources = append(resources, p.kvNamespaceResource(accountID, namespace))
-			}
+		}
+		for _, namespace := range namespaces {
+			resources = append(resources, p.kvNamespaceResource(accountID, namespace))
 		}
 
 		queuesList, err := p.listQueues(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("queues list failed for account %s: %v", accountID, err))
-		} else {
-			for _, queue := range queuesList {
-				resources = append(resources, p.queueResource(accountID, queue))
-			}
+		}
+		for _, queue := range queuesList {
+			resources = append(resources, p.queueResource(accountID, queue))
 		}
 	}
 
@@ -67,26 +63,12 @@ func (p *CloudflareProvider) listR2Buckets(ctx context.Context, accountID string
 
 func (p *CloudflareProvider) listKVNamespaces(ctx context.Context, accountID string) ([]kv.Namespace, error) {
 	iter := p.client.KV.Namespaces.ListAutoPaging(ctx, kv.NamespaceListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]kv.Namespace, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listQueues(ctx context.Context, accountID string) ([]queues.Queue, error) {
 	iter := p.client.Queues.ListAutoPaging(ctx, queues.QueueListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]queues.Queue, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) r2BucketResource(accountID string, bucket r2.Bucket) *pb.Resource {
