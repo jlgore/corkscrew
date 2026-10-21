@@ -15,54 +15,48 @@ import (
 
 func (p *CloudflareProvider) scanData(ctx context.Context) ([]*pb.Resource, []string) {
 	accountIDs, err := p.accountIDsForWorkers(ctx)
-	if err != nil {
-		return nil, []string{fmt.Sprintf("accounts list failed: %v", err)}
-	}
-
 	resources := make([]*pb.Resource, 0)
 	var errs []string
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("accounts list failed: %v", err))
+	}
 
 	for _, accountID := range accountIDs {
 		databases, err := p.listD1Databases(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("d1 databases list failed for account %s: %v", accountID, err))
-		} else {
-			for _, database := range databases {
-				resources = append(resources, p.d1DatabaseResource(accountID, database))
-			}
+		}
+		for _, database := range databases {
+			resources = append(resources, p.d1DatabaseResource(accountID, database))
 		}
 
 		namespaces, err := p.listDurableObjectNamespaces(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("durable object namespaces list failed for account %s: %v", accountID, err))
-		} else {
-			for _, namespace := range namespaces {
-				resources = append(resources, p.durableObjectNamespaceResource(accountID, namespace))
-				objects, err := p.listDurableObjects(ctx, accountID, namespace.ID)
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("durable objects list failed for namespace %s: %v", namespace.ID, err))
-					continue
-				}
-				for _, object := range objects {
-					resources = append(resources, p.durableObjectResource(accountID, namespace.ID, namespace.Name, object))
-				}
+		}
+		for _, namespace := range namespaces {
+			resources = append(resources, p.durableObjectNamespaceResource(accountID, namespace))
+			objects, err := p.listDurableObjects(ctx, accountID, namespace.ID)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("durable objects list failed for namespace %s: %v", namespace.ID, err))
+			}
+			for _, object := range objects {
+				resources = append(resources, p.durableObjectResource(accountID, namespace.ID, namespace.Name, object))
 			}
 		}
 
 		stores, err := p.listSecretStores(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("secret stores list failed for account %s: %v", accountID, err))
-		} else {
-			for _, store := range stores {
-				resources = append(resources, p.secretStoreResource(accountID, store))
-				secrets, err := p.listSecretStoreSecrets(ctx, accountID, store.ID)
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("secret store secrets list failed for store %s: %v", store.ID, err))
-					continue
-				}
-				for _, secret := range secrets {
-					resources = append(resources, p.secretStoreSecretListResource(accountID, store.ID, store.Name, secret))
-				}
+		}
+		for _, store := range stores {
+			resources = append(resources, p.secretStoreResource(accountID, store))
+			secrets, err := p.listSecretStoreSecrets(ctx, accountID, store.ID)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("secret store secrets list failed for store %s: %v", store.ID, err))
+			}
+			for _, secret := range secrets {
+				resources = append(resources, p.secretStoreSecretListResource(accountID, store.ID, store.Name, secret))
 			}
 		}
 	}
@@ -72,62 +66,27 @@ func (p *CloudflareProvider) scanData(ctx context.Context) ([]*pb.Resource, []st
 
 func (p *CloudflareProvider) listD1Databases(ctx context.Context, accountID string) ([]d1.DatabaseListResponse, error) {
 	iter := p.client.D1.Database.ListAutoPaging(ctx, d1.DatabaseListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]d1.DatabaseListResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listDurableObjectNamespaces(ctx context.Context, accountID string) ([]durable_objects.Namespace, error) {
 	iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]durable_objects.Namespace, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listDurableObjects(ctx context.Context, accountID, namespaceID string) ([]durable_objects.DurableObject, error) {
 	iter := p.client.DurableObjects.Namespaces.Objects.ListAutoPaging(ctx, namespaceID, durable_objects.NamespaceObjectListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]durable_objects.DurableObject, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listSecretStores(ctx context.Context, accountID string) ([]secrets_store.StoreListResponse, error) {
 	iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]secrets_store.StoreListResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listSecretStoreSecrets(ctx context.Context, accountID, storeID string) ([]secrets_store.StoreSecretListResponse, error) {
 	iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]secrets_store.StoreSecretListResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) d1DatabaseResource(accountID string, database d1.DatabaseListResponse) *pb.Resource {

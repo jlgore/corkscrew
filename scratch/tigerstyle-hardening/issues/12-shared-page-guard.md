@@ -48,3 +48,17 @@ token and returns the pages before a failure); `orgscan/orgscan.go` `targetAccou
 (organizations.ListAccounts, fails the listing rather than scanning a truncated account list).
 Guard errors flow into BatchScan Errors as `service:<svc>: …` (or `service:discovery: …`).
 Tests: `TestListTypeStopsOnRepeatedToken`, `TestTargetAccountsStopsOnRepeatedToken`.
+
+2026-10-21 (GitHub and Cloudflare, with issue 11): guarded loops in `plugins/github-provider`:
+- `coverage.go`: `listMembers`, `listOutsideCollaborators`, `listOrgWebhooks`, `listOrgRunners`,
+  `listRepoCollaborators`, `listRepoWebhooks`, `listRepoDeployKeys`, `listRepoRunners` (8).
+- `scanner.go`: `scanAccess` teams, `listReposREST`, plus the new `getRESTPages` (alerts,
+  rulesets, workflows), which guards on the full next-page URL.
+- `provider.go`: `resolveInstallationID`.
+- `graphql.go`: `listReposGraphQL`, which guards on `EndCursor` and treats `HasNextPage` with an
+  empty cursor as an error.
+
+Typed go-github loops use `strconv.Itoa(resp.NextPage)` as the token. Every site uses
+`paging.PagesMax`, not a per-site constant. Cloudflare has no hand-written page loops; its
+`ListAutoPaging` iterators are bounded by an item cap instead (issue 11). The `internal/architecture`
+grep check is still open.
