@@ -29,6 +29,7 @@ jobs:
       azure_version: ${{ steps.versions.outputs.azure_version }}
       gcp_version: ${{ steps.versions.outputs.gcp_version }}
       kubernetes_version: ${{ steps.versions.outputs.kubernetes_version }}
+      cloudflare_version: ${{ steps.versions.outputs.cloudflare_version }}
       create_releases: ${{ steps.versions.outputs.create_releases }}
     steps:
       - name: Determine plugin versions
@@ -51,11 +52,13 @@ jobs:
           AZURE_VERSION="${MAIN_VERSION}-azure${VERSION_SUFFIX}"
           GCP_VERSION="${MAIN_VERSION}-gcp${VERSION_SUFFIX}"
           K8S_VERSION="${MAIN_VERSION}-k8s${VERSION_SUFFIX}"
+          CLOUDFLARE_VERSION="${MAIN_VERSION}-cloudflare${VERSION_SUFFIX}"
           
           echo "aws_version=${AWS_VERSION}" >> $GITHUB_OUTPUT
           echo "azure_version=${AZURE_VERSION}" >> $GITHUB_OUTPUT
           echo "gcp_version=${GCP_VERSION}" >> $GITHUB_OUTPUT
           echo "kubernetes_version=${K8S_VERSION}" >> $GITHUB_OUTPUT
+          echo "cloudflare_version=${CLOUDFLARE_VERSION}" >> $GITHUB_OUTPUT
           echo "create_releases=${CREATE_RELEASES}" >> $GITHUB_OUTPUT
           
           echo "🏷️ Plugin versions:"
@@ -63,6 +66,7 @@ jobs:
           echo "  Azure: ${AZURE_VERSION}"
           echo "  GCP: ${GCP_VERSION}"
           echo "  Kubernetes: ${K8S_VERSION}"
+          echo "  Cloudflare: ${CLOUDFLARE_VERSION}"
           echo "  Create releases: ${CREATE_RELEASES}"
 
   build-aws:
@@ -97,8 +101,16 @@ jobs:
       create_release: ${{ needs.prepare.outputs.create_releases }}
     secrets: inherit
 
+  build-cloudflare:
+    needs: prepare
+    uses: ./.github/workflows/build-cloudflare-provider.yml
+    with:
+      version: ${{ needs.prepare.outputs.cloudflare_version }}
+      create_release: ${{ needs.prepare.outputs.create_releases }}
+    secrets: inherit
+
   update-registry:
-    needs: [prepare, build-aws, build-azure, build-gcp, build-kubernetes]
+    needs: [prepare, build-aws, build-azure, build-gcp, build-kubernetes, build-cloudflare]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -114,6 +126,7 @@ jobs:
           VERSION_AZURE="${{ needs.prepare.outputs.azure_version }}"
           VERSION_GCP="${{ needs.prepare.outputs.gcp_version }}"
           VERSION_K8S="${{ needs.prepare.outputs.kubernetes_version }}"
+          VERSION_CLOUDFLARE="${{ needs.prepare.outputs.cloudflare_version }}"
           REPO="${{ github.repository }}"
           
           echo "🔄 Updating plugin registry with new release versions..."
@@ -126,6 +139,7 @@ jobs:
           sed -i "s|/releases/download/[^/]*/azure-provider-|/releases/download/${VERSION_AZURE}/azure-provider-|g" plugins/registry.json
           sed -i "s|/releases/download/[^/]*/gcp-provider-|/releases/download/${VERSION_GCP}/gcp-provider-|g" plugins/registry.json
           sed -i "s|/releases/download/[^/]*/kubernetes-provider-|/releases/download/${VERSION_K8S}/kubernetes-provider-|g" plugins/registry.json
+          sed -i "s|/releases/download/[^/]*/cloudflare-provider-|/releases/download/${VERSION_CLOUDFLARE}/cloudflare-provider-|g" plugins/registry.json
           
           echo "✅ Updated plugin registry"
           cat plugins/registry.json
@@ -144,6 +158,7 @@ jobs:
             - Azure Provider: ${{ needs.prepare.outputs.azure_version }}
             - GCP Provider: ${{ needs.prepare.outputs.gcp_version }}
             - Kubernetes Provider: ${{ needs.prepare.outputs.kubernetes_version }}
+            - Cloudflare Provider: ${{ needs.prepare.outputs.cloudflare_version }}
             
             🤖 Generated with [Claude Code](https://claude.ai/code)
             
@@ -152,7 +167,7 @@ jobs:
           fi
 
   summary:
-    needs: [prepare, build-aws, build-azure, build-gcp, build-kubernetes, update-registry]
+    needs: [prepare, build-aws, build-azure, build-gcp, build-kubernetes, build-cloudflare, update-registry]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -166,6 +181,7 @@ jobs:
           echo "| Azure | ${{ needs.prepare.outputs.azure_version }} | ${{ needs.build-azure.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| GCP | ${{ needs.prepare.outputs.gcp_version }} | ${{ needs.build-gcp.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Kubernetes | ${{ needs.prepare.outputs.kubernetes_version }} | ${{ needs.build-kubernetes.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cloudflare | ${{ needs.prepare.outputs.cloudflare_version }} | ${{ needs.build-cloudflare.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ needs.prepare.outputs.create_releases }}" = "true" ]; then
@@ -190,7 +206,8 @@ jobs:
           if [ "${{ needs.build-aws.result }}" != "success" ] || \
              [ "${{ needs.build-azure.result }}" != "success" ] || \
              [ "${{ needs.build-gcp.result }}" != "success" ] || \
-             [ "${{ needs.build-kubernetes.result }}" != "success" ]; then
+             [ "${{ needs.build-kubernetes.result }}" != "success" ] || \
+             [ "${{ needs.build-cloudflare.result }}" != "success" ]; then
             echo "❌ One or more plugin builds failed"
             exit 1
           else

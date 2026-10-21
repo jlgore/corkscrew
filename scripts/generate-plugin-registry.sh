@@ -44,6 +44,7 @@ for plugin_dir in plugins/*-provider; do
     STATUS="beta"
     case $PROVIDER_TYPE in
       aws|azure) STATUS="stable" ;;
+      cloudflare) STATUS="alpha" ;;
       *) STATUS="beta" ;;
     esac
     

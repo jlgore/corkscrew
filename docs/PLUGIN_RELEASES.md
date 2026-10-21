@@ -10,6 +10,7 @@ Each cloud provider plugin has its own dedicated workflow for building and relea
 - **Azure Provider**: `.github/workflows/build-azure-provider.yml` 
 - **GCP Provider**: `.github/workflows/build-gcp-provider.yml`
 - **Kubernetes Provider**: `.github/workflows/build-kubernetes-provider.yml`
+- **Cloudflare Provider**: `.github/workflows/build-cloudflare-provider.yml`
 
 Additionally, there's a coordinating workflow to build all plugins together:
 
@@ -63,6 +64,7 @@ This creates versioned releases like:
 - `v1.0.0-azure.1` (Azure Provider) 
 - `v1.0.0-gcp.1` (GCP Provider)
 - `v1.0.0-k8s.1` (Kubernetes Provider)
+- `v1.0.0-cloudflare.1` (Cloudflare Provider)
 
 ### Automatic Trigger
 
@@ -94,6 +96,22 @@ mv aws-provider-linux-amd64 ~/.corkscrew/plugins/aws-provider
 
 # Verify installation
 corkscrew plugin list
+```
+
+The Cloudflare provider release also publishes its manifest as
+`cloudflare-provider-plugin.json`. Install the binary and manifest together
+in the provider's directory:
+
+```bash
+DIR=~/.corkscrew/plugins/official/cloudflare
+mkdir -p "$DIR"
+curl -fL -o "$DIR/cloudflare-provider" \
+  https://github.com/jlgore/corkscrew/releases/download/v1.0.0-cloudflare.1/cloudflare-provider-linux-amd64
+curl -fL -o "$DIR/plugin.json" \
+  https://github.com/jlgore/corkscrew/releases/download/v1.0.0-cloudflare.1/cloudflare-provider-plugin.json
+chmod +x "$DIR/cloudflare-provider"
+
+corkscrew plugin status cloudflare
 ```
 
 ### Auto-installation (Future)
