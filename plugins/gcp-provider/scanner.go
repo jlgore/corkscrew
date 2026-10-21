@@ -97,17 +97,41 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 		log.Printf("Asset Inventory failed, falling back to API scanning: %v", err)
 	}
 
-	// Scan services concurrently, at most rs.concurrency at a time. The slot is
-	// taken before the goroutine starts, so goroutines are bounded too.
+	resultChan, errs := rs.launchServiceScans(ctx)
+
+	var allResources []*pb.ResourceRef
+	for result := range resultChan {
+		allResources = append(allResources, result.resources...)
+		if result.err != nil {
+			errs = append(errs, fmt.Errorf("service %s: %w", result.service, result.err))
+		}
+	}
+	return allResources, errors.Join(errs...)
+}
+
+// launchServiceScans starts every service scan, at most rs.concurrency at a
+// time, and returns a channel of their results that closes once all launched
+// scans finish. The slot is taken before the goroutine starts, so goroutines
+// are bounded too. Once ctx ends no further scan starts; each service left
+// unlaunched gets a ctx.Err() error, so the scan is reported partial instead
+// of those services vanishing (ADR 0023).
+func (rs *ResourceScanner) launchServiceScans(
+	ctx context.Context,
+) (<-chan scanServiceResult, []error) {
 	if rs.concurrency <= 0 {
 		panic("gcp: resource scanner concurrency must be positive")
 	}
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, rs.concurrency)
 	resultChan := make(chan scanServiceResult, len(rs.scanners))
+	var notLaunched []error
 
 	for serviceName, scanner := range rs.scanners {
-		slots <- struct{}{}
+		if !acquireSlot(ctx, slots) {
+			notLaunched = append(notLaunched,
+				fmt.Errorf("service %s: not scanned: %w", serviceName, ctx.Err()))
+			continue
+		}
 		wg.Add(1)
 		go func(name string, s ServiceScanner) {
 			defer wg.Done()
@@ -126,16 +150,29 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 		wg.Wait()
 		close(resultChan)
 	}()
-
-	var allResources []*pb.ResourceRef
-	var errs []error
-	for result := range resultChan {
-		allResources = append(allResources, result.resources...)
-		if result.err != nil {
-			errs = append(errs, fmt.Errorf("service %s: %w", result.service, result.err))
-		}
+	if len(notLaunched) > 0 && ctx.Err() == nil {
+		panic("gcp: services left unlaunched while ctx is live")
 	}
-	return allResources, errors.Join(errs...)
+	return resultChan, notLaunched
+}
+
+// acquireSlot takes a slot unless ctx has ended, reporting whether it did.
+// select picks at random when both cases are ready, so ctx is checked before
+// and again after taking a slot: a scan must never start after cancellation.
+func acquireSlot(ctx context.Context, slots chan struct{}) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	select {
+	case slots <- struct{}{}:
+	case <-ctx.Done():
+		return false
+	}
+	if ctx.Err() != nil {
+		<-slots
+		return false
+	}
+	return true
 }
 
 // StreamScanResources streams resources as they are discovered. It owns resourceChan
