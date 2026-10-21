@@ -34,6 +34,8 @@ func main() {
 
 	// Create the new GCP provider
 	gcpProvider := NewGCPProvider()
+	// plugin.Serve returns when the host shuts the plugin down.
+	defer gcpProvider.Close()
 
 	// Serve the plugin
 	plugin.Serve(&plugin.ServeConfig{
