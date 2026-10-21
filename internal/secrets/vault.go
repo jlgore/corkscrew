@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -35,6 +36,18 @@ type Reference struct {
 type Reader interface {
 	ReadSecret(ctx context.Context, ref Reference) (map[string]string, error)
 }
+
+// vaultRequestTimeout bounds one secret read. A KV read is a single small GET; without a
+// timeout a stalled Vault connection would hang credential resolution and the scan behind it.
+const vaultRequestTimeout = 30 * time.Second
+
+// maxVaultResponseBytes caps a secret response. KV secrets are small, and a truncated body
+// would fail to decode with a misleading error, so oversize responses are rejected outright.
+const maxVaultResponseBytes = 1 << 20
+
+// defaultVaultClient is used when VaultReader.HTTPClient is nil; http.DefaultClient has no
+// timeout.
+var defaultVaultClient = &http.Client{Timeout: vaultRequestTimeout}
 
 type VaultReader struct {
 	HTTPClient *http.Client
@@ -72,20 +85,14 @@ func (r *VaultReader) ReadSecret(ctx context.Context, ref Reference) (map[string
 		req.Header.Set("X-Vault-Namespace", ref.Namespace)
 	}
 
-	client := http.DefaultClient
+	client := defaultVaultClient
 	if r != nil && r.HTTPClient != nil {
 		client = r.HTTPClient
 	}
 
-	resp, err := client.Do(req)
+	status, body, err := doVaultRequest(client, req)
 	if err != nil {
-		return nil, fmt.Errorf("read vault secret: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, fmt.Errorf("read vault response: %w", err)
+		return nil, err
 	}
 
 	var payload vaultSecretResponse
@@ -95,11 +102,11 @@ func (r *VaultReader) ReadSecret(ctx context.Context, ref Reference) (map[string
 		return nil, fmt.Errorf("decode vault response: %w", err)
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if status < 200 || status >= 300 {
 		if len(payload.Errors) > 0 {
 			return nil, fmt.Errorf("read vault secret: %s", strings.Join(payload.Errors, "; "))
 		}
-		return nil, fmt.Errorf("read vault secret: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("read vault secret: status %d", status)
 	}
 
 	data := payload.Data
@@ -111,6 +118,24 @@ func (r *VaultReader) ReadSecret(ctx context.Context, ref Reference) (map[string
 		data = nested
 	}
 	return stringifySecretData(data), nil
+}
+
+// doVaultRequest sends req and returns the status and a size-checked body.
+func doVaultRequest(client *http.Client, req *http.Request) (int, []byte, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("read vault secret: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxVaultResponseBytes+1))
+	if err != nil {
+		return 0, nil, fmt.Errorf("read vault response: %w", err)
+	}
+	if len(body) > maxVaultResponseBytes {
+		return 0, nil, fmt.Errorf("vault response exceeds %d bytes", maxVaultResponseBytes)
+	}
+	return resp.StatusCode, body, nil
 }
 
 type vaultSecretResponse struct {

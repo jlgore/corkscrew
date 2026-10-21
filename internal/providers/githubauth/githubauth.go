@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -125,7 +126,7 @@ func BootstrapApp(ctx context.Context, request BootstrapRequest) (*AppConversion
 	}
 	select {
 	case code := <-codeCh:
-		return convertManifest(code)
+		return convertManifest(ctx, manifestClient, githubAPIBaseURL, code)
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("timed out waiting for GitHub callback")
 	case <-ctx.Done():
@@ -158,21 +159,46 @@ func manifestCallbackHandler(state string, codeCh chan<- string) http.HandlerFun
 	}
 }
 
-func convertManifest(code string) (*AppConversion, error) {
-	url := fmt.Sprintf("https://api.github.com/app-manifests/%s/conversions", code)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(nil))
+// githubAPIBaseURL is the GitHub REST API root used for the manifest conversion.
+const githubAPIBaseURL = "https://api.github.com"
+
+// manifestConversionTimeout bounds the one conversion call. It is a single small POST, so a
+// response that has not arrived in this time is a stalled connection, not a slow server.
+const manifestConversionTimeout = 30 * time.Second
+
+// maxManifestConversionBytes caps the conversion response. The credential set (PEM key, client
+// and webhook secrets) is a few KiB; anything larger is not a real GitHub response.
+const maxManifestConversionBytes = 1 << 20
+
+// manifestClient is the HTTP client for the manifest conversion. http.DefaultClient has no
+// timeout, so a stalled GitHub connection would hang bootstrap forever.
+var manifestClient = &http.Client{Timeout: manifestConversionTimeout}
+
+func convertManifest(ctx context.Context, client *http.Client, baseURL, code string) (
+	*AppConversion, error) {
+	// The code comes from the callback query string, so escape it rather than let it alter
+	// the request path.
+	endpoint := fmt.Sprintf("%s/app-manifests/%s/conversions", baseURL, url.PathEscape(code))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(nil))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestConversionBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read manifest conversion response: %w", err)
+	}
+	if len(body) > maxManifestConversionBytes {
+		return nil, fmt.Errorf("manifest conversion response exceeds %d bytes",
+			maxManifestConversionBytes)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("manifest conversion failed: %s: %s", resp.Status, string(body))
 	}

@@ -103,3 +103,10 @@ func TestNoopRefresherReturnsOriginal(t *testing.T) {
 		t.Fatal("expected noop refresher to return original profile")
 	}
 }
+
+func TestCloudflareTokenValidatorDefaultClientHasTimeout(t *testing.T) {
+	client := (&CloudflareTokenValidator{}).httpClient()
+	if client.Timeout != tokenValidationTimeout || client.Timeout <= 0 {
+		t.Fatalf("default validation client timeout = %v", client.Timeout)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -28,11 +29,21 @@ type CloudflareTokenValidator struct {
 	BaseURL    string
 }
 
+// tokenValidationTimeout bounds one validation call. Validation is a single small GET made
+// before a scan starts; http.DefaultClient has no timeout, so a stalled connection would hang it.
+const tokenValidationTimeout = 30 * time.Second
+
+// maxValidationResponseBytes caps the validation response body, which is a short JSON object.
+const maxValidationResponseBytes = 1 << 20
+
+// defaultValidationClient is used when CloudflareTokenValidator.HTTPClient is nil.
+var defaultValidationClient = &http.Client{Timeout: tokenValidationTimeout}
+
 func (v *CloudflareTokenValidator) httpClient() *http.Client {
 	if v.HTTPClient != nil {
 		return v.HTTPClient
 	}
-	return http.DefaultClient
+	return defaultValidationClient
 }
 
 func (v *CloudflareTokenValidator) baseURL() string {
@@ -87,7 +98,9 @@ func (v *CloudflareTokenValidator) validateAPIToken(ctx context.Context, token s
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	// A body over the cap is truncated and then fails to decode, which reports as invalid.
+	body := io.LimitReader(resp.Body, maxValidationResponseBytes)
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
 		result.Errors = append(result.Errors, "decode failed: "+err.Error())
 		return result, nil
 	}
@@ -127,7 +140,9 @@ func (v *CloudflareTokenValidator) validateAPIKey(ctx context.Context, apiKey, e
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	// A body over the cap is truncated and then fails to decode, which reports as invalid.
+	body := io.LimitReader(resp.Body, maxValidationResponseBytes)
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
 		result.Errors = append(result.Errors, "decode failed: "+err.Error())
 		return result, nil
 	}
