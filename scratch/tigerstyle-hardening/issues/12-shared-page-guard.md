@@ -1,6 +1,6 @@
 # Add a shared pagination guard and use it in every page loop
 
-Status: ready-for-agent
+Status: in-progress
 Phase: P3
 
 ## Problem
@@ -75,3 +75,6 @@ grep check is still open.
 - Kubernetes: `scanner.go` `streamResourceType` guards the continue token. The `for { select }`
   loops in `kubernetes_provider.go` are informer event loops, not pagination.
 
+
+2026-10-21: The guard package and every provider loop listed above are done. Remaining: the
+`internal/architecture` grep check that fails on an unguarded page loop.
