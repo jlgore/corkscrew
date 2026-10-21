@@ -20,6 +20,8 @@ type ResourceScanner struct {
 	clientFactory  *ClientFactory
 	assetInventory *AssetInventoryClient
 	scanners       map[string]ServiceScanner
+	// concurrency caps the service scans ScanAllServices runs at once.
+	concurrency int
 }
 
 // ServiceScanner interface for service-specific scanners
@@ -28,11 +30,16 @@ type ServiceScanner interface {
 	DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error)
 }
 
-// NewResourceScanner creates a new resource scanner
-func NewResourceScanner(cf *ClientFactory) *ResourceScanner {
+// NewResourceScanner creates a new resource scanner that runs at most
+// concurrency service scans at once.
+func NewResourceScanner(cf *ClientFactory, concurrency int) *ResourceScanner {
+	if concurrency <= 0 {
+		panic("gcp: resource scanner concurrency must be positive")
+	}
 	rs := &ResourceScanner{
 		clientFactory: cf,
 		scanners:      make(map[string]ServiceScanner),
+		concurrency:   concurrency,
 	}
 
 	// Register service-specific scanners
@@ -90,14 +97,21 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 		log.Printf("Asset Inventory failed, falling back to API scanning: %v", err)
 	}
 
-	// Scan all services concurrently
+	// Scan services concurrently, at most rs.concurrency at a time. The slot is
+	// taken before the goroutine starts, so goroutines are bounded too.
+	if rs.concurrency <= 0 {
+		panic("gcp: resource scanner concurrency must be positive")
+	}
 	var wg sync.WaitGroup
+	slots := make(chan struct{}, rs.concurrency)
 	resultChan := make(chan scanServiceResult, len(rs.scanners))
 
 	for serviceName, scanner := range rs.scanners {
+		slots <- struct{}{}
 		wg.Add(1)
 		go func(name string, s ServiceScanner) {
 			defer wg.Done()
+			defer func() { <-slots }()
 
 			resources, err := s.Scan(ctx)
 			resultChan <- scanServiceResult{
