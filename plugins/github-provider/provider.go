@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,13 +28,12 @@ const providerVersion = "0.1.0"
 var githubServices = []string{"orgs", "repos", "security", "actions", "access", "findings"}
 
 type GitHubProvider struct {
-	initialized     bool
-	org             string
-	client          *github.Client
-	gqlClient       *githubv4.Client
-	concurrency     int
-	protectionCache sync.Map // key: "owner/name@branch" → branchProtectionState
-	listCache       sync.Map // key: listCacheKey(...) → *listEntry
+	initialized bool
+	org         string
+	client      *github.Client
+	gqlClient   *githubv4.Client
+	concurrency int
+	listCache   sync.Map // key: listCacheKey(...) → *listEntry
 }
 
 const defaultRepoConcurrency = 8
@@ -145,6 +145,7 @@ func (p *GitHubProvider) ScanService(ctx context.Context, req *pb.ScanServiceReq
 	}
 
 	start := time.Now()
+	ctx = withProtectionCache(ctx)
 	service := req.Service
 	if service == "" {
 		service = "repos"
@@ -207,6 +208,8 @@ func (p *GitHubProvider) DescribeResource(ctx context.Context, req *pb.DescribeR
 
 func (p *GitHubProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
 	start := time.Now()
+	// One protection cache for the whole batch: `findings` reuses what `repos` fetched.
+	ctx = withProtectionCache(ctx)
 	services := req.Services
 	if len(services) == 0 {
 		services = []string{"repos", "security", "findings"}
@@ -237,8 +240,9 @@ func (p *GitHubProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudPr
 	if len(services) == 0 {
 		services = []string{"repos", "security", "findings"}
 	}
+	ctx := withProtectionCache(stream.Context())
 	for _, service := range services {
-		resp, err := p.ScanService(stream.Context(), &pb.ScanServiceRequest{Service: service, IncludeRelationships: req.IncludeRelationships})
+		resp, err := p.ScanService(ctx, &pb.ScanServiceRequest{Service: service, IncludeRelationships: req.IncludeRelationships})
 		if err != nil {
 			return err
 		}
@@ -452,6 +456,7 @@ func resolveInstallationID(ctx context.Context, cfg *providerConfig) (int64, err
 		}
 	}
 	opt := &github.ListOptions{PerPage: 100}
+	guard := paging.New("GitHub App installations", paging.PagesMax)
 	for {
 		installations, resp, err := client.Apps.ListInstallations(ctx, opt)
 		if err != nil {
@@ -464,6 +469,9 @@ func resolveInstallationID(ctx context.Context, cfg *providerConfig) (int64, err
 		}
 		if resp == nil || resp.NextPage == 0 {
 			break
+		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			return 0, err
 		}
 		opt.Page = resp.NextPage
 	}

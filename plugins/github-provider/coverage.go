@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 )
 
 // This file holds the resource scanners added in Phase 6 — coverage for
@@ -15,14 +17,16 @@ import (
 // (webhooks, deploy keys, self-hosted runners).
 //
 // All paginators follow the same shape: drive go-github's typed list call
-// with PerPage:100, terminate on no NextPage, and on error route through
-// appendAPIError so 403/404 become "skipped" notes rather than scan failures.
+// with PerPage:100, terminate on no NextPage, bound the loop with a
+// paging.Guard so a server repeating NextPage cannot spin until the deadline,
+// and on error route through appendAPIError so the scope is reported partial.
 
 // ----- org-level inventory -----
 
 func (p *GitHubProvider) listMembers(ctx context.Context, errors *[]string) []*pb.Resource {
 	var resources []*pb.Resource
 	opt := &github.ListMembersOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	guard := paging.New("members"+" "+p.org, paging.PagesMax)
 	for {
 		members, resp, err := p.client.Organizations.ListMembers(ctx, p.org, opt)
 		if err != nil {
@@ -39,6 +43,10 @@ func (p *GitHubProvider) listMembers(ctx context.Context, errors *[]string) []*p
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "members", p.org, err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -47,6 +55,7 @@ func (p *GitHubProvider) listMembers(ctx context.Context, errors *[]string) []*p
 func (p *GitHubProvider) listOutsideCollaborators(ctx context.Context, errors *[]string) []*pb.Resource {
 	var resources []*pb.Resource
 	opt := &github.ListOutsideCollaboratorsOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	guard := paging.New("outside_collaborators"+" "+p.org, paging.PagesMax)
 	for {
 		users, resp, err := p.client.Organizations.ListOutsideCollaborators(ctx, p.org, opt)
 		if err != nil {
@@ -63,6 +72,10 @@ func (p *GitHubProvider) listOutsideCollaborators(ctx context.Context, errors *[
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "outside_collaborators", p.org, err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -71,6 +84,7 @@ func (p *GitHubProvider) listOutsideCollaborators(ctx context.Context, errors *[
 func (p *GitHubProvider) listOrgWebhooks(ctx context.Context, errors *[]string) []*pb.Resource {
 	var resources []*pb.Resource
 	opt := &github.ListOptions{PerPage: 100}
+	guard := paging.New("org_webhooks"+" "+p.org, paging.PagesMax)
 	for {
 		hooks, resp, err := p.client.Organizations.ListHooks(ctx, p.org, opt)
 		if err != nil {
@@ -83,6 +97,10 @@ func (p *GitHubProvider) listOrgWebhooks(ctx context.Context, errors *[]string) 
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "org_webhooks", p.org, err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -91,6 +109,7 @@ func (p *GitHubProvider) listOrgWebhooks(ctx context.Context, errors *[]string) 
 func (p *GitHubProvider) listOrgRunners(ctx context.Context, errors *[]string) []*pb.Resource {
 	var resources []*pb.Resource
 	opt := &github.ListRunnersOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	guard := paging.New("org_runners"+" "+p.org, paging.PagesMax)
 	for {
 		runners, resp, err := p.client.Actions.ListOrganizationRunners(ctx, p.org, opt)
 		if err != nil {
@@ -114,6 +133,10 @@ func (p *GitHubProvider) listOrgRunners(ctx context.Context, errors *[]string) [
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "org_runners", p.org, err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -125,6 +148,7 @@ func (p *GitHubProvider) listRepoCollaborators(ctx context.Context, repo *github
 	var resources []*pb.Resource
 	owner, name := repoOwnerName(repo)
 	opt := &github.ListCollaboratorsOptions{Affiliation: "all", ListOptions: github.ListOptions{PerPage: 100}}
+	guard := paging.New("collaborators"+" "+repo.GetFullName(), paging.PagesMax)
 	for {
 		users, resp, err := p.client.Repositories.ListCollaborators(ctx, owner, name, opt)
 		if err != nil {
@@ -143,6 +167,10 @@ func (p *GitHubProvider) listRepoCollaborators(ctx context.Context, repo *github
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "collaborators", repo.GetFullName(), err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -152,6 +180,7 @@ func (p *GitHubProvider) listRepoWebhooks(ctx context.Context, repo *github.Repo
 	var resources []*pb.Resource
 	owner, name := repoOwnerName(repo)
 	opt := &github.ListOptions{PerPage: 100}
+	guard := paging.New("repo_webhooks"+" "+repo.GetFullName(), paging.PagesMax)
 	for {
 		hooks, resp, err := p.client.Repositories.ListHooks(ctx, owner, name, opt)
 		if err != nil {
@@ -164,6 +193,10 @@ func (p *GitHubProvider) listRepoWebhooks(ctx context.Context, repo *github.Repo
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "repo_webhooks", repo.GetFullName(), err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -173,6 +206,7 @@ func (p *GitHubProvider) listRepoDeployKeys(ctx context.Context, repo *github.Re
 	var resources []*pb.Resource
 	owner, name := repoOwnerName(repo)
 	opt := &github.ListOptions{PerPage: 100}
+	guard := paging.New("deploy_keys"+" "+repo.GetFullName(), paging.PagesMax)
 	for {
 		keys, resp, err := p.client.Repositories.ListKeys(ctx, owner, name, opt)
 		if err != nil {
@@ -191,6 +225,10 @@ func (p *GitHubProvider) listRepoDeployKeys(ctx context.Context, repo *github.Re
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "deploy_keys", repo.GetFullName(), err)
+			return resources
+		}
 		opt.Page = resp.NextPage
 	}
 	return resources
@@ -200,6 +238,7 @@ func (p *GitHubProvider) listRepoRunners(ctx context.Context, repo *github.Repos
 	var resources []*pb.Resource
 	owner, name := repoOwnerName(repo)
 	opt := &github.ListRunnersOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	guard := paging.New("repo_runners"+" "+repo.GetFullName(), paging.PagesMax)
 	for {
 		runners, resp, err := p.client.Actions.ListRunners(ctx, owner, name, opt)
 		if err != nil {
@@ -223,6 +262,10 @@ func (p *GitHubProvider) listRepoRunners(ctx context.Context, repo *github.Repos
 		}
 		if resp == nil || resp.NextPage == 0 {
 			break
+		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			appendAPIError(errors, "repo_runners", repo.GetFullName(), err)
+			return resources
 		}
 		opt.Page = resp.NextPage
 	}

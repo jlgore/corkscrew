@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/google/go-github/v71/github"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"github.com/shurcooL/githubv4"
 )
 
@@ -76,9 +77,11 @@ func newGraphQLClient(httpClient *http.Client, baseURL string) *githubv4.Client 
 	return githubv4.NewClient(httpClient)
 }
 
-// listReposGraphQL fetches all org repos via GraphQL, populating
-// protectionCache as it goes so the subsequent scan paths skip the per-repo
-// REST roundtrip for branch protection.
+// listReposGraphQL fetches all org repos via GraphQL, populating the scan's
+// protection cache as it goes so the subsequent scan paths skip the per-repo
+// REST roundtrip for branch protection. An empty or repeated EndCursor while
+// HasNextPage stays true is an error (listRepos then falls back to REST)
+// rather than a loop that runs until the deadline.
 func (p *GitHubProvider) listReposGraphQL(ctx context.Context) ([]*github.Repository, error) {
 	if p.gqlClient == nil {
 		return nil, fmt.Errorf("graphql client unavailable")
@@ -88,6 +91,7 @@ func (p *GitHubProvider) listReposGraphQL(ctx context.Context) ([]*github.Reposi
 		"org":    githubv4.String(p.org),
 		"cursor": (*githubv4.String)(nil),
 	}
+	guard := paging.New("graphql repositories "+p.org, paging.PagesMax)
 	for {
 		var q orgReposQuery
 		if err := p.gqlClient.Query(ctx, &q, vars); err != nil {
@@ -96,12 +100,19 @@ func (p *GitHubProvider) listReposGraphQL(ctx context.Context) ([]*github.Reposi
 		for _, node := range q.Organization.Repositories.Nodes {
 			repo := convertGraphQLRepo(node)
 			repos = append(repos, repo)
-			p.cacheBranchProtectionFromGraphQL(repo, node)
+			p.cacheBranchProtectionFromGraphQL(ctx, repo, node)
 		}
-		if !q.Organization.Repositories.PageInfo.HasNextPage {
+		pageInfo := q.Organization.Repositories.PageInfo
+		if !pageInfo.HasNextPage {
 			break
 		}
-		vars["cursor"] = githubv4.NewString(q.Organization.Repositories.PageInfo.EndCursor)
+		if pageInfo.EndCursor == "" {
+			return nil, fmt.Errorf("graphql repositories %s: hasNextPage without endCursor", p.org)
+		}
+		if err := guard.Next(string(pageInfo.EndCursor)); err != nil {
+			return nil, err
+		}
+		vars["cursor"] = githubv4.NewString(pageInfo.EndCursor)
 	}
 	return repos, nil
 }
@@ -129,22 +140,28 @@ func convertGraphQLRepo(n orgRepoNode) *github.Repository {
 }
 
 // cacheBranchProtectionFromGraphQL writes the (possibly absent) branch
-// protection state into protectionCache so checkBranchProtection becomes a
+// protection state into the scan's cache so checkBranchProtection becomes a
 // pure cache hit. Distinguishing nil DefaultBranchRef (empty repo, no default
 // branch — bpNoBranch) from a present-but-unprotected branch (bpUnprotected)
 // matches the REST path's semantics.
-func (p *GitHubProvider) cacheBranchProtectionFromGraphQL(repo *github.Repository, n orgRepoNode) {
+func (p *GitHubProvider) cacheBranchProtectionFromGraphQL(
+	ctx context.Context, repo *github.Repository, n orgRepoNode,
+) {
+	cache := protectionCacheFrom(ctx)
+	if cache == nil {
+		return
+	}
 	owner, name := repoOwnerName(repo)
 	if n.DefaultBranchRef == nil {
 		key := fmt.Sprintf("%s/%s@", owner, name)
-		p.protectionCache.Store(key, branchProtectionState{status: bpNoBranch})
+		cache.Store(key, branchProtectionState{status: bpNoBranch})
 		return
 	}
 	branch := string(n.DefaultBranchRef.Name)
 	key := fmt.Sprintf("%s/%s@%s", owner, name, branch)
 
 	if n.DefaultBranchRef.BranchProtectionRule == nil {
-		p.protectionCache.Store(key, branchProtectionState{status: bpUnprotected})
+		cache.Store(key, branchProtectionState{status: bpUnprotected})
 		return
 	}
 
@@ -166,7 +183,7 @@ func (p *GitHubProvider) cacheBranchProtectionFromGraphQL(repo *github.Repositor
 	resource := p.resource("repos", "branch_protection",
 		fmt.Sprintf("%s/branches/%s/protection", repo.GetFullName(), branch),
 		branch, rule, attrs)
-	p.protectionCache.Store(key, branchProtectionState{
+	cache.Store(key, branchProtectionState{
 		resource: resource,
 		status:   bpProtected,
 	})
