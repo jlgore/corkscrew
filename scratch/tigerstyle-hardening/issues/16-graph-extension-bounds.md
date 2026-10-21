@@ -47,3 +47,18 @@ first and seen failing.
   don't count. vf2 1.0 still sees only one of several parallel edges for edge labels.
 - Clippy `-D warnings` on the extension still fails only on the 4 `dead_code` items issue 04
   recorded.
+
+2026-10-21 (after review of `main...perf/p4`); 84 tests now:
+
+- Match: budget spent while probing past `MATCHES_MAX` returns the rows with
+  `was_truncated = true` instead of failing. `was_truncated` now means "cap reached, may be more".
+- Correlators: `GROUP_SIZE_MAX` replaced by `GROUP_PAIRS_MAX = 500_000` cross-provider pairs.
+  Groups are split by provider; single-provider groups are never flagged. Fixes large DNS zones
+  and multi-account shared IPs losing all matches. Skipped-row evidence now has
+  `group_providers`, `group_pairs`, `group_pairs_max`.
+- BFS: `FixedBitSet` and graph-sized parent arrays replaced by `HashMap`/`HashSet`, so memory
+  grows with visited nodes (a full-graph traversal costs more; small queries on huge graphs no
+  longer allocate ~120 MB). `fixedbitset` dependency removed.
+- Patterns: a non-empty node `type_filter` OR edge `rel_filter` satisfies validation.
+- Cache fingerprint includes `<db>.wal` (absent = `None`).
+- All 10 correlators share `CorrelationRow` and helpers from `correlate_common`.

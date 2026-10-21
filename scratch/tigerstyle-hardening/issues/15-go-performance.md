@@ -42,3 +42,14 @@ Phase: P4
   upserts/inserts, `findingBatchCountMax = 256`. Test with 600 rows checks per-row semantics are
   identical. `findings.Evaluate` is still over 70 lines (was already).
 - `internal/cache` deleted; nothing in root or any plugin module imported it.
+
+2026-10-21 (after review of `main...perf/p4`):
+
+- Azure: the concurrency cap alone overshot ARM's ~25/s refill. `DescribeResource` now waits on
+  a scanner-owned `armReadLimiter` (20/s, burst 20) before each GET, covering ARM and Resource
+  Graph paths. The existing `p.rateLimiter` (100/s, RPC entry points only) is untouched and
+  could be retuned or removed. Cost: 1000 describes take at least ~50 s.
+- GCP cache: one `entries` map plus an expiry min-heap with lazy deletion (rebuilt past
+  2×entriesMax), so eviction is O(log n) instead of two full scans under the lock.
+- GCP `ScanAllServices`: stops launching once ctx ends; each unlaunched service is reported as
+  `not scanned: <ctx.Err()>`, so the scan is partial.
