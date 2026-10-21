@@ -6,11 +6,20 @@
 // thousands of records in several clouds, and the cross-provider pairs grow with
 // the product of the partition sizes, so every walk here is bounded twice: by the
 // pairs one group would produce, and by the rows returned in total.
+//
+// It also holds the row type, ordering, and output helpers every correlator shares,
+// so every correlator's result set keeps one schema and one order.
 
 use std::collections::HashMap;
+use std::ffi::CString;
+use std::sync::atomic::AtomicUsize;
 
+use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
+use duckdb::vtab::BindInfo;
+use duckdb::Connection;
 use serde_json::json;
 
+use crate::functions::common::{chunk_capacity, next_chunk};
 use crate::functions::params::BoxError;
 
 /// Most cross-provider pairs one group may produce before it is skipped. Half the
@@ -232,4 +241,109 @@ fn skipped_group_row(
             key.kind, key.value, shape.pair_count, shape.record_count, limits.group_pairs_max
         ),
     }
+}
+
+/// True when `table_name` exists in the database, compared case-insensitively.
+pub fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
+    let mut stmt = conn.prepare(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
+    )?;
+    let count: i64 = stmt.query_row([table_name], |row| row.get(0))?;
+    Ok(count > 0)
+}
+
+/// Result order shared by every correlator: confidence descending, then providers
+/// and ids ascending, so output is deterministic.
+pub fn sort_rows(a: &CorrelationRow, b: &CorrelationRow) -> std::cmp::Ordering {
+    b.confidence
+        .partial_cmp(&a.confidence)
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then_with(|| a.source_provider.cmp(&b.source_provider))
+        .then_with(|| a.target_provider.cmp(&b.target_provider))
+        .then_with(|| a.source_id.cmp(&b.source_id))
+        .then_with(|| a.target_id.cmp(&b.target_id))
+}
+
+/// Declares the nine result columns every correlator returns, in `CorrelationRow`
+/// field order.
+pub fn add_standard_columns(bind: &BindInfo) {
+    for name in [
+        "correlation_id",
+        "correlation_type",
+        "source_id",
+        "target_id",
+        "source_provider",
+        "target_provider",
+    ] {
+        bind.add_result_column(name, LogicalTypeHandle::from(LogicalTypeId::Varchar));
+    }
+    bind.add_result_column("confidence", LogicalTypeHandle::from(LogicalTypeId::Double));
+    bind.add_result_column("evidence", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+    bind.add_result_column(
+        "description",
+        LogicalTypeHandle::from(LogicalTypeId::Varchar),
+    );
+}
+
+/// Writes the next chunk of `rows` into `output`, in `add_standard_columns` order.
+pub fn emit_rows(
+    cursor: &AtomicUsize,
+    rows: &[CorrelationRow],
+    output: &mut DataChunkHandle,
+) -> Result<(), BoxError> {
+    let Some((start, end)) = next_chunk(cursor, rows.len(), chunk_capacity()) else {
+        output.set_len(0);
+        return Ok(());
+    };
+    let v0 = output.flat_vector(0);
+    let v1 = output.flat_vector(1);
+    let v2 = output.flat_vector(2);
+    let v3 = output.flat_vector(3);
+    let v4 = output.flat_vector(4);
+    let v5 = output.flat_vector(5);
+    let mut v6 = output.flat_vector(6);
+    let v7 = output.flat_vector(7);
+    let v8 = output.flat_vector(8);
+    let confidence = v6.as_mut_slice::<f64>();
+    for (out_idx, row) in rows[start..end].iter().enumerate() {
+        v0.insert(out_idx, CString::new(row.correlation_id.clone())?);
+        v1.insert(out_idx, CString::new(row.correlation_type.clone())?);
+        v2.insert(out_idx, CString::new(row.source_id.clone())?);
+        v3.insert(out_idx, CString::new(row.target_id.clone())?);
+        v4.insert(out_idx, CString::new(row.source_provider.clone())?);
+        v5.insert(out_idx, CString::new(row.target_provider.clone())?);
+        confidence[out_idx] = row.confidence;
+        v7.insert(out_idx, CString::new(row.evidence.clone())?);
+        v8.insert(out_idx, CString::new(row.description.clone())?);
+    }
+    output.set_len(end - start);
+    Ok(())
+}
+
+/// Orders a (source, target) pair by (provider, id) so each pair has one
+/// canonical direction; the flag is true when the pair was swapped.
+pub fn ordered_values(
+    source_id: String,
+    target_id: String,
+    source_provider: String,
+    target_provider: String,
+) -> (String, String, String, String, bool) {
+    if (&source_provider, &source_id) <= (&target_provider, &target_id) {
+        (
+            source_id,
+            target_id,
+            source_provider,
+            target_provider,
+            false,
+        )
+    } else {
+        (target_id, source_id, target_provider, source_provider, true)
+    }
+}
+
+/// Trims `value`, mapping a missing or blank string to `None`.
+pub fn clean_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
