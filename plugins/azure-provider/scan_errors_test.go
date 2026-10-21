@@ -80,7 +80,7 @@ func listPage(nextLink string, ids ...string) armresources.ClientListResponse {
 func newScanErrorTestProvider(arm *fakeARM) *AzureProvider {
 	p := NewAzureProvider()
 	p.subscriptionID = testSubscription
-	p.scanner = &AzureResourceScanner{subscriptionID: testSubscription, resourcesClient: arm}
+	p.scanner = testScanner(arm)
 	p.initialized.Store(true)
 	return p
 }
@@ -112,7 +112,7 @@ func TestBatchScanReportsFailedDescribeAndKeepsResources(t *testing.T) {
 
 func TestScanWithFilterStopsOnRepeatedNextLink(t *testing.T) {
 	arm := &fakeARM{pages: []armresources.ClientListResponse{listPage("same", testVMID)}}
-	s := &AzureResourceScanner{subscriptionID: testSubscription, resourcesClient: arm}
+	s := testScanner(arm)
 
 	resources, err := s.scanWithFilter(context.Background(), "")
 	if !errors.Is(err, paging.ErrTokenRepeated) {

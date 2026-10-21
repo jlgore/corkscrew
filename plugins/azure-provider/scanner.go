@@ -15,6 +15,7 @@ import (
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -38,13 +39,33 @@ var newResourcesClient = func(
 	return armresources.NewClient(subID, cred, nil)
 }
 
+// ARM refills a subscription's read bucket at about 25 requests per second from a burst of
+// about 250. The scanner's GETs take tokens at 20 per second so that, with listing pages and
+// other callers sharing the subscription, a long describe run stays under the refill rate
+// instead of draining the bucket and exhausting the SDK's retries on 429s. The burst is small
+// so one scan cannot spend the bucket another scan relies on.
+const (
+	armReadRatePerSecond   rate.Limit = 20
+	armReadBurst                      = 20
+	armReadRefillPerSecond rate.Limit = 25
+)
+
+// armReadWaiter blocks until one ARM read may be sent, or fails when ctx ends first.
+// *rate.Limiter satisfies it; tests count the calls.
+type armReadWaiter interface {
+	Wait(ctx context.Context) error
+}
+
 // AzureResourceScanner handles resource scanning operations
 type AzureResourceScanner struct {
 	credential      azcore.TokenCredential
 	subscriptionID  string
 	resourcesClient armResourcesAPI
 	clientFactory   *AzureClientFactory
-	mu              sync.RWMutex
+	// armReadLimiter paces every ARM GET this scanner sends, across all concurrent scans of
+	// the provider, because ARM throttles per subscription rather than per scan.
+	armReadLimiter armReadWaiter
+	mu             sync.RWMutex
 }
 
 // NewAzureResourceScanner creates a new Azure resource scanner. It fails when the ARM client
@@ -56,11 +77,15 @@ func NewAzureResourceScanner(
 	if err != nil {
 		return nil, fmt.Errorf("create ARM resources client: %w", err)
 	}
+	if armReadRatePerSecond >= armReadRefillPerSecond {
+		panic("azure: ARM read rate must stay under ARM's refill rate")
+	}
 	return &AzureResourceScanner{
 		credential:      cred,
 		subscriptionID:  subID,
 		resourcesClient: client,
 		clientFactory:   NewAzureClientFactory(cred, subID),
+		armReadLimiter:  rate.NewLimiter(armReadRatePerSecond, armReadBurst),
 	}, nil
 }
 
@@ -188,10 +213,10 @@ func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, serv
 	return resources, errors.Join(errs...)
 }
 
-// describeConcurrency caps in-flight ARM GETs per scan. ARM refills a subscription's read
-// bucket at about 25 requests per second from a burst of 250, so 16 overlapping GETs of
-// roughly 100 ms each stays under the refill rate while cutting a 1000-resource service from
-// minutes of sequential round trips to seconds.
+// describeConcurrency caps in-flight ARM GETs per scan. It bounds goroutines and hides round
+// trip latency, but it does not keep the request rate under ARM's throttle: 16 GETs of about
+// 100 ms each would send about 160 per second. The rate is set by the scanner's
+// armReadLimiter, which DescribeResource waits on before every GET.
 const describeConcurrency = 16
 
 // describeEach calls describe for every ref with at most describeConcurrency calls in flight
@@ -303,7 +328,14 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	apiVersion := s.getAPIVersionForResourceType(resourceRef.Type)
 	debugLogf("Using API version %s for resource type %s", apiVersion, resourceRef.Type)
 
-	// Get resource details using ARM API
+	// Pace the GET: ARM throttles reads per subscription, and describeEach runs many at once.
+	if s.armReadLimiter == nil {
+		panic("azure: scanner built without an ARM read limiter")
+	}
+	if err := s.armReadLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("wait for ARM read token for %s: %w", resourceRef.Id, err)
+	}
+
 	result, err := s.resourcesClient.GetByID(ctx, resourceRef.Id, apiVersion, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource %s with API version %s: %w", resourceRef.Id, apiVersion, err)
