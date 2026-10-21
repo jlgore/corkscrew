@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 )
 
 // ResourceExplorer provides high-performance resource discovery using AWS Resource Explorer
@@ -73,10 +74,13 @@ func (re *ResourceExplorer) QueryWithFilter(ctx context.Context, filters map[str
 	return re.executeQuery(ctx, query, filters)
 }
 
-// executeQuery performs the actual Resource Explorer query
+// executeQuery performs the actual Resource Explorer query. On a failed
+// page it returns the resources of the pages before it with the error, so
+// the caller can keep them and still report the query as incomplete.
 func (re *ResourceExplorer) executeQuery(ctx context.Context, query string, filters map[string]string) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
 	var nextToken *string
+	guard := paging.New("resourceexplorer2.Search", paging.PagesMax)
 
 	for {
 		input := &resourceexplorer2.SearchInput{
@@ -88,14 +92,19 @@ func (re *ResourceExplorer) executeQuery(ctx context.Context, query string, filt
 
 		result, err := re.client.Search(ctx, input)
 		if err != nil {
-			return nil, fmt.Errorf("resource explorer search failed: %w", err)
+			return allResources, fmt.Errorf("resource explorer search failed: %w", err)
 		}
 
 		resources := re.convertResults(result.Resources)
 		allResources = append(allResources, resources...)
 
-		if result.NextToken == nil {
+		// An empty token also ends the listing: sending it back would restart
+		// the search from the first page.
+		if result.NextToken == nil || *result.NextToken == "" {
 			break
+		}
+		if err := guard.Next(*result.NextToken); err != nil {
+			return allResources, err
 		}
 		nextToken = result.NextToken
 	}

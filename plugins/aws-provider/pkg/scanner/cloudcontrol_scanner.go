@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -17,6 +18,7 @@ import (
 	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -28,20 +30,11 @@ import (
 // replaced by cloudformation.ListTypes lookup later.
 //
 // Toggle from aws_provider.go via CORKSCREW_AWS_SCANNER=cloudcontrol.
-// Package-level discovery cache. Type discovery via cloudformation.ListTypes
-// pulls ~1,400 types and burns CFN throttle budget; it's the same answer for
-// every CC scanner in a process, so cache it across instances.
-var (
-	discoveryOnce      sync.Once
-	discoveredTypesMap map[string][]string
-	discoveredReverse  map[string]string
-	discoveryRunErr    error
-)
-
 type CloudControlScanner struct {
-	client *cloudcontrol.Client
-	cfn    *cloudformation.Client
-	cfg    aws.Config
+	client   cloudControlAPI
+	cfn      typeRegistryAPI
+	identity callerIdentityAPI
+	cfg      aws.Config
 
 	mu        sync.RWMutex
 	accountID string
@@ -60,12 +53,31 @@ type CloudControlScanner struct {
 	reQueries    atomic.Int64
 }
 
+// The AWS client surfaces the scanner calls, so tests can substitute fakes.
+type cloudControlAPI interface {
+	ListResources(ctx context.Context, in *cloudcontrol.ListResourcesInput,
+		opts ...func(*cloudcontrol.Options)) (*cloudcontrol.ListResourcesOutput, error)
+	GetResource(ctx context.Context, in *cloudcontrol.GetResourceInput,
+		opts ...func(*cloudcontrol.Options)) (*cloudcontrol.GetResourceOutput, error)
+}
+
+type typeRegistryAPI interface {
+	ListTypes(ctx context.Context, in *cloudformation.ListTypesInput,
+		opts ...func(*cloudformation.Options)) (*cloudformation.ListTypesOutput, error)
+}
+
+type callerIdentityAPI interface {
+	GetCallerIdentity(ctx context.Context, in *sts.GetCallerIdentityInput,
+		opts ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
+}
+
 // NewCloudControlScanner constructs a Cloud Control API-backed scanner.
 func NewCloudControlScanner(cfg aws.Config) *CloudControlScanner {
 	return &CloudControlScanner{
-		client: cloudcontrol.NewFromConfig(cfg),
-		cfn:    cloudformation.NewFromConfig(cfg),
-		cfg:    cfg,
+		client:   cloudcontrol.NewFromConfig(cfg),
+		cfn:      cloudformation.NewFromConfig(cfg),
+		identity: sts.NewFromConfig(cfg),
+		cfg:      cfg,
 	}
 }
 
@@ -157,12 +169,9 @@ var curatedTypes = map[string][]string{
 
 // SupportedServices returns the services this scanner can enumerate.
 // Triggers dynamic discovery on first call; falls back to the curated map
-// if discovery fails. Note: this is best-effort — pass a context if you
-// want a deadline; otherwise discovery runs with a default 30s budget.
+// if discovery fails, which DiscoveryErr then reports.
 func (s *CloudControlScanner) SupportedServices() []string {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	s.ensureDiscovery(ctx)
+	s.ensureDiscovery(context.Background())
 
 	m := s.activeTypeMap()
 	services := make([]string, 0, len(m))
@@ -184,8 +193,16 @@ func (s *CloudControlScanner) SetResourceExplorer(re ResourceExplorer) {
 // ScanService lists every resource of every CFN type known for the service.
 // When a Resource Explorer is wired, prefer RE for discovery (one indexed
 // search across regions) and use CC.GetResource only for the type lookup.
+//
+// It returns the refs it observed even when it also returns an error: the
+// error joins one entry per type that failed, so the caller can report the
+// service as incomplete without discarding what was listed.
 func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
-	s.ensureAccountID(ctx)
+	// Every ref is keyed by the account it came from. Without the account ID
+	// the refs would be stored under "" and never match a real account.
+	if err := s.ensureAccountID(ctx); err != nil {
+		return nil, err
+	}
 	s.ensureDiscovery(ctx)
 
 	s.mu.RLock()
@@ -202,7 +219,14 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 		log.Printf("CloudControl: service %q has no known CFN types; skipping", serviceName)
 		return nil, nil
 	}
+	return s.scanTypes(ctx, serviceName, types)
+}
 
+// scanTypes lists each type of the service, keeping the refs of every type
+// that answered and joining one error per type that did not.
+func (s *CloudControlScanner) scanTypes(
+	ctx context.Context, serviceName string, types []string,
+) ([]*pb.ResourceRef, error) {
 	// Dedupe by Id. Multiple CFN types under the same service often share
 	// an identifier — e.g. AWS::S3::Bucket and AWS::S3::BucketPolicy both
 	// use the bucket name as their resource ID, so iterating types naively
@@ -211,17 +235,10 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 	// type (Bucket before BucketPolicy, Function before FunctionAlias, etc).
 	seen := make(map[string]struct{})
 	var all []*pb.ResourceRef
+	var errs []error
 	for _, typeName := range types {
+		// listType returns the pages it got before failing; keep them.
 		refs, err := s.listType(ctx, serviceName, typeName)
-		if err != nil {
-			if isUnsupportedTypeErr(err) {
-				s.unsupportedTypes.Store(typeName, err.Error())
-				continue
-			}
-			s.listFailures.Add(1)
-			log.Printf("CloudControl: ListResources(%s) failed: %v", typeName, err)
-			continue
-		}
 		for _, r := range refs {
 			if _, dup := seen[r.Id]; dup {
 				continue
@@ -229,37 +246,63 @@ func (s *CloudControlScanner) ScanService(ctx context.Context, serviceName strin
 			seen[r.Id] = struct{}{}
 			all = append(all, r)
 		}
+		if ctx.Err() != nil {
+			// Every remaining type would fail the same way; report it once.
+			errs = append(errs, ctx.Err())
+			break
+		}
+		if err == nil {
+			continue
+		}
+		if isUnsupportedTypeErr(err) {
+			s.unsupportedTypes.Store(typeName, err.Error())
+			continue
+		}
+		s.listFailures.Add(1)
+		log.Printf("CloudControl: ListResources(%s) failed: %v", typeName, err)
+		errs = append(errs, typeListError(typeName, err))
 	}
-	return all, nil
+	return all, errors.Join(errs...)
+}
+
+// typeListError names the type that failed. Access errors are labelled
+// apart from other failures because the fix is an IAM change, but they are
+// still errors: resources of that type may exist and were not observed.
+func typeListError(typeName string, err error) error {
+	if isAccessDeniedErr(err) {
+		return fmt.Errorf("access_denied:%s: %w", typeName, err)
+	}
+	return fmt.Errorf("%s: %w", typeName, err)
 }
 
 // isUnsupportedTypeErr matches the Cloud Control errors that mean "this
-// type isn't enumerable in this account" rather than "the scan broke".
-// Includes:
+// type has nothing to enumerate here" rather than "the scan broke", so the
+// type is reported as a notice and the scope stays complete. Includes:
 //   - TypeNotFoundException / UnsupportedActionException (CFN registry lookups)
-//   - "not currently supported" (CC's own gap message)
-//   - GeneralServiceException with "does not exist" or "not found"
-//     (returned when a parent resource the type depends on isn't set up,
-//     e.g. AWS::S3::AccessGrant when there's no Access Grants Instance)
-//   - HandlerInternalFailureException / HandlerErrorCode: InternalFailure
-//     (AWS-side bugs in the type's CC handler — not the user's problem)
-//   - "AccessDenied" / "is not authorized" (IAM gap; reported as unsupported
-//     so the rest of the scan continues)
+//   - "not currently supported" (CC's own gap message, e.g. per region)
+//   - GeneralServiceException with "does not exist" (returned when a parent
+//     resource the type depends on isn't set up, e.g. AWS::S3::AccessGrant
+//     when there's no Access Grants Instance, so there is nothing to list)
+//
+// Access errors and handler failures are deliberately not here: resources
+// of the type may exist, so treating them as unsupported would let a scan
+// claim completeness over data it never saw (ADR 0023).
 func isUnsupportedTypeErr(err error) bool {
+	return errContainsAny(err, "TypeNotFoundException", "UnsupportedActionException",
+		"not currently supported", "does not exist")
+}
+
+// isAccessDeniedErr matches IAM denials for a Cloud Control call.
+func isAccessDeniedErr(err error) bool {
+	return errContainsAny(err, "AccessDenied", "is not authorized")
+}
+
+func errContainsAny(err error, needles ...string) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	for _, needle := range []string{
-		"TypeNotFoundException",
-		"UnsupportedActionException",
-		"not currently supported",
-		"does not exist",
-		"HandlerInternalFailureException",
-		"HandlerErrorCode: InternalFailure",
-		"AccessDenied",
-		"is not authorized",
-	} {
+	for _, needle := range needles {
 		if strings.Contains(msg, needle) {
 			return true
 		}
@@ -292,6 +335,7 @@ func (s *CloudControlScanner) listType(ctx context.Context, serviceName, typeNam
 
 	var refs []*pb.ResourceRef
 	var nextToken *string
+	guard := paging.New("cloudcontrol.ListResources("+typeName+")", paging.PagesMax)
 	for {
 		out, err := s.client.ListResources(ctx, &cloudcontrol.ListResourcesInput{
 			TypeName:  aws.String(typeName),
@@ -332,6 +376,9 @@ func (s *CloudControlScanner) listType(ctx context.Context, serviceName, typeNam
 
 		if out.NextToken == nil || *out.NextToken == "" {
 			break
+		}
+		if err := guard.Next(*out.NextToken); err != nil {
+			return refs, err
 		}
 		nextToken = out.NextToken
 	}
@@ -414,33 +461,87 @@ func (s *CloudControlScanner) GetMetrics() interface{} {
 	}
 }
 
-// ensureDiscovery runs cloudformation.ListTypes at most once per process.
-// Caches both success and failure across every CloudControlScanner instance
-// — important when the CLI fans out to multiple regions, because each
-// region used to spin up its own scanner that ran ListTypes independently
-// and tripped CFN's throttle. On failure, scans fall back to the curated map.
+const (
+	// discoveryTimeout bounds one cloudformation.ListTypes run (~1,400 types
+	// over a few dozen pages). Discovery runs detached from the caller's
+	// context so one cancelled scope does not fail it for the scopes waiting
+	// on the same run.
+	discoveryTimeout = 30 * time.Second
+	// discoveryRetryAfter spaces out retries of a failed discovery, so a scan
+	// of many services does not re-run ListTypes (and its throttle cost) for
+	// every service while CloudFormation is unavailable.
+	discoveryRetryAfter = 5 * time.Minute
+)
+
+// discovery is the package-level type discovery cache. Type discovery via
+// cloudformation.ListTypes pulls ~1,400 types and burns CFN throttle budget;
+// it's the same answer for every CC scanner in a process (one per region),
+// so it is shared across instances. Only success is kept for good: a failure
+// is retried after discoveryRetryAfter.
+var discovery struct {
+	mu       sync.Mutex
+	ok       bool
+	types    map[string][]string
+	reverse  map[string]string
+	err      error
+	failedAt time.Time
+}
+
+// ensureDiscovery runs cloudformation.ListTypes until it succeeds once per
+// process. Until then scans fall back to the curated map and DiscoveryErr
+// reports why. The lock is held across the run so concurrent scanners wait
+// for one ListTypes run instead of each tripping CFN's throttle.
 func (s *CloudControlScanner) ensureDiscovery(ctx context.Context) {
 	if s.cfn == nil {
 		// Zero-value scanner (e.g. in unit tests) — skip dynamic discovery.
 		return
 	}
-	discoveryOnce.Do(func() {
-		discovered, err := s.discoverTypes(ctx)
-		if err != nil {
-			discoveryRunErr = err
-			log.Printf("CloudControl: type discovery failed (%v); falling back to curated map", err)
-			return
-		}
-		discoveredTypesMap = discovered
-		log.Printf("CloudControl: discovered %d services / %d total types via cloudformation.ListTypes",
-			len(discovered), countTypes(discovered))
-	})
+	discovery.mu.Lock()
+	defer discovery.mu.Unlock()
+	if discovery.ok {
+		return
+	}
+	if discovery.err != nil && time.Since(discovery.failedAt) < discoveryRetryAfter {
+		return
+	}
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), discoveryTimeout)
+	defer cancel()
+	types, reverse, err := s.discoverTypes(runCtx)
+	if err != nil {
+		discovery.err = err
+		discovery.failedAt = time.Now()
+		log.Printf("CloudControl: type discovery failed (%v); falling back to curated map", err)
+		return
+	}
+	discovery.ok, discovery.err = true, nil
+	discovery.types, discovery.reverse = types, reverse
+	log.Printf("CloudControl: discovered %d services / %d total types via cloudformation.ListTypes",
+		len(types), countTypes(types))
 }
 
-// discoverTypes enumerates all FULLY_MUTABLE public AWS::* types and groups
-// them by service. Returns a map[service][]typeName. Also populates the
-// scanner's reFormatToCFN reverse map for RE-driven enrichment.
-func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]string, error) {
+// DiscoveryErr returns why type discovery failed while scans are using the
+// curated fallback map, or nil. The fallback covers a few dozen types of the
+// ~1,400 discovery finds, so a scan made with it has missed most resources.
+func DiscoveryErr() error {
+	discovery.mu.Lock()
+	defer discovery.mu.Unlock()
+	if discovery.ok {
+		return nil
+	}
+	return discovery.err
+}
+
+// DiscoveryErr reports the process-wide discovery state; see DiscoveryErr.
+func (s *CloudControlScanner) DiscoveryErr() error {
+	return DiscoveryErr()
+}
+
+// discoverTypes enumerates all FULLY_MUTABLE and IMMUTABLE public AWS::*
+// types and groups them by service: map[service][]typeName. It also returns
+// the "service:resource" → CFN type reverse map for RE-driven enrichment.
+func (s *CloudControlScanner) discoverTypes(
+	ctx context.Context,
+) (map[string][]string, map[string]string, error) {
 	out := map[string][]string{}
 	reverse := map[string]string{}
 
@@ -449,6 +550,7 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 		cfntypes.ProvisioningTypeImmutable,
 	} {
 		var nextToken *string
+		guard := paging.New(fmt.Sprintf("cloudformation.ListTypes(%s)", prov), paging.PagesMax)
 		for {
 			resp, err := s.cfn.ListTypes(ctx, &cloudformation.ListTypesInput{
 				Type:             cfntypes.RegistryTypeResource,
@@ -457,7 +559,7 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 				NextToken:        nextToken,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("ListTypes(%s): %w", prov, err)
+				return nil, nil, fmt.Errorf("ListTypes(%s): %w", prov, err)
 			}
 			for _, t := range resp.TypeSummaries {
 				name := aws.ToString(t.TypeName)
@@ -476,6 +578,9 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 			if resp.NextToken == nil || *resp.NextToken == "" {
 				break
 			}
+			if err := guard.Next(*resp.NextToken); err != nil {
+				return nil, nil, err
+			}
 			nextToken = resp.NextToken
 		}
 	}
@@ -483,9 +588,7 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 	for svc := range out {
 		sort.Strings(out[svc])
 	}
-
-	discoveredReverse = reverse
-	return out, nil
+	return out, reverse, nil
 }
 
 // scanServiceViaRE queries Resource Explorer for the service, then looks up
@@ -493,14 +596,20 @@ func (s *CloudControlScanner) discoverTypes(ctx context.Context) (map[string][]s
 // be resolved are returned anyway (with whatever Type the RE result had);
 // the caller can still enrich by passing them to DescribeResource, which
 // falls back to the type already on the ref.
+//
+// A failed query returns the refs from the pages before the failure along
+// with the error, as listType does.
 func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName string, re ResourceExplorer) ([]*pb.ResourceRef, error) {
 	s.reQueries.Add(1)
 	refs, err := re.QueryByService(ctx, strings.ToLower(serviceName))
 	if err != nil {
-		return nil, fmt.Errorf("ResourceExplorer.QueryByService(%s): %w", serviceName, err)
+		err = fmt.Errorf("ResourceExplorer.QueryByService(%s): %w", serviceName, err)
 	}
 
-	reverse := discoveredReverse
+	discovery.mu.Lock()
+	reverse := discovery.reverse
+	discovery.mu.Unlock()
+	accountID := s.getAccountID()
 
 	for _, r := range refs {
 		if r.BasicAttributes == nil {
@@ -517,8 +626,11 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 		}
 		// Normalize Service: RE may set it to upper-case shorthand.
 		r.Service = strings.ToLower(r.Service)
+		if r.AccountId == "" {
+			r.AccountId = accountID
+		}
 	}
-	return refs, nil
+	return refs, err
 }
 
 // reFormatKey converts a CFN type name into the lowercase "service:resource"
@@ -536,8 +648,10 @@ func reFormatKey(cfnType string) string {
 // activeTypeMap returns the map of services→types currently in use.
 // Prefers the dynamically-discovered map; falls back to the curated map.
 func (s *CloudControlScanner) activeTypeMap() map[string][]string {
-	if discoveredTypesMap != nil {
-		return discoveredTypesMap
+	discovery.mu.Lock()
+	defer discovery.mu.Unlock()
+	if discovery.ok {
+		return discovery.types
 	}
 	return curatedTypes
 }
@@ -567,23 +681,32 @@ func countTypes(m map[string][]string) int {
 	return n
 }
 
-func (s *CloudControlScanner) ensureAccountID(ctx context.Context) {
+// ensureAccountID resolves the scanned account once via STS. It fails when
+// STS does, rather than leaving every ref of the scan with AccountId "".
+func (s *CloudControlScanner) ensureAccountID(ctx context.Context) error {
 	s.mu.RLock()
 	have := s.accountID != ""
 	s.mu.RUnlock()
 	if have {
-		return
+		return nil
+	}
+	if s.identity == nil {
+		return errors.New("resolve account id: no STS client")
 	}
 
-	stsClient := sts.NewFromConfig(s.cfg)
-	out, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	if err != nil || out.Account == nil {
-		return
+	out, err := s.identity.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return fmt.Errorf("resolve account id: sts.GetCallerIdentity: %w", err)
+	}
+	accountID := aws.ToString(out.Account)
+	if accountID == "" {
+		return errors.New("resolve account id: sts.GetCallerIdentity returned no account")
 	}
 
 	s.mu.Lock()
-	s.accountID = aws.ToString(out.Account)
+	s.accountID = accountID
 	s.mu.Unlock()
+	return nil
 }
 
 func (s *CloudControlScanner) getAccountID() string {

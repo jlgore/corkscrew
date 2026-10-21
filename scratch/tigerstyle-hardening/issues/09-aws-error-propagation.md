@@ -1,6 +1,6 @@
 # AWS: surface dropped types, accounts, describes and discovery failures
 
-Status: ready-for-agent
+Status: complete
 Phase: P2
 Depends on: 08
 
@@ -24,3 +24,26 @@ Depends on: 08
 
 Follow-up already known (not part of this issue): `GetResource` is sent the ARN as `Identifier`,
 which most CFN types reject (from the #22 review).
+
+## Comments
+
+2026-10-21: Done in `plugins/aws-provider` only.
+- Shape: `activeScanner.ScanService` keeps its signature but now returns the refs it observed
+  together with an `errors.Join` of one error per failed type (CloudControlScanner) or per
+  failed account (`account:<id>: …`, OrgScanner). `scanner.FlattenErrors` splits the join, and
+  BatchScan emits one `shared.ServiceScanError(svc, e)` per leaf while keeping the partial refs.
+- Access errors are `access_denied:<type>: …` error entries and make the scope partial.
+  `isUnsupportedTypeErr` now matches only TypeNotFound, UnsupportedAction, "not currently
+  supported" and "does not exist" (parent resource absent, nothing to list). Handler internal
+  failures are errors too: resources of the type may exist.
+- Discovery: mutex plus success flag; runs on `context.WithoutCancel(ctx)` with
+  `discoveryTimeout` (30s); a failure is retried after `discoveryRetryAfter` (5m) rather than on
+  every service. `DiscoveryErr()` is on `activeScanner`; BatchScan, ScanService, ListResources and
+  the stream paths report `service:discovery: …` while the curated map is in use.
+- STS failure fails ScanService (`resolve account id: …`) instead of emitting `AccountId=""`.
+  RE-path refs with no account get the scanner's account.
+- BatchScan panics if `TotalResources` disagrees with the sum of `ServiceCounts` or
+  `ResourceCounts`; `ServiceCounts` now uses `+=` so a repeated service cannot trip it.
+- Stream paths send unenriched resources on describe failure, send partial refs, and end with
+  an error when anything failed (no Errors field on a stream). ScanService RPC fills `Errors`;
+  ListResources (no Errors field) sets `metadata["complete"]="false"` and `metadata["errors"]`.

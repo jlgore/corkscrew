@@ -9,6 +9,7 @@ package orgscan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
 )
 
@@ -60,8 +62,12 @@ func DefaultConfig() Config {
 type OrgScanner struct {
 	cfg     aws.Config // management-account credentials
 	stsAPI  *sts.Client
-	orgAPI  *organizations.Client
+	orgAPI  accountLister
 	options Config
+
+	// scannerFor builds the scanner for one member account. A field so tests
+	// can substitute accounts whose role assumption fails.
+	scannerFor func(ctx context.Context, acctID string) (accountScanner, error)
 
 	// Resource Explorer is wired through to each per-account scanner if
 	// non-nil. RE indexes are per-account, so the explorer here should be
@@ -72,6 +78,19 @@ type OrgScanner struct {
 
 	mu               sync.Mutex
 	unsupportedTypes map[string]string
+}
+
+// accountScanner is what OrgScanner needs from a per-account scanner.
+type accountScanner interface {
+	ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error)
+	DescribeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error)
+	UnsupportedTypes() map[string]string
+}
+
+// accountLister is the Organizations call targetAccounts pages through.
+type accountLister interface {
+	ListAccounts(ctx context.Context, in *organizations.ListAccountsInput,
+		opts ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
 }
 
 // New constructs an OrgScanner using cfg for Organizations + STS calls.
@@ -86,13 +105,15 @@ func New(cfg aws.Config, opts Config) *OrgScanner {
 	if opts.SessionName == "" {
 		opts.SessionName = "corkscrew-org-scan"
 	}
-	return &OrgScanner{
+	o := &OrgScanner{
 		cfg:              cfg,
 		stsAPI:           sts.NewFromConfig(cfg),
 		orgAPI:           organizations.NewFromConfig(cfg),
 		options:          opts,
 		unsupportedTypes: map[string]string{},
 	}
+	o.scannerFor = o.scannerForAccount
+	return o
 }
 
 // SetResourceExplorer wires an RE client into the scanner. See note on the
@@ -109,14 +130,30 @@ func (o *OrgScanner) SupportedServices() []string {
 	return scanner.NewCloudControlScanner(o.cfg).SupportedServices()
 }
 
-// ScanService fans the scan out across every targeted account.
+// DiscoveryErr reports the process-wide type discovery state that every
+// per-account scanner shares; see scanner.DiscoveryErr.
+func (o *OrgScanner) DiscoveryErr() error {
+	return scanner.DiscoveryErr()
+}
+
+// accountResult is one account's share of a ScanService fan-out.
+type accountResult struct {
+	acctID string
+	refs   []*pb.ResourceRef
+	err    error
+}
+
+// ScanService fans the scan out across every targeted account. It returns
+// the refs of every account that answered, even when others failed, joined
+// with one "account:<id>: ..." error per failure so the caller can report
+// the service as incomplete without discarding the accounts that worked.
 func (o *OrgScanner) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
 	accounts, err := o.targetAccounts(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	results := make(chan []*pb.ResourceRef, len(accounts))
+	results := make(chan accountResult, len(accounts))
 	sem := make(chan struct{}, o.options.MaxConcurrentAccounts)
 	var wg sync.WaitGroup
 
@@ -139,25 +176,29 @@ acctLoop:
 			refs, err := o.scanOneAccount(ctx, acctID, serviceName)
 			if err != nil {
 				log.Printf("orgscan: account %s service %s failed: %v", acctID, serviceName, err)
-				return
 			}
 			for _, r := range refs {
 				r.AccountId = acctID
 			}
-			results <- refs
+			results <- accountResult{acctID: acctID, refs: refs, err: err}
 		}(acct)
 	}
 	wg.Wait()
 	close(results)
-	if cancelled != nil {
-		return nil, fmt.Errorf("orgscan: service %s: %w", serviceName, cancelled)
-	}
 
 	var all []*pb.ResourceRef
-	for refs := range results {
-		all = append(all, refs...)
+	var errs []error
+	if cancelled != nil {
+		errs = append(errs, fmt.Errorf("orgscan: service %s: %w", serviceName, cancelled))
 	}
-	return all, nil
+	for res := range results {
+		all = append(all, res.refs...)
+		// One entry per failed type, each naming its account.
+		for _, e := range scanner.FlattenErrors(res.err) {
+			errs = append(errs, fmt.Errorf("account:%s: %w", res.acctID, e))
+		}
+	}
+	return all, errors.Join(errs...)
 }
 
 // DescribeResource enriches a ref by re-assuming into the account the ref
@@ -167,7 +208,7 @@ func (o *OrgScanner) DescribeResource(ctx context.Context, ref *pb.ResourceRef) 
 	if ref.AccountId == "" {
 		return nil, fmt.Errorf("orgscan: ResourceRef missing AccountId; can't pick which account to assume")
 	}
-	sc, err := o.scannerForAccount(ctx, ref.AccountId)
+	sc, err := o.scannerFor(ctx, ref.AccountId)
 	if err != nil {
 		return nil, fmt.Errorf("orgscan: assume account %s: %w", ref.AccountId, err)
 	}
@@ -212,9 +253,9 @@ func (o *OrgScanner) mergeUnsupported(other map[string]string) {
 
 // scanOneAccount assumes into acctID and runs a single CC scan there.
 func (o *OrgScanner) scanOneAccount(ctx context.Context, acctID, serviceName string) ([]*pb.ResourceRef, error) {
-	sc, err := o.scannerForAccount(ctx, acctID)
+	sc, err := o.scannerFor(ctx, acctID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("assume role: %w", err)
 	}
 	refs, err := sc.ScanService(ctx, serviceName)
 	o.mergeUnsupported(sc.UnsupportedTypes())
@@ -224,8 +265,9 @@ func (o *OrgScanner) scanOneAccount(ctx context.Context, acctID, serviceName str
 // scannerForAccount builds a CloudControlScanner whose aws.Config is
 // scoped to the assumed-role credentials for acctID. Constructed fresh
 // per call — STS credentials cache themselves, and the cost of creating
-// CC clients is small.
-func (o *OrgScanner) scannerForAccount(ctx context.Context, acctID string) (*scanner.CloudControlScanner, error) {
+// CC clients is small. The role is assumed lazily, so an AssumeRole failure
+// surfaces from the scanner's first call (its STS account lookup).
+func (o *OrgScanner) scannerForAccount(ctx context.Context, acctID string) (accountScanner, error) {
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", acctID, o.options.RoleName)
 	provider := stscreds.NewAssumeRoleProvider(o.stsAPI, roleArn, func(p *stscreds.AssumeRoleOptions) {
 		p.RoleSessionName = o.options.SessionName
@@ -247,6 +289,7 @@ func (o *OrgScanner) targetAccounts(ctx context.Context) ([]string, error) {
 
 	var ids []string
 	var nextToken *string
+	guard := paging.New("organizations.ListAccounts", paging.PagesMax)
 	for {
 		resp, err := o.orgAPI.ListAccounts(ctx, &organizations.ListAccountsInput{NextToken: nextToken})
 		if err != nil {
@@ -267,6 +310,10 @@ func (o *OrgScanner) targetAccounts(ctx context.Context) ([]string, error) {
 		}
 		if resp.NextToken == nil || *resp.NextToken == "" {
 			break
+		}
+		// Scanning a truncated account list would silently skip accounts.
+		if err := guard.Next(*resp.NextToken); err != nil {
+			return nil, err
 		}
 		nextToken = resp.NextToken
 	}

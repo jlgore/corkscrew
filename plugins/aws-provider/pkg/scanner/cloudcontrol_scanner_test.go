@@ -94,10 +94,13 @@ func TestIsUnsupportedTypeErr(t *testing.T) {
 		"UnsupportedActionException: bar":         true,
 		"resource is not currently supported by ": true,
 		"GeneralServiceException: AWS::S3::AccessGrant Handler returned status FAILED: Access Grants Instance does not exist": true,
-		"HandlerInternalFailureException: foo":                                                 true,
-		"HandlerErrorCode: InternalFailure":                                                    true,
-		"AccessDenied: User is not authorized":                                                 true,
-		"User: arn:aws:iam::1:user/x is not authorized to perform: cloudcontrol:ListResources": true,
+
+		// Should NOT match: resources of the type may exist but were not
+		// listed, so these are errors rather than notices.
+		"HandlerInternalFailureException: foo":                                                 false,
+		"HandlerErrorCode: InternalFailure":                                                    false,
+		"AccessDenied: User is not authorized":                                                 false,
+		"User: arn:aws:iam::1:user/x is not authorized to perform: cloudcontrol:ListResources": false,
 
 		// Should NOT match (transient or unrelated):
 		"Throttling: Rate exceeded": false,
