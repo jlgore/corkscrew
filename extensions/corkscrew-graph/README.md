@@ -101,8 +101,9 @@ fails the query with an error that names the limit. A correlator group that is
 too large is skipped and reported in its own row:
 
 - Patterns need 1 to 8 nodes, at most 56 edges, and at least one node with a
-  non-empty `type_filter`. The VF2 search fails once it has made 100,000,000
-  node comparisons, which suggests adding `type_filter` to more nodes.
+  non-empty `type_filter` or one edge with a non-empty `rel_filter`. The VF2
+  search fails once it has made 100,000,000 node comparisons, which suggests
+  adding `type_filter` to more nodes.
 - `graph_traverse` fails if it would return more than 1,000,000 rows. Lower
   `max_hops` or set `filter_type`.
 - A graph load fails past 10,000,000 nodes or 50,000,000 edges.

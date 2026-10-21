@@ -2349,6 +2349,30 @@ fn pattern_without_any_type_filter_is_rejected() {
 }
 
 #[test]
+fn pattern_anchored_only_by_an_edge_relationship_filter_is_accepted() {
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    // A relationship filter prunes VF2 candidates just as a type_filter does, so
+    // a pattern constrained only by its edges is bounded and must load.
+    let assumes_role = load_pattern(
+        r#"{"name":"assume","nodes":[{"label":"a"},{"label":"b"}],
+            "edges":[{"from":"a","to":"b","rel_filter":"assumes_role"}]}"#,
+    )
+    .expect("an edge relationship filter anchors the pattern");
+    assert_eq!(assumes_role.graph.node_count(), 2);
+    assert_eq!(assumes_role.graph.edge_count(), 1);
+
+    // An empty relationship filter matches every edge, so it anchors nothing.
+    let error = load_pattern(
+        r#"{"name":"empty_rel","nodes":[{"label":"a"},{"label":"b"}],
+            "edges":[{"from":"a","to":"b","rel_filter":""}]}"#,
+    )
+    .expect_err("an empty rel_filter must not anchor the pattern")
+    .to_string();
+    assert!(error.contains("rel_filter"), "{error}");
+}
+
+#[test]
 fn builtin_patterns_satisfy_pattern_bounds() {
     use corkscrew_graph_tests::patterns::{builtin, load_pattern};
 

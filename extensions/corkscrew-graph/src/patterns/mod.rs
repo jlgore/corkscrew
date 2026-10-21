@@ -100,7 +100,9 @@ impl PatternGraph {
 }
 
 /// Rejects patterns whose VF2 search cannot be bounded: too many nodes or edges, or no
-/// `type_filter` at all, which makes every data node a candidate for every pattern node.
+/// filter at all, which makes every data node a candidate for every pattern node and
+/// every edge a candidate for every pattern edge. One non-empty node `type_filter` or
+/// edge `rel_filter` prunes the search; the step budget bounds what remains.
 fn validate_definition(definition: &PatternDefinition) -> Result<(), Box<dyn std::error::Error>> {
     let name = &definition.name;
     let node_count = definition.nodes.len();
@@ -122,14 +124,20 @@ fn validate_definition(definition: &PatternDefinition) -> Result<(), Box<dyn std
         )
         .into());
     }
-    let anchored = definition.nodes.iter().any(|node| {
+    let node_anchored = definition.nodes.iter().any(|node| {
         node.type_filter
             .as_deref()
             .is_some_and(|filter| !filter.is_empty())
     });
-    if !anchored {
+    let edge_anchored = definition.edges.iter().any(|edge| {
+        edge.rel_filter
+            .as_deref()
+            .is_some_and(|filter| !filter.is_empty())
+    });
+    if !node_anchored && !edge_anchored {
         return Err(format!(
-            "pattern '{name}' needs at least one node with a non-empty type_filter"
+            "pattern '{name}' needs at least one node with a non-empty type_filter \
+             or one edge with a non-empty rel_filter"
         )
         .into());
     }
