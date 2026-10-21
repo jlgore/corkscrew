@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -267,12 +268,39 @@ repoLoop:
 	return resources, errors
 }
 
-// listRepos prefers GraphQL, which returns repo metadata + default branch
+// listRepos returns the org's repositories, listing them once per scan: every later service of
+// the scan reuses the scan cache's list. A listing that reported errors is not cached, so the
+// next service retries it rather than scanning a possibly truncated list again, and reports its
+// own errors, as each service did before the cache.
+func (p *GitHubProvider) listRepos(ctx context.Context) ([]*github.Repository, []string) {
+	cache := scanCacheFrom(ctx)
+	if cache == nil {
+		return p.listReposUncached(ctx)
+	}
+
+	cache.reposMu.Lock()
+	defer cache.reposMu.Unlock()
+
+	if cache.reposListed {
+		return cache.repos, nil
+	}
+	if cache.repos != nil {
+		panic("github: repository cache holds repositories it never listed")
+	}
+	repos, errors := p.listReposUncached(ctx)
+	if len(errors) == 0 {
+		cache.repos = repos
+		cache.reposListed = true
+	}
+	return repos, errors
+}
+
+// listReposUncached prefers GraphQL, which returns repo metadata + default branch
 // protection rule in a single paginated query (eliminating the per-repo REST
 // roundtrip for branch protection on subsequent scan paths). Falls back to
 // REST on Enterprise (no GraphQL client built) or any GraphQL error so the
 // scanner is never worse than the REST-only baseline.
-func (p *GitHubProvider) listRepos(ctx context.Context) ([]*github.Repository, []string) {
+func (p *GitHubProvider) listReposUncached(ctx context.Context) ([]*github.Repository, []string) {
 	if p.gqlClient != nil {
 		repos, err := p.listReposGraphQL(ctx)
 		if err == nil {
@@ -318,7 +346,7 @@ func (p *GitHubProvider) repoResource(repo *github.Repository) *pb.Resource {
 // checkBranchProtection returns a structured status. A 404 means the branch
 // genuinely has no protection; any other error (403 Forbidden, 5xx, transport)
 // becomes bpUnknown so callers don't synthesize a false-positive finding.
-// Known results are cached for the current scan (see withProtectionCache) so
+// Known results are cached for the current scan (see withScanCache) so
 // BatchScan doesn't re-fetch across `repos` and `findings` services.
 func (p *GitHubProvider) checkBranchProtection(ctx context.Context, repo *github.Repository, errors *[]string) branchProtectionState {
 	owner, name := repoOwnerName(repo)
@@ -361,23 +389,56 @@ func (p *GitHubProvider) checkBranchProtection(ctx context.Context, repo *github
 	return state
 }
 
-type protectionCacheKey struct{}
+type scanCacheKey struct{}
 
-// withProtectionCache returns ctx carrying a branch protection cache for one scan, reusing one
-// already in ctx. The cache used to live on the provider for the life of the process, so a
-// later scan reported the protection state seen by an earlier one.
-func withProtectionCache(ctx context.Context) context.Context {
-	if protectionCacheFrom(ctx) != nil {
-		return ctx
-	}
-	return context.WithValue(ctx, protectionCacheKey{}, &sync.Map{})
+// scanCache holds what one scan has already fetched, so the services of a BatchScan share it:
+// the default batch (repos, security, findings) used to list every repository three times and
+// fetch every alert listing twice. It lives in the scan's ctx and never on the provider: a cache
+// that outlived the scan made a later scan report the state an earlier one saw.
+type scanCache struct {
+	// protection maps "owner/name@branch" to branchProtectionState.
+	protection sync.Map
+
+	// reposMu is held for the whole listing, so a second caller waits for the first listing
+	// rather than starting its own. Services run in sequence, so it is rarely contended.
+	reposMu     sync.Mutex
+	reposListed bool
+	repos       []*github.Repository
+
+	// alerts maps alertCacheKey to alertListing.
+	alerts      sync.Map
+	alertsCount atomic.Int64
 }
 
-// protectionCacheFrom returns the scan's cache (key "owner/name@branch" →
-// branchProtectionState), or nil outside a scan, in which case callers neither read nor store.
-func protectionCacheFrom(ctx context.Context) *sync.Map {
-	cache, _ := ctx.Value(protectionCacheKey{}).(*sync.Map)
+// alertListing is one alert endpoint's result for one repository: the alerts and the notices
+// the listing reported, which a cache hit replays so every service still reports them.
+type alertListing struct {
+	items   []alertItem
+	notices []string
+}
+
+// withScanCache returns ctx carrying the cache for one scan, reusing one already in ctx.
+func withScanCache(ctx context.Context) context.Context {
+	if scanCacheFrom(ctx) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, scanCacheKey{}, &scanCache{})
+}
+
+// scanCacheFrom returns the scan's cache, or nil outside a scan, in which case callers neither
+// read nor store.
+func scanCacheFrom(ctx context.Context) *scanCache {
+	cache, _ := ctx.Value(scanCacheKey{}).(*scanCache)
 	return cache
+}
+
+// protectionCacheFrom returns the scan's branch protection cache, or nil outside a scan.
+func protectionCacheFrom(ctx context.Context) *sync.Map {
+	cache := scanCacheFrom(ctx)
+	if cache == nil {
+		return nil
+	}
+	return &cache.protection
 }
 
 func (p *GitHubProvider) rulesetResources(ctx context.Context, repo *github.Repository, errors *[]string) []*pb.Resource {
@@ -395,27 +456,96 @@ func (p *GitHubProvider) rulesetResources(ctx context.Context, repo *github.Repo
 }
 
 func (p *GitHubProvider) dependabotAlerts(ctx context.Context, owner, repo string, errors *[]string) []alertItem {
-	path := fmt.Sprintf("repos/%s/%s/dependabot/alerts?state=open&per_page=%d",
-		owner, repo, restPerPage)
-	alerts, err := p.getRESTMaps(ctx, "dependabot alerts "+owner+"/"+repo, path)
-	appendAPIError(errors, "dependabot alerts", owner+"/"+repo, err)
-	return p.buildAlertItems("dependabot_alert", owner+"/"+repo, alerts, dependabotSeverity)
+	return p.cachedAlerts(ctx, alertSource{
+		operation: "dependabot alerts", alertType: "dependabot_alert", endpoint: "dependabot",
+		severity: dependabotSeverity,
+	}, owner, repo, errors)
 }
 
 func (p *GitHubProvider) secretScanningAlerts(ctx context.Context, owner, repo string, errors *[]string) []alertItem {
-	path := fmt.Sprintf("repos/%s/%s/secret-scanning/alerts?state=open&per_page=%d",
-		owner, repo, restPerPage)
-	alerts, err := p.getRESTMaps(ctx, "secret scanning alerts "+owner+"/"+repo, path)
-	appendAPIError(errors, "secret scanning alerts", owner+"/"+repo, err)
-	return p.buildAlertItems("secret_scanning_alert", owner+"/"+repo, alerts, secretScanningSeverity)
+	return p.cachedAlerts(ctx, alertSource{
+		operation: "secret scanning alerts", alertType: "secret_scanning_alert",
+		endpoint: "secret-scanning", severity: secretScanningSeverity,
+	}, owner, repo, errors)
 }
 
 func (p *GitHubProvider) codeScanningAlerts(ctx context.Context, owner, repo string, errors *[]string) []alertItem {
-	path := fmt.Sprintf("repos/%s/%s/code-scanning/alerts?state=open&per_page=%d",
-		owner, repo, restPerPage)
-	alerts, err := p.getRESTMaps(ctx, "code scanning alerts "+owner+"/"+repo, path)
-	appendAPIError(errors, "code scanning alerts", owner+"/"+repo, err)
-	return p.buildAlertItems("code_scanning_alert", owner+"/"+repo, alerts, codeScanningSeverity)
+	return p.cachedAlerts(ctx, alertSource{
+		operation: "code scanning alerts", alertType: "code_scanning_alert",
+		endpoint: "code-scanning", severity: codeScanningSeverity,
+	}, owner, repo, errors)
+}
+
+// alertSource describes one of the three per-repository alert endpoints.
+type alertSource struct {
+	operation string // names the listing in errors and notices
+	alertType string // the resource type of each alert
+	endpoint  string // the path segment under repos/{owner}/{repo}/
+	severity  func(map[string]interface{}) string
+}
+
+// alertSourcesCount is the number of alertSource values above; the cache bound counts on it.
+const alertSourcesCount = 3
+
+// alertCacheEntriesMax bounds the scan's alert cache at one entry per alert source per
+// repository a listing can return (paging.PagesMax pages of restPerPage repositories).
+const alertCacheEntriesMax = alertSourcesCount * paging.PagesMax * restPerPage
+
+// alertCacheKey identifies one alert listing of one repository within a scan.
+type alertCacheKey struct {
+	endpoint string
+	repo     string
+}
+
+// cachedAlerts lists source's open alerts for owner/repo once per scan: `security` and
+// `findings` both read every repository's alerts. A listing that ended in a notice (403/404) is
+// cached with its notices, which a hit replays. Any other failure is not cached, so the next
+// service retries it instead of repeating what is usually a transient error.
+func (p *GitHubProvider) cachedAlerts(
+	ctx context.Context, source alertSource, owner, repo string, errors *[]string,
+) []alertItem {
+	if source.endpoint == "" {
+		panic("github: alert source has no endpoint")
+	}
+	cache := scanCacheFrom(ctx)
+	key := alertCacheKey{endpoint: source.endpoint, repo: owner + "/" + repo}
+	if cache != nil {
+		if cached, ok := cache.alerts.Load(key); ok {
+			listing := cached.(alertListing)
+			*errors = append(*errors, listing.notices...)
+			return listing.items
+		}
+	}
+
+	var entries []string
+	items := p.listAlerts(ctx, source, owner, repo, &entries)
+	*errors = append(*errors, entries...)
+	if cache == nil {
+		return items
+	}
+	for _, entry := range entries {
+		if !shared.IsScanNotice(entry) {
+			return items
+		}
+	}
+	if cache.alertsCount.Load() < alertCacheEntriesMax {
+		if _, loaded := cache.alerts.LoadOrStore(key, alertListing{items, entries}); !loaded {
+			cache.alertsCount.Add(1)
+		}
+	}
+	return items
+}
+
+// listAlerts fetches every page of source's open alerts for owner/repo.
+func (p *GitHubProvider) listAlerts(
+	ctx context.Context, source alertSource, owner, repo string, errors *[]string,
+) []alertItem {
+	fullName := owner + "/" + repo
+	path := fmt.Sprintf("repos/%s/%s/%s/alerts?state=open&per_page=%d",
+		owner, repo, source.endpoint, restPerPage)
+	alerts, err := p.getRESTMaps(ctx, source.operation+" "+fullName, path)
+	appendAPIError(errors, source.operation, fullName, err)
+	return p.buildAlertItems(source.alertType, fullName, alerts, source.severity)
 }
 
 func (p *GitHubProvider) buildAlertItems(alertType, repo string, alerts []map[string]interface{}, severityFn func(map[string]interface{}) string) []alertItem {
