@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -307,19 +308,16 @@ func runPackInstall(args []string) {
 
 	ctx := context.Background()
 
-	// Check if it's a direct GitHub reference
-	if strings.Contains(packRef, "github.com/") || strings.Contains(packRef, "/") && !strings.Contains(packRef, "@") {
-		err := installFromGitHub(ctx, packRef, *version, installDir, *force, *dryRun, *verbose)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
-			os.Exit(1)
-		}
+	var err error
+	if isGitHubPackRef(packRef) {
+		err = installFromGitHub(ctx, packRef, *version, installDir, *force, *dryRun, *verbose)
 	} else {
-		err := installFromRegistry(ctx, packRef, *version, installDir, *force, *dryRun, *installDeps, *verbose)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
-			os.Exit(1)
-		}
+		err = installFromRegistry(ctx, packRef, *version, installDir, *force, *dryRun,
+			*installDeps, *verbose)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	if !*dryRun {
@@ -352,6 +350,10 @@ func installFromRegistry(ctx context.Context, packRef, version, installDir strin
 		}
 	}
 
+	if err := checkExistingPack(filepath.Join(installDir, packRef), force); err != nil {
+		return err
+	}
+
 	if dryRun {
 		fmt.Printf("🔍 [DRY-RUN] Would install pack '%s' version '%s' to '%s'\n", packRef, version, installDir)
 		return nil
@@ -371,6 +373,31 @@ func installFromRegistry(ctx context.Context, packRef, version, installDir strin
 		}
 	}
 
+	return nil
+}
+
+// isGitHubPackRef reports whether ref names a GitHub repository directly.
+// Only an explicit github.com/ prefix counts: a bare owner/name such as
+// jlgore/cfi-ccc is a registry namespace, not a repository path.
+func isGitHubPackRef(ref string) bool {
+	ref = strings.TrimPrefix(ref, "https://")
+	ref = strings.TrimPrefix(ref, "http://")
+	return strings.HasPrefix(ref, "github.com/")
+}
+
+// checkExistingPack refuses to install over a pack already at dir unless
+// force is set, so a reinstall is always something the user asked for.
+func checkExistingPack(dir string, force bool) error {
+	_, err := os.Stat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check existing pack %s: %w", dir, err)
+	}
+	if !force {
+		return fmt.Errorf("pack already installed at %s (use --force to reinstall)", dir)
+	}
 	return nil
 }
 

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -89,10 +90,16 @@ func installManaged(source ResolvedManifest, destinationRoot string) (ResolvedMa
 		}
 	}
 	if err := os.Rename(temporary, destination); err != nil {
+		activateErr := fmt.Errorf("activate managed provider installation: %w", err)
 		if backup != "" {
-			_ = os.Rename(backup, destination)
+			// If the restore fails too, the previous install now exists only
+			// at the backup path; name it so the user can recover it.
+			if err := os.Rename(backup, destination); err != nil {
+				return ResolvedManifest{}, errors.Join(activateErr, fmt.Errorf(
+					"restore previous installation from %s to %s: %w", backup, destination, err))
+			}
 		}
-		return ResolvedManifest{}, fmt.Errorf("activate managed provider installation: %w", err)
+		return ResolvedManifest{}, activateErr
 	}
 	if backup != "" {
 		_ = os.RemoveAll(backup)

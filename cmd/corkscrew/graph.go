@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -44,7 +43,10 @@ func runRefreshCorrelations(args []string) int {
 		fmt.Fprintf(os.Stderr, "correlation refresh failed: %v\n", err)
 		return 1
 	}
-	renderCorrelationRun(result, *output)
+	if err := renderCorrelationRun(result, *output); err != nil {
+		fmt.Fprintf(os.Stderr, "write correlation run: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
@@ -61,7 +63,10 @@ func runCorrelationStatus(args []string) int {
 		fmt.Fprintf(os.Stderr, "correlation status failed: %v\n", err)
 		return 1
 	}
-	renderCorrelationRun(result, *output)
+	if err := renderCorrelationRun(result, *output); err != nil {
+		fmt.Fprintf(os.Stderr, "write correlation run: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
@@ -84,11 +89,11 @@ func parseEvidenceKinds(value string) ([]contract.Kind, error) {
 	return result, nil
 }
 
-func renderCorrelationRun(result appcorrelation.Result, output string) {
+// renderCorrelationRun writes result to stdout. tabwriter buffers every row
+// until Flush, so Flush reports any write error.
+func renderCorrelationRun(result appcorrelation.Result, output string) error {
 	if output == "json" {
-		encoded, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(encoded))
-		return
+		return writeJSON(os.Stdout, result)
 	}
 	fmt.Printf("Correlation materialization %s: %s\n", result.RunID, result.Status)
 	fmt.Printf("Evidence: %d  Rows: %d  Rejected: %d\n", result.EvidenceCount, result.RowCount, result.RejectedCount)
@@ -103,5 +108,5 @@ func renderCorrelationRun(result appcorrelation.Result, output string) {
 		count := result.Coverage[key]
 		fmt.Fprintf(writer, "%s\t%d\n", key, count)
 	}
-	_ = writer.Flush()
+	return writer.Flush()
 }

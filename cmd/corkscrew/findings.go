@@ -104,7 +104,10 @@ func runFindingsList(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	renderFindings(rows, *output)
+	if err := renderFindings(rows, *output); err != nil {
+		fmt.Fprintf(os.Stderr, "write findings: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
@@ -124,7 +127,10 @@ func runFindingsShow(args []string) int {
 	}
 	for _, row := range rows {
 		if row.Fingerprint == fs.Arg(0) {
-			renderFindings([]appfindings.Finding{row}, *output)
+			if err := renderFindings([]appfindings.Finding{row}, *output); err != nil {
+				fmt.Fprintf(os.Stderr, "write finding: %v\n", err)
+				return 1
+			}
 			return 0
 		}
 	}
@@ -174,16 +180,16 @@ func runFindingsUnsuppress(args []string) int {
 	return 0
 }
 
-func renderFindings(rows []appfindings.Finding, output string) {
+// renderFindings writes rows to stdout. tabwriter buffers every row until
+// Flush, so Flush reports any write error.
+func renderFindings(rows []appfindings.Finding, output string) error {
 	if output == "json" {
-		encoded, _ := json.MarshalIndent(rows, "", "  ")
-		fmt.Println(string(encoded))
-		return
+		return writeJSON(os.Stdout, rows)
 	}
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(writer, "STATUS\tSEVERITY\tCONTROL\tPROVIDER\tRESOURCE\tFINGERPRINT")
 	for _, row := range rows {
 		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", row.Status, row.Severity, row.ControlID, row.Provider, row.ResourceID, row.Fingerprint)
 	}
-	_ = writer.Flush()
+	return writer.Flush()
 }

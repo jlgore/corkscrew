@@ -2,6 +2,8 @@ package findings
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -48,6 +50,52 @@ func TestEvaluateOpensSuppressesAndResolvesFinding(t *testing.T) {
 	}
 	if len(rows) != 1 {
 		t.Fatalf("resolved findings = %#v", rows)
+	}
+}
+
+// Evaluate counts a finding as recurred or opened from findingExists. A
+// failed existence query must surface as an error rather than read as "new",
+// which would count a recurring finding as opened. Forcing only that query to
+// fail inside a full Evaluate is impractical, so this exercises the seam
+// Evaluate calls with a connection that has already been closed.
+func TestFindingExistsReturnsQueryError(t *testing.T) {
+	ctx := context.Background()
+	session, err := dataaccess.OpenSession(ctx, filepath.Join(t.TempDir(), "findings.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	connection, err := session.Connection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	existed, err := findingExists(ctx, connection, "fp")
+	if err != nil {
+		t.Fatalf("open connection: %v", err)
+	}
+	if existed {
+		t.Fatal("empty database reports the finding as existing")
+	}
+
+	if err := connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := findingExists(ctx, connection, "fp"); !errors.Is(err, sql.ErrConnDone) {
+		t.Fatalf("closed connection: err = %v, want sql.ErrConnDone", err)
+	}
+}
+
+func TestDecodeJSONColumn(t *testing.T) {
+	var services []string
+	if err := decodeJSONColumn("", &services); err != nil || services != nil {
+		t.Fatalf("empty column: services=%v err=%v", services, err)
+	}
+	if err := decodeJSONColumn(`["s3"]`, &services); err != nil || len(services) != 1 {
+		t.Fatalf("valid column: services=%v err=%v", services, err)
+	}
+	if err := decodeJSONColumn(`["s3"`, &services); err == nil {
+		t.Fatal("corrupt column: want error")
 	}
 }
 

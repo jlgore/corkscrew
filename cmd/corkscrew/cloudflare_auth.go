@@ -80,11 +80,15 @@ func runCloudflareLogin(args []string) error {
 		return err
 	}
 
-	reqServices, _ := requestedServices(*services, *bundle)
+	// A typo in --bundle must fail rather than fall through to the generic
+	// scope list, which would look like a successful plan.
+	reqServices, err := requestedServices(*services, *bundle)
+	if err != nil {
+		return err
+	}
 	var plan *cloudflareauth.PermissionPlan
 	if len(reqServices) > 0 {
 		planner := &cloudflareauth.StaticPermissionPlanner{}
-		var err error
 		plan, err = planner.Plan(reqServices)
 		if err != nil {
 			return err
