@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jlgore/corkscrew/pkg/query"
 )
@@ -59,7 +60,9 @@ type Executor struct {
 
 // NewExecutor creates a new compliance executor
 func NewExecutor(dbPath string) (*Executor, error) {
-	engine, err := query.NewEngine(dbPath)
+	// Packs can come from external git or OCI sources, so their SQL never gets
+	// host file or network access.
+	engine, err := query.NewSandboxedEngine(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create query engine: %w", err)
 	}
@@ -79,6 +82,10 @@ func (e *Executor) Close() error {
 	return nil
 }
 
+// queryTimeout bounds each compliance query, so one pathological pack query
+// (an accidental cross join, say) cannot hang a whole compliance run.
+const queryTimeout = 2 * time.Minute
+
 // ExecuteOptions defines options for compliance execution
 type ExecuteOptions struct {
 	ControlID  string
@@ -86,6 +93,8 @@ type ExecuteOptions struct {
 	Tags       []string
 	Parameters map[string]interface{}
 	DryRun     bool
+	// QueryTimeout overrides queryTimeout for each query when positive.
+	QueryTimeout time.Duration
 }
 
 // SimpleQueryResult represents a compliance query result for the CLI
@@ -102,8 +111,9 @@ type SimpleQueryResult struct {
 }
 
 // Execute runs compliance checks based on the options - returns SimpleQueryResult for CLI compatibility
-func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) {
-	ctx := context.Background()
+func (e *Executor) Execute(
+	ctx context.Context, options ExecuteOptions,
+) ([]SimpleQueryResult, error) {
 	selections, err := e.selectQueries(ctx, options)
 	if err != nil {
 		return nil, err
@@ -111,10 +121,13 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 	if len(selections) == 0 {
 		return nil, fmt.Errorf("no compliance queries matched the requested options")
 	}
+	timeout := queryTimeout
+	if options.QueryTimeout > 0 {
+		timeout = options.QueryTimeout
+	}
 
 	results := make([]SimpleQueryResult, 0, len(selections))
 	for _, selection := range selections {
-		parameters := parametersWithDefaults(selection.pack, options.Parameters)
 		result := SimpleQueryResult{
 			PackRef:     canonicalPackRef(selection.pack),
 			ControlID:   selection.query.ID,
@@ -122,7 +135,10 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 			Description: selection.query.Description,
 			Passed:      true,
 		}
-
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("compliance run stopped before %s: %w", result.ControlID, err)
+		}
+		parameters := parametersWithDefaults(selection.pack, options.Parameters)
 		if options.DryRun {
 			if err := e.dryRunQuery(ctx, selection.query, parameters); err != nil {
 				result.Passed = false
@@ -132,34 +148,38 @@ func (e *Executor) Execute(options ExecuteOptions) ([]SimpleQueryResult, error) 
 			continue
 		}
 
-		complianceResults, err := e.compliance.ExecuteQuery(ctx, &selection.query, parameters)
+		queryCtx, cancel := context.WithTimeout(ctx, timeout)
+		complianceResults, err := e.compliance.ExecuteQuery(queryCtx, &selection.query, parameters)
+		cancel()
 		if err != nil {
 			result.Passed = false
 			result.Error = err
 			results = append(results, result)
 			continue
 		}
-		result.Rows = append(result.Rows, complianceResults...)
-
-		result.ResourceCount = len(complianceResults)
-		for _, complianceResult := range complianceResults {
-			switch strings.ToUpper(complianceResult.Status) {
-			case "PASS":
-				continue
-			default:
-				result.Passed = false
-				resource := complianceResult.ResourceID
-				if complianceResult.ResourceName != "" && complianceResult.ResourceName != complianceResult.ResourceID {
-					resource = fmt.Sprintf("%s (%s)", complianceResult.ResourceName, complianceResult.ResourceID)
-				}
-				result.FailedResources = append(result.FailedResources, resource)
-			}
-		}
-
+		recordComplianceRows(&result, complianceResults)
 		results = append(results, result)
 	}
 
 	return results, nil
+}
+
+// recordComplianceRows fills result from the query's rows: any row whose
+// status is not PASS fails the control and names its resource.
+func recordComplianceRows(result *SimpleQueryResult, rows []ComplianceResult) {
+	result.Rows = append(result.Rows, rows...)
+	result.ResourceCount = len(rows)
+	for _, row := range rows {
+		if strings.ToUpper(row.Status) == "PASS" {
+			continue
+		}
+		result.Passed = false
+		resource := row.ResourceID
+		if row.ResourceName != "" && row.ResourceName != row.ResourceID {
+			resource = fmt.Sprintf("%s (%s)", row.ResourceName, row.ResourceID)
+		}
+		result.FailedResources = append(result.FailedResources, resource)
+	}
 }
 
 func canonicalPackRef(pack *QueryPack) string {

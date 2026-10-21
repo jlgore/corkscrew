@@ -84,6 +84,43 @@ func TestTraverseRunnerAgainstFixtureDB(t *testing.T) {
 	}
 }
 
+// Graph sessions load the extension, then sandbox. The extension's functions
+// must keep working (they open dbPath through the extension's own DuckDB
+// instance), while SQL on the session itself cannot read host files.
+func TestGraphSessionIsSandboxedAfterExtensionLoads(t *testing.T) {
+	extensionPath, err := filepath.Abs(
+		"../../extensions/corkscrew-graph/build/corkscrew_graph.duckdb_extension",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(extensionPath); err != nil {
+		t.Skipf("graph extension not available: %v", err)
+	}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "fixture.duckdb")
+	setupGraphFixture(t, dbPath)
+	secret := filepath.Join(dir, "credentials")
+	if err := os.WriteFile(secret, []byte("aws_secret_access_key=x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, query := range []string{
+		"SELECT * FROM graph_traverse(" + sqlStringLiteral(dbPath) + ", 'r1', 3, 'outbound', 'NULL')",
+		"SELECT * FROM graph_correlate_ips(" + sqlStringLiteral(dbPath) + ", 0.5)",
+		"SELECT * FROM graph_cache_invalidate(" + sqlStringLiteral(dbPath) + ")",
+	} {
+		if _, _, err := executeGraphQuery(dbPath, query, extensionPath); err != nil {
+			t.Fatalf("%s under sandbox: %v", query, err)
+		}
+	}
+	readSecret := "SELECT * FROM read_text(" + sqlStringLiteral(secret) + ")"
+	_, _, err = executeGraphQuery(dbPath, readSecret, extensionPath)
+	if err == nil || !strings.Contains(err.Error(), "Permission Error") {
+		t.Fatalf("read_text on a graph session: error = %v, want a DuckDB permission error", err)
+	}
+}
+
 func setupGraphFixture(t *testing.T, dbPath string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {

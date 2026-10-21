@@ -403,7 +403,15 @@ func defaultDatabasePath() string {
 }
 
 func executeGraphQuery(dbPath, sqlQuery, extensionPath string) ([][]interface{}, []string, error) {
-	session, err := dataaccess.OpenSession(context.Background(), dbPath, dataaccess.WithGraphExtension(extensionPath))
+	// Graph SQL carries user input (pattern JSON, resource IDs), so it runs
+	// sandboxed. The extension still reads dbPath: it opens the file through its
+	// own DuckDB instance, which the sandbox on this one does not cover.
+	session, err := dataaccess.OpenSession(
+		context.Background(),
+		dbPath,
+		dataaccess.WithGraphExtension(extensionPath),
+		dataaccess.WithSandbox(),
+	)
 	if err != nil {
 		return nil, nil, err
 	}

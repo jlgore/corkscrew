@@ -3,7 +3,9 @@ package query
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +20,40 @@ func TestRunExecutesReadQuery(t *testing.T) {
 	}
 	if len(result.Rows) != 1 || len(result.Rows[0]) != 1 {
 		t.Fatalf("rows = %#v, want one row with one value", result.Rows)
+	}
+}
+
+// Ad hoc queries read local files by default; --sandbox (Request.Sandbox)
+// takes that away.
+func TestRunSandboxIsOptIn(t *testing.T) {
+	dir := t.TempDir()
+	csvPath := filepath.Join(dir, "local.csv")
+	if err := os.WriteFile(csvPath, []byte("name\nalpha\n"), 0o600); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	sql := "SELECT name FROM read_csv('" + csvPath + "')"
+
+	open, err := Run(context.Background(), Request{
+		Target: filepath.Join(dir, "open.duckdb"),
+		SQL:    sql,
+	})
+	if err != nil {
+		t.Fatalf("unsandboxed read_csv: %v", err)
+	}
+	if len(open.Rows) != 1 || open.Rows[0][0] != "alpha" {
+		t.Fatalf("rows = %#v, want [[alpha]]", open.Rows)
+	}
+
+	_, err = Run(context.Background(), Request{
+		Target:  filepath.Join(dir, "sandboxed.duckdb"),
+		SQL:     sql,
+		Sandbox: true,
+	})
+	if err == nil {
+		t.Fatal("sandboxed read_csv unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "Permission Error") {
+		t.Fatalf("error = %v, want a DuckDB permission error", err)
 	}
 }
 

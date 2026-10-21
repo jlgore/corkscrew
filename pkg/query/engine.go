@@ -85,11 +85,26 @@ func NewDuckDBQueryEngine() (*DuckDBQueryEngine, error) {
 // URI (e.g. "quack:host:9494"). An empty target resolves to the default unified
 // database path. Options (such as db.WithToken) apply only to remote targets.
 func NewDuckDBQueryEngineForTarget(target string, opts ...db.Option) (*DuckDBQueryEngine, error) {
-	session, err := dataaccess.OpenSession(
-		context.Background(),
+	return openDuckDBQueryEngine(target, dataaccess.WithDatabaseOptions(opts...))
+}
+
+// NewSandboxedDuckDBQueryEngineForTarget is NewDuckDBQueryEngineForTarget with
+// the session sandboxed (see data.Session.Sandbox): its queries cannot read
+// host files, reach the network, or load extensions.
+func NewSandboxedDuckDBQueryEngineForTarget(
+	target string, opts ...db.Option,
+) (*DuckDBQueryEngine, error) {
+	return openDuckDBQueryEngine(
 		target,
 		dataaccess.WithDatabaseOptions(opts...),
+		dataaccess.WithSandbox(),
 	)
+}
+
+func openDuckDBQueryEngine(
+	target string, options ...dataaccess.SessionOption,
+) (*DuckDBQueryEngine, error) {
+	session, err := dataaccess.OpenSession(context.Background(), target, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open data session: %w", err)
 	}

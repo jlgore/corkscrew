@@ -99,7 +99,12 @@ func Evaluate(ctx context.Context, request EvaluateRequest) (Evaluation, error) 
 	if err != nil {
 		return Evaluation{}, err
 	}
-	results, executeErr := executor.Execute(compliance.ExecuteOptions{ControlID: request.ControlID, PackName: request.PackName, Tags: request.Tags, Parameters: request.Parameters})
+	results, executeErr := executor.Execute(ctx, compliance.ExecuteOptions{
+		ControlID:  request.ControlID,
+		PackName:   request.PackName,
+		Tags:       request.Tags,
+		Parameters: request.Parameters,
+	})
 	_ = executor.Close()
 	if executeErr != nil {
 		return Evaluation{}, executeErr

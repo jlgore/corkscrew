@@ -764,6 +764,8 @@ func runQuery(args []string) {
 	outputFormat := fs.String("output", "table", "Output format (table, json, csv)")
 	verbose := fs.Bool("verbose", false, "Enable verbose output")
 	noHeader := fs.Bool("no-header", false, "Omit header in table output")
+	sandbox := fs.Bool("sandbox", false,
+		"Run SQL without host file, network, or extension access (compliance always does)")
 
 	// Create parameter flags handler
 	params := make(parameterFlags)
@@ -831,6 +833,7 @@ func runQuery(args []string) {
 		Target:  resolvedDBPath,
 		Options: quackOpts,
 		SQL:     sqlQuery,
+		Sandbox: *sandbox,
 	})
 	if err != nil {
 		var queryErr *appquery.Error

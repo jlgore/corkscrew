@@ -29,6 +29,7 @@ type sessionOptions struct {
 	databaseOptions []db.Option
 	graphExtension  string
 	scanWriter      ScanWriter
+	sandbox         bool
 }
 
 // SessionOption configures a data session.
@@ -47,6 +48,13 @@ func WithDatabaseOptions(options ...db.Option) SessionOption {
 // WithGraphExtension loads a trusted packaged graph extension in-process.
 func WithGraphExtension(path string) SessionOption {
 	return func(config *sessionOptions) { config.graphExtension = path }
+}
+
+// WithSandbox calls Session.Sandbox once the session has loaded its
+// extensions. Sessions that run SQL the user did not write themselves
+// (compliance packs from external sources, graph queries) use it.
+func WithSandbox() SessionOption {
+	return func(config *sessionOptions) { config.sandbox = true }
 }
 
 // WithScanWriter substitutes the session's scan-persistence adapter. Production
@@ -106,18 +114,60 @@ func openSessionWith(ctx context.Context, target string, opener databaseOpener, 
 		session.scanWriter = graphStoreWriter{store: db.NewGraphStore(database)}
 	}
 	if strings.TrimSpace(config.graphExtension) != "" {
-		resolved, resolveErr := ResolveGraphExtension(config.graphExtension)
-		if resolveErr != nil {
+		if err := loadGraphExtension(ctx, database, config.graphExtension); err != nil {
 			_ = database.Close()
-			return nil, resolveErr
-		}
-		if _, loadErr := database.ExecContext(ctx, "LOAD '"+db.SQLEscapeSingleQuotes(resolved)+"'"); loadErr != nil {
-			_ = database.Close()
-			return nil, fmt.Errorf("load graph extension %q: %w", resolved, loadErr)
+			return nil, err
 		}
 		session.graphAvailable = true
 	}
+	// The sandbox locks the configuration for good, so it must come after
+	// every LOAD above.
+	if config.sandbox {
+		if err := session.Sandbox(ctx); err != nil {
+			_ = database.Close()
+			return nil, err
+		}
+	}
 	return session, nil
+}
+
+func loadGraphExtension(ctx context.Context, database *sql.DB, path string) error {
+	resolved, err := ResolveGraphExtension(path)
+	if err != nil {
+		return err
+	}
+	statement := "LOAD '" + db.SQLEscapeSingleQuotes(resolved) + "'"
+	if _, err := database.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("load graph extension %q: %w", resolved, err)
+	}
+	return nil
+}
+
+// sandboxStatements turn off DuckDB's host access, then lock the
+// configuration so that a later SET or RESET cannot turn it back on. The order
+// matters: once lock_configuration is on, no setting can change.
+var sandboxStatements = [...]string{
+	"SET enable_external_access = false",
+	"SET lock_configuration = true",
+}
+
+// Sandbox stops the session's SQL from reaching the host. It blocks read_text,
+// read_csv, COPY, ATTACH, URLs and loading new extensions, so a compliance
+// pack from an external git or OCI source cannot read ~/.aws/credentials or
+// send rows over the network. The database file that is already open, and
+// extensions that are already loaded, keep working. Both settings apply to the
+// whole DuckDB instance (every pooled connection) and last for the life of the
+// session.
+func (s *Session) Sandbox(ctx context.Context) error {
+	if s == nil || s.database == nil {
+		return fmt.Errorf("data session is closed")
+	}
+	for _, statement := range sandboxStatements {
+		if _, err := s.database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("sandbox data session (%s): %w", statement, err)
+		}
+	}
+	return nil
 }
 
 func resolveLocalTarget(target string) (string, error) {
@@ -349,32 +399,67 @@ func hasOnlyTrailingSemicolon(statement string) bool {
 	return strings.HasSuffix(trimmed, ";") && !strings.Contains(strings.TrimSuffix(trimmed, ";"), ";")
 }
 
+// graphExtensionFile is the packaged extension's file name, both as built and
+// as installed under the corkscrew home.
+const graphExtensionFile = "corkscrew_graph.duckdb_extension"
+
+// graphExtensionEnv names an operator-chosen extension path, like --extension.
+const graphExtensionEnv = "CORKSCREW_GRAPH_EXTENSION"
+
+// ResolveGraphExtension returns the absolute path of the graph extension to
+// LOAD. Sessions that load it also allow unsigned extensions, so the binary
+// must come from a place the operator chose: an explicit path (--extension),
+// an absolute path in CORKSCREW_GRAPH_EXTENSION, or the install location
+// ~/.corkscrew/extensions. It never searches the working directory: running
+// corkscrew inside an untrusted checkout must not load a binary from it.
 func ResolveGraphExtension(explicitPath string) (string, error) {
-	if strings.TrimSpace(explicitPath) != "" {
-		path, err := filepath.Abs(strings.TrimSpace(explicitPath))
+	if path := strings.TrimSpace(explicitPath); path != "" {
+		absolute, err := filepath.Abs(path)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("resolve graph extension path %q: %w", path, err)
 		}
-		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-			return "", fmt.Errorf("graph extension not found at %q", path)
+		return requireRegularFile(absolute)
+	}
+	if path := strings.TrimSpace(os.Getenv(graphExtensionEnv)); path != "" {
+		// A relative value would depend on the working directory again.
+		if !filepath.IsAbs(path) {
+			return "", fmt.Errorf("%s must be an absolute path, got %q", graphExtensionEnv, path)
 		}
-		return path, nil
+		return requireRegularFile(filepath.Clean(path))
 	}
-	if environmentPath := strings.TrimSpace(os.Getenv("CORKSCREW_GRAPH_EXTENSION")); environmentPath != "" {
-		return ResolveGraphExtension(environmentPath)
+	installed, err := installedGraphExtensionPath()
+	if err != nil {
+		return "", err
 	}
-	candidates := []string{
-		"extensions/corkscrew-graph/build/corkscrew_graph.duckdb_extension",
-		"extensions/corkscrew-graph/target/release/corkscrew_graph.duckdb_extension",
-		"build/corkscrew_graph.duckdb_extension",
+	if _, err := requireRegularFile(installed); err != nil {
+		return "", fmt.Errorf(
+			"could not find %s at %q; install it there, or use --extension or %s",
+			graphExtensionFile, installed, graphExtensionEnv,
+		)
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".corkscrew", "extensions", "corkscrew_graph.duckdb_extension"))
+	return installed, nil
+}
+
+// installedGraphExtensionPath is ~/.corkscrew/extensions/<file>. It rejects a
+// relative home directory, which would resolve against the working directory.
+func installedGraphExtensionPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory for graph extension: %w", err)
 	}
-	for _, candidate := range candidates {
-		if resolved, err := ResolveGraphExtension(candidate); err == nil {
-			return resolved, nil
-		}
+	if !filepath.IsAbs(home) {
+		return "", fmt.Errorf("home directory %q is not absolute", home)
 	}
-	return "", fmt.Errorf("could not find corkscrew_graph.duckdb_extension; use --extension or CORKSCREW_GRAPH_EXTENSION")
+	return filepath.Join(home, ".corkscrew", "extensions", graphExtensionFile), nil
+}
+
+func requireRegularFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("graph extension not found at %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("graph extension at %q is not a regular file", path)
+	}
+	return path, nil
 }
