@@ -7,6 +7,9 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::correlate_common::{
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+};
 use crate::functions::params::{bind_data, guard, param_bool, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
@@ -31,19 +34,6 @@ struct DNSRecord {
     dns_service: String,
     zone_id: String,
     zone_name: String,
-}
-
-#[derive(Clone, Debug)]
-struct CorrelationRow {
-    correlation_id: String,
-    correlation_type: String,
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-    confidence: f64,
-    evidence: String,
-    description: String,
 }
 
 pub struct CorrelateDNSInitData {
@@ -154,14 +144,11 @@ fn collect_dns_correlations(
             .push(record);
     }
     for (dns_name, group) in by_name {
-        correlate_pairs(
-            &group,
-            "dns_name_match",
-            &dns_name,
-            threshold,
-            &mut seen,
-            &mut out,
-        );
+        let key = GroupKey {
+            kind: "dns_name_match",
+            value: &dns_name,
+        };
+        correlate_pairs(&group, key, threshold, &mut seen, &mut out)?;
     }
 
     if include_cname {
@@ -177,14 +164,11 @@ fn collect_dns_correlations(
             }
         }
         for (target, group) in by_cname_target {
-            correlate_pairs(
-                &group,
-                "dns_cname_target_match",
-                &target,
-                threshold,
-                &mut seen,
-                &mut out,
-            );
+            let key = GroupKey {
+                kind: "dns_cname_target_match",
+                value: &target,
+            };
+            correlate_pairs(&group, key, threshold, &mut seen, &mut out)?;
         }
     }
 
@@ -194,73 +178,82 @@ fn collect_dns_correlations(
 
 fn correlate_pairs(
     group: &[&DNSRecord],
-    kind: &str,
-    shared_value: &str,
+    key: GroupKey<'_>,
     threshold: f64,
     seen: &mut HashSet<String>,
     out: &mut Vec<CorrelationRow>,
-) {
-    for i in 0..group.len() {
-        for j in (i + 1)..group.len() {
-            let left = group[i];
-            let right = group[j];
-            if left.provider == right.provider || left.resource_id == right.resource_id {
-                continue;
-            }
-            let (source, target) = ordered_pair(left, right);
-            let confidence = dns_confidence(source, target, kind);
-            if confidence < threshold {
-                continue;
-            }
-            let correlation_id = format!(
-                "{}:{}:{}:{}",
-                kind, shared_value, source.resource_id, target.resource_id
-            );
-            if !seen.insert(correlation_id.clone()) {
-                continue;
-            }
-            let evidence = json!({
-                "match_value": shared_value,
-                "source_record_id": source.record_id,
-                "target_record_id": target.record_id,
-                "source_dns_name": source.dns_name,
-                "target_dns_name": target.dns_name,
-                "source_record_type": source.record_type,
-                "target_record_type": target.record_type,
-                "source_record_values": source.record_values,
-                "target_record_values": target.record_values,
-                "source_resource_type": source.resource_type,
-                "target_resource_type": target.resource_type,
-                "source_region": source.region,
-                "target_region": target.region,
-                "source_account_id": source.account_id,
-                "target_account_id": target.account_id,
-                "source_dns_service": source.dns_service,
-                "target_dns_service": target.dns_service,
-                "source_zone_id": source.zone_id,
-                "target_zone_id": target.zone_id,
-                "source_zone_name": source.zone_name,
-                "target_zone_name": target.zone_name,
-            })
-            .to_string();
-            out.push(CorrelationRow {
-                correlation_id,
-                correlation_type: kind.to_string(),
-                source_id: source.resource_id.clone(),
-                target_id: target.resource_id.clone(),
-                source_provider: source.provider.clone(),
-                target_provider: target.provider.clone(),
-                confidence,
-                evidence,
-                description: format!(
-                    "DNS records {} and {} share {}",
-                    display_name(source),
-                    display_name(target),
-                    shared_value
-                ),
-            });
-        }
+) -> Result<(), BoxError> {
+    walk_group_pairs(
+        group,
+        key,
+        CorrelationLimits::DEFAULT,
+        out,
+        |left, right| {
+            let row = dns_pair_row(left, right, key, threshold)?;
+            seen.insert(row.correlation_id.clone()).then_some(row)
+        },
+    )
+}
+
+/// The correlation row for one pair of DNS records sharing `key.value`, or
+/// `None` when the pair is same-provider, same-resource, or below `threshold`.
+fn dns_pair_row(
+    left: &DNSRecord,
+    right: &DNSRecord,
+    key: GroupKey<'_>,
+    threshold: f64,
+) -> Option<CorrelationRow> {
+    if left.provider == right.provider || left.resource_id == right.resource_id {
+        return None;
     }
+    let (source, target) = ordered_pair(left, right);
+    let confidence = dns_confidence(source, target, key.kind);
+    if confidence < threshold {
+        return None;
+    }
+    let evidence = json!({
+        "match_value": key.value,
+        "source_record_id": source.record_id,
+        "target_record_id": target.record_id,
+        "source_dns_name": source.dns_name,
+        "target_dns_name": target.dns_name,
+        "source_record_type": source.record_type,
+        "target_record_type": target.record_type,
+        "source_record_values": source.record_values,
+        "target_record_values": target.record_values,
+        "source_resource_type": source.resource_type,
+        "target_resource_type": target.resource_type,
+        "source_region": source.region,
+        "target_region": target.region,
+        "source_account_id": source.account_id,
+        "target_account_id": target.account_id,
+        "source_dns_service": source.dns_service,
+        "target_dns_service": target.dns_service,
+        "source_zone_id": source.zone_id,
+        "target_zone_id": target.zone_id,
+        "source_zone_name": source.zone_name,
+        "target_zone_name": target.zone_name,
+    })
+    .to_string();
+    Some(CorrelationRow {
+        correlation_id: format!(
+            "{}:{}:{}:{}",
+            key.kind, key.value, source.resource_id, target.resource_id
+        ),
+        correlation_type: key.kind.to_string(),
+        source_id: source.resource_id.clone(),
+        target_id: target.resource_id.clone(),
+        source_provider: source.provider.clone(),
+        target_provider: target.provider.clone(),
+        confidence,
+        evidence,
+        description: format!(
+            "DNS records {} and {} share {}",
+            display_name(source),
+            display_name(target),
+            key.value
+        ),
+    })
 }
 
 fn dns_confidence(source: &DNSRecord, target: &DNSRecord, kind: &str) -> f64 {

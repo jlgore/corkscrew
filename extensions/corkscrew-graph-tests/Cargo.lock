@@ -498,6 +498,7 @@ dependencies = [
  "criterion",
  "dashmap",
  "duckdb",
+ "fixedbitset",
  "lru",
  "petgraph",
  "serde",

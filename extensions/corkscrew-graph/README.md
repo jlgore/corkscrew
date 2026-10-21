@@ -91,8 +91,28 @@ Cache TTL can be overridden per session with:
 `graph_traverse(..., filter_type)` accepts either SQL `NULL` or the literal
 string `'NULL'` to disable type filtering.
 
-`graph_match_pattern` caps results at 256 distinct matches. Detect truncation
-with `COUNT(DISTINCT match_id) = 256`.
+`graph_match_pattern` caps results at 256 distinct matches. Every row carries a
+`was_truncated` BOOLEAN that is true when more matches existed than were
+returned.
+
+Limits. Every query has fixed upper bounds. A limit on work or result size
+fails the query with an error that names the limit. A correlator group that is
+too large is skipped and reported in its own row:
+
+- Patterns need 1 to 8 nodes, at most 56 edges, and at least one node with a
+  non-empty `type_filter`. The VF2 search fails once it has made 100,000,000
+  node comparisons, which suggests adding `type_filter` to more nodes.
+- `graph_traverse` fails if it would return more than 1,000,000 rows. Lower
+  `max_hops` or set `filter_type`.
+- A graph load fails past 10,000,000 nodes or 50,000,000 edges.
+- The correlators that compare every pair in a group (`ips`, `dns`, `domains`,
+  `load_balancers`, `secrets`) skip any group with more than 1024 records, such
+  as a shared RFC1918 or Docker-bridge address. Each skipped group becomes one
+  row with `correlation_type = 'group_skipped'`, `source_id` set to the shared
+  value, confidence `0.0`, and evidence `{group_kind, group_value, group_size,
+  group_size_max}`. These rows ignore `min_confidence` and sort last under
+  `ORDER BY confidence DESC`. A correlator fails if it would return more than
+  1,000,000 rows.
 
 Provider tables are detected by convention. Any pair of tables named
 `<prefix>_resources` and `<prefix>_relationships` (excluding the unified
@@ -105,9 +125,14 @@ either per session:
     SET VARIABLE corkscrew_graph_cache_ttl = 0;          -- always reload
     SET VARIABLE corkscrew_graph_cache_max_entries = 1;  -- single-entry cache
 
-Cache entries auto-invalidate when the backing DuckDB file's mtime or size
-changes, so re-running a scan into the same path doesn't need an explicit
-`graph_cache_invalidate` call.
+Each entry holds a whole graph, so `corkscrew_graph_cache_max_entries` is
+clamped to 1 through 16.
+
+Cache entries auto-invalidate when the backing DuckDB file's mtime (in
+nanoseconds) or size changes, so re-running a scan into the same path doesn't
+need an explicit `graph_cache_invalidate` call. The fingerprint is taken before
+the load starts. A graph whose file changed during its own load goes back to
+that caller but is not cached. Loads of different databases run in parallel.
 
 **Edge weights**: `graph_shortest_path(..., weighted := true)` reads a positive
 integer `weight` field from each edge's JSON `properties` payload. No provider

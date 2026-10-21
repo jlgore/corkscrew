@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{
     chunk_capacity, collect_traverse_rows, load_graph_for_path, next_chunk,
-    write_varchar_list_column, TraversalDirection, TraverseRow,
+    write_varchar_list_column, TraversalDirection, TraverseRow, TRAVERSE_ROWS_MAX,
 };
 use crate::functions::params::{
     bind_data, guard, param_hops, param_optional_varchar, param_varchar, BoxError,
@@ -78,7 +78,8 @@ impl VTab for GraphTraverseVTab {
                 bind_ref.max_hops,
                 bind_ref.direction,
                 bind_ref.filter_type.as_deref(),
-            );
+                TRAVERSE_ROWS_MAX,
+            )?;
 
             Ok(TraverseInitData {
                 cursor: AtomicUsize::new(0),
