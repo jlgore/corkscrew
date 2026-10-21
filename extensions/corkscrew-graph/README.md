@@ -92,8 +92,9 @@ Cache TTL can be overridden per session with:
 string `'NULL'` to disable type filtering.
 
 `graph_match_pattern` caps results at 256 distinct matches. Every row carries a
-`was_truncated` BOOLEAN that is true when more matches existed than were
-returned.
+`was_truncated` BOOLEAN that is true when the cap was reached and more matches
+may exist: the search found a 257th match, or ran out of its step budget while
+looking for one. Running out of budget before reaching the cap is an error.
 
 Limits. Every query has fixed upper bounds. A limit on work or result size
 fails the query with an error that names the limit. A correlator group that is

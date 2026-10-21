@@ -2415,6 +2415,51 @@ fn match_pattern_step_budget_is_an_error() {
 }
 
 #[test]
+fn match_pattern_budget_spent_probing_past_the_cap_keeps_the_rows() {
+    use corkscrew_graph_tests::functions::match_pattern::{collect_match_rows, MatchLimits};
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    // With the cap equal to the true match count, the search must probe past the last
+    // match to learn nothing more exists. Find the smallest budget that finishes the
+    // search; one step less runs out while probing, after every match was collected,
+    // so the rows come back marked truncated instead of failing the query.
+    let (_temp_dir, fixture_path) = fixture_db(make_many_public_s3_matches_fixture);
+    let loaded = load_fixture(&fixture_path);
+    let pattern = load_pattern("public_s3_via_instance").unwrap();
+    let pattern_nodes = pattern.graph.node_count();
+    let match_count = 300;
+
+    let complete_within = |steps_max: u64| {
+        let limits = MatchLimits {
+            matches_max: match_count,
+            steps_max,
+        };
+        collect_match_rows(&pattern, &loaded.graph, limits).is_ok_and(|result| !result.truncated)
+    };
+    let mut steps_low: u64 = 1;
+    let mut steps_high: u64 = 100_000;
+    assert!(!complete_within(steps_low));
+    assert!(complete_within(steps_high));
+    while steps_high - steps_low > 1 {
+        let steps_middle = steps_low + (steps_high - steps_low) / 2;
+        if complete_within(steps_middle) {
+            steps_high = steps_middle;
+        } else {
+            steps_low = steps_middle;
+        }
+    }
+
+    let probe_starved = MatchLimits {
+        matches_max: match_count,
+        steps_max: steps_high - 1,
+    };
+    let result = collect_match_rows(&pattern, &loaded.graph, probe_starved)
+        .expect("running out while probing past the cap must keep the rows");
+    assert!(result.truncated);
+    assert_eq!(result.rows.len(), match_count * pattern_nodes);
+}
+
+#[test]
 fn traverse_rows_max_is_an_error() {
     use corkscrew_graph_tests::functions::common::{collect_traverse_rows, TraversalDirection};
 
