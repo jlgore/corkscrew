@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 func TestRunScanEParseErrorsReturnError(t *testing.T) {
 	var err error
 	captureCLIOutput(t, func() int {
-		err = runScanE([]string{"--not-a-real-flag"})
+		err = runScanE(context.Background(), []string{"--not-a-real-flag"})
 		if err != nil {
 			return 1
 		}
@@ -30,7 +31,7 @@ func TestRunScanEParseErrorsReturnError(t *testing.T) {
 func TestRunScanEHelpReturnsNil(t *testing.T) {
 	var err error
 	code := captureCLIOutput(t, func() int {
-		err = runScanE([]string{"-h"})
+		err = runScanE(context.Background(), []string{"-h"})
 		if err != nil {
 			return 1
 		}
@@ -53,7 +54,7 @@ func TestRunScanEValidationErrorsReturnError(t *testing.T) {
 
 	var err error
 	captureCLIOutput(t, func() int {
-		err = runScanE([]string{"--provider", "digitalocean", "--config", configPath})
+		err = runScanE(context.Background(), []string{"--provider", "digitalocean", "--config", configPath})
 		if err != nil {
 			return 1
 		}
@@ -73,7 +74,7 @@ func TestRunScanEMissingConfigReturnsError(t *testing.T) {
 
 	var err error
 	captureCLIOutput(t, func() int {
-		err = runScanE([]string{"--config", missingConfig})
+		err = runScanE(context.Background(), []string{"--config", missingConfig})
 		if err != nil {
 			return 1
 		}

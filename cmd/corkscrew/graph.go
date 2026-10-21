@@ -14,17 +14,17 @@ import (
 	"github.com/jlgore/corkscrew/pkg/graphquery"
 )
 
-func runGraph(args []string) int {
+func runGraph(ctx context.Context, args []string) int {
 	if len(args) > 0 && args[0] == "refresh-correlations" {
-		return runRefreshCorrelations(args[1:])
+		return runRefreshCorrelations(ctx, args[1:])
 	}
 	if len(args) > 0 && args[0] == "correlation-status" {
-		return runCorrelationStatus(args[1:])
+		return runCorrelationStatus(ctx, args[1:])
 	}
-	return graphquery.NewRunner(os.Stdout, os.Stderr).Run(args)
+	return graphquery.NewRunner(os.Stdout, os.Stderr).RunContext(ctx, args)
 }
 
-func runRefreshCorrelations(args []string) int {
+func runRefreshCorrelations(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("graph refresh-correlations", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -38,7 +38,7 @@ func runRefreshCorrelations(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	result, err := appcorrelation.Refresh(context.Background(), appcorrelation.Request{Target: *dbPath, Kinds: kinds})
+	result, err := appcorrelation.Refresh(ctx, appcorrelation.Request{Target: *dbPath, Kinds: kinds})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "correlation refresh failed: %v\n", err)
 		return 1
@@ -50,7 +50,7 @@ func runRefreshCorrelations(args []string) int {
 	return 0
 }
 
-func runCorrelationStatus(args []string) int {
+func runCorrelationStatus(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("graph correlation-status", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -58,7 +58,7 @@ func runCorrelationStatus(args []string) int {
 	if fs.Parse(args) != nil {
 		return 1
 	}
-	result, err := appcorrelation.Latest(context.Background(), *dbPath)
+	result, err := appcorrelation.Latest(ctx, *dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "correlation status failed: %v\n", err)
 		return 1

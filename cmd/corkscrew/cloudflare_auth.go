@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"github.com/jlgore/corkscrew/internal/providers/cloudflareauth"
 )
 
-func runCloudflare(args []string) {
+func runCloudflare(ctx context.Context, args []string) {
 	if len(args) == 0 {
 		printCloudflareUsage()
 		return
@@ -19,7 +20,7 @@ func runCloudflare(args []string) {
 
 	switch args[0] {
 	case "auth":
-		runCloudflareAuth(args[1:])
+		runCloudflareAuth(ctx, args[1:])
 	case "login":
 		runCloudflareLogin(args[1:])
 	case "logout":
@@ -33,7 +34,7 @@ func runCloudflare(args []string) {
 	}
 }
 
-func runCloudflareAuth(args []string) {
+func runCloudflareAuth(ctx context.Context, args []string) {
 	if len(args) == 0 {
 		printCloudflareAuthUsage()
 		return
@@ -46,17 +47,17 @@ func runCloudflareAuth(args []string) {
 			os.Exit(1)
 		}
 	case "status":
-		if err := runCloudflareAuthStatus(args[1:]); err != nil {
+		if err := runCloudflareAuthStatus(ctx, args[1:]); err != nil {
 			fmt.Printf("Cloudflare auth status failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "verify":
-		if err := runCloudflareAuthVerify(args[1:]); err != nil {
+		if err := runCloudflareAuthVerify(ctx, args[1:]); err != nil {
 			fmt.Printf("Cloudflare auth verify failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "validate":
-		if err := runCloudflareAuthValidate(args[1:]); err != nil {
+		if err := runCloudflareAuthValidate(ctx, args[1:]); err != nil {
 			fmt.Printf("Cloudflare auth validate failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -157,7 +158,7 @@ func runCloudflareAuthPlan(args []string) error {
 	return nil
 }
 
-func runCloudflareAuthStatus(args []string) error {
+func runCloudflareAuthStatus(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cloudflare auth status", flag.ContinueOnError)
 	profile := fs.String("profile", cloudflareauth.DefaultProfileName, "OAuth profile name")
 	method := fs.String("method", "", "Auth method override (oauth, api_token, api_key)")
@@ -181,7 +182,7 @@ func runCloudflareAuthStatus(args []string) error {
 		Validator:     &cloudflareauth.CloudflareTokenValidator{},
 		AllowFallback: true,
 	}
-	resolved, err := resolver.Resolve(nil, cloudflareauth.ResolveAuthRequest{Config: cfg})
+	resolved, err := resolver.Resolve(ctx, cloudflareauth.ResolveAuthRequest{Config: cfg})
 	if err != nil {
 		fmt.Printf("Method: %s\n", cfg.Auth.Method)
 		fmt.Printf("Status: not configured (%v)\n", err)
@@ -217,7 +218,7 @@ func runCloudflareAuthStatus(args []string) error {
 	return nil
 }
 
-func runCloudflareAuthVerify(args []string) error {
+func runCloudflareAuthVerify(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cloudflare auth verify", flag.ContinueOnError)
 	services := fs.String("services", "", "Comma-separated Cloudflare scan services")
 	bundle := fs.String("bundle", "", "Convenience permission bundle")
@@ -253,7 +254,7 @@ func runCloudflareAuthVerify(args []string) error {
 		Validator:     &cloudflareauth.CloudflareTokenValidator{},
 		AllowFallback: true,
 	}
-	resolved, err := resolver.Resolve(nil, cloudflareauth.ResolveAuthRequest{Config: cfg, Services: requested})
+	resolved, err := resolver.Resolve(ctx, cloudflareauth.ResolveAuthRequest{Config: cfg, Services: requested})
 	if err != nil {
 		return err
 	}
@@ -278,7 +279,7 @@ func runCloudflareAuthVerify(args []string) error {
 	return nil
 }
 
-func runCloudflareAuthValidate(args []string) error {
+func runCloudflareAuthValidate(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cloudflare auth validate", flag.ContinueOnError)
 	profile := fs.String("profile", cloudflareauth.DefaultProfileName, "OAuth profile name")
 	method := fs.String("method", "", "Auth method override (oauth, api_token, api_key)")
@@ -302,7 +303,7 @@ func runCloudflareAuthValidate(args []string) error {
 		AllowFallback: true,
 		Validate:      true,
 	}
-	resolved, err := resolver.Resolve(nil, cloudflareauth.ResolveAuthRequest{Config: cfg})
+	resolved, err := resolver.Resolve(ctx, cloudflareauth.ResolveAuthRequest{Config: cfg})
 	if err != nil {
 		return err
 	}

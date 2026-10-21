@@ -11,16 +11,16 @@ import (
 	"github.com/jlgore/corkscrew/internal/awsorg"
 )
 
-func runAWSOrg(args []string) {
+func runAWSOrg(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		printAWSOrgUsage()
 		os.Exit(1)
 	}
 	switch args[0] {
 	case "bootstrap-template":
-		runAWSOrgBootstrapTemplate(args[1:])
+		runAWSOrgBootstrapTemplate(ctx, args[1:])
 	case "bootstrap-deploy":
-		runAWSOrgBootstrapDeploy(args[1:])
+		runAWSOrgBootstrapDeploy(ctx, args[1:])
 	case "help", "--help", "-h":
 		printAWSOrgUsage()
 	default:
@@ -120,12 +120,11 @@ func paramsFromFlags(f *orgFlags, ous []string) awsorg.TemplateParams {
 	}
 }
 
-func runAWSOrgBootstrapTemplate(args []string) {
+func runAWSOrgBootstrapTemplate(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("bootstrap-template", flag.ExitOnError)
 	f := bindOrgFlags(fs, false)
 	_ = fs.Parse(args)
 
-	ctx := context.Background()
 	ous, err := resolveOUs(ctx, f.ousCSV)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "resolve OUs: %v\n", err)
@@ -139,12 +138,11 @@ func runAWSOrgBootstrapTemplate(args []string) {
 	fmt.Print(yaml)
 }
 
-func runAWSOrgBootstrapDeploy(args []string) {
+func runAWSOrgBootstrapDeploy(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("bootstrap-deploy", flag.ExitOnError)
 	f := bindOrgFlags(fs, true)
 	_ = fs.Parse(args)
 
-	ctx := context.Background()
 	ous, err := resolveOUs(ctx, f.ousCSV)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "resolve OUs: %v\n", err)

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -59,7 +58,9 @@ type ProgressTracker struct {
 	StartTime time.Time
 }
 
-func runInit(args []string) {
+// runInit takes the CLI root context: Ctrl-C cancels in-flight downloads and kills
+// generator/build subprocesses instead of leaving them running after init exits.
+func runInit(ctx context.Context, args []string) {
 	// Check for help first
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -70,11 +71,6 @@ func runInit(args []string) {
 
 	fmt.Println("🚀 Initializing Corkscrew v2.0.0...")
 	fmt.Println()
-
-	// Ctrl-C cancels in-flight downloads and kills generator/build subprocesses instead of
-	// leaving them running after init exits.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 
 	// Parse flags
 	dryRun := false

@@ -10,7 +10,7 @@ import (
 	"github.com/jlgore/corkscrew/internal/providers/githubauth"
 )
 
-func runGitHub(args []string) {
+func runGitHub(ctx context.Context, args []string) {
 	if len(args) == 0 {
 		fmt.Println("Usage: corkscrew github <command>")
 		fmt.Println("Commands: bootstrap-app")
@@ -19,7 +19,7 @@ func runGitHub(args []string) {
 
 	switch args[0] {
 	case "bootstrap-app":
-		if err := runGitHubBootstrapApp(args[1:]); err != nil {
+		if err := runGitHubBootstrapApp(ctx, args[1:]); err != nil {
 			fmt.Printf("GitHub App bootstrap failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -29,7 +29,7 @@ func runGitHub(args []string) {
 	}
 }
 
-func runGitHubBootstrapApp(args []string) error {
+func runGitHubBootstrapApp(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("github bootstrap-app", flag.ContinueOnError)
 	org := fs.String("org", os.Getenv("GITHUB_ORG"), "GitHub organization slug")
 	name := fs.String("name", "Corkscrew Scanner", "GitHub App name")
@@ -45,7 +45,7 @@ func runGitHubBootstrapApp(args []string) error {
 		return err
 	}
 
-	conversion, err := githubauth.BootstrapApp(context.Background(), githubauth.BootstrapRequest{
+	conversion, err := githubauth.BootstrapApp(ctx, githubauth.BootstrapRequest{
 		Org:     *org,
 		AppName: *name,
 		Port:    *callbackPort,
