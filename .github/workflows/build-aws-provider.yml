@@ -210,9 +210,10 @@ jobs:
             
             ---
             **Full Changelog**: https://github.com/${{ github.repository }}/compare/previous-tag...${{ steps.version.outputs.version }}
-          files: |
-            dist/${{ env.PLUGIN_NAME }}-*
-            dist/checksums.txt
+          # release-action takes a comma-separated `artifacts` list; it ignores `files`.
+          artifacts: "dist/${{ env.PLUGIN_NAME }}-*,dist/checksums.txt"
+          # Plugin releases must not replace the CLI release as the repo's latest.
+          makeLatest: "false"
           draft: false
           prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
           token: ${{ secrets.GITHUB_TOKEN }}
