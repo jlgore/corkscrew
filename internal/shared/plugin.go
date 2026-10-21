@@ -2,6 +2,9 @@ package shared
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 
 	"github.com/hashicorp/go-plugin"
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -68,8 +71,9 @@ func (p *CloudProviderGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.
 	return nil
 }
 
-func (p *CloudProviderGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
-	return &grpcProviderClient{client: pb.NewCloudProviderClient(c), ctx: ctx}, nil
+func (p *CloudProviderGRPCPlugin) GRPCClient(_ context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+	// Streams use their caller's context; the plugin's setup context is not stored.
+	return &grpcProviderClient{client: pb.NewCloudProviderClient(c)}, nil
 }
 
 // grpcProviderServer is the gRPC server implementation for CloudProvider
@@ -141,7 +145,6 @@ func (s *grpcProviderServer) GenerateFromAnalysis(ctx context.Context, req *pb.G
 // grpcProviderClient is the gRPC client implementation for CloudProvider
 type grpcProviderClient struct {
 	client pb.CloudProviderClient
-	ctx    context.Context
 }
 
 // GetUnderlyingClient returns the underlying gRPC client for orchestrator integration
@@ -182,22 +185,12 @@ func (c *grpcProviderClient) BatchScan(ctx context.Context, req *pb.BatchScanReq
 }
 
 func (c *grpcProviderClient) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	streamClient, err := c.client.StreamScan(c.ctx, req)
+	streamClient, err := c.client.StreamScan(stream.Context(), req)
 	if err != nil {
 		return err
 	}
 
-	for {
-		resource, err := streamClient.Recv()
-		if err != nil {
-			break
-		}
-		if err := stream.Send(resource); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return forwardStream(streamClient, stream)
 }
 
 func (c *grpcProviderClient) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
@@ -221,20 +214,31 @@ func (c *grpcProviderClient) GetServiceInfo(ctx context.Context, req *pb.GetServ
 }
 
 func (c *grpcProviderClient) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	streamClient, err := c.client.StreamScanService(c.ctx, req)
+	streamClient, err := c.client.StreamScanService(stream.Context(), req)
 	if err != nil {
 		return err
 	}
 
+	return forwardStream(streamClient, stream)
+}
+
+// forwardStream relays resources until the provider ends the stream. Only io.EOF is a clean end:
+// any other Recv error (a plugin crash, a dropped connection) means the stream was truncated,
+// and returning nil would present a partial inventory as a complete one.
+func forwardStream(
+	source interface{ Recv() (*pb.Resource, error) },
+	sink interface{ Send(*pb.Resource) error },
+) error {
 	for {
-		resource, err := streamClient.Recv()
-		if err != nil {
-			break
+		resource, err := source.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
-		if err := stream.Send(resource); err != nil {
+		if err != nil {
+			return fmt.Errorf("receive streamed resource: %w", err)
+		}
+		if err := sink.Send(resource); err != nil {
 			return err
 		}
 	}
-
-	return nil
 }

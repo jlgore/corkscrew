@@ -77,6 +77,7 @@ type ScopeResult struct {
 	Resources []*pb.Resource
 	Stats     *pb.ScanStats
 	Errors    []string
+	Notices   []string
 	Duration  time.Duration
 }
 
@@ -182,7 +183,8 @@ func Run(ctx context.Context, request Request, dependencies Dependencies) (Outco
 	for index, scope := range execution.Scopes {
 		outcome.Scopes[index] = ScopeResult{
 			Scope: scope.Scope, Resources: scope.Resources, Stats: scope.Stats,
-			Errors: append([]string(nil), scope.Errors...), Duration: scope.Duration,
+			Errors: append([]string(nil), scope.Errors...), Notices: append([]string(nil), scope.Notices...),
+			Duration: scope.Duration,
 		}
 	}
 	if message := strings.TrimSpace(runtimeWarnings.String()); message != "" {

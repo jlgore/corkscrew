@@ -1,6 +1,6 @@
 # Define the scan error contract: dropped data means a partial scan
 
-Status: ready-for-agent
+Status: complete
 Phase: P2
 
 ## Problem
@@ -35,3 +35,18 @@ Core-side gaps:
 ## Decision
 
 PRD decision 4: yes, any non-informational service error makes the scope (and so the scan) `partial`.
+
+## Comments
+
+2026-10-21: Implemented. `internal/shared/scan_errors.go` defines notices (`UnsupportedTypeNotice`)
+and errors (`ServiceScanError`). Unknown entries count as errors. `scanexec` splits them per scope,
+treats any error as partial, reserves `failed` for "no scope answered", and panics if a scope result
+is missing. `forwardStream` returns any non-EOF `Recv` error and uses the stream's context. The dead
+`grpcProviderClient.ctx` field is removed. Decision recorded in ADR 0023 and `CONTEXT.md` (*Partial
+scan*). AWS's two existing entries use the helpers.
+
+This also fixes the opposite bug: `unsupported_type:` notices used to count as failures, so an AWS
+scan where every region reported one was `failed`, and its findings were never evaluated.
+
+Per-provider "inject a failure and expect partial" tests belong with each provider's change
+(issues 09–11), since each needs its own fake-scanner seam.

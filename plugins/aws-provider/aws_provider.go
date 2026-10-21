@@ -343,7 +343,7 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		tracker.StartService(svc)
 		refs, err := regional.ScanService(ctx, svc)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("Service %s: %v", svc, err))
+			errs = append(errs, shared.ServiceScanError(svc, err))
 			tracker.CompleteService(svc, 0, err)
 			continue
 		}
@@ -357,7 +357,7 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		if err != nil {
 			// Cancelled mid-service: keep what was described, report the
 			// service as failed, and start no further services.
-			errs = append(errs, fmt.Sprintf("Service %s: %v", svc, err))
+			errs = append(errs, shared.ServiceScanError(svc, err))
 			tracker.CompleteService(svc, len(described), err)
 			break
 		}
@@ -367,7 +367,7 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	stats.DurationMs = time.Since(scanStartTime).Milliseconds()
 
 	for typeName, reason := range regional.UnsupportedTypes() {
-		errs = append(errs, fmt.Sprintf("unsupported_type:%s: %s", typeName, reason))
+		errs = append(errs, shared.UnsupportedTypeNotice(typeName, reason))
 	}
 
 	log.Printf("Batch scan %s: %d resources across %d services (%d unsupported types)",
