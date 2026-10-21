@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
 use crate::functions::correlate_common::{
-    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey, GroupMember,
 };
 use crate::functions::params::{bind_data, guard, param_bool, param_f64, param_varchar, BoxError};
 
@@ -34,6 +34,12 @@ struct DNSRecord {
     dns_service: String,
     zone_id: String,
     zone_name: String,
+}
+
+impl GroupMember for DNSRecord {
+    fn provider(&self) -> &str {
+        &self.provider
+    }
 }
 
 pub struct CorrelateDNSInitData {

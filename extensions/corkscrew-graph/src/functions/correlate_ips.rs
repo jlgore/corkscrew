@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
 use crate::functions::correlate_common::{
-    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey, GroupMember,
 };
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
@@ -33,6 +33,12 @@ struct IPRecord {
     vpc_id: String,
     subnet_id: String,
     network_interface_id: String,
+}
+
+impl GroupMember for IPRecord {
+    fn provider(&self) -> &str {
+        &self.provider
+    }
 }
 
 pub struct CorrelateIPsInitData {

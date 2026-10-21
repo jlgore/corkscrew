@@ -2670,50 +2670,117 @@ fn weighted_shortest_path_reports_the_cheapest_parallel_edge() {
     }
 }
 
-#[test]
-fn walk_group_pairs_visits_every_pair_within_bounds() {
-    use corkscrew_graph_tests::functions::correlate_common::{
-        walk_group_pairs, CorrelationLimits, GroupKey,
-    };
+/// One record of a correlation group in the `walk_group_pairs` unit tests: `index` is
+/// its position in the group, so a test can check which pairs were visited.
+struct Member {
+    index: usize,
+    provider: &'static str,
+}
 
+impl corkscrew_graph_tests::functions::correlate_common::GroupMember for Member {
+    fn provider(&self) -> &str {
+        self.provider
+    }
+}
+
+fn members(providers: &[&'static str]) -> Vec<Member> {
+    providers
+        .iter()
+        .enumerate()
+        .map(|(index, provider)| Member { index, provider })
+        .collect()
+}
+
+fn test_group_key() -> corkscrew_graph_tests::functions::correlate_common::GroupKey<'static> {
+    corkscrew_graph_tests::functions::correlate_common::GroupKey {
+        kind: "ip_match",
+        value: "10.0.0.1",
+    }
+}
+
+#[test]
+fn walk_group_pairs_visits_only_cross_provider_pairs() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    let group = members(&["aws", "aws", "gcp", "aws", "gcp"]);
     let mut rows = Vec::new();
-    let mut visits = 0;
-    let key = GroupKey {
-        kind: "test",
-        value: "v",
-    };
+    let mut visited = Vec::new();
     walk_group_pairs(
-        &[1, 2, 3, 4],
-        key,
+        &group,
+        test_group_key(),
         CorrelationLimits::DEFAULT,
         &mut rows,
-        |_, _| {
-            visits += 1;
+        |left, right| {
+            assert_ne!(left.provider, right.provider);
+            assert!(left.index < right.index, "pairs keep group order");
+            visited.push((left.index, right.index));
             None
         },
     )
     .unwrap();
-    assert_eq!(visits, 6);
+    // Three aws records times two gcp records; no aws-aws or gcp-gcp pair.
+    visited.sort_unstable();
+    assert_eq!(visited, [(0, 2), (0, 4), (1, 2), (1, 4), (2, 3), (3, 4)]);
     assert!(rows.is_empty());
 }
 
 #[test]
-fn walk_group_pairs_flags_oversized_groups_without_visiting_pairs() {
-    use corkscrew_graph_tests::functions::correlate_common::{
-        walk_group_pairs, CorrelationLimits, GroupKey, GROUP_SKIPPED_TYPE,
-    };
+fn walk_group_pairs_never_flags_a_single_provider_group() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
 
     let limits = CorrelationLimits {
-        group_size_max: 3,
+        group_pairs_max: 1,
         rows_max: 100,
     };
-    let key = GroupKey {
-        kind: "ip_match",
-        value: "10.0.0.1",
+    let group = members(&["aws"; 50]);
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 0);
+    assert!(rows.is_empty(), "same-provider records produce no pairs to skip");
+}
+
+#[test]
+fn walk_group_pairs_bounds_cross_provider_pairs_not_group_size() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    // 100 aws records and one gcp record: 101 records but only 100 pairs.
+    let mut providers = vec!["aws"; 100];
+    providers.push("gcp");
+    let group = members(&providers);
+    let limits = CorrelationLimits {
+        group_pairs_max: 100,
+        rows_max: 1_000,
     };
     let mut rows = Vec::new();
     let mut visits = 0;
-    walk_group_pairs(&[1, 2, 3, 4], key, limits, &mut rows, |_, _| {
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 100);
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn walk_group_pairs_flags_groups_with_too_many_pairs_without_visiting_them() {
+    use corkscrew_graph_tests::functions::correlate_common::{
+        walk_group_pairs, CorrelationLimits, GROUP_SKIPPED_TYPE,
+    };
+
+    let limits = CorrelationLimits {
+        group_pairs_max: 3,
+        rows_max: 100,
+    };
+    let group = members(&["aws", "gcp", "aws", "gcp"]);
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
         visits += 1;
         None
     })
@@ -2722,26 +2789,22 @@ fn walk_group_pairs_flags_oversized_groups_without_visiting_pairs() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].correlation_type, GROUP_SKIPPED_TYPE);
     assert_eq!(rows[0].source_id, "10.0.0.1");
-    assert!(
-        rows[0].evidence.contains("\"group_size\":4"),
-        "{}",
-        rows[0].evidence
-    );
+    let evidence: serde_json::Value = serde_json::from_str(&rows[0].evidence).unwrap();
+    assert_eq!(evidence["group_size"], 4);
+    assert_eq!(evidence["group_providers"], 2);
+    assert_eq!(evidence["group_pairs"], 4);
+    assert_eq!(evidence["group_pairs_max"], 3);
 }
 
 #[test]
 fn walk_group_pairs_errors_past_the_total_row_cap() {
     use corkscrew_graph_tests::functions::correlate_common::{
-        walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+        walk_group_pairs, CorrelationLimits, CorrelationRow,
     };
 
     let limits = CorrelationLimits {
-        group_size_max: 100,
+        group_pairs_max: 100,
         rows_max: 5,
-    };
-    let key = GroupKey {
-        kind: "test",
-        value: "v",
     };
     let row = CorrelationRow {
         correlation_id: String::new(),
@@ -2754,10 +2817,13 @@ fn walk_group_pairs_errors_past_the_total_row_cap() {
         evidence: String::new(),
         description: String::new(),
     };
+    let group = members(&["aws", "gcp", "aws", "gcp", "aws", "gcp"]);
     let mut rows = Vec::new();
-    let error = walk_group_pairs(&[0; 10], key, limits, &mut rows, |_, _| Some(row.clone()))
-        .expect_err("45 pairs must exceed a cap of 5")
-        .to_string();
+    let error = walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        Some(row.clone())
+    })
+    .expect_err("9 pairs must exceed a cap of 5")
+    .to_string();
     assert!(error.contains("exceeds 5 rows"), "{error}");
     assert_eq!(rows.len(), 5);
 }
@@ -2777,15 +2843,21 @@ fn skipped_group_summary(fixture_path: &str, sql: &str) -> (i64, String) {
         .unwrap()
 }
 
+/// The smallest even group, split evenly between two providers, whose
+/// (size / 2)^2 cross-provider pairs exceed `GROUP_PAIRS_MAX`.
 fn oversized_group_size() -> usize {
-    corkscrew_graph_tests::functions::correlate_common::GROUP_SIZE_MAX + 1
+    use corkscrew_graph_tests::functions::correlate_common::GROUP_PAIRS_MAX;
+
+    let half = (1..).find(|half: &usize| half * half > GROUP_PAIRS_MAX).unwrap();
+    half * 2
 }
 
 fn assert_one_skipped_group(fixture_path: &str, sql: &str) {
     let (skipped, evidence) = skipped_group_summary(fixture_path, sql);
     assert_eq!(skipped, 1, "{sql}");
-    let size = format!("\"group_size\":{}", oversized_group_size());
-    assert!(evidence.contains(&size), "{sql}: {evidence}");
+    let half = oversized_group_size() / 2;
+    let pairs = format!("\"group_pairs\":{}", half * half);
+    assert!(evidence.contains(&pairs), "{sql}: {evidence}");
 }
 
 // Every oversized-group fixture alternates two providers so each group holds
@@ -2886,6 +2958,65 @@ fn graph_correlate_load_balancers_flags_oversized_groups() {
         &fixture_path,
         "SELECT * FROM graph_correlate_load_balancers(?, 0.99)",
     );
+}
+
+/// Number of rows `sql` (one `?` for the fixture path) returns whose evidence
+/// mentions `needle`.
+fn rows_mentioning(fixture_path: &str, sql: &str, needle: &str) -> i64 {
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+    let query = format!("SELECT COUNT(*) FROM ({sql}) WHERE evidence LIKE '%{needle}%'");
+    conn.query_row(&query, [fixture_path], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn graph_correlate_ips_pairs_a_lone_provider_against_a_large_same_provider_group() {
+    // 1100 aws records and one azure record share an IP: 1101 records, but only
+    // 1100 cross-provider pairs, so the group is walked rather than skipped.
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_ip_fixture(conn);
+        conn.execute_batch(
+            "INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-' || i AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'big-res-' || i AS resource_id, 'aws' AS provider
+             FROM range(1100) t(i);
+             INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-azure' AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'big-azure-res' AS resource_id, 'azure' AS provider;",
+        )
+        .unwrap();
+    });
+    let sql = "SELECT * FROM graph_correlate_ips(?, 0.0)";
+    let (skipped, _) = skipped_group_summary(&fixture_path, sql);
+    assert_eq!(skipped, 0);
+    assert_eq!(rows_mentioning(&fixture_path, sql, "172.17.0.1"), 1100);
+}
+
+#[test]
+fn graph_correlate_domains_matches_a_small_zone_against_a_large_one() {
+    // A Route53 zone of 1500 records and a GCP zone of 3 records for one domain:
+    // 4500 cross-provider pairs, far below the cap, so none may be lost.
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_domain_fixture(conn);
+        conn.execute_batch(
+            "INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'r53-' || i AS id, 'h' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'r53-res-' || i AS resource_id,
+                    'aws' AS provider
+             FROM range(1500) t(i);
+             INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'gcp-' || i AS id, 'g' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'gcp-res-' || i AS resource_id,
+                    'gcp' AS provider
+             FROM range(3) t(i);",
+        )
+        .unwrap();
+    });
+    let sql = "SELECT * FROM graph_correlate_domains(?, 0.0)";
+    let (skipped, _) = skipped_group_summary(&fixture_path, sql);
+    assert_eq!(skipped, 0);
+    assert_eq!(rows_mentioning(&fixture_path, sql, "big.example"), 1500 * 3);
 }
 
 #[test]

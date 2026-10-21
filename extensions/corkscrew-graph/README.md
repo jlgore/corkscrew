@@ -106,14 +106,18 @@ too large is skipped and reported in its own row:
 - `graph_traverse` fails if it would return more than 1,000,000 rows. Lower
   `max_hops` or set `filter_type`.
 - A graph load fails past 10,000,000 nodes or 50,000,000 edges.
-- The correlators that compare every pair in a group (`ips`, `dns`, `domains`,
-  `load_balancers`, `secrets`) skip any group with more than 1024 records, such
-  as a shared RFC1918 or Docker-bridge address. Each skipped group becomes one
-  row with `correlation_type = 'group_skipped'`, `source_id` set to the shared
-  value, confidence `0.0`, and evidence `{group_kind, group_value, group_size,
-  group_size_max}`. These rows ignore `min_confidence` and sort last under
-  `ORDER BY confidence DESC`. A correlator fails if it would return more than
-  1,000,000 rows.
+- The correlators that pair records sharing a value (`ips`, `dns`, `domains`,
+  `load_balancers`, `secrets`) only compare records from different providers.
+  They skip any group whose cross-provider pairs would exceed 500,000, such as a
+  shared RFC1918 or Docker-bridge address used in several clouds. Same-provider
+  records never count against the limit, so a group with a single provider is
+  never skipped, and 1,100 AWS records sharing an IP with one Azure record are
+  still paired (1,100 pairs). Each skipped group becomes one row with
+  `correlation_type = 'group_skipped'`, `source_id` set to the shared value,
+  confidence `0.0`, and evidence `{group_kind, group_value, group_size,
+  group_providers, group_pairs, group_pairs_max}`. These rows ignore
+  `min_confidence` and sort last under `ORDER BY confidence DESC`. A correlator
+  fails if it would return more than 1,000,000 rows.
 
 Provider tables are detected by convention. Any pair of tables named
 `<prefix>_resources` and `<prefix>_relationships` (excluding the unified
