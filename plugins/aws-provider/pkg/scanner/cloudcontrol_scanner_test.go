@@ -57,9 +57,9 @@ func TestReFormatKey(t *testing.T) {
 		"AWS::S3::Bucket":                           "s3:bucket",
 		"AWS::EC2::Instance":                        "ec2:instance",
 		"AWS::ElasticLoadBalancingV2::LoadBalancer": "elasticloadbalancingv2:loadbalancer",
-		"":                                          "",
-		"AWS::S3":                                   "",
-		"NotAWS::S3::Bucket":                        "",
+		"":                   "",
+		"AWS::S3":            "",
+		"NotAWS::S3::Bucket": "",
 	}
 	for in, want := range cases {
 		if got := reFormatKey(in); got != want {
@@ -70,15 +70,15 @@ func TestReFormatKey(t *testing.T) {
 
 func TestServiceFromCFNType(t *testing.T) {
 	cases := map[string]string{
-		"AWS::S3::Bucket":                            "s3",
-		"AWS::EC2::Instance":                         "ec2",
-		"AWS::IAM::Role":                             "iam",
-		"AWS::ElasticLoadBalancingV2::LoadBalancer":  "elasticloadbalancing",
-		"AWS::CloudFormation::Stack":                 "cloudformation",
-		"":                                           "",
-		"NotAWS::S3::Bucket":                         "",
-		"AWS::":                                      "",
-		"AWS::S3":                                    "",
+		"AWS::S3::Bucket":                           "s3",
+		"AWS::EC2::Instance":                        "ec2",
+		"AWS::IAM::Role":                            "iam",
+		"AWS::ElasticLoadBalancingV2::LoadBalancer": "elasticloadbalancing",
+		"AWS::CloudFormation::Stack":                "cloudformation",
+		"":                                          "",
+		"NotAWS::S3::Bucket":                        "",
+		"AWS::":                                     "",
+		"AWS::S3":                                   "",
 	}
 	for in, want := range cases {
 		if got := serviceFromCFNType(in); got != want {
@@ -90,20 +90,20 @@ func TestServiceFromCFNType(t *testing.T) {
 func TestIsUnsupportedTypeErr(t *testing.T) {
 	cases := map[string]bool{
 		// Real strings observed in CloudControl error responses.
-		"TypeNotFoundException: foo":                       true,
-		"UnsupportedActionException: bar":                  true,
-		"resource is not currently supported by ":          true,
+		"TypeNotFoundException: foo":              true,
+		"UnsupportedActionException: bar":         true,
+		"resource is not currently supported by ": true,
 		"GeneralServiceException: AWS::S3::AccessGrant Handler returned status FAILED: Access Grants Instance does not exist": true,
-		"HandlerInternalFailureException: foo":             true,
-		"HandlerErrorCode: InternalFailure":                true,
-		"AccessDenied: User is not authorized":             true,
+		"HandlerInternalFailureException: foo":                                                 true,
+		"HandlerErrorCode: InternalFailure":                                                    true,
+		"AccessDenied: User is not authorized":                                                 true,
 		"User: arn:aws:iam::1:user/x is not authorized to perform: cloudcontrol:ListResources": true,
 
 		// Should NOT match (transient or unrelated):
-		"Throttling: Rate exceeded":              false,
-		"connection reset by peer":               false,
-		"context deadline exceeded":              false,
-		"":                                       false,
+		"Throttling: Rate exceeded": false,
+		"connection reset by peer":  false,
+		"context deadline exceeded": false,
+		"":                          false,
 	}
 	for msg, want := range cases {
 		var err error

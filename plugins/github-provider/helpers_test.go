@@ -134,10 +134,10 @@ func TestSecretScanningSeverityAlwaysCritical(t *testing.T) {
 
 func TestParseRepoFromID(t *testing.T) {
 	cases := []struct {
-		id           string
-		wantOwner    string
-		wantName     string
-		wantOK       bool
+		id        string
+		wantOwner string
+		wantName  string
+		wantOK    bool
 	}{
 		{"acme/web/branches/main/protection", "acme", "web", true},
 		{"acme/web/rulesets/42", "acme", "web", true},
@@ -162,12 +162,12 @@ func TestParseRepoFromID(t *testing.T) {
 
 func TestBranchFromBranchProtectionID(t *testing.T) {
 	cases := map[string]string{
-		"acme/web/branches/main/protection":             "main",
-		"acme/web/branches/release/2026/protection":     "release/2026", // slash-bearing branch
-		"acme/web/branches/feature/foo/bar/protection":  "feature/foo/bar",
-		"acme/web/branches/main":                        "main", // no /protection suffix
-		"unrelated":                                     "",
-		"":                                              "",
+		"acme/web/branches/main/protection":            "main",
+		"acme/web/branches/release/2026/protection":    "release/2026", // slash-bearing branch
+		"acme/web/branches/feature/foo/bar/protection": "feature/foo/bar",
+		"acme/web/branches/main":                       "main", // no /protection suffix
+		"unrelated":                                    "",
+		"":                                             "",
 	}
 	for in, want := range cases {
 		if got := branchFromBranchProtectionID(in); got != want {

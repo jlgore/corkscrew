@@ -49,7 +49,7 @@ For more information on writing plugins see: [PLUGIN_DEVELOPMENT.md](/plugins/PL
 
 ## 🔌 Cloud Provider Plugins
 
-Corkscrew supports **four production-ready cloud providers** through specialized plugins, each optimized for their platform's unique capabilities:
+Corkscrew supports **four production-ready cloud providers** through specialized plugins, each optimized for their platform's unique capabilities, plus an alpha Cloudflare provider:
 
 ### 🚀 [AWS Provider](plugins/aws-provider/README.md) - **410+ Services Supported**
 The AWS provider leverages **advanced reflection-based discovery** to automatically support 410+ AWS services without manual configuration. Using dynamic SDK analysis and AWS Resource Explorer integration, it discovers new services automatically as AWS releases them. Features include unified scanning across all services, intelligent caching with 40% memory reduction, and comprehensive relationship mapping between resources. Perfect for environments that need zero-maintenance service discovery and enterprise-scale AWS deployments.
@@ -71,6 +71,11 @@ The Kubernetes provider offers **universal resource discovery** that works with 
 
 **Current Status**: ✅ **Production Ready** - Supports any Kubernetes cluster with real-time updates
 
+### ☁️ [Cloudflare Provider](plugins/cloudflare-provider/README.md) - **Edge, Workers, and Storage Inventory**
+The Cloudflare provider scans accounts and zones read-only through `cloudflare-go`, covering DNS records, Workers scripts, routes, and custom domains, R2 buckets, KV namespaces, Queues, D1 databases, Durable Objects, and Secrets Store. It authenticates with an API token, a Global API Key, an OAuth profile, or credentials read from Vault, and `corkscrew cloudflare auth plan` prints the exact token scopes a scan needs. Scans can be narrowed by account or zone without changing credentials.
+
+**Current Status**: 🧪 **Alpha** - Core edge, Workers, and storage inventory
+
 ### 🎯 Choosing the Right Provider
 
 Each provider is optimized for its platform's strengths:
@@ -78,6 +83,7 @@ Each provider is optimized for its platform's strengths:
 - **Azure**: Ideal for enterprise-scale tenant management and Resource Graph performance
 - **GCP**: Optimal for multi-project organizations needing Cloud Asset Inventory bulk operations
 - **Kubernetes**: Perfect for container platforms with dynamic CRD resources
+- **Cloudflare**: Inventory of zones, DNS, Workers, and edge storage alongside your cloud accounts
 
 See the [Plugin Development Guide](plugins/PLUGIN_DEVELOPMENT.md) for detailed architectural comparisons and guidance on building new providers.
 

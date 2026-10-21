@@ -50,13 +50,13 @@ func printAWSOrgUsage() {
 }
 
 type orgFlags struct {
-	roleName    string
-	trustedArn  string
-	externalID  string
-	ousCSV      string
-	autoDeploy  bool
-	homeRegion  string
-	stackName   string
+	roleName   string
+	trustedArn string
+	externalID string
+	ousCSV     string
+	autoDeploy bool
+	homeRegion string
+	stackName  string
 }
 
 func bindOrgFlags(fs *flag.FlagSet, withDeployFlags bool) *orgFlags {

@@ -128,9 +128,11 @@ func (re *ResourceExplorer) convertResults(resources []types.Resource) []*pb.Res
 		}
 
 		if resource.ResourceType != nil {
-			if resourceRef.Type == "" {
-				resourceRef.Type = *resource.ResourceType
-			}
+			// RE's own "service:resource" type wins over the segment parsed
+			// out of the ARN above: scanServiceViaRE maps it to a CFN type,
+			// and a bare segment such as "key" matches nothing there, so
+			// every GetResource would be sent an invalid TypeName.
+			resourceRef.Type = *resource.ResourceType
 			resourceRef.BasicAttributes["resource_type"] = *resource.ResourceType
 		}
 
