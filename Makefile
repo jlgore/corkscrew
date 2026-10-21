@@ -83,6 +83,15 @@ build-graph-extension:
 	@echo "🔨 Building corkscrew graph extension..."
 	@$(MAKE) -C extensions/corkscrew-graph build
 
+# corkscrew loads the graph extension only from ~/.corkscrew/extensions (or an
+# explicit --extension), never from the working directory.
+.PHONY: install-graph-extension
+install-graph-extension: build-graph-extension
+	@mkdir -p $(HOME)/.corkscrew/extensions
+	@cp extensions/corkscrew-graph/build/corkscrew_graph.duckdb_extension \
+		$(HOME)/.corkscrew/extensions/corkscrew_graph.duckdb_extension
+	@echo "✅ Graph extension installed: $(HOME)/.corkscrew/extensions/"
+
 .PHONY: build-cli
 build-cli: create-dirs
 	@echo "🔨 Building main CLI..."

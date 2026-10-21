@@ -13,6 +13,11 @@ The packaged DuckDB extension artifact is written to both:
 - `target/release/corkscrew_graph.duckdb_extension`
 - `build/corkscrew_graph.duckdb_extension`
 
+`corkscrew graph` does not look for the extension in the working directory.
+Install it with `make install-graph-extension` from the repository root (it
+copies the build to `~/.corkscrew/extensions/`), or pass `--extension <path>`,
+or set `CORKSCREW_GRAPH_EXTENSION` to an absolute path.
+
 To test loading from a DuckDB shell (example):
 
     -- in sqlite3-like shell that can load extensions

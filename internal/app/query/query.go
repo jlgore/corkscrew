@@ -19,6 +19,9 @@ type Request struct {
 	Target  string
 	Options []db.Option
 	SQL     string
+	// Sandbox runs the query without host file or network access. It is opt-in
+	// for ad hoc queries, where reading a local CSV is a normal thing to do.
+	Sandbox bool
 }
 
 // Result is the transport-neutral output of a successful query.
@@ -30,7 +33,11 @@ type Result struct {
 // Run executes the query and returns rows and columns. On failure it returns a
 // *Error classifying the failure and carrying repair hints.
 func Run(_ context.Context, request Request) (Result, error) {
-	engine, err := pkgquery.NewEngineWithOptions(request.Target, request.Options...)
+	open := pkgquery.NewEngineWithOptions
+	if request.Sandbox {
+		open = pkgquery.NewSandboxedEngine
+	}
+	engine, err := open(request.Target, request.Options...)
 	if err != nil {
 		return Result{}, fmt.Errorf("create query engine: %w", err)
 	}
@@ -192,14 +199,14 @@ type ComplianceResult struct {
 
 // RunCompliance executes the requested compliance controls and returns their
 // results.
-func RunCompliance(_ context.Context, request ComplianceRequest) ([]ComplianceResult, error) {
+func RunCompliance(ctx context.Context, request ComplianceRequest) ([]ComplianceResult, error) {
 	executor, err := compliance.NewExecutor(request.Target)
 	if err != nil {
 		return nil, fmt.Errorf("create compliance executor: %w", err)
 	}
 	defer executor.Close()
 
-	results, err := executor.Execute(compliance.ExecuteOptions{
+	results, err := executor.Execute(ctx, compliance.ExecuteOptions{
 		ControlID:  request.ControlID,
 		PackName:   request.PackName,
 		Tags:       request.Tags,
