@@ -314,13 +314,13 @@ func TestUntilReset(t *testing.T) {
 
 func TestIsTransientErr(t *testing.T) {
 	cases := map[string]bool{
-		"connection reset by peer":  true,
-		"i/o timeout":               true,
-		"broken pipe":               true,
-		"unexpected EOF":            true,
-		"no such host":              true,
-		"definitely fatal":          false,
-		"":                          false,
+		"connection reset by peer": true,
+		"i/o timeout":              true,
+		"broken pipe":              true,
+		"unexpected EOF":           true,
+		"no such host":             true,
+		"definitely fatal":         false,
+		"":                         false,
 	}
 	for msg, want := range cases {
 		if got := isTransientErr(errors.New(msg)); got != want {

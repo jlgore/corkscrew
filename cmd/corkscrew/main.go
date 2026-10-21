@@ -245,7 +245,7 @@ func printUsage() {
 	fmt.Println("Commands:")
 	fmt.Println("  init                - Initialize Corkscrew with dependencies and plugins")
 	fmt.Println("  config              - Manage Corkscrew configuration (init, show, validate)")
-	fmt.Println("  scan                - Full resource scanning (supports service groups)")
+	fmt.Println("  scan                - Full resource scanning (supports AWS service groups)")
 	fmt.Println("  scans               - List and inspect durable scan history")
 	fmt.Println("  drift               - Compare historical resource observations")
 	fmt.Println("  findings            - Evaluate and manage durable compliance findings")

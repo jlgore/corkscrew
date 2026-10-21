@@ -75,16 +75,16 @@ func NewCloudControlScanner(cfg aws.Config) *CloudControlScanner {
 // by (account, type, id) without losing regional info on actually-regional
 // resources. Lowercase service shorthand (matches serviceFromCFNType output).
 var globalServices = map[string]bool{
-	"iam":            true,
-	"s3":             true, // buckets are listed globally even though a bucket has a home region
-	"route53":        true,
-	"cloudfront":     true,
-	"organizations":  true,
-	"support":        true,
-	"health":         true,
-	"billing":        true,
+	"iam":               true,
+	"s3":                true, // buckets are listed globally even though a bucket has a home region
+	"route53":           true,
+	"cloudfront":        true,
+	"organizations":     true,
+	"support":           true,
+	"health":            true,
+	"billing":           true,
 	"globalaccelerator": true,
-	"chatbot":        true,
+	"chatbot":           true,
 }
 
 // curatedTypes is the fallback map used when dynamic discovery via

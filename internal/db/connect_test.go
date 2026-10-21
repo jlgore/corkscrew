@@ -25,11 +25,11 @@ func TestParseTarget_Local(t *testing.T) {
 
 func TestParseTarget_Remote(t *testing.T) {
 	cases := []struct {
-		in          string
-		endpoint    string
-		attachURI   string
-		disableSSL  bool
-		token       string
+		in         string
+		endpoint   string
+		attachURI  string
+		disableSSL bool
+		token      string
 	}{
 		{in: "quack:localhost", endpoint: "localhost", attachURI: "quack:localhost"},
 		{in: "quack:host:9494", endpoint: "host:9494", attachURI: "quack:host:9494"},
@@ -65,10 +65,10 @@ func TestParseTarget_Remote(t *testing.T) {
 
 func TestParseTarget_Invalid(t *testing.T) {
 	cases := []string{
-		"quack:",            // missing host
-		"quack://",          // missing host after authority
-		"quack:ho st",       // whitespace in host
-		"quack:h'ost",       // single quote (SQL injection guard)
+		"quack:",      // missing host
+		"quack://",    // missing host after authority
+		"quack:ho st", // whitespace in host
+		"quack:h'ost", // single quote (SQL injection guard)
 	}
 	for _, c := range cases {
 		if _, err := ParseTarget(c); err == nil {

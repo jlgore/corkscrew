@@ -111,7 +111,7 @@ func installPlugin(args []string) error {
 }
 
 func listServiceGroups() {
-	fmt.Println("📦 Available Service Groups:")
+	fmt.Println("📦 Available AWS Service Groups:")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "Group\tServices")
 	groups := scanapp.ServiceGroups()

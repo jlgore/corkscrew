@@ -94,6 +94,9 @@ type Outcome struct {
 	Persisted  bool
 }
 
+// serviceGroups name sets of AWS services. Other providers have their own
+// service names, some of which collide with group names (Azure, GCP, and
+// Cloudflare each have a "storage" service), so groups expand only for AWS.
 var serviceGroups = map[string][]string{
 	"compute":    {"ec2", "lambda", "ecs", "eks", "batch"},
 	"storage":    {"s3", "ebs", "efs", "fsx", "backup"},
@@ -249,8 +252,8 @@ func Prepare(request Request, getenv func(string) string) (PreparedRequest, []Se
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
-	services, expansions := ExpandServices(request.Services)
 	request.Provider = strings.TrimSpace(request.Provider)
+	services, expansions := ExpandServices(request.Provider, request.Services)
 	request.ConfigPath = strings.TrimSpace(request.ConfigPath)
 	request.DatabasePath = strings.TrimSpace(request.DatabasePath)
 	if request.DatabasePath == "" {
@@ -324,7 +327,7 @@ func installedDescriptor(descriptors []providerRuntime.Descriptor, name string) 
 	return providerRuntime.Descriptor{}, false
 }
 
-func ExpandServices(value string) ([]string, []ServiceGroupExpansion) {
+func ExpandServices(provider, value string) ([]string, []ServiceGroupExpansion) {
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
 	}
@@ -335,7 +338,7 @@ func ExpandServices(value string) ([]string, []ServiceGroupExpansion) {
 		if item == "" {
 			continue
 		}
-		if group, exists := serviceGroups[item]; exists {
+		if group, exists := serviceGroups[item]; exists && provider == "aws" {
 			services := append([]string(nil), group...)
 			expansions = append(expansions, ServiceGroupExpansion{Name: item, Services: services})
 			expanded = append(expanded, services...)
