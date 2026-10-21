@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 )
 
 // AzureServiceDiscovery handles dynamic discovery of Azure services
@@ -37,15 +38,21 @@ type ResourceTypeInfo struct {
 	Properties   map[string]interface{}
 }
 
-// NewAzureServiceDiscovery creates a new Azure service discovery instance
-func NewAzureServiceDiscovery(cred azcore.TokenCredential, subID string) *AzureServiceDiscovery {
-	client, _ := armresources.NewProvidersClient(subID, cred, nil)
+// NewAzureServiceDiscovery creates a new Azure service discovery instance. It fails when the
+// providers client cannot be built, rather than leaving a nil client that panics on first use.
+func NewAzureServiceDiscovery(
+	cred azcore.TokenCredential, subID string,
+) (*AzureServiceDiscovery, error) {
+	client, err := armresources.NewProvidersClient(subID, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create ARM providers client: %w", err)
+	}
 	return &AzureServiceDiscovery{
 		credential:      cred,
 		subscriptionID:  subID,
 		providersClient: client,
 		cache:           make(map[string]*ProviderInfo),
-	}
+	}, nil
 }
 
 // DiscoverProviders discovers all Azure resource providers and their capabilities
@@ -60,10 +67,14 @@ func (d *AzureServiceDiscovery) DiscoverProviders(ctx context.Context) ([]*Provi
 		Expand: to.Ptr("resourceTypes/aliases"), // Get detailed info including aliases
 	})
 
+	guard := paging.New("list resource providers", paging.PagesMax)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list providers: %w", err)
+		}
+		if err := guardNextLink(guard, page.NextLink); err != nil {
+			return nil, err
 		}
 
 		for _, provider := range page.Value {

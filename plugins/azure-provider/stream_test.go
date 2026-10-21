@@ -52,7 +52,9 @@ func (s *fakeStream) Send(resource *pb.Resource) error {
 }
 
 func newStreamTestProvider(streamer resourceStreamer) *AzureProvider {
-	return &AzureProvider{initialized: true, streamer: streamer}
+	p := &AzureProvider{streamer: streamer}
+	p.initialized.Store(true)
+	return p
 }
 
 func TestStreamScanSendsAllResources(t *testing.T) {

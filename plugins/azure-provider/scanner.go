@@ -3,47 +3,74 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// armResourcesAPI is the part of armresources.Client the scanner uses; tests fake it.
+type armResourcesAPI interface {
+	NewListPager(
+		options *armresources.ClientListOptions,
+	) *runtime.Pager[armresources.ClientListResponse]
+	GetByID(
+		ctx context.Context,
+		resourceID, apiVersion string,
+		options *armresources.ClientGetByIDOptions,
+	) (armresources.ClientGetByIDResponse, error)
+}
+
+// newResourcesClient builds the ARM resources client. It is a variable so tests can make
+// construction fail without Azure credentials.
+var newResourcesClient = func(
+	subID string, cred azcore.TokenCredential,
+) (armResourcesAPI, error) {
+	return armresources.NewClient(subID, cred, nil)
+}
 
 // AzureResourceScanner handles resource scanning operations
 type AzureResourceScanner struct {
 	credential      azcore.TokenCredential
 	subscriptionID  string
-	resourcesClient *armresources.Client
+	resourcesClient armResourcesAPI
 	clientFactory   *AzureClientFactory
 	mu              sync.RWMutex
 }
 
-// NewAzureResourceScanner creates a new Azure resource scanner
-func NewAzureResourceScanner(cred azcore.TokenCredential, subID string) *AzureResourceScanner {
-	client, _ := armresources.NewClient(subID, cred, nil)
+// NewAzureResourceScanner creates a new Azure resource scanner. It fails when the ARM client
+// cannot be built, rather than returning a scanner whose nil client panics on first use.
+func NewAzureResourceScanner(
+	cred azcore.TokenCredential, subID string,
+) (*AzureResourceScanner, error) {
+	client, err := newResourcesClient(subID, cred)
+	if err != nil {
+		return nil, fmt.Errorf("create ARM resources client: %w", err)
+	}
 	return &AzureResourceScanner{
 		credential:      cred,
 		subscriptionID:  subID,
 		resourcesClient: client,
 		clientFactory:   NewAzureClientFactory(cred, subID),
-	}
+	}, nil
 }
 
-// ScanService scans resources for a specific service
+// ScanService scans resources for a specific service. When the listing fails part way it
+// returns the matching resources it did see along with the error.
 func (s *AzureResourceScanner) ScanService(ctx context.Context, service string, filters map[string]string) ([]*pb.ResourceRef, error) {
 	log.Printf("Scanning service: %s with filters: %v", service, filters)
 
 	// For now, let's scan all resources and filter by service
 	// This is because Azure ARM filter syntax is limited
-	allResources, err := s.scanWithFilter(ctx, "")
-	if err != nil {
-		return nil, err
-	}
+	allResources, listErr := s.scanWithFilter(ctx, "")
 
 	// Map common service names to Azure resource provider namespaces
 	serviceMapping := map[string][]string{
@@ -92,7 +119,7 @@ func (s *AzureResourceScanner) ScanService(ctx context.Context, service string, 
 	}
 
 	log.Printf("Found %d resources for service %s", len(filteredResources), service)
-	return filteredResources, nil
+	return filteredResources, listErr
 }
 
 // ScanAllResources scans all resources using ARM API
@@ -115,68 +142,74 @@ func (s *AzureResourceScanner) ScanAllResources(ctx context.Context, filters map
 	return s.scanWithFilter(ctx, filter)
 }
 
-// ScanServiceForResources scans a service and returns full Resource objects
+// ScanServiceForResources scans a service and returns full Resource objects.
+//
+// A resource whose describe fails is still returned, from its listing data, but the failure is
+// reported: its full configuration was not observed, and a check that reads a missing property
+// must not see the resource as compliant on a complete scan.
 func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, service string, filters map[string]string) ([]*pb.Resource, error) {
-	resourceRefs, err := s.ScanService(ctx, service, filters)
-	if err != nil {
-		return nil, err
-	}
+	resourceRefs, listErr := s.ScanService(ctx, service, filters)
 
-	// Convert ResourceRef to Resource with full details
 	resources := make([]*pb.Resource, 0, len(resourceRefs))
+	describeFailures := 0
+	var describeErr error
 	for _, ref := range resourceRefs {
-		// Try to get full resource details
 		resource, err := s.DescribeResource(ctx, ref)
 		if err != nil {
-			// If describe fails, fall back to basic conversion
-			log.Printf("Failed to describe resource %s, using basic data: %v", ref.Id, err)
-			resource = &pb.Resource{
-				Provider:     "azure",
-				Service:      ref.Service,
-				Type:         ref.Type,
-				Id:           ref.Id,
-				Name:         ref.Name,
-				Region:       ref.Region,
-				Tags:         make(map[string]string),
-				DiscoveredAt: timestamppb.Now(),
+			describeFailures++
+			if describeErr == nil {
+				describeErr = err
 			}
-
-			// Extract metadata from BasicAttributes
-			if ref.BasicAttributes != nil {
-				if rg, ok := ref.BasicAttributes["resource_group"]; ok {
-					resource.ParentId = rg
-				}
-				if subID, ok := ref.BasicAttributes["subscription_id"]; ok {
-					resource.AccountId = subID
-				}
-
-				// Extract tags
-				for k, v := range ref.BasicAttributes {
-					if strings.HasPrefix(k, "tag_") {
-						tagName := strings.TrimPrefix(k, "tag_")
-						resource.Tags[tagName] = v
-					}
-				}
-
-				// Store raw data - prefer full raw_data over just properties
-				if rawData, ok := ref.BasicAttributes["raw_data"]; ok {
-					resource.RawData = rawData
-				} else if props, ok := ref.BasicAttributes["properties"]; ok {
-					resource.RawData = props
-				}
-			}
+			resource = basicResourceFromRef(ref)
 		}
 
 		// Extract relationships from the resource
-		relationships := s.extractRelationshipsFromResource(resource, ref)
-		for _, rel := range relationships {
-			resource.Relationships = append(resource.Relationships, rel)
-		}
-
+		resource.Relationships = append(resource.Relationships,
+			s.extractRelationshipsFromResource(resource, ref)...)
 		resources = append(resources, resource)
 	}
 
-	return resources, nil
+	var errs []error
+	if listErr != nil {
+		errs = append(errs, listErr)
+	}
+	if describeFailures > 0 {
+		errs = append(errs, fmt.Errorf("describe failed for %d of %d resources, first: %w",
+			describeFailures, len(resourceRefs), describeErr))
+	}
+	return resources, errors.Join(errs...)
+}
+
+// basicResourceFromRef builds a Resource from listing data alone, for when the full resource
+// could not be fetched.
+func basicResourceFromRef(ref *pb.ResourceRef) *pb.Resource {
+	resource := &pb.Resource{
+		Provider:     "azure",
+		Service:      ref.Service,
+		Type:         ref.Type,
+		Id:           ref.Id,
+		Name:         ref.Name,
+		Region:       ref.Region,
+		Tags:         make(map[string]string),
+		DiscoveredAt: timestamppb.Now(),
+	}
+	if ref.BasicAttributes == nil {
+		return resource
+	}
+	resource.ParentId = ref.BasicAttributes["resource_group"]
+	resource.AccountId = ref.BasicAttributes["subscription_id"]
+	for k, v := range ref.BasicAttributes {
+		if tagName, ok := strings.CutPrefix(k, "tag_"); ok {
+			resource.Tags[tagName] = v
+		}
+	}
+	// Prefer full raw_data over just properties
+	if rawData, ok := ref.BasicAttributes["raw_data"]; ok {
+		resource.RawData = rawData
+	} else if props, ok := ref.BasicAttributes["properties"]; ok {
+		resource.RawData = props
+	}
+	return resource
 }
 
 // getAPIVersionForResourceType returns the appropriate API version for a resource type
@@ -335,15 +368,16 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 }
 
 // StreamScanResources streams resources as they are discovered. It owns resourceChan
-// and closes it on return; callers must only receive.
+// and closes it on return; callers must only receive. A failed service does not stop the
+// others, but its error is returned so the stream does not end as if the scan were complete.
 func (s *AzureResourceScanner) StreamScanResources(ctx context.Context, services []string, resourceChan chan<- *pb.Resource) error {
 	defer close(resourceChan)
 
+	var errs []error
 	for _, service := range services {
 		resources, err := s.ScanServiceForResources(ctx, service, nil)
 		if err != nil {
-			log.Printf("Failed to scan service %s: %v", service, err)
-			continue
+			errs = append(errs, fmt.Errorf("service %s: %w", service, err))
 		}
 
 		for _, resource := range resources {
@@ -355,7 +389,7 @@ func (s *AzureResourceScanner) StreamScanResources(ctx context.Context, services
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // scanWithFilter scans resources with the given OData filter
@@ -368,11 +402,13 @@ func (s *AzureResourceScanner) scanWithFilter(ctx context.Context, filter string
 	}
 
 	pager := s.resourcesClient.NewListPager(options)
+	guard := paging.New("list resources", paging.PagesMax)
 
+	// A failed or looping page returns the resources from earlier pages with the error.
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list resources: %w", err)
+			return resources, fmt.Errorf("failed to list resources: %w", err)
 		}
 
 		for _, resource := range page.Value {
@@ -380,6 +416,9 @@ func (s *AzureResourceScanner) scanWithFilter(ctx context.Context, filter string
 			if ref != nil {
 				resources = append(resources, ref)
 			}
+		}
+		if err := guardNextLink(guard, page.NextLink); err != nil {
+			return resources, err
 		}
 	}
 
