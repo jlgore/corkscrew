@@ -1,6 +1,6 @@
 # Add a shared pagination guard and use it in every page loop
 
-Status: in-progress
+Status: complete
 Phase: P3
 
 ## Problem
@@ -78,3 +78,9 @@ grep check is still open.
 
 2026-10-21: The guard package and every provider loop listed above are done. Remaining: the
 `internal/architecture` grep check that fails on an unguarded page loop.
+
+2026-10-21: Added `internal/architecture/paging_test.go`. It fails on any plugin `for {}` loop that
+references a continuation token (NextToken, NextPageToken, EndCursor, NextPage, NextLink, SkipToken,
+Continue, ...) in a function that never uses the `paging` package. A self-test checks the detector
+catches an unguarded loop. It currently sees 20 page walks across the plugins, all guarded.
+
