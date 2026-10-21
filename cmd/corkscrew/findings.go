@@ -13,29 +13,29 @@ import (
 	appfindings "github.com/jlgore/corkscrew/internal/app/findings"
 )
 
-func runFindings(args []string) int {
+func runFindings(ctx context.Context, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: corkscrew findings evaluate|list|show|suppress|unsuppress")
 		return 1
 	}
 	switch args[0] {
 	case "evaluate":
-		return runFindingsEvaluate(args[1:])
+		return runFindingsEvaluate(ctx, args[1:])
 	case "list":
-		return runFindingsList(args[1:])
+		return runFindingsList(ctx, args[1:])
 	case "show":
-		return runFindingsShow(args[1:])
+		return runFindingsShow(ctx, args[1:])
 	case "suppress":
-		return runFindingsSuppress(args[1:])
+		return runFindingsSuppress(ctx, args[1:])
 	case "unsuppress":
-		return runFindingsUnsuppress(args[1:])
+		return runFindingsUnsuppress(ctx, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown findings subcommand %q\n", args[0])
 		return 1
 	}
 }
 
-func runFindingsEvaluate(args []string) int {
+func runFindingsEvaluate(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("findings evaluate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -60,7 +60,7 @@ func runFindingsEvaluate(args []string) int {
 			tags = append(tags, tag)
 		}
 	}
-	result, err := appfindings.Evaluate(context.Background(), appfindings.EvaluateRequest{Target: *dbPath, ScanID: *scanID,
+	result, err := appfindings.Evaluate(ctx, appfindings.EvaluateRequest{Target: *dbPath, ScanID: *scanID,
 		PackName: *pack, ControlID: *control, Tags: tags, Parameters: params})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "findings evaluation failed: %v\n", err)
@@ -73,7 +73,7 @@ func runFindingsEvaluate(args []string) int {
 		fmt.Printf("Evaluation %s: %s (opened=%d recurred=%d resolved=%d)\n", result.ID, result.Status, result.Opened, result.Recurred, result.Resolved)
 	}
 	if *failSeverity != "" {
-		open, err := appfindings.List(context.Background(), *dbPath, appfindings.ListFilter{Status: "open", MinSeverity: *failSeverity})
+		open, err := appfindings.List(ctx, *dbPath, appfindings.ListFilter{Status: "open", MinSeverity: *failSeverity})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -85,7 +85,7 @@ func runFindingsEvaluate(args []string) int {
 	return 0
 }
 
-func runFindingsList(args []string) int {
+func runFindingsList(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("findings list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -99,16 +99,19 @@ func runFindingsList(args []string) int {
 	if fs.Parse(args) != nil {
 		return 1
 	}
-	rows, err := appfindings.List(context.Background(), *dbPath, appfindings.ListFilter{Status: *status, Provider: *provider, ControlID: *control, MinSeverity: *severity, ScanID: *scanID, PackRef: *pack})
+	rows, err := appfindings.List(ctx, *dbPath, appfindings.ListFilter{Status: *status, Provider: *provider, ControlID: *control, MinSeverity: *severity, ScanID: *scanID, PackRef: *pack})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	renderFindings(rows, *output)
+	if err := renderFindings(rows, *output); err != nil {
+		fmt.Fprintf(os.Stderr, "write findings: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
-func runFindingsShow(args []string) int {
+func runFindingsShow(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("findings show", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -117,14 +120,17 @@ func runFindingsShow(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: corkscrew findings show <fingerprint>")
 		return 1
 	}
-	rows, err := appfindings.List(context.Background(), *dbPath, appfindings.ListFilter{})
+	rows, err := appfindings.List(ctx, *dbPath, appfindings.ListFilter{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	for _, row := range rows {
 		if row.Fingerprint == fs.Arg(0) {
-			renderFindings([]appfindings.Finding{row}, *output)
+			if err := renderFindings([]appfindings.Finding{row}, *output); err != nil {
+				fmt.Fprintf(os.Stderr, "write finding: %v\n", err)
+				return 1
+			}
 			return 0
 		}
 	}
@@ -132,7 +138,7 @@ func runFindingsShow(args []string) int {
 	return 1
 }
 
-func runFindingsSuppress(args []string) int {
+func runFindingsSuppress(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("findings suppress", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -152,14 +158,14 @@ func runFindingsSuppress(args []string) int {
 		}
 		until = &parsed
 	}
-	if err := appfindings.Suppress(context.Background(), *dbPath, fs.Arg(0), *reason, *actor, until); err != nil {
+	if err := appfindings.Suppress(ctx, *dbPath, fs.Arg(0), *reason, *actor, until); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func runFindingsUnsuppress(args []string) int {
+func runFindingsUnsuppress(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("findings unsuppress", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -167,23 +173,23 @@ func runFindingsUnsuppress(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: corkscrew findings unsuppress <fingerprint>")
 		return 1
 	}
-	if err := appfindings.Unsuppress(context.Background(), *dbPath, fs.Arg(0)); err != nil {
+	if err := appfindings.Unsuppress(ctx, *dbPath, fs.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func renderFindings(rows []appfindings.Finding, output string) {
+// renderFindings writes rows to stdout. tabwriter buffers every row until
+// Flush, so Flush reports any write error.
+func renderFindings(rows []appfindings.Finding, output string) error {
 	if output == "json" {
-		encoded, _ := json.MarshalIndent(rows, "", "  ")
-		fmt.Println(string(encoded))
-		return
+		return writeJSON(os.Stdout, rows)
 	}
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(writer, "STATUS\tSEVERITY\tCONTROL\tPROVIDER\tRESOURCE\tFINGERPRINT")
 	for _, row := range rows {
 		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", row.Status, row.Severity, row.ControlID, row.Provider, row.ResourceID, row.Fingerprint)
 	}
-	_ = writer.Flush()
+	return writer.Flush()
 }

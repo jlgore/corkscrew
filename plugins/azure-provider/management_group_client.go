@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/managementgroups/armmanagementgroups"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 )
 
 // ManagementGroupScope represents the scope configuration for Azure resources
@@ -53,7 +55,16 @@ func NewManagementGroupClient(credential azcore.TokenCredential) (*ManagementGro
 	}, nil
 }
 
-// DiscoverManagementGroupHierarchy discovers the full management group hierarchy from root
+// managementGroupDepthMax bounds the hierarchy walk. Azure allows six levels below the tenant
+// root, so a deeper walk means a malformed or cyclic answer, not a real hierarchy.
+const managementGroupDepthMax = 10
+
+// DiscoverManagementGroupHierarchy discovers the full management group hierarchy from root.
+//
+// A failed root group, child group, or subscription listing does not stop the walk: the scopes
+// that were discovered are returned together with the joined error, because a partial
+// hierarchy is a narrower scan scope and the caller must report it. A 403 is not an error
+// here: a group the credential cannot read is outside its scope.
 func (c *ManagementGroupClient) DiscoverManagementGroupHierarchy(ctx context.Context) ([]*ManagementGroupScope, error) {
 	log.Printf("Discovering management group hierarchy from root...")
 
@@ -64,27 +75,25 @@ func (c *ManagementGroupClient) DiscoverManagementGroupHierarchy(ctx context.Con
 	}
 
 	var allScopes []*ManagementGroupScope
-
-	// For each root group, recursively discover the hierarchy
+	var errs []error
+	visited := make(map[string]bool)
 	for _, rootGroup := range rootGroups {
-		scopes, err := c.discoverManagementGroupRecursive(ctx, rootGroup.ID, 0)
-		if err != nil {
-			log.Printf("Warning: Failed to discover hierarchy for root group %s: %v", rootGroup.ID, err)
-			continue
-		}
+		scopes, err := c.discoverManagementGroupRecursive(ctx, rootGroup.ID, 0, visited)
 		allScopes = append(allScopes, scopes...)
+		if err != nil && !isForbidden(err) {
+			errs = append(errs, fmt.Errorf("root group %s: %w", rootGroup.ID, err))
+		}
 	}
 
 	// Also discover accessible subscriptions not in management groups
 	orphanSubs, err := c.discoverOrphanSubscriptions(ctx, allScopes)
-	if err != nil {
-		log.Printf("Warning: Failed to discover orphan subscriptions: %v", err)
-	} else {
-		allScopes = append(allScopes, orphanSubs...)
+	allScopes = append(allScopes, orphanSubs...)
+	if err != nil && !isForbidden(err) {
+		errs = append(errs, fmt.Errorf("orphan subscriptions: %w", err))
 	}
 
 	log.Printf("Discovered %d management group scopes", len(allScopes))
-	return allScopes, nil
+	return allScopes, errors.Join(errs...)
 }
 
 // discoverRootManagementGroups discovers root-level management groups
@@ -93,11 +102,15 @@ func (c *ManagementGroupClient) discoverRootManagementGroups(ctx context.Context
 
 	// List all management groups the user has access to
 	pager := c.mgClient.NewListPager(&armmanagementgroups.ClientListOptions{})
+	guard := paging.New("list management groups", paging.PagesMax)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list management groups: %w", err)
+		}
+		if err := guardNextLink(guard, page.NextLink); err != nil {
+			return nil, err
 		}
 
 		for _, mg := range page.Value {
@@ -146,12 +159,20 @@ func (c *ManagementGroupClient) discoverRootManagementGroups(ctx context.Context
 	return rootGroups, nil
 }
 
-// discoverManagementGroupRecursive recursively discovers management group hierarchy
-func (c *ManagementGroupClient) discoverManagementGroupRecursive(ctx context.Context, mgID string, depth int) ([]*ManagementGroupScope, error) {
-	// Prevent infinite recursion
-	if depth > 10 {
+// discoverManagementGroupRecursive discovers mgID and its descendants. visited holds every group
+// already entered on this walk, so a cyclic answer cannot loop; depth is bounded by
+// managementGroupDepthMax. Child failures are joined into the returned error alongside the
+// scopes that were discovered.
+func (c *ManagementGroupClient) discoverManagementGroupRecursive(
+	ctx context.Context, mgID string, depth int, visited map[string]bool,
+) ([]*ManagementGroupScope, error) {
+	if depth > managementGroupDepthMax {
 		return nil, fmt.Errorf("maximum recursion depth reached for management group %s", mgID)
 	}
+	if visited[mgID] {
+		return nil, nil
+	}
+	visited[mgID] = true
 
 	// Check cache first
 	c.mu.RLock()
@@ -179,47 +200,40 @@ func (c *ManagementGroupClient) discoverManagementGroupRecursive(ctx context.Con
 		AccessLevel:    "read",
 		HasPermissions: true,
 	}
+	allScopes := []*ManagementGroupScope{scope}
 
-	var allScopes []*ManagementGroupScope
-	allScopes = append(allScopes, scope)
-
-	// Process children
-	if result.Properties != nil && result.Properties.Children != nil {
-		for _, child := range result.Properties.Children {
-			if child.ID == nil || child.Name == nil {
-				continue
+	var errs []error
+	var children []*armmanagementgroups.ManagementGroupChildInfo
+	if result.Properties != nil {
+		children = result.Properties.Children
+	}
+	for _, child := range children {
+		if child.ID == nil || child.Name == nil || child.Type == nil {
+			continue
+		}
+		childName := *child.Name
+		switch *child.Type {
+		case "Microsoft.Management/managementGroups":
+			scope.ChildGroups = append(scope.ChildGroups, childName)
+			childScopes, err := c.discoverManagementGroupRecursive(ctx, childName, depth+1, visited)
+			allScopes = append(allScopes, childScopes...)
+			if err != nil && !isForbidden(err) {
+				errs = append(errs, fmt.Errorf("child management group %s: %w", childName, err))
 			}
-
-			childName := *child.Name
-			if child.Type != nil {
-				switch *child.Type {
-				case "Microsoft.Management/managementGroups":
-					scope.ChildGroups = append(scope.ChildGroups, childName)
-					// Recursively discover child management groups
-					childScopes, err := c.discoverManagementGroupRecursive(ctx, childName, depth+1)
-					if err != nil {
-						log.Printf("Warning: Failed to discover child management group %s: %v", childName, err)
-						continue
-					}
-					allScopes = append(allScopes, childScopes...)
-
-				case "Microsoft.Subscription":
-					// Extract subscription ID from the full ID
-					subID := extractSubscriptionID(*child.ID)
-					if subID != "" {
-						scope.Subscriptions = append(scope.Subscriptions, subID)
-					}
-				}
+		case "Microsoft.Subscription":
+			if subID := extractSubscriptionID(*child.ID); subID != "" {
+				scope.Subscriptions = append(scope.Subscriptions, subID)
 			}
 		}
 	}
 
-	// Cache the result
-	c.mu.Lock()
-	c.cache[mgID] = scope
-	c.mu.Unlock()
-
-	return allScopes, nil
+	// Cache only a complete answer, so a later walk retries the failed children.
+	if len(errs) == 0 {
+		c.mu.Lock()
+		c.cache[mgID] = scope
+		c.mu.Unlock()
+	}
+	return allScopes, errors.Join(errs...)
 }
 
 // discoverOrphanSubscriptions finds subscriptions not in any management group
@@ -235,11 +249,15 @@ func (c *ManagementGroupClient) discoverOrphanSubscriptions(ctx context.Context,
 	// List all accessible subscriptions
 	var orphanScopes []*ManagementGroupScope
 	pager := c.subscriptionsClient.NewListPager(nil)
+	guard := paging.New("list subscriptions", paging.PagesMax)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+			return orphanScopes, fmt.Errorf("failed to list subscriptions: %w", err)
+		}
+		if err := guardNextLink(guard, page.NextLink); err != nil {
+			return orphanScopes, err
 		}
 
 		for _, sub := range page.Value {

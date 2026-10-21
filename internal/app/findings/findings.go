@@ -99,7 +99,12 @@ func Evaluate(ctx context.Context, request EvaluateRequest) (Evaluation, error) 
 	if err != nil {
 		return Evaluation{}, err
 	}
-	results, executeErr := executor.Execute(compliance.ExecuteOptions{ControlID: request.ControlID, PackName: request.PackName, Tags: request.Tags, Parameters: request.Parameters})
+	results, executeErr := executor.Execute(ctx, compliance.ExecuteOptions{
+		ControlID:  request.ControlID,
+		PackName:   request.PackName,
+		Tags:       request.Tags,
+		Parameters: request.Parameters,
+	})
 	_ = executor.Close()
 	if executeErr != nil {
 		return Evaluation{}, executeErr
@@ -147,8 +152,10 @@ func Evaluate(ctx context.Context, request EvaluateRequest) (Evaluation, error) 
 			if row.Remediation != nil {
 				finding.Remediation = *row.Remediation
 			}
-			var existed bool
-			_ = tx.QueryRowContext(ctx, `SELECT COUNT(*) > 0 FROM findings WHERE fingerprint = ?`, fingerprint).Scan(&existed)
+			existed, err := findingExists(ctx, tx, fingerprint)
+			if err != nil {
+				return Evaluation{}, err
+			}
 			if existed {
 				evaluation.Recurred++
 			} else {
@@ -212,16 +219,24 @@ func hydrateSnapshot(ctx context.Context, target string, scan dataaccess.ScanRec
 	resources := make([]*pb.Resource, 0, len(observations))
 	for _, observation := range observations {
 		tags := map[string]string{}
-		_ = json.Unmarshal([]byte(observation.Tags), &tags)
+		if err := decodeJSONColumn(observation.Tags, &tags); err != nil {
+			return fmt.Errorf("decode tags of %s: %w", observation.ResourceID, err)
+		}
 		resources = append(resources, &pb.Resource{Provider: observation.Provider, Id: observation.ResourceID, Name: observation.Name,
 			Type: observation.Type, Service: observation.Service, Region: observation.Location, AccountId: observation.AccountID,
 			Arn: observation.ARN, ParentId: observation.ParentID, Tags: tags, Attributes: observation.Attributes,
 			RawData: observation.RawData, DiscoveredAt: timestamppb.New(observation.ObservedAt),
 			Relationships: bySource[observation.Provider+"\x00"+observation.ResourceID]})
 	}
+	// The snapshot's services and scopes decide what the evaluator treats as
+	// observed, so a corrupt value must fail rather than shrink to nothing.
 	var services, scopes []string
-	_ = json.Unmarshal([]byte(scan.ServicesJSON), &services)
-	_ = json.Unmarshal([]byte(scan.ScopesJSON), &scopes)
+	if err := decodeJSONColumn(scan.ServicesJSON, &services); err != nil {
+		return fmt.Errorf("decode services of scan %s: %w", scan.ID, err)
+	}
+	if err := decodeJSONColumn(scan.ScopesJSON, &scopes); err != nil {
+		return fmt.Errorf("decode scopes of scan %s: %w", scan.ID, err)
+	}
 	session, err := dataaccess.OpenSession(ctx, target)
 	if err != nil {
 		return err
@@ -229,6 +244,34 @@ func hydrateSnapshot(ctx context.Context, target string, scan dataaccess.ScanRec
 	defer session.Close()
 	return session.PersistScanOutcome(ctx, dataaccess.ScanOutcome{ID: scan.ID, Provider: scan.Provider, Services: services,
 		Scopes: scopes, Status: dataaccess.ScanStatusCompleted, StartedAt: scan.StartedAt, EndedAt: scan.EndedAt, Resources: resources}, dataaccess.PersistScanOptions{})
+}
+
+// rowQuerier is the part of *sql.Tx findingExists needs, so tests can pass
+// a connection whose queries fail.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// findingExists reports whether fingerprint has been seen before. A failed
+// query must not read as "new": that would count a recurring finding as
+// opened.
+func findingExists(ctx context.Context, q rowQuerier, fingerprint string) (bool, error) {
+	var existed bool
+	err := q.QueryRowContext(ctx, `SELECT COUNT(*) > 0 FROM findings WHERE fingerprint = ?`,
+		fingerprint).Scan(&existed)
+	if err != nil {
+		return false, fmt.Errorf("check finding %s: %w", fingerprint, err)
+	}
+	return existed, nil
+}
+
+// decodeJSONColumn unmarshals a JSON text column into dst. An empty column
+// means no value was stored and leaves dst unchanged.
+func decodeJSONColumn(raw string, dst any) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(raw), dst)
 }
 
 func upsertFinding(ctx context.Context, tx *sql.Tx, finding Finding) error {

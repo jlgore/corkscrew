@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	appconfig "github.com/jlgore/corkscrew/internal/config"
 	"github.com/jlgore/corkscrew/internal/data"
@@ -50,11 +52,26 @@ func (r *ViewRouter) SetDependencies(database *data.Session, config *appconfig.C
 	}
 }
 
+// maxRouterHistory bounds back-navigation memory. A long session that keeps switching views
+// would otherwise grow history without limit, since only GoBack ever pops it.
+const maxRouterHistory = 32
+
 // SwitchView switches to a specific view
 func (r *ViewRouter) SwitchView(viewType ViewType, data interface{}) tea.Cmd {
+	// Create the view first so an unknown view type leaves the router on a view that exists.
+	if _, exists := r.views[viewType]; !exists {
+		view := r.createView(viewType)
+		if view == nil {
+			err := fmt.Errorf("view %v is not available", viewType)
+			return func() tea.Msg { return ErrorMsg{Error: err} }
+		}
+		r.views[viewType] = view
+		r.injectDependencies(view)
+	}
+
 	// Add current view to history (unless switching to same view)
 	if viewType != r.currentView {
-		r.history = append(r.history, r.currentView)
+		r.pushHistory(r.currentView)
 	}
 
 	// Blur current view
@@ -62,39 +79,47 @@ func (r *ViewRouter) SwitchView(viewType ViewType, data interface{}) tea.Cmd {
 		currentView.Blur()
 	}
 
-	// Create view if it doesn't exist
-	if _, exists := r.views[viewType]; !exists {
-		view := r.createView(viewType)
-		if view != nil {
-			r.views[viewType] = view
-			r.injectDependencies(view)
-		}
-	}
-
 	// Switch to new view
 	r.currentView = viewType
+	newView := r.mustCurrentView()
 
 	// Focus new view and initialize if needed
+	newView.Focus()
+	newView.Resize(r.width, r.height)
+
+	// Handle view-specific data
 	var cmd tea.Cmd
-	if newView, exists := r.views[viewType]; exists {
-		newView.Focus()
-		newView.Resize(r.width, r.height)
-
-		// Handle view-specific data
-		if data != nil {
-			cmd = r.handleViewData(viewType, data)
-		}
-
-		// Initialize view if this is the first time
-		initCmd := newView.Init()
-		if initCmd != nil && cmd != nil {
-			return tea.Batch(cmd, initCmd)
-		} else if initCmd != nil {
-			return initCmd
-		}
+	if data != nil {
+		cmd = r.handleViewData(viewType, data)
 	}
 
+	// Initialize view if this is the first time
+	initCmd := newView.Init()
+	if initCmd != nil && cmd != nil {
+		return tea.Batch(cmd, initCmd)
+	} else if initCmd != nil {
+		return initCmd
+	}
 	return cmd
+}
+
+// pushHistory appends to history, dropping the oldest entry once the cap is reached.
+func (r *ViewRouter) pushHistory(viewType ViewType) {
+	if len(r.history) >= maxRouterHistory {
+		copy(r.history, r.history[1:])
+		r.history = r.history[:len(r.history)-1]
+	}
+	r.history = append(r.history, viewType)
+}
+
+// mustCurrentView returns the current view. Views are never removed and SwitchView only moves to
+// views it has created, so a missing current view is a router bug, not an operating condition.
+func (r *ViewRouter) mustCurrentView() views.BaseView {
+	view, exists := r.views[r.currentView]
+	if !exists {
+		panic(fmt.Sprintf("tui: router current view %v has no view instance", r.currentView))
+	}
+	return view
 }
 
 // GoBack navigates to the previous view in history
@@ -107,18 +132,12 @@ func (r *ViewRouter) GoBack() tea.Cmd {
 	previousView := r.history[len(r.history)-1]
 	r.history = r.history[:len(r.history)-1]
 
-	// Switch to previous view without adding to history
-	oldCurrent := r.currentView
+	// Blur old view, then switch to previous view without adding to history
+	r.mustCurrentView().Blur()
 	r.currentView = previousView
-
-	// Blur old view, focus new view
-	if oldView, exists := r.views[oldCurrent]; exists {
-		oldView.Blur()
-	}
-	if newView, exists := r.views[r.currentView]; exists {
-		newView.Focus()
-		newView.Resize(r.width, r.height)
-	}
+	newView := r.mustCurrentView()
+	newView.Focus()
+	newView.Resize(r.width, r.height)
 
 	return nil
 }

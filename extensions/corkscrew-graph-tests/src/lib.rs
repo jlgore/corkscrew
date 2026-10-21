@@ -59,6 +59,13 @@ pub mod functions {
         ));
     }
 
+    pub mod params {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../corkscrew-graph/src/functions/params.rs"
+        ));
+    }
+
     pub mod info {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),

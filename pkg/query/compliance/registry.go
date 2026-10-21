@@ -1,12 +1,11 @@
 package compliance
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +17,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jlgore/corkscrew/internal/archive"
 )
 
 // RegistryClient manages discovery, download, and installation of compliance packs
@@ -31,6 +32,7 @@ type RegistryClient struct {
 	userAgent     string
 	baseURLs      []string // Support multiple registry URLs
 	offlineMode   bool
+	warnings      io.Writer // receives unverified-download warnings; os.Stderr by default
 }
 
 // RegistryCache represents the local registry cache structure
@@ -216,6 +218,7 @@ func NewRegistryClient() *RegistryClient {
 			Backoff:    2.0,
 		},
 		userAgent: "Corkscrew-Registry-Client/1.0",
+		warnings:  os.Stderr,
 		baseURLs: []string{
 			"https://api.github.com", // Default GitHub API
 		},
@@ -739,18 +742,45 @@ func (c *RegistryClient) DownloadPack(ctx context.Context, namespace, version st
 	return c.downloadAndExtract(ctx, packInfo, *packVersion, destDir)
 }
 
+// Pack archives are small YAML/SQL trees; these limits are far above any real pack but stop a
+// hostile or broken registry entry from filling the disk.
+const (
+	packDownloadBytesMax = 64 << 20 // compressed tarball
+	packBytesMax         = 64 << 20 // uncompressed, all entries
+	packEntryCountMax    = 10_000
+	packEntryBytesMax    = 16 << 20
+)
+
+// Retry settings come from user JSON, so they are capped: a large backoff or retry count must
+// not stall a download for hours.
+const (
+	retryDelayMax = 30 * time.Second
+	retryCountMax = 10
+)
+
 // downloadAndExtract downloads and extracts a pack tarball
 func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackInfo, version RegistryPackVersion, destDir string) (*QueryPack, error) {
-	// Create temporary file for download
-	tmpFile, err := os.CreateTemp("", "corkscrew-pack-*.tar.gz")
-	if err != nil {
-		return nil, err
+	// An unverified tarball lets whoever serves the URL choose the pack's SQL. Versions built
+	// from GitHub release tarballs carry no checksum yet (scratch issue 19), so refusing them
+	// would make every registry pack uninstallable; install them, but say so loudly.
+	if version.Checksum == "" {
+		_, _ = fmt.Fprintf(c.warnings,
+			"⚠️  WARNING: pack %s %s has no checksum; installing an UNVERIFIED download from %s\n",
+			packInfo.Namespace, version.Version, version.TarballURL)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
 
-	// Download the tarball
-	if err := c.downloadFile(ctx, version.TarballURL, tmpFile); err != nil {
+	extractDir, err := packExtractDir(destDir, packInfo.Namespace)
+	if err != nil {
+		return nil, RegistryError{
+			Operation: "extract",
+			URL:       packInfo.Namespace,
+			Message:   "invalid pack destination",
+			Cause:     err,
+		}
+	}
+
+	tmpPath, err := c.downloadToTemp(ctx, version.TarballURL)
+	if err != nil {
 		return nil, RegistryError{
 			Operation: "download",
 			URL:       version.TarballURL,
@@ -758,10 +788,10 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 			Cause:     err,
 		}
 	}
+	defer os.Remove(tmpPath)
 
-	// Verify checksum if available
 	if version.Checksum != "" {
-		if err := c.verifyChecksum(tmpFile.Name(), version.Checksum); err != nil {
+		if err := c.verifyChecksum(tmpPath, version.Checksum); err != nil {
 			return nil, RegistryError{
 				Operation: "verify",
 				URL:       version.TarballURL,
@@ -771,12 +801,16 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 		}
 	}
 
-	// Extract to destination
-	extractDir := filepath.Join(destDir, packInfo.Namespace)
-	if err := c.extractTarball(tmpFile.Name(), extractDir); err != nil {
+	// GitHub tarballs wrap the pack in one root directory, which is stripped.
+	limits := archive.Limits{
+		BytesMax:      packBytesMax,
+		EntryCountMax: packEntryCountMax,
+		EntryBytesMax: packEntryBytesMax,
+	}
+	if err := archive.ExtractTree(archive.FormatTarGz, tmpPath, extractDir, 1, limits); err != nil {
 		return nil, RegistryError{
 			Operation: "extract",
-			URL:       tmpFile.Name(),
+			URL:       tmpPath,
 			Message:   "failed to extract tarball",
 			Cause:     err,
 		}
@@ -785,6 +819,37 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 	// Load the pack using the pack loader
 	loader := NewPackLoader().WithSearchPaths(destDir)
 	return loader.LoadPack(ctx, packInfo.Namespace)
+}
+
+// packExtractDir resolves the pack directory and keeps a registry-supplied namespace such as
+// "../x" from naming a directory outside destDir.
+func packExtractDir(destDir, namespace string) (string, error) {
+	root, err := filepath.Abs(destDir)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, namespace)
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("namespace %q is outside %s", namespace, root)
+	}
+	return dir, nil
+}
+
+// downloadToTemp downloads url into a new temporary file and returns its path.
+func (c *RegistryClient) downloadToTemp(ctx context.Context, url string) (string, error) {
+	tmpFile, err := os.CreateTemp("", "corkscrew-pack-*.tar.gz")
+	if err != nil {
+		return "", err
+	}
+	downloadErr := c.downloadFile(ctx, url, tmpFile)
+	if err := errors.Join(downloadErr, tmpFile.Close()); err != nil {
+		return "", errors.Join(err, os.Remove(tmpFile.Name()))
+	}
+	return tmpFile.Name(), nil
 }
 
 // downloadFile downloads a file from URL
@@ -810,8 +875,14 @@ func (c *RegistryClient) downloadFile(ctx context.Context, url string, dest *os.
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
-	_, err = io.Copy(dest, resp.Body)
-	return err
+	n, err := io.Copy(dest, io.LimitReader(resp.Body, packDownloadBytesMax+1))
+	if err != nil {
+		return err
+	}
+	if n > packDownloadBytesMax {
+		return fmt.Errorf("download exceeds %d bytes", packDownloadBytesMax)
+	}
+	return nil
 }
 
 // verifyChecksum verifies file checksum
@@ -835,91 +906,21 @@ func (c *RegistryClient) verifyChecksum(filePath, expectedChecksum string) error
 	return nil
 }
 
-// extractTarball extracts a gzipped tarball
-func (c *RegistryClient) extractTarball(tarPath, destDir string) error {
-	// Ensure destination directory exists
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
-	}
-
-	file, err := os.Open(tarPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	gzr, err := gzip.NewReader(file)
-	if err != nil {
-		return err
-	}
-	defer gzr.Close()
-
-	tr := tar.NewReader(gzr)
-
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		// Skip root directory (GitHub tarballs have a root directory)
-		pathParts := strings.Split(header.Name, "/")
-		if len(pathParts) <= 1 {
-			continue
-		}
-
-		// Remove the root directory from path
-		relativePath := strings.Join(pathParts[1:], "/")
-		if relativePath == "" {
-			continue
-		}
-
-		targetPath := filepath.Join(destDir, relativePath)
-
-		// Ensure we don't extract outside destination
-		if !strings.HasPrefix(targetPath, destDir) {
-			continue
-		}
-
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(targetPath, os.FileMode(header.Mode)); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			// Ensure parent directory exists
-			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-				return err
-			}
-
-			outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
-			if err != nil {
-				return err
-			}
-
-			if _, err := io.Copy(outFile, tr); err != nil {
-				outFile.Close()
-				return err
-			}
-			outFile.Close()
-		}
-	}
-
-	return nil
-}
-
 // doRequestWithRetry performs HTTP request with retry logic
 func (c *RegistryClient) doRequestWithRetry(req *http.Request) (*http.Response, error) {
 	var lastErr error
-	delay := c.retryConfig.RetryDelay
+	delay := min(c.retryConfig.RetryDelay, retryDelayMax)
+	retries := min(c.retryConfig.MaxRetries, retryCountMax)
 
-	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
+	for attempt := 0; attempt <= retries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(delay)
-			delay = time.Duration(float64(delay) * c.retryConfig.Backoff)
+			// Cancellation must interrupt the wait, not only the next request.
+			select {
+			case <-req.Context().Done():
+				return nil, errors.Join(req.Context().Err(), lastErr)
+			case <-time.After(delay):
+			}
+			delay = nextRetryDelay(delay, c.retryConfig.Backoff)
 		}
 
 		resp, err := c.httpClient.Do(req)
@@ -939,6 +940,19 @@ func (c *RegistryClient) doRequestWithRetry(req *http.Request) (*http.Response, 
 	}
 
 	return nil, lastErr
+}
+
+// nextRetryDelay applies the backoff multiplier, clamped to [0, retryDelayMax]. The float
+// product can overflow Duration, so the clamp happens before converting back.
+func nextRetryDelay(delay time.Duration, backoff float64) time.Duration {
+	next := float64(delay) * backoff
+	if !(next >= 0) { // also catches NaN
+		return 0
+	}
+	if next > float64(retryDelayMax) {
+		return retryDelayMax
+	}
+	return time.Duration(next)
 }
 
 // loadCache loads the registry cache from disk

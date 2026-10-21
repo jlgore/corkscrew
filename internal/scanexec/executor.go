@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 )
 
 type BatchScanner interface {
@@ -38,8 +39,13 @@ type ScopeResult struct {
 	Scope     string
 	Resources []*pb.Resource
 	Stats     *pb.ScanStats
-	Errors    []string
-	Duration  time.Duration
+	// Errors mean the scope was not fully observed; any entry makes the scan partial.
+	Errors []string
+	// Notices are informational provider entries (see shared.IsScanNotice).
+	Notices []string
+	// Unreachable is set when the provider returned no response for the scope at all.
+	Unreachable bool
+	Duration    time.Duration
 }
 
 type Outcome struct {
@@ -122,12 +128,14 @@ func Execute(ctx context.Context, scanner BatchScanner, plan Plan, observer Obse
 				result := ScopeResult{Scope: scope, Duration: time.Since(scopeStarted)}
 				if err != nil {
 					result.Errors = []string{err.Error()}
+					result.Unreachable = true
 				} else if response == nil {
 					result.Errors = []string{"provider returned an empty scan response"}
+					result.Unreachable = true
 				} else {
 					result.Resources = response.Resources
 					result.Stats = response.Stats
-					result.Errors = append(result.Errors, response.Errors...)
+					result.Errors, result.Notices = shared.SplitScanErrors(response.Errors)
 				}
 				results <- indexedScopeResult{index: index, ScopeResult: result}
 			}
@@ -146,15 +154,27 @@ func Execute(ctx context.Context, scanner BatchScanner, plan Plan, observer Obse
 	}()
 
 	outcome := Outcome{Scopes: make([]ScopeResult, len(plan.Scopes)), Stats: &pb.ScanStats{ServiceCounts: map[string]int32{}}}
+	received := 0
 	for result := range results {
 		outcome.Scopes[result.index] = result.ScopeResult
+		received++
+	}
+	// Every scope is dispatched exactly once and every worker reports each job it takes, so a
+	// missing result is a scheduler bug. Treating its zero value as a clean scope would let the
+	// scan claim completeness for a region it never scanned.
+	if received != len(plan.Scopes) {
+		panic(fmt.Sprintf("scanexec: received %d scope results for %d scopes", received, len(plan.Scopes)))
 	}
 
 	// Aggregate in requested scope order rather than worker-completion order.
 	// When providers return conflicting duplicates, the earliest requested scope
 	// wins, followed by the provider's response order within that scope.
 	var failed []string
+	unreachable := 0
 	for index, result := range outcome.Scopes {
+		if result.Unreachable {
+			unreachable++
+		}
 		outcome.Resources = append(outcome.Resources, result.Resources...)
 		if result.Stats != nil {
 			outcome.Stats.TotalResources += result.Stats.TotalResources
@@ -184,7 +204,9 @@ func Execute(ctx context.Context, scanner BatchScanner, plan Plan, observer Obse
 	}
 	if len(failed) > 0 {
 		sort.Strings(failed)
-		if len(failed) == len(plan.Scopes) {
+		// Failed means nothing was observed. A scope that answered with some errors still
+		// contributed resources, so the scan is partial: persisted, but never comparable.
+		if unreachable == len(plan.Scopes) {
 			outcome.Status = StatusFailed
 		} else {
 			outcome.Status = StatusPartial

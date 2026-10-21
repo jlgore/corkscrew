@@ -10,15 +10,22 @@ import (
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const listCacheTTL = 10 * time.Minute
 
+// listPageSizeDefault applies when a ListResources caller sets no MaxResults. It used to mean
+// "every ref in one response", which for a large org can exceed gRPC's message size limit.
+const listPageSizeDefault = 1000
+
 // listEntry caches a flattened ListResources scan so paged callers can iterate
-// without re-running the full scan on every page request.
+// without re-running the full scan on every page request. errors holds the
+// scan's error entries: a non-empty list means refs may be incomplete.
 type listEntry struct {
 	refs      []*pb.ResourceRef
+	errors    []string
 	expiresAt time.Time
 }
 
@@ -186,10 +193,11 @@ func lastSegment(id string) string {
 // the cached slice.
 func (p *GitHubProvider) listResourcesPaged(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
 	key := listCacheKey(req.Service, req.Filters)
-	refs, err := p.refsForKey(ctx, key, req)
+	entry, err := p.refsForKey(ctx, key, req)
 	if err != nil {
 		return nil, err
 	}
+	refs := entry.refs
 
 	offset := 0
 	if req.NextToken != "" {
@@ -201,27 +209,48 @@ func (p *GitHubProvider) listResourcesPaged(ctx context.Context, req *pb.ListRes
 		offset = len(refs)
 	}
 
+	pageSize := listPageSizeDefault
+	if req.MaxResults > 0 {
+		pageSize = int(req.MaxResults)
+	}
 	page := refs[offset:]
 	nextToken := ""
-	if req.MaxResults > 0 && int(req.MaxResults) < len(page) {
-		page = page[:req.MaxResults]
+	if pageSize < len(page) {
+		page = page[:pageSize]
 		nextToken = strconv.Itoa(offset + len(page))
 	}
 
+	metadata := map[string]string{"org": p.org}
+	scanErrors, notices := shared.SplitScanErrors(entry.errors)
+	if len(scanErrors) > 0 {
+		// The listing may be missing resources; say so instead of presenting it as complete.
+		metadata["partial"] = "true"
+		metadata["errors"] = strings.Join(scanErrors, "\n")
+	}
+	if len(notices) > 0 {
+		metadata["notices"] = strings.Join(notices, "\n")
+	}
 	return &pb.ListResourcesResponse{
 		Resources:  page,
 		TotalCount: int32(len(refs)),
 		NextToken:  nextToken,
-		Metadata:   map[string]string{"org": p.org},
+		Metadata:   metadata,
 	}, nil
 }
 
-func (p *GitHubProvider) refsForKey(ctx context.Context, key string, req *pb.ListResourcesRequest) ([]*pb.ResourceRef, error) {
+// refsForKey returns the cached listing for key, scanning when there is none. A partial
+// listing is still cached so continuation pages stay consistent, but a first-page request
+// (no NextToken) rescans rather than replaying the failure for the rest of the TTL.
+func (p *GitHubProvider) refsForKey(
+	ctx context.Context, key string, req *pb.ListResourcesRequest,
+) (*listEntry, error) {
 	p.gcListCache()
 	if cached, ok := p.listCache.Load(key); ok {
 		entry := cached.(*listEntry)
-		if time.Now().Before(entry.expiresAt) {
-			return entry.refs, nil
+		fresh := time.Now().Before(entry.expiresAt)
+		scanErrors, _ := shared.SplitScanErrors(entry.errors)
+		if fresh && (len(scanErrors) == 0 || req.NextToken != "") {
+			return entry, nil
 		}
 		p.listCache.Delete(key)
 	}
@@ -257,8 +286,13 @@ func (p *GitHubProvider) refsForKey(ctx context.Context, key string, req *pb.Lis
 		}
 		refs = append(refs, ref)
 	}
-	p.listCache.Store(key, &listEntry{refs: refs, expiresAt: time.Now().Add(listCacheTTL)})
-	return refs, nil
+	entry := &listEntry{
+		refs:      refs,
+		errors:    append([]string(nil), resp.Errors...),
+		expiresAt: time.Now().Add(listCacheTTL),
+	}
+	p.listCache.Store(key, entry)
+	return entry, nil
 }
 
 func (p *GitHubProvider) gcListCache() {

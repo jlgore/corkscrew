@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,13 +28,12 @@ const providerVersion = "0.1.0"
 var githubServices = []string{"orgs", "repos", "security", "actions", "access", "findings"}
 
 type GitHubProvider struct {
-	initialized     bool
-	org             string
-	client          *github.Client
-	gqlClient       *githubv4.Client
-	concurrency     int
-	protectionCache sync.Map // key: "owner/name@branch" → branchProtectionState
-	listCache       sync.Map // key: listCacheKey(...) → *listEntry
+	initialized bool
+	org         string
+	client      *github.Client
+	gqlClient   *githubv4.Client
+	concurrency int
+	listCache   sync.Map // key: listCacheKey(...) → *listEntry
 }
 
 const defaultRepoConcurrency = 8
@@ -145,6 +145,7 @@ func (p *GitHubProvider) ScanService(ctx context.Context, req *pb.ScanServiceReq
 	}
 
 	start := time.Now()
+	ctx = withProtectionCache(ctx)
 	service := req.Service
 	if service == "" {
 		service = "repos"
@@ -207,6 +208,8 @@ func (p *GitHubProvider) DescribeResource(ctx context.Context, req *pb.DescribeR
 
 func (p *GitHubProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
 	start := time.Now()
+	// One protection cache for the whole batch: `findings` reuses what `repos` fetched.
+	ctx = withProtectionCache(ctx)
 	services := req.Services
 	if len(services) == 0 {
 		services = []string{"repos", "security", "findings"}
@@ -237,8 +240,9 @@ func (p *GitHubProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudPr
 	if len(services) == 0 {
 		services = []string{"repos", "security", "findings"}
 	}
+	ctx := withProtectionCache(stream.Context())
 	for _, service := range services {
-		resp, err := p.ScanService(stream.Context(), &pb.ScanServiceRequest{Service: service, IncludeRelationships: req.IncludeRelationships})
+		resp, err := p.ScanService(ctx, &pb.ScanServiceRequest{Service: service, IncludeRelationships: req.IncludeRelationships})
 		if err != nil {
 			return err
 		}
@@ -394,6 +398,19 @@ func mergeConfig(base, override map[string]string) map[string]string {
 	return merged
 }
 
+// httpClientTimeout bounds one GitHub call end to end. http.Client.Timeout also
+// covers the rate-limit transport's retries (at most defaultMaxRetries waits of
+// retryWaitMax, 3m in all), so it must exceed them; it stays under the host's
+// 5-minute scope deadline so a hung call fails as that listing's error rather
+// than as the whole scope timing out.
+const httpClientTimeout = 4 * time.Minute
+
+// newHTTPClient is the only way this provider builds an *http.Client, so none
+// is left with Go's default of no timeout.
+func newHTTPClient(transport http.RoundTripper) *http.Client {
+	return &http.Client{Transport: transport, Timeout: httpClientTimeout}
+}
+
 // newGitHubClient returns the REST client and the underlying *http.Client so
 // callers can build sibling clients (e.g. GraphQL) sharing the same auth and
 // rate-limit transport.
@@ -414,15 +431,15 @@ func newGitHubClient(ctx context.Context, cfg *providerConfig) (*github.Client, 
 		}
 		// Wrap with rate-limit/retry handling on the outside so backoff
 		// applies to the auth-completed request, not raw JWT exchanges.
-		httpClient = &http.Client{Transport: newRateLimitTransport(appTransport)}
+		httpClient = newHTTPClient(newRateLimitTransport(appTransport))
 	case cfg.Token != "":
 		// Plumb through oauth2.Transport manually so the underlying base
 		// transport is our rate-limit wrapper instead of http.DefaultTransport.
 		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: cfg.Token})
-		httpClient = &http.Client{Transport: &oauth2.Transport{
+		httpClient = newHTTPClient(&oauth2.Transport{
 			Source: src,
 			Base:   newRateLimitTransport(http.DefaultTransport),
-		}}
+		})
 	default:
 		return nil, nil, fmt.Errorf("github auth missing: provide a token (token / GITHUB_TOKEN / token_env) or GitHub App credentials (app_id + private_key_path)")
 	}
@@ -443,7 +460,7 @@ func resolveInstallationID(ctx context.Context, cfg *providerConfig) (int64, err
 	if err != nil {
 		return 0, fmt.Errorf("create GitHub App transport: %w", err)
 	}
-	httpClient := &http.Client{Transport: newRateLimitTransport(transport)}
+	httpClient := newHTTPClient(newRateLimitTransport(transport))
 	client := github.NewClient(httpClient)
 	if cfg.BaseURL != "" {
 		client, err = client.WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL)
@@ -452,6 +469,7 @@ func resolveInstallationID(ctx context.Context, cfg *providerConfig) (int64, err
 		}
 	}
 	opt := &github.ListOptions{PerPage: 100}
+	guard := paging.New("GitHub App installations", paging.PagesMax)
 	for {
 		installations, resp, err := client.Apps.ListInstallations(ctx, opt)
 		if err != nil {
@@ -464,6 +482,9 @@ func resolveInstallationID(ctx context.Context, cfg *providerConfig) (int64, err
 		}
 		if resp == nil || resp.NextPage == 0 {
 			break
+		}
+		if err := guard.Next(strconv.Itoa(resp.NextPage)); err != nil {
+			return 0, err
 		}
 		opt.Page = resp.NextPage
 	}

@@ -12,7 +12,7 @@ import (
 	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
-func runPluginE(args []string) error {
+func runPluginE(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: corkscrew plugin <list|build|status|install|groups>")
 	}
@@ -20,14 +20,13 @@ func runPluginE(args []string) error {
 	case "list":
 		return listPlugins()
 	case "build":
-		return buildPlugins(context.Background(), args[1:])
+		return buildPlugins(ctx, args[1:])
 	case "status":
 		return checkPluginStatus(args[1:])
 	case "install":
 		return installPlugin(args[1:])
 	case "groups":
-		listServiceGroups()
-		return nil
+		return listServiceGroups()
 	default:
 		return fmt.Errorf("unknown plugin command: %s", args[0])
 	}
@@ -110,7 +109,7 @@ func installPlugin(args []string) error {
 	return nil
 }
 
-func listServiceGroups() {
+func listServiceGroups() error {
 	fmt.Println("📦 Available AWS Service Groups:")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "Group\tServices")
@@ -118,5 +117,5 @@ func listServiceGroups() {
 	for _, group := range scanapp.ServiceGroupNames() {
 		fmt.Fprintf(w, "%s\t%s\n", group, strings.Join(groups[group], ", "))
 	}
-	_ = w.Flush()
+	return w.Flush()
 }

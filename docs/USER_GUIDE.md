@@ -1023,7 +1023,16 @@ corkscrew query --file analysis.sql
 
 # Query from stdin
 echo "SELECT * FROM azure_resources WHERE type = 'VirtualMachine'" | corkscrew query --stdin
+
+# Run SQL you did not write without host file or network access
+corkscrew query --sandbox --file shared.sql
 ```
+
+Ad hoc queries can read local files (for example `read_csv('local.csv')`).
+`--sandbox` turns that off: `read_text`, `read_csv`, `COPY`, `ATTACH`, URLs and
+extension loading all fail with a DuckDB permission error, and the setting is
+locked for the session. Compliance packs and `corkscrew graph` always run
+sandboxed.
 
 #### Understanding the Schema
 
@@ -1229,6 +1238,10 @@ corkscrew query --control aws/s3/encryption \
 # Export compliance results
 corkscrew query --pack aws-cis --output csv > compliance_report.csv
 ```
+
+Pack SQL runs sandboxed, since packs can come from external git or OCI
+sources: it can read the corkscrew database but not host files or the network.
+Each query is cancelled after two minutes.
 
 #### Writing Custom Compliance Queries
 

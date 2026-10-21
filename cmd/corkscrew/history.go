@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"text/tabwriter"
@@ -15,7 +16,7 @@ import (
 	dataaccess "github.com/jlgore/corkscrew/internal/data"
 )
 
-func runScans(args []string) int {
+func runScans(ctx context.Context, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: corkscrew scans list|show [options]")
 		return 1
@@ -31,13 +32,13 @@ func runScans(args []string) int {
 		if fs.Parse(args[1:]) != nil {
 			return 1
 		}
-		session, err := dataaccess.OpenSession(context.Background(), *dbPath)
+		session, err := dataaccess.OpenSession(ctx, *dbPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 		defer session.Close()
-		scans, err := session.ListScans(context.Background(), *provider, *limit)
+		scans, err := session.ListScans(ctx, *provider, *limit)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -55,13 +56,13 @@ func runScans(args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: corkscrew scans show <scan-id>")
 			return 1
 		}
-		session, err := dataaccess.OpenSession(context.Background(), *dbPath)
+		session, err := dataaccess.OpenSession(ctx, *dbPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 		defer session.Close()
-		scan, err := session.GetScan(context.Background(), fs.Arg(0))
+		scan, err := session.GetScan(ctx, fs.Arg(0))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -73,7 +74,7 @@ func runScans(args []string) int {
 	}
 }
 
-func runDrift(args []string) int {
+func runDrift(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("drift", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -85,7 +86,7 @@ func runDrift(args []string) int {
 	if fs.Parse(args) != nil {
 		return 1
 	}
-	result, err := appdrift.Run(context.Background(), appdrift.Request{Target: *dbPath, Provider: *provider, FromScan: *from, ToScan: *to})
+	result, err := appdrift.Run(ctx, appdrift.Request{Target: *dbPath, Provider: *provider, FromScan: *from, ToScan: *to})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "drift failed: %v\n", err)
 		return 1
@@ -99,54 +100,106 @@ func runDrift(args []string) int {
 	return 0
 }
 
+// renderScans writes scans to stdout. Output errors (a closed pipe, a full
+// disk) are reported and fail the command rather than truncating silently.
 func renderScans(scans []dataaccess.ScanRecord, output string) int {
-	switch output {
-	case "json":
-		encoded, _ := json.MarshalIndent(scans, "", "  ")
-		fmt.Println(string(encoded))
-	case "csv":
-		writer := csv.NewWriter(os.Stdout)
-		_ = writer.Write([]string{"id", "provider", "status", "started_at", "resources", "new", "updated", "deleted", "scope_key"})
-		for _, scan := range scans {
-			_ = writer.Write([]string{scan.ID, scan.Provider, scan.Status, scan.StartedAt.Format(time.RFC3339),
-				strconv.Itoa(scan.TotalResources), strconv.Itoa(scan.NewResources), strconv.Itoa(scan.UpdatedResources),
-				strconv.Itoa(scan.DeletedResources), scan.ScopeKey})
-		}
-		writer.Flush()
-	default:
-		writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(writer, "ID\tPROVIDER\tSTATUS\tSTARTED\tRESOURCES\t+\t~\t-")
-		for _, scan := range scans {
-			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n", scan.ID, scan.Provider, scan.Status,
-				scan.StartedAt.Format(time.RFC3339), scan.TotalResources, scan.NewResources, scan.UpdatedResources, scan.DeletedResources)
-		}
-		_ = writer.Flush()
+	if err := writeScans(os.Stdout, scans, output); err != nil {
+		fmt.Fprintf(os.Stderr, "write scans: %v\n", err)
+		return 1
 	}
 	return 0
 }
 
-func renderDrift(result appdrift.Result, output string) int {
+func writeScans(out io.Writer, scans []dataaccess.ScanRecord, output string) error {
 	switch output {
 	case "json":
-		encoded, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(encoded))
+		return writeJSON(out, scans)
 	case "csv":
-		writer := csv.NewWriter(os.Stdout)
-		_ = writer.Write([]string{"change_type", "provider", "resource_id", "changed_fields"})
-		for _, change := range result.Changes {
-			fields, _ := json.Marshal(change.ChangedFields)
-			_ = writer.Write([]string{string(change.Type), change.Provider, change.ResourceID, string(fields)})
+		writer := csv.NewWriter(out)
+		header := []string{"id", "provider", "status", "started_at", "resources",
+			"new", "updated", "deleted", "scope_key"}
+		if err := writer.Write(header); err != nil {
+			return err
+		}
+		for _, scan := range scans {
+			record := []string{scan.ID, scan.Provider, scan.Status,
+				scan.StartedAt.Format(time.RFC3339), strconv.Itoa(scan.TotalResources),
+				strconv.Itoa(scan.NewResources), strconv.Itoa(scan.UpdatedResources),
+				strconv.Itoa(scan.DeletedResources), scan.ScopeKey}
+			if err := writer.Write(record); err != nil {
+				return err
+			}
 		}
 		writer.Flush()
+		return writer.Error()
 	default:
-		fmt.Printf("Drift %s -> %s (comparable=%t, incomplete=%t)\n", result.From.ID, result.To.ID, result.Comparable, result.Incomplete)
-		writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(writer, "CHANGE\tPROVIDER\tRESOURCE\tFIELDS")
-		for _, change := range result.Changes {
-			fields, _ := json.Marshal(change.ChangedFields)
-			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", change.Type, change.Provider, change.ResourceID, string(fields))
+		writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(writer, "ID\tPROVIDER\tSTATUS\tSTARTED\tRESOURCES\t+\t~\t-")
+		for _, scan := range scans {
+			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n", scan.ID, scan.Provider,
+				scan.Status, scan.StartedAt.Format(time.RFC3339), scan.TotalResources,
+				scan.NewResources, scan.UpdatedResources, scan.DeletedResources)
 		}
-		_ = writer.Flush()
+		// tabwriter buffers every row until Flush, so Flush reports any
+		// write error from the rows above.
+		return writer.Flush()
+	}
+}
+
+func renderDrift(result appdrift.Result, output string) int {
+	if err := writeDrift(os.Stdout, result, output); err != nil {
+		fmt.Fprintf(os.Stderr, "write drift: %v\n", err)
+		return 1
 	}
 	return 0
+}
+
+func writeDrift(out io.Writer, result appdrift.Result, output string) error {
+	switch output {
+	case "json":
+		return writeJSON(out, result)
+	case "csv":
+		writer := csv.NewWriter(out)
+		header := []string{"change_type", "provider", "resource_id", "changed_fields"}
+		if err := writer.Write(header); err != nil {
+			return err
+		}
+		for _, change := range result.Changes {
+			fields, err := json.Marshal(change.ChangedFields)
+			if err != nil {
+				return fmt.Errorf("encode changed fields of %s: %w", change.ResourceID, err)
+			}
+			record := []string{string(change.Type), change.Provider, change.ResourceID,
+				string(fields)}
+			if err := writer.Write(record); err != nil {
+				return err
+			}
+		}
+		writer.Flush()
+		return writer.Error()
+	default:
+		fmt.Fprintf(out, "Drift %s -> %s (comparable=%t, incomplete=%t)\n",
+			result.From.ID, result.To.ID, result.Comparable, result.Incomplete)
+		writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(writer, "CHANGE\tPROVIDER\tRESOURCE\tFIELDS")
+		for _, change := range result.Changes {
+			fields, err := json.Marshal(change.ChangedFields)
+			if err != nil {
+				return fmt.Errorf("encode changed fields of %s: %w", change.ResourceID, err)
+			}
+			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", change.Type, change.Provider,
+				change.ResourceID, string(fields))
+		}
+		return writer.Flush()
+	}
+}
+
+// writeJSON writes value as indented JSON followed by a newline.
+func writeJSON(out io.Writer, value any) error {
+	encoded, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(out, string(encoded))
+	return err
 }

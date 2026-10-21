@@ -48,6 +48,10 @@ The immutable normalized state of one resource in one scan. Completed observatio
 
 A completed scan with the same provider and canonical service/scope key as another scan. Automatic drift baselines and finding resolution only use comparable scans.
 
+### Partial scan
+
+A scan in which at least one scope reported an error, meaning resources may be missing. Partial scans are persisted but are never comparable, so they never resolve findings. Informational provider notices do not make a scan partial: an unsupported resource type, a permission the credential lacks, or a disabled feature. Permission gaps and disabled features are reported as coverage warnings (ADR 0023).
+
 ### Correlation evidence
 
 A versioned provider-emitted envelope in resource attributes. Core validates and materializes this evidence into graph-extension correlation tables without parsing provider-specific raw configuration.

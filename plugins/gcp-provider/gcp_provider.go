@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -15,13 +16,23 @@ import (
 	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// Page sizes requested from Resource Manager; each is the API's documented maximum.
+const (
+	orgSearchPageSize   = 1000
+	projectListPageSize = 1000
 )
 
 // GCPProvider implements the CloudProvider interface for Google Cloud Platform
 type GCPProvider struct {
-	mu          sync.RWMutex
-	initialized bool
+	mu sync.RWMutex
+	// initialized is set last in Initialize. RPC handlers read it without p.mu, so it is atomic;
+	// a true Load also publishes the fields Initialize wrote before it.
+	initialized atomic.Bool
 
 	// Configuration
 	projectIDs []string
@@ -29,10 +40,14 @@ type GCPProvider struct {
 	folderID   string
 	scope      string // "projects", "folders", or "organizations"
 
+	// orgDiscoveryErr is why automatic scope discovery fell back from organization scope.
+	orgDiscoveryErr error
+
 	// Core components
 	assetInventory  *AssetInventoryClient
 	discovery       *ServiceDiscovery
 	scanner         *ResourceScanner
+	streamer        resourceStreamer // overrides scanner for StreamScan; nil in production
 	enhancedScanner *EnhancedResourceScanner
 	schemaGen       *GCPSchemaGenerator
 	clientFactory   *ClientFactory
@@ -124,7 +139,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 		}
 	}
 
-	p.initialized = true
+	p.initialized.Store(true)
 
 	// Build metadata for response
 	metadata := map[string]string{
@@ -132,6 +147,10 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 		"auth_method":     authMethod,
 		"scope":           p.scope,
 		"max_concurrency": fmt.Sprintf("%d", p.maxConcurrency),
+	}
+
+	if p.orgDiscoveryErr != nil {
+		metadata["org_discovery_error"] = p.orgDiscoveryErr.Error()
 	}
 
 	// Add scope-specific metadata
@@ -156,6 +175,8 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 // discoverScope determines the scanning scope based on configuration and permissions
 func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]string) error {
+	p.orgDiscoveryErr = nil
+
 	// Check if specific scope is requested
 	if scope, ok := config["scope"]; ok {
 		p.scope = scope
@@ -188,13 +209,20 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 	// Try to discover accessible resources
 	log.Printf("Discovering accessible GCP resources...")
 
-	// First, try to list organizations
-	if orgs, err := p.discoverOrganizations(ctx); err == nil && len(orgs) > 0 {
+	// First, try to list organizations. Any listed organization is usable even if a later
+	// page failed. With none, fall back to project scope and remember why (see
+	// scopeScanErrors).
+	orgs, err := p.discoverOrganizations(ctx)
+	if len(orgs) > 0 {
 		// Use the first accessible organization
 		p.orgID = orgs[0]
 		p.scope = "organizations"
 		log.Printf("Discovered organization: %s", p.orgID)
 		return nil
+	}
+	if err != nil {
+		p.orgDiscoveryErr = err
+		log.Printf("Organization discovery failed, falling back to project scope: %v", err)
 	}
 
 	// Next, try to list accessible projects
@@ -219,7 +247,9 @@ func (p *GCPProvider) discoverScope(ctx context.Context, config map[string]strin
 	return nil
 }
 
-// discoverOrganizations attempts to list accessible organizations
+// discoverOrganizations lists accessible organizations. It returns every error, including
+// PermissionDenied: the caller decides that a credential without organization access falls
+// back to project scope, and the reason is reported rather than hidden.
 func (p *GCPProvider) discoverOrganizations(ctx context.Context) ([]string, error) {
 	client, err := resourcemanager.NewOrganizationsClient(ctx, p.clientFactory.ClientOptions()...)
 	if err != nil {
@@ -227,34 +257,24 @@ func (p *GCPProvider) discoverOrganizations(ctx context.Context) ([]string, erro
 	}
 	defer client.Close()
 
-	var orgs []string
-
-	// Search for organizations
 	it := client.SearchOrganizations(ctx, &resourcemanagerpb.SearchOrganizationsRequest{})
-
-	for {
-		org, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			// Permission denied is expected if user doesn't have org access
-			if strings.Contains(err.Error(), "permission") {
-				return nil, nil
-			}
-			return nil, err
-		}
-
-		// Extract org ID from name (organizations/123456)
-		if parts := strings.Split(org.Name, "/"); len(parts) == 2 {
-			orgs = append(orgs, parts[1])
-		}
-	}
-
-	return orgs, nil
+	return collectOrgIDs(it)
 }
 
-// discoverProjects lists all accessible projects
+// collectOrgIDs extracts organization IDs (organizations/123456 -> 123456) from a search,
+// keeping the IDs listed before any failure.
+func collectOrgIDs(it iterator.Pageable) ([]string, error) {
+	var orgs []string
+	err := listPages("search organizations", it, orgSearchPageSize,
+		func(org *resourcemanagerpb.Organization) {
+			if parts := strings.Split(org.Name, "/"); len(parts) == 2 {
+				orgs = append(orgs, parts[1])
+			}
+		})
+	return orgs, err
+}
+
+// discoverProjects lists all accessible, active projects.
 func (p *GCPProvider) discoverProjects(ctx context.Context) ([]string, error) {
 	client, err := resourcemanager.NewProjectsClient(ctx, p.clientFactory.ClientOptions()...)
 	if err != nil {
@@ -263,25 +283,16 @@ func (p *GCPProvider) discoverProjects(ctx context.Context) ([]string, error) {
 	defer client.Close()
 
 	var projects []string
-
-	// List all projects the user has access to
 	it := client.ListProjects(ctx, &resourcemanagerpb.ListProjectsRequest{})
-
-	for {
-		project, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to list projects: %w", err)
-		}
-
-		// Only include active projects
-		if project.State == resourcemanagerpb.Project_ACTIVE {
-			projects = append(projects, project.ProjectId)
-		}
+	err = listPages("list projects", it, projectListPageSize,
+		func(project *resourcemanagerpb.Project) {
+			if project.State == resourcemanagerpb.Project_ACTIVE {
+				projects = append(projects, project.ProjectId)
+			}
+		})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects: %w", err)
 	}
-
 	return projects, nil
 }
 
@@ -338,7 +349,7 @@ func (p *GCPProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb.P
 
 // DiscoverServices discovers available GCP services dynamically
 func (p *GCPProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServicesRequest) (*pb.DiscoverServicesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -394,7 +405,7 @@ func (p *GCPProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 
 // ListResources lists resources for specified services
 func (p *GCPProvider) ListResources(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -461,71 +472,33 @@ func (p *GCPProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 	}, nil
 }
 
+// scopeScanErrors reports a scope narrowed by a failed organization discovery. PermissionDenied
+// is the steady answer for project-level credentials, so project scope is the whole scope. Any
+// other failure may be transient: the same credentials could have scanned the organization, so
+// a project-scope scan has not observed everything and must not resolve findings elsewhere.
+func (p *GCPProvider) scopeScanErrors() []string {
+	err := p.orgDiscoveryErr
+	if err == nil || status.Code(err) == codes.PermissionDenied {
+		return nil
+	}
+	err = fmt.Errorf("organization discovery failed, scanned project scope only: %w", err)
+	return []string{shared.ServiceScanError("resourcemanager", err)}
+}
+
 // BatchScan performs batch scanning of multiple services
 func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
 	startTime := time.Now()
-	var allResources []*pb.Resource
-	var errors []string
 	stats := &pb.ScanStats{
 		ResourceCounts: make(map[string]int32),
 		ServiceCounts:  make(map[string]int32),
 	}
 
-	// Use enhanced scanner for comprehensive results if available
-	if p.enhancedScanner != nil && (len(req.Services) == 0 || len(req.Services) > 3) {
-		log.Printf("🚀 Using enhanced scanner for comprehensive batch scan")
-		resources, err := p.enhancedScanner.ScanAllServicesEnhanced(ctx)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("Enhanced scan error: %v", err))
-		} else {
-			allResources = resources
-			log.Printf("✅ Enhanced scan completed: %d resources found", len(resources))
-		}
-	} else if len(req.Services) > 1 {
-		// Use concurrent scanning for multiple services
-		resources, errs := p.batchScanConcurrent(ctx, req.Services)
-		allResources = resources
-		errors = errs
-	} else if len(req.Services) == 1 {
-		// Single service scan
-		serviceRefs, err := p.scanner.ScanService(ctx, req.Services[0])
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("Service %s: %v", req.Services[0], err))
-		} else {
-			// Convert ResourceRef to Resource
-			for _, ref := range serviceRefs {
-				resource := p.convertRefToResource(ref)
-				allResources = append(allResources, resource)
-			}
-		}
-	} else {
-		// No services specified, use enhanced scanner if available
-		if p.enhancedScanner != nil {
-			log.Printf("🚀 Using enhanced scanner for full scan")
-			resources, err := p.enhancedScanner.ScanAllServicesEnhanced(ctx)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("Enhanced scan error: %v", err))
-			} else {
-				allResources = resources
-				log.Printf("✅ Enhanced full scan completed: %d resources found", len(resources))
-			}
-		} else {
-			// Fall back to standard scanner
-			serviceRefs, err := p.scanner.ScanAllServices(ctx)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("Standard scan error: %v", err))
-			} else {
-				for _, ref := range serviceRefs {
-					resource := p.convertRefToResource(ref)
-					allResources = append(allResources, resource)
-				}
-			}
-		}
-	}
+	allResources, errors := p.scanBatch(ctx, req.Services)
+	errors = append(errors, p.scopeScanErrors()...)
 
 	// Extract relationships if we have multiple resources
 	if len(allResources) > 1 {
@@ -570,46 +543,66 @@ func (p *GCPProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	}, nil
 }
 
+// scanBatch runs the scan BatchScan asked for. It returns every resource observed and one
+// error entry per service that may have dropped resources, so a failed service makes the
+// scan partial instead of silently shrinking it (ADR 0023).
+func (p *GCPProvider) scanBatch(ctx context.Context, services []string) ([]*pb.Resource, []string) {
+	if p.enhancedScanner != nil && (len(services) == 0 || len(services) > 3) {
+		log.Printf("🚀 Using enhanced scanner for comprehensive batch scan")
+		return p.enhancedScanner.ScanAllServicesEnhanced(ctx)
+	}
+	if len(services) > 1 {
+		return p.batchScanConcurrent(ctx, services)
+	}
+
+	service := "all"
+	var refs []*pb.ResourceRef
+	var err error
+	if len(services) == 1 {
+		service = services[0]
+		refs, err = p.scanner.ScanService(ctx, service)
+	} else {
+		refs, err = p.scanner.ScanAllServices(ctx)
+	}
+	resources := make([]*pb.Resource, 0, len(refs))
+	for _, ref := range refs {
+		resources = append(resources, p.convertRefToResource(ref))
+	}
+	if err != nil {
+		return resources, []string{shared.ServiceScanError(service, err)}
+	}
+	return resources, nil
+}
+
 // StreamScan streams resources as they are discovered
 func (p *GCPProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 
-	ctx := stream.Context()
-	resourceChan := make(chan *pb.Resource, 100)
-	errChan := make(chan error, 1)
-
-	// Start async scanning
-	go func() {
-		defer close(resourceChan)
-		err := p.scanner.StreamScanResources(ctx, req.Services, resourceChan)
-		if err != nil {
-			errChan <- err
+	send := func(resource *pb.Resource) error {
+		if err := stream.Send(resource); err != nil {
+			return fmt.Errorf("failed to send resource: %w", err)
 		}
-	}()
-
-	// Stream resources as they come in
-	for {
-		select {
-		case resource, ok := <-resourceChan:
-			if !ok {
-				return nil // Scanning complete
-			}
-			if err := stream.Send(resource); err != nil {
-				return fmt.Errorf("failed to send resource: %w", err)
-			}
-		case err := <-errChan:
-			return fmt.Errorf("scanning error: %w", err)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		return nil
 	}
+	if err := streamResources(stream.Context(), p.streamSource(), req.Services, send); err != nil {
+		return fmt.Errorf("stream scan: %w", err)
+	}
+	return nil
+}
+
+// streamSource returns the producer for StreamScan. Tests inject a fake via p.streamer.
+func (p *GCPProvider) streamSource() resourceStreamer {
+	if p.streamer != nil {
+		return p.streamer
+	}
+	return p.scanner
 }
 
 // GetSchemas returns database schemas for resources
 func (p *GCPProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -618,7 +611,7 @@ func (p *GCPProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest)
 
 // DescribeResource provides detailed information about a specific resource
 func (p *GCPProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -653,7 +646,7 @@ func (p *GCPProvider) GenerateServiceScanners(ctx context.Context, req *pb.Gener
 
 // ConfigureDiscovery configures the discovery settings for the provider
 func (p *GCPProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -697,7 +690,7 @@ func (p *GCPProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureD
 
 // AnalyzeDiscoveredData analyzes discovered data using the client library analyzer
 func (p *GCPProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -756,7 +749,7 @@ func (p *GCPProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.Analyze
 
 // GenerateFromAnalysis generates scanners or other artifacts from analysis data
 func (p *GCPProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -936,14 +929,11 @@ func (p *GCPProvider) batchScanConcurrent(ctx context.Context, services []string
 				return
 			}
 
-			// Scan service
+			// Keep resources from a service that failed part way; the error is reported too.
 			refs, err := p.scanner.ScanService(ctx, svc)
-			if err != nil {
-				result.err = err
-			} else {
-				for _, ref := range refs {
-					result.resources = append(result.resources, p.convertRefToResource(ref))
-				}
+			result.err = err
+			for _, ref := range refs {
+				result.resources = append(result.resources, p.convertRefToResource(ref))
 			}
 
 			resultChan <- result
@@ -958,10 +948,9 @@ func (p *GCPProvider) batchScanConcurrent(ctx context.Context, services []string
 
 	// Collect results
 	for result := range resultChan {
+		allResources = append(allResources, result.resources...)
 		if result.err != nil {
-			errors = append(errors, fmt.Sprintf("Service %s: %v", result.service, result.err))
-		} else {
-			allResources = append(allResources, result.resources...)
+			errors = append(errors, shared.ServiceScanError(result.service, result.err))
 		}
 	}
 
@@ -993,7 +982,7 @@ func (p *GCPProvider) attachRelationshipsToResources(resources []*pb.Resource, r
 
 // GetServiceInfo returns information about a specific GCP service
 func (p *GCPProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1039,7 +1028,7 @@ func (p *GCPProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfo
 
 // ScanService performs scanning for a specific GCP service
 func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1058,50 +1047,31 @@ func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 		return nil, fmt.Errorf("no asset types found for service: %s", req.Service)
 	}
 
-	// Use Asset Inventory or scanner to get resources
-	var resources []*pb.Resource
-
+	// Use Asset Inventory or scanner to get resources. Resources observed before a failure are
+	// kept, and the failure is reported in Errors so the scan is not taken as complete.
+	var resourceRefs []*pb.ResourceRef
+	var scanErr error
 	if p.assetInventory != nil {
-		// Use Asset Inventory for efficient scanning
-		resourceRefs, scanErr := p.assetInventory.QueryAssetsByType(ctx, assetTypes)
-		if scanErr != nil {
-			log.Printf("Failed to query assets: %v", scanErr)
-		} else {
-			// Convert ResourceRefs to Resources
-			for _, ref := range resourceRefs {
-				resource := &pb.Resource{
-					Provider:     "gcp",
-					Service:      ref.Service,
-					Type:         ref.Type,
-					Id:           ref.Id,
-					Name:         ref.Name,
-					Region:       ref.Region,
-					Tags:         ref.BasicAttributes,
-					DiscoveredAt: timestamppb.Now(),
-				}
-				resources = append(resources, resource)
-			}
-		}
+		resourceRefs, scanErr = p.assetInventory.QueryAssetsByType(ctx, assetTypes)
 	} else {
-		// Fall back to scanner
-		resourceRefs, err := p.scanner.ScanService(ctx, req.Service)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan service %s: %w", req.Service, err)
-		}
-		// Convert ResourceRefs to Resources
-		for _, ref := range resourceRefs {
-			resource := &pb.Resource{
-				Provider:     "gcp",
-				Service:      ref.Service,
-				Type:         ref.Type,
-				Id:           ref.Id,
-				Name:         ref.Name,
-				Region:       ref.Region,
-				Tags:         ref.BasicAttributes,
-				DiscoveredAt: timestamppb.Now(),
-			}
-			resources = append(resources, resource)
-		}
+		resourceRefs, scanErr = p.scanner.ScanService(ctx, req.Service)
+	}
+	scanErrors := p.scopeScanErrors()
+	if scanErr != nil {
+		scanErrors = append(scanErrors, shared.ServiceScanError(req.Service, scanErr))
+	}
+	resources := make([]*pb.Resource, 0, len(resourceRefs))
+	for _, ref := range resourceRefs {
+		resources = append(resources, &pb.Resource{
+			Provider:     "gcp",
+			Service:      ref.Service,
+			Type:         ref.Type,
+			Id:           ref.Id,
+			Name:         ref.Name,
+			Region:       ref.Region,
+			Tags:         ref.BasicAttributes,
+			DiscoveredAt: timestamppb.Now(),
+		})
 	}
 
 	// If relationships are requested, enrich resources
@@ -1142,6 +1112,7 @@ func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 	return &pb.ScanServiceResponse{
 		Service:   req.Service,
 		Resources: resources,
+		Errors:    scanErrors,
 		Stats: &pb.ScanStats{
 			TotalResources: int32(len(resources)),
 			DurationMs:     time.Since(startTime).Milliseconds(),
@@ -1157,7 +1128,7 @@ func (p *GCPProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 
 // StreamScanService streams resources as they are discovered for a specific GCP service
 func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 
@@ -1175,74 +1146,37 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 		return fmt.Errorf("no asset types found for service: %s", req.Service)
 	}
 
-	// Stream resources as they're discovered
-	for _, project := range p.projectIDs {
-		if p.assetInventory != nil {
-			// Stream using Asset Inventory
-			resourceRefs, err := p.assetInventory.QueryAssetsByType(ctx, assetTypes)
-			if err != nil {
-				log.Printf("Failed to query assets for project %s: %v", project, err)
-				continue
-			}
-
-			// Convert and stream each resource
-			for _, ref := range resourceRefs {
-				resource := &pb.Resource{
-					Provider:     "gcp",
-					Service:      ref.Service,
-					Type:         ref.Type,
-					Id:           ref.Id,
-					Name:         ref.Name,
-					Region:       ref.Region,
-					Tags:         ref.BasicAttributes,
-					DiscoveredAt: timestamppb.Now(),
-				}
-
-				// Enrich with relationships if requested
-				if req.IncludeRelationships && p.relationships != nil {
-					// Need to get relationships for this resource
-					allRels := p.relationships.ExtractRelationships([]*pb.ResourceRef{ref})
-					resource.Relationships = allRels
-				}
-
-				// Send the resource
-				if err := stream.Send(resource); err != nil {
-					return fmt.Errorf("failed to send resource: %w", err)
-				}
-			}
-		} else {
-			// Use scanner for streaming
-			resourceRefs, err := p.scanner.ScanService(ctx, req.Service)
-			if err != nil {
-				return fmt.Errorf("scanner failed: %w", err)
-			}
-
-			// Stream each resource
-			for _, ref := range resourceRefs {
-				resource := &pb.Resource{
-					Provider:     "gcp",
-					Service:      ref.Service,
-					Type:         ref.Type,
-					Id:           ref.Id,
-					Name:         ref.Name,
-					Region:       ref.Region,
-					Tags:         ref.BasicAttributes,
-					DiscoveredAt: timestamppb.Now(),
-				}
-
-				// Enrich with relationships if requested
-				if req.IncludeRelationships && p.relationships != nil {
-					allRels := p.relationships.ExtractRelationships([]*pb.ResourceRef{ref})
-					resource.Relationships = allRels
-				}
-
-				if err := stream.Send(resource); err != nil {
-					return fmt.Errorf("failed to send resource: %w", err)
-				}
-			}
+	// Both sources already cover every configured project, so query once; looping per project
+	// would send each resource once per project. Resources observed before a failure are sent,
+	// then the failure is returned so the stream does not end as if it were complete.
+	var resourceRefs []*pb.ResourceRef
+	var scanErr error
+	if p.assetInventory != nil {
+		resourceRefs, scanErr = p.assetInventory.QueryAssetsByType(ctx, assetTypes)
+	} else {
+		resourceRefs, scanErr = p.scanner.ScanService(ctx, req.Service)
+	}
+	for _, ref := range resourceRefs {
+		resource := &pb.Resource{
+			Provider:     "gcp",
+			Service:      ref.Service,
+			Type:         ref.Type,
+			Id:           ref.Id,
+			Name:         ref.Name,
+			Region:       ref.Region,
+			Tags:         ref.BasicAttributes,
+			DiscoveredAt: timestamppb.Now(),
+		}
+		if req.IncludeRelationships && p.relationships != nil {
+			resource.Relationships = p.relationships.ExtractRelationships([]*pb.ResourceRef{ref})
+		}
+		if err := stream.Send(resource); err != nil {
+			return fmt.Errorf("failed to send resource: %w", err)
 		}
 	}
-
+	if scanErr != nil {
+		return fmt.Errorf("scan service %s: %w", req.Service, scanErr)
+	}
 	return nil
 }
 
@@ -1250,7 +1184,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 
 // SetupServiceAccount provides automated service account setup
 // func (p *GCPProvider) SetupServiceAccount(ctx context.Context, req *pb.AutoSetupRequest) (*pb.AutoSetupResponse, error) {
-//	if !p.initialized {
+//	if !p.initialized.Load() {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
 //
@@ -1266,7 +1200,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 
 // ValidateServiceAccount validates service account configuration
 // func (p *GCPProvider) ValidateServiceAccount(ctx context.Context, req *pb.ValidateSetupRequest) (*pb.ValidateSetupResponse, error) {
-//	if !p.initialized {
+//	if !p.initialized.Load() {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
 //
@@ -1282,7 +1216,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 
 // GenerateServiceAccountScripts generates deployment and validation scripts
 // func (p *GCPProvider) GenerateServiceAccountScripts(ctx context.Context, req *pb.GenerateScriptRequest) (*pb.GenerateScriptResponse, error) {
-//	if !p.initialized {
+//	if !p.initialized.Load() {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
 //
@@ -1298,7 +1232,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 
 // GetServiceAccountRecommendations provides setup recommendations
 // func (p *GCPProvider) GetServiceAccountRecommendations(ctx context.Context, req *pb.RecommendationsRequest) (*pb.RecommendationsResponse, error) {
-//	if !p.initialized {
+//	if !p.initialized.Load() {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
 //
@@ -1314,7 +1248,7 @@ func (p *GCPProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 
 // GetServiceAccountStatus returns current service account status
 // func (p *GCPProvider) GetServiceAccountStatus(ctx context.Context) (*pb.ServiceAccountStatus, error) {
-//	if !p.initialized {
+//	if !p.initialized.Load() {
 //		return nil, fmt.Errorf("provider not initialized")
 //	}
 //

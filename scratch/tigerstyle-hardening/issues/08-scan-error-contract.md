@@ -1,0 +1,61 @@
+# Define the scan error contract: dropped data means a partial scan
+
+Status: complete
+Phase: P2
+
+## Problem
+
+Findings are only evaluated against completed scans (`internal/app/findings/findings.go:71`), and
+evaluation resolves open findings that are absent from the latest scan. When a plugin logs an error
+and drops it, the scan reports `complete` with resources missing, and **those resources' findings
+are resolved even though they were never observed**.
+
+Core-side gaps:
+
+- `internal/shared/plugin.go:190,229`: any `Recv()` error is treated as end of stream, and the
+  call returns `nil`. It also uses the stored `c.ctx` instead of the stream's context.
+- `internal/scanexec/executor.go`: per-scope status is decided only by RPC-level failure.
+  `BatchScanResponse.Errors` entries don't affect `Status`, and nothing checks that every scope
+  result was filled in.
+
+## Change
+
+- Contract, documented in `docs/` and in a new ADR:
+  - A plugin puts every per-service, per-type, per-account or per-page failure into
+    `BatchScanResponse.Errors` with a stable prefix (`service:<name>: …`).
+  - `unsupported_type:` entries are informational.
+  - Any other entry makes that scope `partial`.
+- `scanexec`:
+  - A scope with non-informational errors is partial.
+  - Assert `len(outcome.Scopes) == len(plan.Scopes)`, and that every scope result has a status.
+- `plugin.go`: `io.EOF` returns nil, and any other error is returned. Use `stream.Context()`.
+- A contract test in `internal/architecture` (or a shared plugin test kit) that each provider
+  module runs: inject a failure into one service and expect a `partial` scope.
+
+## Decision
+
+PRD decision 4: yes, any non-informational service error makes the scope (and so the scan) `partial`.
+
+## Comments
+
+2026-10-21: Implemented. `internal/shared/scan_errors.go` defines notices (`UnsupportedTypeNotice`)
+and errors (`ServiceScanError`). Unknown entries count as errors. `scanexec` splits them per scope,
+treats any error as partial, reserves `failed` for "no scope answered", and panics if a scope result
+is missing. `forwardStream` returns any non-EOF `Recv` error and uses the stream's context. The dead
+`grpcProviderClient.ctx` field is removed. Decision recorded in ADR 0023 and `CONTEXT.md` (*Partial
+scan*). AWS's two existing entries use the helpers.
+
+This also fixes the opposite bug: `unsupported_type:` notices used to count as failures, so an AWS
+scan where every region reported one was `failed`, and its findings were never evaluated.
+
+Per-provider "inject a failure and expect partial" tests belong with each provider's change
+(issues 09–11), since each needs its own fake-scanner seam.
+
+2026-10-21: Maintainer decision: permission gaps and disabled features are notices, not errors,
+following how Wiz surfaces them: the scan is complete for what the credential can see, and the gaps
+show up as warnings. Added `AccessDeniedNotice` and `NotEnabledNotice` (`IsCoverageNotice`). AWS
+access-denied types and GitHub 403 (access) / 404 (not enabled) listings use them. Org member
+accounts whose role can't be assumed stay errors. Scans now print one `coverage` warning and one
+`incomplete` warning, each quoting up to 3 examples. ADR 0023 records the tradeoff: a finding behind a
+denied type can be resolved without the resource being seen.
+

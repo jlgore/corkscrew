@@ -13,12 +13,12 @@ import (
 
 func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, []string) {
 	accountIDs, err := p.accountIDsForWorkers(ctx)
-	if err != nil {
-		return nil, []string{fmt.Sprintf("accounts list failed: %v", err)}
-	}
-	zonesList, zoneErr := p.listZones(ctx)
 	resources := make([]*pb.Resource, 0)
 	var errs []string
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("accounts list failed: %v", err))
+	}
+	zonesList, zoneErr := p.listZones(ctx)
 	if zoneErr != nil {
 		errs = append(errs, fmt.Sprintf("zones list failed: %v", zoneErr))
 	}
@@ -27,19 +27,17 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 		scripts, err := p.listWorkerScripts(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, err))
-		} else {
-			for _, script := range scripts {
-				resources = append(resources, p.workerScriptResource(accountID, script))
-			}
+		}
+		for _, script := range scripts {
+			resources = append(resources, p.workerScriptResource(accountID, script))
 		}
 
 		domains, err := p.listWorkerDomains(ctx, accountID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("workers domains list failed for account %s: %v", accountID, err))
-		} else {
-			for _, domain := range domains {
-				resources = append(resources, p.workerDomainResource(accountID, domain.ID, domain.Hostname, domain.Service, domain.ZoneID, domain.ZoneName, domain.Environment, domain.CERTID, domain))
-			}
+		}
+		for _, domain := range domains {
+			resources = append(resources, p.workerDomainResource(accountID, domain.ID, domain.Hostname, domain.Service, domain.ZoneID, domain.ZoneName, domain.Environment, domain.CERTID, domain))
 		}
 	}
 
@@ -47,7 +45,6 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 		routes, err := p.listWorkerRoutes(ctx, zone.ID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
-			continue
 		}
 		for _, route := range routes {
 			resources = append(resources, p.workerRouteResource(zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
@@ -62,50 +59,26 @@ func (p *CloudflareProvider) accountIDsForWorkers(ctx context.Context) ([]string
 		return append([]string(nil), p.config.Scope.AccountIDs...), nil
 	}
 	accountsList, err := p.listAccounts(ctx)
-	if err != nil {
-		return nil, err
-	}
 	ids := make([]string, 0, len(accountsList))
 	for _, account := range accountsList {
 		ids = append(ids, account.ID)
 	}
-	return ids, nil
+	return ids, err
 }
 
 func (p *CloudflareProvider) listWorkerScripts(ctx context.Context, accountID string) ([]workers.ScriptListResponse, error) {
 	iter := p.client.Workers.Scripts.ListAutoPaging(ctx, workers.ScriptListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]workers.ScriptListResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listWorkerDomains(ctx context.Context, accountID string) ([]workers.DomainListResponse, error) {
 	iter := p.client.Workers.Domains.ListAutoPaging(ctx, workers.DomainListParams{AccountID: cloudflare.F(accountID)})
-	results := make([]workers.DomainListResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) listWorkerRoutes(ctx context.Context, zoneID string) ([]workers.RouteListResponse, error) {
 	iter := p.client.Workers.Routes.ListAutoPaging(ctx, workers.RouteListParams{ZoneID: cloudflare.F(zoneID)})
-	results := make([]workers.RouteListResponse, 0)
-	for iter.Next() {
-		results = append(results, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collectAutoPaging(iter)
 }
 
 func (p *CloudflareProvider) workerScriptResource(accountID string, script workers.ScriptListResponse) *pb.Resource {

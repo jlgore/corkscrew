@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/db"
@@ -19,14 +20,17 @@ import (
 //
 // The client side needs no dedicated subcommand: pass a `quack:` URI to the
 // existing `--database`/`--db` flags of scan and query.
-func runQuack(args []string) {
+func runQuack(ctx context.Context, args []string) {
 	if len(args) == 0 {
 		printQuackUsage()
 		os.Exit(1)
 	}
 	switch args[0] {
 	case "serve":
-		runQuackServe(args[1:])
+		if err := runQuackServe(ctx, args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "help", "--help", "-h":
 		printQuackUsage()
 	default:
@@ -57,31 +61,46 @@ traversal is not yet supported.
 `)
 }
 
+// minLocalQuackTokenLen is the shortest fixed token accepted for a loopback-only server, where
+// only local users can reach the port.
+const minLocalQuackTokenLen = 4
+
+// minRemoteQuackTokenLen is the shortest fixed token accepted once the server is reachable from
+// other hosts. The token is the only authentication Quack has, so it must resist online guessing.
+const minRemoteQuackTokenLen = 32
+
+// generatedQuackTokenBytes is the entropy of a token corkscrew generates for a remote server
+// when none is given: 256 bits, hex-encoded to 64 characters.
+const generatedQuackTokenBytes = 32
+
 // runQuackServe opens a local DuckDB database and serves it over Quack, blocking
-// until interrupted.
-func runQuackServe(args []string) {
+// until the root context is cancelled (Ctrl+C / SIGTERM). It returns errors rather than
+// exiting so the deferred session and connection cleanup always runs.
+func runQuackServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("quack serve", flag.ExitOnError)
 	database := fs.String("database", "", "Local DuckDB database to expose (default: the unified corkscrew database)")
 	listen := fs.String("listen", "localhost:9494", "Address to listen on, host:port")
-	token := fs.String("token", "", "Fixed authentication token (min 4 chars). If empty, the server generates one")
+	token := fs.String("token", "", "Fixed authentication token (min 4 chars local, 32 remote). "+
+		"If empty, one is generated")
 	allowRemote := fs.Bool("allow-remote", false, "Allow binding to a non-local hostname (also implied when --listen is not local)")
 	disableSSL := fs.Bool("disable-ssl", false, "Advertise plaintext HTTP to clients (Quack never terminates TLS itself)")
 	if err := fs.Parse(args); err != nil {
-		fatalf("failed to parse flags: %v", err)
+		return fmt.Errorf("failed to parse flags: %w", err)
 	}
 
-	if *token != "" && len(*token) < 4 {
-		fatalf("--token must be at least 4 characters")
+	allowOther := *allowRemote || !isLocalListen(*listen)
+	serveToken, err := quackServeToken(*token, allowOther)
+	if err != nil {
+		return err
 	}
 	if db.IsRemoteTarget(*database) {
-		fatalf("--database must be a local file for quack serve, got remote URI %q", *database)
+		return fmt.Errorf("--database must be a local file for quack serve, got remote URI %q",
+			*database)
 	}
-
-	ctx := context.Background()
 
 	session, err := data.OpenSession(ctx, *database)
 	if err != nil {
-		fatalf("failed to open database: %v", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer session.Close()
 
@@ -90,7 +109,7 @@ func runQuackServe(args []string) {
 	// open keeps the instance (and therefore the listener) alive.
 	conn, err := session.Connection(ctx)
 	if err != nil {
-		fatalf("failed to acquire connection: %v", err)
+		return fmt.Errorf("failed to acquire connection: %w", err)
 	}
 	defer conn.Close()
 
@@ -98,33 +117,13 @@ func runQuackServe(args []string) {
 		_, err := conn.ExecContext(ctx, q)
 		return err
 	}); err != nil {
-		fatalf("%v", err)
+		return err
 	}
 
-	allowOther := *allowRemote || !isLocalListen(*listen)
-	call := buildServeCall("quack:"+*listen, *token, allowOther, *disableSSL)
-
-	rows, err := conn.QueryContext(ctx, call)
-	if err != nil {
-		fatalf("quack_serve failed: %v", err)
+	call := buildServeCall("quack:"+*listen, serveToken, allowOther, *disableSSL)
+	if err := startQuackServer(ctx, conn, call, session.Target()); err != nil {
+		return err
 	}
-	cols, _ := rows.Columns()
-	fmt.Printf("🦆 Quack server started, exposing %s\n", session.Target())
-	for rows.Next() {
-		vals := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			rows.Close()
-			fatalf("failed to read quack_serve result: %v", err)
-		}
-		for i, c := range cols {
-			fmt.Printf("   %-14s %v\n", c+":", vals[i])
-		}
-	}
-	rows.Close()
 
 	if !isLocalListen(*listen) {
 		fmt.Printf("\n⚠️  Quack does not terminate TLS. Front this server with a TLS-terminating\n")
@@ -132,10 +131,64 @@ func runQuackServe(args []string) {
 	}
 	fmt.Printf("\n⏹️  Press Ctrl+C to stop the server\n")
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	<-ctx.Done()
 	fmt.Printf("\n👋 Shutting down Quack server\n")
+	return nil
+}
+
+// quackServeToken validates a user-supplied token, or generates one for a remote server.
+// An empty token on a loopback server is left to Quack to generate, as before.
+func quackServeToken(token string, allowOther bool) (string, error) {
+	if !allowOther {
+		if token != "" && len(token) < minLocalQuackTokenLen {
+			return "", fmt.Errorf("--token must be at least %d characters", minLocalQuackTokenLen)
+		}
+		return token, nil
+	}
+	if token == "" {
+		raw := make([]byte, generatedQuackTokenBytes)
+		if _, err := rand.Read(raw); err != nil {
+			return "", fmt.Errorf("generate quack token: %w", err)
+		}
+		return hex.EncodeToString(raw), nil
+	}
+	if len(token) < minRemoteQuackTokenLen {
+		return "", fmt.Errorf("--token must be at least %d characters when the server is "+
+			"reachable from other hosts", minRemoteQuackTokenLen)
+	}
+	return token, nil
+}
+
+// startQuackServer runs the quack_serve CALL and prints the listener details it returns.
+func startQuackServer(ctx context.Context, conn *sql.Conn, call, target string) error {
+	rows, err := conn.QueryContext(ctx, call)
+	if err != nil {
+		return fmt.Errorf("quack_serve failed: %w", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("failed to read quack_serve columns: %w", err)
+	}
+	fmt.Printf("🦆 Quack server started, exposing %s\n", target)
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return fmt.Errorf("failed to read quack_serve result: %w", err)
+		}
+		for i, c := range cols {
+			fmt.Printf("   %-14s %v\n", c+":", vals[i])
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to read quack_serve result: %w", err)
+	}
+	return nil
 }
 
 // buildServeCall renders the CALL quack_serve(...) statement.
@@ -192,9 +245,4 @@ func resolveQuackConn(flagVal, defaultVal, tokenFlag string) (string, []db.Optio
 		opts = append(opts, db.WithToken(token))
 	}
 	return target, opts
-}
-
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
-	os.Exit(1)
 }

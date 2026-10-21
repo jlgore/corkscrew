@@ -19,6 +19,9 @@ import (
 type Runner struct {
 	Stdout io.Writer
 	Stderr io.Writer
+	// ctx is the caller's context for one Run, so a graph query stops when the CLI is
+	// interrupted. A Runner serves a single invocation, so holding it here is safe.
+	ctx context.Context
 }
 
 type traverseRow struct {
@@ -40,7 +43,14 @@ func NewRunner(stdout, stderr io.Writer) *Runner {
 	return &Runner{Stdout: stdout, Stderr: stderr}
 }
 
+// Run executes one graph subcommand without cancellation.
 func (r *Runner) Run(args []string) int {
+	return r.RunContext(context.Background(), args)
+}
+
+// RunContext executes one graph subcommand; cancelling ctx aborts its query.
+func (r *Runner) RunContext(ctx context.Context, args []string) int {
+	r.ctx = ctx
 	if len(args) == 0 {
 		r.printGraphUsage()
 		return 1
@@ -224,7 +234,7 @@ func (r *Runner) runTraverse(args []string) error {
 	)
 
 	if *outputFormat == "dot" {
-		rows, columns, err := executeGraphQuery(*dbPath, query, *extensionPath)
+		rows, columns, err := executeGraphQuery(r.ctx, *dbPath, query, *extensionPath)
 		if err != nil {
 			return err
 		}
@@ -347,7 +357,7 @@ func (r *Runner) runSQL(dbPath, extensionPath, sqlQuery, outputFormat string, no
 	if err != nil {
 		return err
 	}
-	rows, columns, err := executeGraphQuery(dbPath, sqlQuery, resolvedExtensionPath)
+	rows, columns, err := executeGraphQuery(r.ctx, dbPath, sqlQuery, resolvedExtensionPath)
 	if err != nil {
 		return err
 	}
@@ -402,13 +412,22 @@ func defaultDatabasePath() string {
 	return ".corkscrew.duckdb"
 }
 
-func executeGraphQuery(dbPath, sqlQuery, extensionPath string) ([][]interface{}, []string, error) {
-	session, err := dataaccess.OpenSession(context.Background(), dbPath, dataaccess.WithGraphExtension(extensionPath))
+func executeGraphQuery(ctx context.Context, dbPath, sqlQuery, extensionPath string) (
+	[][]interface{}, []string, error) {
+	// Graph SQL carries user input (pattern JSON, resource IDs), so it runs
+	// sandboxed. The extension still reads dbPath: it opens the file through its
+	// own DuckDB instance, which the sandbox on this one does not cover.
+	session, err := dataaccess.OpenSession(
+		ctx,
+		dbPath,
+		dataaccess.WithGraphExtension(extensionPath),
+		dataaccess.WithSandbox(),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer session.Close()
-	result, err := session.ReadOnly(context.Background(), sqlQuery)
+	result, err := session.ReadOnly(ctx, sqlQuery)
 	if err != nil {
 		return nil, nil, err
 	}

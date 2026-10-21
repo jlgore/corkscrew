@@ -19,6 +19,13 @@ func NewEngineWithOptions(target string, opts ...db.Option) (QueryEngine, error)
 	return NewDuckDBQueryEngineForTarget(target, opts...)
 }
 
+// NewSandboxedEngine is NewEngineWithOptions with the session sandboxed, for
+// SQL that should not reach host files or the network: compliance packs and
+// `corkscrew query --sandbox`.
+func NewSandboxedEngine(target string, opts ...db.Option) (QueryEngine, error) {
+	return NewSandboxedDuckDBQueryEngineForTarget(target, opts...)
+}
+
 // Engine is an alias for QueryEngine for backward compatibility
 type Engine = QueryEngine
 

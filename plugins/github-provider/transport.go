@@ -21,9 +21,14 @@ import (
 //   - Secondary rate limit / abuse detection: 403 or 429 with Retry-After.
 //     Sleep for the indicated duration, then retry.
 //   - Primary rate limit: 403 with X-RateLimit-Remaining: 0. Sleep until
-//     X-RateLimit-Reset (capped) and retry.
+//     X-RateLimit-Reset and retry.
 //   - 5xx and transient network errors: bounded exponential backoff with
 //     jitter.
+//
+// A rate-limit wait longer than maxWait fails the request with
+// errRateLimitWaitTooLong instead of sleeping: the host gives each scope five
+// minutes, so a longer sleep would only end in a scope-wide deadline error
+// that hides which listing was throttled.
 //
 // It also emits a stderr warning when the primary budget gets low, so users
 // see scans approaching the cliff before they fall off it.
@@ -59,10 +64,25 @@ func (t *rateLimitTransport) sleep(ctx context.Context, d time.Duration) error {
 
 const (
 	defaultMaxRetries          = 3
-	defaultMaxRateLimitWait    = 15 * time.Minute
 	rateLimitWarnRemaining     = 50
 	rateLimitWarnRepeatEveryMs = 60_000
+
+	// retryWaitMax caps one rate-limit wait. defaultMaxRetries such waits add
+	// up to 3m, under httpClientTimeout and the host's 5-minute scope
+	// deadline, so a throttled call fails on its own terms.
+	retryWaitMax = 60 * time.Second
+
+	// drainBytesMax bounds how much of a discarded retry body is read. A short
+	// error body drains fully so the connection is reused; a large one is
+	// closed instead of being read to the end.
+	drainBytesMax = 64 << 10
 )
+
+// errRateLimitWaitTooLong reports a rate limit that resets further away than
+// maxWait. It reaches the scanner as a plain error rather than a GitHub 403
+// response, so the listing becomes a ServiceScanError entry and the scan is
+// partial (ADR 0023) instead of an access-denied notice.
+var errRateLimitWaitTooLong = errors.New("github rate limit wait exceeds cap")
 
 var (
 	lastWarnMu sync.Mutex
@@ -76,7 +96,7 @@ func newRateLimitTransport(base http.RoundTripper) http.RoundTripper {
 	return &rateLimitTransport{
 		base:       base,
 		maxRetries: defaultMaxRetries,
-		maxWait:    defaultMaxRateLimitWait,
+		maxWait:    retryWaitMax,
 		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
@@ -110,10 +130,15 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 			return resp, err
 		}
 
-		// Drain & close so the connection can be reused.
+		// Drain (bounded) & close so the connection can be reused.
 		if resp != nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
+			_, _ = io.CopyN(io.Discard, resp.Body, drainBytesMax)
 			_ = resp.Body.Close()
+		}
+		if wait > t.maxWait {
+			return nil, fmt.Errorf("%w: %s %s asks to wait %s, cap is %s",
+				errRateLimitWaitTooLong, req.Method, req.URL.Path,
+				wait.Round(time.Second), t.maxWait)
 		}
 		if err := t.sleep(req.Context(), wait); err != nil {
 			return nil, err
@@ -123,7 +148,8 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 // classify decides whether to retry and how long to wait. Returns (wait, true)
-// to retry, (_, false) to stop.
+// to retry, (_, false) to stop. Rate-limit waits are returned uncapped so
+// RoundTrip fails a wait over maxWait instead of retrying before the reset.
 func (t *rateLimitTransport) classify(resp *http.Response, err error, attempt int) (time.Duration, bool) {
 	if attempt >= t.maxRetries {
 		return 0, false
@@ -141,14 +167,11 @@ func (t *rateLimitTransport) classify(resp *http.Response, err error, attempt in
 	// Secondary rate limit (abuse detection) returns 403 or 429 with Retry-After.
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
 		if wait := retryAfter(resp); wait > 0 {
-			if wait > t.maxWait {
-				wait = t.maxWait
-			}
 			return wait, true
 		}
 		// Primary rate limit: 403 with X-RateLimit-Remaining: 0.
 		if resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0" {
-			if wait := untilReset(resp); wait > 0 && wait <= t.maxWait {
+			if wait := untilReset(resp); wait > 0 {
 				return wait + jitter(t, time.Second), true
 			}
 		}

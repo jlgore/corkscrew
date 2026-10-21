@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"google.golang.org/api/serviceusage/v1"
 )
 
@@ -112,6 +113,7 @@ func (sd *ServiceDiscovery) discoverProjectServices(ctx context.Context, client 
 
 	var services []*pb.ServiceInfo
 	pageToken := ""
+	guard := paging.New("list services for "+projectName, paging.PagesMax)
 
 	for {
 		// List enabled services
@@ -134,6 +136,9 @@ func (sd *ServiceDiscovery) discoverProjectServices(ctx context.Context, client 
 
 		if resp.NextPageToken == "" {
 			break
+		}
+		if err := guard.Next(resp.NextPageToken); err != nil {
+			return nil, err
 		}
 		pageToken = resp.NextPageToken
 	}

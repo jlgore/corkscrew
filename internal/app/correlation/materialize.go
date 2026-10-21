@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -266,23 +267,38 @@ type tableColumn struct {
 	Default    sql.NullString
 }
 
-func insertCandidate(ctx context.Context, tx *sql.Tx, item candidate) error {
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info('%s')", item.Table))
+// tableColumns reads table's column definitions. rows.Err is checked because
+// an iteration error would otherwise yield a short column list and the
+// insert would silently drop fields.
+func tableColumns(ctx context.Context, tx *sql.Tx, table string) ([]tableColumn, error) {
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info('%s')", table))
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer rows.Close()
 	var columns []tableColumn
 	for rows.Next() {
 		var cid int
 		var column tableColumn
 		var primary bool
-		if err := rows.Scan(&cid, &column.Name, &column.Type, &column.NotNull, &column.Default, &primary); err != nil {
-			rows.Close()
-			return err
+		err := rows.Scan(&cid, &column.Name, &column.Type, &column.NotNull, &column.Default,
+			&primary)
+		if err != nil {
+			return nil, err
 		}
 		columns = append(columns, column)
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read columns of %s: %w", table, err)
+	}
+	return columns, nil
+}
+
+func insertCandidate(ctx context.Context, tx *sql.Tx, item candidate) error {
+	columns, err := tableColumns(ctx, tx, item.Table)
+	if err != nil {
+		return err
+	}
 	var names, expressions []string
 	var args []any
 	for _, column := range columns {
@@ -303,7 +319,11 @@ func insertCandidate(ctx context.Context, tx *sql.Tx, item candidate) error {
 			case json.RawMessage:
 				args = append(args, string(typed))
 			default:
-				encoded, _ := json.Marshal(value)
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					return fmt.Errorf("encode %s evidence field %s: %w",
+						item.Kind, column.Name, err)
+				}
 				args = append(args, string(encoded))
 			}
 		} else {
@@ -320,9 +340,15 @@ func insertCandidate(ctx context.Context, tx *sql.Tx, item candidate) error {
 func insertRun(ctx context.Context, executor interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }, result Result) error {
-	kinds, _ := json.Marshal(result.Kinds)
-	coverage, _ := json.Marshal(result.Coverage)
-	_, err := executor.ExecContext(ctx, `INSERT INTO correlation_materialization_runs
+	kinds, err := json.Marshal(result.Kinds)
+	if err != nil {
+		return fmt.Errorf("encode run kinds: %w", err)
+	}
+	coverage, err := json.Marshal(result.Coverage)
+	if err != nil {
+		return fmt.Errorf("encode run coverage: %w", err)
+	}
+	_, err = executor.ExecContext(ctx, `INSERT INTO correlation_materialization_runs
 (id, started_at, ended_at, status, kinds, evidence_count, rejected_count, row_count, coverage, error_message)
 VALUES (?, ?, ?, ?, try_cast(? AS JSON), ?, ?, ?, try_cast(? AS JSON), ?)`, result.RunID, result.StartedAt,
 		result.EndedAt, result.Status, string(kinds), result.EvidenceCount, result.RejectedCount, result.RowCount, string(coverage), nullable(result.Error))
@@ -335,7 +361,11 @@ func recordFailure(ctx context.Context, executor interface {
 	result.Status = "failed"
 	result.EndedAt = time.Now().UTC()
 	result.Error = cause.Error()
-	_ = insertRun(ctx, executor, result)
+	// Keep cause first: it is why the run failed. A failure to record the
+	// run is joined on so it is not lost either.
+	if err := insertRun(ctx, executor, result); err != nil {
+		return result, errors.Join(cause, fmt.Errorf("record failed run %s: %w", result.RunID, err))
+	}
 	return result, cause
 }
 

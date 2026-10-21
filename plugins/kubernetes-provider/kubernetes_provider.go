@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -23,13 +25,17 @@ import (
 
 // KubernetesProvider implements the CloudProvider interface for Kubernetes
 type KubernetesProvider struct {
-	mu          sync.RWMutex
-	initialized bool
+	mu sync.RWMutex
+	// initialized is set last in Initialize. RPC handlers read it without p.mu, so it is atomic;
+	// a true Load also publishes the fields Initialize wrote before it.
+	initialized atomic.Bool
 
 	// Kubernetes configuration
 	kubeConfig    *rest.Config
 	clientset     kubernetes.Interface
 	dynamicClient dynamic.Interface
+	// watchClient reaches the primary cluster without a per-request timeout, for informers.
+	watchClient dynamic.Interface
 
 	// Core components (following cloud provider patterns)
 	discovery     *APIDiscovery
@@ -37,6 +43,9 @@ type KubernetesProvider struct {
 	schemaGen     *K8sSchemaGenerator
 	clientFactory *ClientFactory
 	relationships *RelationshipMapper
+
+	// newStreamer overrides the per-cluster stream producer; nil in production.
+	newStreamer func(*ClusterConnection) resourceStreamer
 
 	// Multi-cluster support
 	clusters      map[string]*ClusterConnection
@@ -53,6 +62,14 @@ type KubernetesProvider struct {
 }
 
 const unsupportedCodegenReason = "Kubernetes provider discovers API resources dynamically"
+
+// apiRequestTimeout bounds every non-watch API request. client-go has no default, so a stalled
+// API server or a half-open connection would hang a scan forever. It becomes the http.Client
+// timeout, which covers reading the whole response body, so it also cuts off watches; informers
+// therefore use a copy of the config without it (see KubernetesProvider.watchClient), where the
+// reflector's server-side watch timeout and cacheSyncTimeout provide the bounds instead. A page
+// of a list call returns in well under this on a healthy cluster.
+const apiRequestTimeout = 60 * time.Second
 
 // ProviderConfig holds configuration for the Kubernetes provider
 type ProviderConfig struct {
@@ -135,9 +152,9 @@ func (p *KubernetesProvider) Initialize(ctx context.Context, req *pb.InitializeR
 	p.scanner = NewResourceScanner(p.clientFactory, p.rateLimiter)
 	p.schemaGen = NewK8sSchemaGenerator()
 	p.relationships = NewRelationshipMapper()
-	p.informerCache = NewInformerCache(p.clientFactory)
+	p.informerCache = NewInformerCache(p.watchClient)
 
-	p.initialized = true
+	p.initialized.Store(true)
 
 	return &pb.InitializeResponse{
 		Success: true,
@@ -163,6 +180,8 @@ func (p *KubernetesProvider) initializePrimaryCluster(ctx context.Context) error
 			return fmt.Errorf("failed to create Kubernetes config: %w", err)
 		}
 	}
+	watchConfig := rest.CopyConfig(config)
+	config.Timeout = apiRequestTimeout
 
 	// Create clientset
 	clientset, err := kubernetes.NewForConfig(config)
@@ -176,6 +195,11 @@ func (p *KubernetesProvider) initializePrimaryCluster(ctx context.Context) error
 		return fmt.Errorf("failed to create dynamic client: %w", err)
 	}
 
+	watchClient, err := dynamic.NewForConfig(watchConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create watch client: %w", err)
+	}
+
 	// Test connection
 	_, err = clientset.Discovery().ServerVersion()
 	if err != nil {
@@ -185,6 +209,7 @@ func (p *KubernetesProvider) initializePrimaryCluster(ctx context.Context) error
 	p.kubeConfig = config
 	p.clientset = clientset
 	p.dynamicClient = dynamicClient
+	p.watchClient = watchClient
 
 	// Add to clusters map
 	p.clusters["default"] = &ClusterConnection{
@@ -224,6 +249,8 @@ func (p *KubernetesProvider) addCluster(ctx context.Context, contextName string)
 	if err != nil {
 		return err
 	}
+	// Additional clusters are only scanned, never watched, so they need no unbounded copy.
+	config.Timeout = apiRequestTimeout
 
 	// Create clients
 	clientset, err := kubernetes.NewForConfig(config)
@@ -284,7 +311,7 @@ func (p *KubernetesProvider) GetProviderInfo(ctx context.Context, req *pb.Empty)
 
 // DiscoverServices discovers all available Kubernetes resources
 func (p *KubernetesProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServicesRequest) (*pb.DiscoverServicesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -351,11 +378,12 @@ func (p *KubernetesProvider) DiscoverServices(ctx context.Context, req *pb.Disco
 
 // ListResources lists all resources of specified types
 func (p *KubernetesProvider) ListResources(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
 	var allResources []*pb.Resource
+	var errs []error
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -374,19 +402,22 @@ func (p *KubernetesProvider) ListResources(ctx context.Context, req *pb.ListReso
 			defer func() { <-semaphore }() // Release
 
 			resources, err := p.scanClusterResources(ctx, c, req)
-			if err != nil {
-				// Log error but continue with other clusters
-				fmt.Printf("Failed to scan cluster %s: %v\n", c.Name, err)
-				return
-			}
 
 			mu.Lock()
+			defer mu.Unlock()
 			allResources = append(allResources, resources...)
-			mu.Unlock()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("cluster %s: %w", c.Name, err))
+			}
 		}(cluster)
 	}
 
 	wg.Wait()
+	// ListResourcesResponse has no field for partial results, so a listing that may be
+	// missing resources is an error rather than a short answer that looks complete.
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
 
 	// Convert Resources to ResourceRefs
 	var resourceRefs []*pb.ResourceRef
@@ -441,7 +472,8 @@ func (p *KubernetesProvider) getClustersToScan(req *pb.ListResourcesRequest) []*
 	return result
 }
 
-// scanClusterResources scans resources in a specific cluster
+// scanClusterResources scans resources in a specific cluster. It returns every resource listed
+// together with the joined failures of any type, namespace, or namespace listing.
 func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest) ([]*pb.Resource, error) {
 	// Create scanner with cluster-specific clients
 	scanner := NewResourceScannerForCluster(cluster)
@@ -459,7 +491,7 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 	}
 
 	// Determine namespaces
-	namespaces := p.getNamespacesToScan(ctx, cluster, req)
+	namespaces, nsErr := p.getNamespacesToScan(ctx, cluster, req)
 
 	// Apply optional label/field selectors
 	labelSel := ""
@@ -472,6 +504,7 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 	// If selectors present, scan per resource type using specialized paths
 	if labelSel != "" || fieldSel != "" {
 		var all []*pb.Resource
+		errs := []error{nsErr}
 		for _, rt := range resourcesToScan {
 			var res []*pb.Resource
 			var err error
@@ -480,33 +513,37 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 			} else {
 				res, err = scanner.ScanWithFieldSelector(ctx, rt, fieldSel, namespaces)
 			}
-			if err != nil {
-				fmt.Printf("Failed to scan %s with selector: %v\n", rt, err)
-				continue
-			}
 			all = append(all, res...)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("scan %s with selector: %w", rt, err))
+			}
 		}
-		return all, nil
+		return all, errors.Join(errs...)
 	}
 
 	// Default: scan across resource types/namespaces
-	return scanner.ScanResources(ctx, resourcesToScan, namespaces)
+	resources, err := scanner.ScanResources(ctx, resourcesToScan, namespaces)
+	return resources, errors.Join(nsErr, err)
 }
 
-// getNamespacesToScan determines which namespaces to scan
-func (p *KubernetesProvider) getNamespacesToScan(ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest) []string {
+// getNamespacesToScan determines which namespaces to scan. If listing namespaces fails it
+// still returns "default" so that namespace is scanned, but also the error: every other
+// namespace went unobserved.
+func (p *KubernetesProvider) getNamespacesToScan(
+	ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest,
+) ([]string, error) {
 	if namespace := req.Filters["namespace"]; namespace != "" {
-		return []string{namespace}
+		return []string{namespace}, nil
 	}
 
 	if !p.config.AllNamespaces {
-		return []string{"default"}
+		return []string{"default"}, nil
 	}
 
 	// List all namespaces
 	namespaceList, err := cluster.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return []string{"default"}
+		return []string{"default"}, fmt.Errorf("list namespaces: %w", err)
 	}
 
 	var namespaces []string
@@ -518,12 +555,12 @@ func (p *KubernetesProvider) getNamespacesToScan(ctx context.Context, cluster *C
 		namespaces = append(namespaces, ns.Name)
 	}
 
-	return namespaces
+	return namespaces, nil
 }
 
 // DescribeResource gets detailed information about a specific resource
 func (p *KubernetesProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -589,7 +626,7 @@ func (p *KubernetesProvider) GenerateServiceScanners(ctx context.Context, req *p
 
 // GetSchemas returns database schemas for Kubernetes resources
 func (p *KubernetesProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -609,7 +646,7 @@ func (p *KubernetesProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasR
 
 // BatchScan performs concurrent scanning of multiple services
 func (p *KubernetesProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -629,10 +666,10 @@ func (p *KubernetesProvider) BatchScan(ctx context.Context, req *pb.BatchScanReq
 	var errors []string
 
 	for _, cluster := range clusters {
+		// A cluster that failed part way keeps what it listed and reports the rest.
 		resources, err := p.scanClusterResources(ctx, cluster, listReq)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("cluster %s: %v", cluster.Name, err))
-			continue
+			errors = append(errors, shared.ServiceScanError("cluster/"+cluster.Name, err))
 		}
 		allResources = append(allResources, resources...)
 		// Optionally enrich with relationships (basic + cross-resource)
@@ -767,64 +804,26 @@ func (p *KubernetesProvider) StreamScan(req *pb.StreamScanRequest, stream pb.Clo
 
 // streamClusterResources streams resources from a specific cluster
 func (p *KubernetesProvider) streamClusterResources(ctx context.Context, cluster *ClusterConnection, req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	scanner := NewResourceScannerForCluster(cluster)
-
-	// Create a channel for streaming results
-	resourceChan := make(chan *pb.Resource, 100)
-	errChan := make(chan error, 1)
-
-	// Start scanning in background
-	go func() {
-		defer close(resourceChan)
-		err := scanner.StreamScanResources(ctx, req.Services, resourceChan)
-		if err != nil {
-			errChan <- err
-		}
-	}()
-
-	// Stream resources as they arrive
-	for {
-		select {
-		case resource, ok := <-resourceChan:
-			if !ok {
-				return nil // Channel closed, scanning complete
-			}
-			if err := stream.Send(resource); err != nil {
-				return err
-			}
-		case err := <-errChan:
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	return streamResources(ctx, p.clusterStreamer(cluster), req.Services, stream.Send)
 }
 
-// streamWithInformers uses Kubernetes informers for real-time streaming
+// clusterStreamer returns the stream producer for cluster. Tests inject a fake via
+// p.newStreamer.
+func (p *KubernetesProvider) clusterStreamer(cluster *ClusterConnection) resourceStreamer {
+	if p.newStreamer != nil {
+		return p.newStreamer(cluster)
+	}
+	return NewResourceScannerForCluster(cluster)
+}
+
+// streamWithInformers uses Kubernetes informers for real-time streaming. It runs until the
+// client disconnects, so it never ends with a clean result.
 func (p *KubernetesProvider) streamWithInformers(ctx context.Context, req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	// Set up informers for requested resource types
-	informers, err := p.informerCache.SetupInformers(ctx, req.Services)
+	set, err := p.informerCache.SetupInformers(req.Services)
 	if err != nil {
 		return fmt.Errorf("failed to setup informers: %w", err)
 	}
-
-	// Create event channel
-	eventChan := make(chan *pb.Resource, 1000)
-
-	// Start informers
-	p.informerCache.StartInformers(ctx, informers, eventChan)
-
-	// Stream events
-	for {
-		select {
-		case resource := <-eventChan:
-			if err := stream.Send(resource); err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	return p.informerCache.StreamInformers(ctx, set, stream.Send)
 }
 
 // Helper functions
@@ -863,7 +862,7 @@ func (p *KubernetesProvider) getResourcesForAPIGroup(apiGroup string) []string {
 
 // GetServiceInfo returns information about a specific Kubernetes API group/service
 func (p *KubernetesProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -913,7 +912,7 @@ func (p *KubernetesProvider) GetServiceInfo(ctx context.Context, req *pb.GetServ
 
 // ScanService scans resources for a specific Kubernetes API group
 func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -954,17 +953,19 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 		}
 	}
 
-	// Scan resources across all configured clusters
+	// Scan resources across all configured clusters. A cluster that failed part way keeps
+	// what it listed and adds an error entry.
 	var allResources []*pb.Resource
+	var scanErrors []string
 	clusters := p.getClustersToScan(&pb.ListResourcesRequest{})
 
 	for _, cluster := range clusters {
 		scanner := NewResourceScannerForCluster(cluster)
-		namespaces := p.getNamespacesToScan(ctx, cluster, &pb.ListResourcesRequest{})
+		namespaces, nsErr := p.getNamespacesToScan(ctx, cluster, &pb.ListResourcesRequest{})
 
 		resources, err := scanner.ScanResources(ctx, resourceTypes, namespaces)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan resources for cluster %s: %w", cluster.Name, err)
+		if err := errors.Join(nsErr, err); err != nil {
+			scanErrors = append(scanErrors, shared.ServiceScanError("cluster/"+cluster.Name, err))
 		}
 
 		// Enrich with relationships if requested
@@ -987,6 +988,7 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	return &pb.ScanServiceResponse{
 		Service:   apiGroup,
 		Resources: allResources,
+		Errors:    scanErrors,
 		Stats: &pb.ScanStats{
 			TotalResources: int32(len(allResources)),
 			DurationMs:     time.Since(startTime).Milliseconds(),
@@ -1000,7 +1002,7 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 
 // StreamScanService streams resources as they are discovered for a specific API group
 func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 
@@ -1022,44 +1024,21 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 	// Otherwise, scan and stream from each cluster
 	clusters := p.getClustersToScan(&pb.ListResourcesRequest{})
 
+	send := func(resource *pb.Resource) error {
+		// Enrich with relationships if requested
+		if req.IncludeRelationships && p.relationships != nil {
+			resource.Relationships = p.extractBasicRelationships(resource)
+		}
+		if err := stream.Send(resource); err != nil {
+			return fmt.Errorf("failed to send resource: %w", err)
+		}
+		return nil
+	}
+
 	for _, cluster := range clusters {
-		scanner := NewResourceScannerForCluster(cluster)
-
-		// Create a channel for streaming results
-		resourceChan := make(chan *pb.Resource, 100)
-		errChan := make(chan error, 1)
-
-		// Start scanning in background
-		go func() {
-			defer close(resourceChan)
-			err := scanner.StreamScanResources(ctx, resourceTypes, resourceChan)
-			if err != nil {
-				errChan <- err
-			}
-		}()
-
-		// Stream resources as they arrive
-		for {
-			select {
-			case resource, ok := <-resourceChan:
-				if !ok {
-					// Channel closed, move to next cluster
-					break
-				}
-
-				// Enrich with relationships if requested
-				if req.IncludeRelationships && p.relationships != nil {
-					resource.Relationships = p.extractBasicRelationships(resource)
-				}
-
-				if err := stream.Send(resource); err != nil {
-					return fmt.Errorf("failed to send resource: %w", err)
-				}
-			case err := <-errChan:
-				return fmt.Errorf("scanning error for cluster %s: %w", cluster.Name, err)
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+		streamer := p.clusterStreamer(cluster)
+		if err := streamResources(ctx, streamer, resourceTypes, send); err != nil {
+			return fmt.Errorf("scanning error for cluster %s: %w", cluster.Name, err)
 		}
 	}
 
@@ -1068,37 +1047,21 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 
 // streamWithInformersForService uses informers to stream real-time updates for a specific API group
 func (p *KubernetesProvider) streamWithInformersForService(ctx context.Context, apiGroup string, resourceTypes []string, req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	// Set up informers for the specific resource types
-	informers, err := p.informerCache.SetupInformers(ctx, resourceTypes)
+	set, err := p.informerCache.SetupInformers(resourceTypes)
 	if err != nil {
 		return fmt.Errorf("failed to setup informers: %w", err)
 	}
-
-	// Create event channel
-	eventChan := make(chan *pb.Resource, 1000)
-
-	// Start informers
-	p.informerCache.StartInformers(ctx, informers, eventChan)
-
-	// Stream events
-	for {
-		select {
-		case resource := <-eventChan:
-			// Only send resources from the requested API group
-			if p.getAPIGroupForResource(resource) == apiGroup {
-				// Enrich with relationships if requested
-				if req.IncludeRelationships && p.relationships != nil {
-					resource.Relationships = p.extractBasicRelationships(resource)
-				}
-
-				if err := stream.Send(resource); err != nil {
-					return err
-				}
-			}
-		case <-ctx.Done():
-			return ctx.Err()
+	return p.informerCache.StreamInformers(ctx, set, func(resource *pb.Resource) error {
+		// Only send resources from the requested API group
+		if p.getAPIGroupForResource(resource) != apiGroup {
+			return nil
 		}
-	}
+		// Enrich with relationships if requested
+		if req.IncludeRelationships && p.relationships != nil {
+			resource.Relationships = p.extractBasicRelationships(resource)
+		}
+		return stream.Send(resource)
+	})
 }
 
 // getAPIGroupForResource extracts the API group from a resource

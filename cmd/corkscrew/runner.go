@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func runCLI(args []string) int {
@@ -26,32 +29,46 @@ func runCLI(args []string) int {
 		return 0
 	}
 
+	// One root context for the whole command: SIGINT/SIGTERM cancel registry downloads, plugin
+	// RPCs and remote queries instead of leaving them to hang. Created after the TUI branch so
+	// the TUI keeps its own key handling.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	// After the first signal, restore default handling so a second Ctrl-C still kills a
+	// command that does not observe ctx.
+	context.AfterFunc(ctx, stop)
+
+	return runCommand(ctx, command, commandArgs)
+}
+
+// runCommand dispatches one CLI command under the root context.
+func runCommand(ctx context.Context, command string, commandArgs []string) int {
 	switch command {
 	case "init":
-		runInit(commandArgs)
+		runInit(ctx, commandArgs)
 	case "scan":
-		if err := runScanE(commandArgs); err != nil {
+		if err := runScanE(ctx, commandArgs); err != nil {
 			fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
 			return 1
 		}
 	case "scans":
-		return runScans(commandArgs)
+		return runScans(ctx, commandArgs)
 	case "drift":
-		return runDrift(commandArgs)
+		return runDrift(ctx, commandArgs)
 	case "findings":
-		return runFindings(commandArgs)
+		return runFindings(ctx, commandArgs)
 	case "discover":
-		runDiscover(commandArgs)
+		runDiscover(ctx, commandArgs)
 	case "list":
-		runList(commandArgs)
+		runList(ctx, commandArgs)
 	case "describe":
-		runDescribe(commandArgs)
+		runDescribe(ctx, commandArgs)
 	case "info":
-		runInfo(commandArgs)
+		runInfo(ctx, commandArgs)
 	case "schemas":
-		runSchemas(commandArgs)
+		runSchemas(ctx, commandArgs)
 	case "query":
-		runQuery(commandArgs)
+		runQuery(ctx, commandArgs)
 	case "diagram":
 		printUnavailableCommandMessage(os.Stderr, "diagram", "diagram generation is not wired into this binary")
 		return 1
@@ -61,24 +78,24 @@ func runCLI(args []string) int {
 			return 1
 		}
 	case "plugin":
-		if err := runPluginE(commandArgs); err != nil {
+		if err := runPluginE(ctx, commandArgs); err != nil {
 			fmt.Fprintf(os.Stderr, "Plugin failed: %v\n", err)
 			return 1
 		}
 	case "pack":
-		runPack(commandArgs)
+		runPack(ctx, commandArgs)
 	case "aws-org":
-		runAWSOrg(commandArgs)
+		runAWSOrg(ctx, commandArgs)
 	case "serve":
-		runServe(commandArgs)
+		runServe(ctx, commandArgs)
 	case "quack":
-		runQuack(commandArgs)
+		runQuack(ctx, commandArgs)
 	case "graph":
-		return runGraph(commandArgs)
+		return runGraph(ctx, commandArgs)
 	case "github":
-		runGitHub(commandArgs)
+		runGitHub(ctx, commandArgs)
 	case "cloudflare":
-		runCloudflare(commandArgs)
+		runCloudflare(ctx, commandArgs)
 	case "crosscloud":
 		runCrossCloud(commandArgs)
 	case "correlate":

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
 
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 )
 
 func TestNormalizeSeverity(t *testing.T) {
@@ -349,21 +351,21 @@ func TestCompactResources(t *testing.T) {
 }
 
 func TestAppendAPIError(t *testing.T) {
-	t.Run("403 marked skipped", func(t *testing.T) {
+	t.Run("403 is an access notice", func(t *testing.T) {
 		var errs []string
-		appendAPIError(&errs, "op", "target", &github.ErrorResponse{
+		appendAPIError(&errs, "op", "target", fmt.Errorf("page 2: %w", &github.ErrorResponse{
 			Response: stubHTTPResponse(403, "403 Forbidden"),
-		})
-		if len(errs) != 1 || !contains(errs[0], "skipped") {
+		}))
+		if len(errs) != 1 || !shared.IsCoverageNotice(errs[0]) || !contains(errs[0], "access_denied:") {
 			t.Errorf("got %v", errs)
 		}
 	})
-	t.Run("404 marked skipped", func(t *testing.T) {
+	t.Run("404 is a not-enabled notice", func(t *testing.T) {
 		var errs []string
 		appendAPIError(&errs, "op", "target", &github.ErrorResponse{
 			Response: stubHTTPResponse(404, "404 Not Found"),
 		})
-		if len(errs) != 1 || !contains(errs[0], "skipped") {
+		if len(errs) != 1 || !shared.IsCoverageNotice(errs[0]) || !contains(errs[0], "not_enabled:") {
 			t.Errorf("got %v", errs)
 		}
 	})

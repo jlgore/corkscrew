@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"sync"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -54,8 +58,12 @@ func (ers *EnhancedResourceScanner) registerAllScanners() {
 	log.Printf("✅ Registered %d enhanced service scanners", len(ers.scanners))
 }
 
-// ScanAllServicesEnhanced performs comprehensive scanning with real results
-func (ers *EnhancedResourceScanner) ScanAllServicesEnhanced(ctx context.Context) ([]*pb.Resource, error) {
+// ScanAllServicesEnhanced scans every registered service concurrently. It returns every resource
+// observed, including those from a service that failed part way, plus one error entry per failed
+// service so the scan is reported partial rather than complete (ADR 0023).
+func (ers *EnhancedResourceScanner) ScanAllServicesEnhanced(
+	ctx context.Context,
+) ([]*pb.Resource, []string) {
 	log.Printf("🚀 Starting enhanced scanning across %d services", len(ers.scanners))
 
 	// Use semaphore for concurrency control
@@ -74,19 +82,15 @@ func (ers *EnhancedResourceScanner) ScanAllServicesEnhanced(ctx context.Context)
 			defer func() { <-sem }() // Release
 
 			result := &serviceResult{service: name}
-
 			refs, err := s.Scan(ctx)
-			if err != nil {
-				result.err = err
-				log.Printf("⚠️ Scanner error for %s: %v", name, err)
-			} else {
-				// Convert ResourceRefs to Resources
-				for _, ref := range refs {
-					resource := convertRefToResourceEnhanced(ref)
-					result.resources = append(result.resources, resource)
-				}
-				log.Printf("✅ Scanned %s: %d resources found", name, len(refs))
+			result.err = err
+			for _, ref := range refs {
+				result.resources = append(result.resources, convertRefToResourceEnhanced(ref))
 			}
+			if err != nil {
+				log.Printf("⚠️ Scanner error for %s: %v", name, err)
+			}
+			log.Printf("✅ Scanned %s: %d resources found", name, len(refs))
 
 			resultChan <- result
 		}(serviceName, scanner)
@@ -98,26 +102,24 @@ func (ers *EnhancedResourceScanner) ScanAllServicesEnhanced(ctx context.Context)
 		close(resultChan)
 	}()
 
-	// Collect results
 	var allResources []*pb.Resource
-	var errors []string
-
+	var scanErrors []string
 	for result := range resultChan {
+		allResources = append(allResources, result.resources...)
 		if result.err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", result.service, result.err))
-		} else {
-			allResources = append(allResources, result.resources...)
+			scanErrors = append(scanErrors, shared.ServiceScanError(result.service, result.err))
 		}
 	}
 
 	log.Printf("🎯 Enhanced scan completed: %d total resources across %d services",
 		len(allResources), len(ers.scanners))
+	return allResources, scanErrors
+}
 
-	if len(errors) > 0 {
-		log.Printf("⚠️ Scan errors: %v", errors)
-	}
-
-	return allResources, nil
+// isNotFound reports whether err is a Google API 404, i.e. the requested object does not exist.
+func isNotFound(err error) bool {
+	var apiErr *googleapi.Error
+	return errors.As(err, &apiErr) && apiErr.Code == http.StatusNotFound
 }
 
 // BigQueryScanner implements scanning for BigQuery resources
@@ -136,13 +138,15 @@ func (bqs *BigQueryScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := bqs.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
 		// List datasets
 		datasets, err := client.Datasets.List(projectID).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list BigQuery datasets for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list BigQuery datasets for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -171,7 +175,7 @@ func (bqs *BigQueryScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 			// List tables in this dataset
 			tables, err := client.Tables.List(projectID, dataset.Id).Context(ctx).Do()
 			if err != nil {
-				log.Printf("Failed to list tables in dataset %s: %v", dataset.Id, err)
+				errs = append(errs, fmt.Errorf("list tables in dataset %s: %w", dataset.Id, err))
 				continue
 			}
 
@@ -199,7 +203,7 @@ func (bqs *BigQueryScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (bqs *BigQueryScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -263,13 +267,15 @@ func (css *CloudSQLScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := css.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
 		// List SQL instances
 		instances, err := client.Instances.List(projectID).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list Cloud SQL instances for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list Cloud SQL instances for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -300,7 +306,8 @@ func (css *CloudSQLScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 			// List databases for this instance
 			databases, err := client.Databases.List(projectID, instance.Name).Context(ctx).Do()
 			if err != nil {
-				log.Printf("Failed to list databases for instance %s: %v", instance.Name, err)
+				errs = append(errs, fmt.Errorf("list databases for instance %s: %w",
+					instance.Name, err))
 				continue
 			}
 
@@ -325,7 +332,7 @@ func (css *CloudSQLScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (css *CloudSQLScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -385,13 +392,15 @@ func (pss *PubSubScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := pss.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
 		// List topics
 		topics, err := client.Projects.Topics.List(fmt.Sprintf("projects/%s", projectID)).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list Pub/Sub topics for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list Pub/Sub topics for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -419,7 +428,8 @@ func (pss *PubSubScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 		// List subscriptions
 		subscriptions, err := client.Projects.Subscriptions.List(fmt.Sprintf("projects/%s", projectID)).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list Pub/Sub subscriptions for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list Pub/Sub subscriptions for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -446,7 +456,7 @@ func (pss *PubSubScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (pss *PubSubScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -521,6 +531,7 @@ func (crs *CloudRunScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := crs.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
@@ -528,7 +539,8 @@ func (crs *CloudRunScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 		parent := fmt.Sprintf("projects/%s/locations/-", projectID)
 		services, err := client.Projects.Locations.Services.List(parent).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list Cloud Run services for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list Cloud Run services for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -556,7 +568,7 @@ func (crs *CloudRunScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (crs *CloudRunScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -604,6 +616,7 @@ func (cfs *CloudFunctionsScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, 
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := cfs.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
@@ -611,7 +624,8 @@ func (cfs *CloudFunctionsScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, 
 		parent := fmt.Sprintf("projects/%s/locations/-", projectID)
 		functions, err := client.Projects.Locations.Functions.List(parent).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list Cloud Functions for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list Cloud Functions for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -641,7 +655,7 @@ func (cfs *CloudFunctionsScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, 
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (cfs *CloudFunctionsScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -689,13 +703,19 @@ func (aes *AppEngineScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := aes.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
 		// Get App Engine application
 		app, err := client.Apps.Get(projectID).Context(ctx).Do()
 		if err != nil {
-			// App Engine might not be enabled for this project
+			// A project without an App Engine application answers 404, which is an empty
+			// result. Any other failure means the project's applications went unobserved.
+			if !isNotFound(err) {
+				errs = append(errs, fmt.Errorf("get App Engine application for project %s: %w",
+					projectID, err))
+			}
 			continue
 		}
 
@@ -718,7 +738,8 @@ func (aes *AppEngineScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error
 		// List services
 		services, err := client.Apps.Services.List(projectID).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list App Engine services for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list App Engine services for project %s: %w",
+				projectID, err))
 			continue
 		}
 
@@ -740,7 +761,7 @@ func (aes *AppEngineScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error
 			// List versions for this service
 			versions, err := client.Apps.Services.Versions.List(projectID, service.Id).Context(ctx).Do()
 			if err != nil {
-				log.Printf("Failed to list versions for service %s: %v", service.Id, err)
+				errs = append(errs, fmt.Errorf("list versions for service %s: %w", service.Id, err))
 				continue
 			}
 
@@ -765,7 +786,7 @@ func (aes *AppEngineScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (aes *AppEngineScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {

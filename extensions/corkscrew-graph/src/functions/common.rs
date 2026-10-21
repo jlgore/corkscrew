@@ -24,9 +24,12 @@ pub fn next_chunk(cursor: &AtomicUsize, total: usize, capacity: usize) -> Option
 /// DuckDB's per-call vector capacity (typically 2048). Read at runtime so it
 /// stays correct if DuckDB is built with a non-default vector size.
 pub fn chunk_capacity() -> usize {
+    // SAFETY: `duckdb_vector_size` takes no arguments and only reads a
+    // compile-time constant of the loaded DuckDB library.
     unsafe { duckdb::ffi::duckdb_vector_size() as usize }
 }
 
+use crate::functions::params::hops_to_i32;
 use crate::graph::loader::{CloudGraph, LoadedGraph, RelationshipEdge, ResourceNode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -125,7 +128,7 @@ pub fn collect_traverse_rows(
                     region: resource.region.clone(),
                     account_id: resource.account_id.clone(),
                     provider: resource.provider.clone(),
-                    hop_count: hops as i32,
+                    hop_count: hops_to_i32(hops),
                     path_ids,
                     relationship_types: rel_types,
                 });
@@ -174,7 +177,7 @@ pub fn collect_shortest_path_rows(
         return Vec::new();
     };
 
-    let total_hops = path_nodes.len().saturating_sub(1) as i32;
+    let total_hops = i32::try_from(path_nodes.len().saturating_sub(1)).unwrap_or(i32::MAX);
     path_nodes
         .iter()
         .enumerate()
@@ -191,7 +194,7 @@ pub fn collect_shortest_path_rows(
             };
 
             PathRow {
-                hop_number: index as i32,
+                hop_number: i32::try_from(index).unwrap_or(i32::MAX),
                 resource_id: resource.id.clone(),
                 resource_type: resource.resource_type.clone(),
                 resource_name: resource.name.clone(),
@@ -235,7 +238,7 @@ pub fn collect_reachable_row(
             if type_matches(&resource.resource_type, filter) {
                 match_count += 1;
                 if closest_hop.is_none() {
-                    closest_hop = Some(hops as i32);
+                    closest_hop = Some(hops_to_i32(hops));
                     example_id = Some(resource.id.clone());
                 }
             }
@@ -284,7 +287,7 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
                     sample_ids: Vec::new(),
                 });
             entry.reachable_count += 1;
-            entry.max_hop_distance = entry.max_hop_distance.max(hops as i32);
+            entry.max_hop_distance = entry.max_hop_distance.max(hops_to_i32(hops));
             if entry.sample_ids.len() < 5 {
                 entry.sample_ids.push(resource.id.clone());
             }

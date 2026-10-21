@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jlgore/corkscrew/internal/db"
@@ -205,5 +206,143 @@ func TestResolveGraphExtension(t *testing.T) {
 	}
 	if resolved != extension {
 		t.Fatalf("resolved = %q, want %q", resolved, extension)
+	}
+}
+
+func TestSandboxBlocksHostFilesAndLocksConfiguration(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "credentials")
+	if err := os.WriteFile(secret, []byte("aws_secret_access_key=x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session, err := OpenSession(ctx, filepath.Join(dir, "sandboxed.duckdb"), WithSandbox())
+	if err != nil {
+		t.Fatalf("OpenSession(WithSandbox): %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	// The database the session already has open still answers queries.
+	if _, err := session.ReadOnly(ctx, "SELECT COUNT(*) FROM all_cloud_resources"); err != nil {
+		t.Fatalf("query attached database under sandbox: %v", err)
+	}
+	for _, statement := range []string{
+		"SELECT * FROM read_text('" + secret + "')",
+		"SELECT * FROM read_csv('" + secret + "')",
+		"SELECT * FROM read_text('https://example.com/exfiltrate')",
+	} {
+		_, err := session.ReadOnly(ctx, statement)
+		if err == nil || !strings.Contains(err.Error(), "Permission Error") {
+			t.Fatalf("%s: error = %v, want a DuckDB permission error", statement, err)
+		}
+	}
+
+	// ReadOnly rejects SET lexically, so go under it: the lock must hold even
+	// for SQL that reaches DuckDB directly, on any pooled connection.
+	connection, err := session.Connection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	for _, statement := range []string{
+		"SET enable_external_access = true",
+		"RESET enable_external_access",
+		"SET lock_configuration = false",
+	} {
+		_, err := connection.ExecContext(ctx, statement)
+		if err == nil || !strings.Contains(err.Error(), "configuration has been locked") {
+			t.Fatalf("%s: error = %v, want locked configuration", statement, err)
+		}
+	}
+}
+
+func TestSessionWithoutSandboxReadsHostFiles(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	local := filepath.Join(dir, "local.txt")
+	if err := os.WriteFile(local, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session, err := OpenSession(ctx, filepath.Join(dir, "open.duckdb"))
+	if err != nil {
+		t.Fatalf("OpenSession(): %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	result, err := session.ReadOnly(ctx, "SELECT content FROM read_text('"+local+"')")
+	if err != nil {
+		t.Fatalf("read_text without sandbox: %v", err)
+	}
+	if len(result.Rows) != 1 || result.Rows[0][0] != "hello" {
+		t.Fatalf("rows = %#v, want [[hello]]", result.Rows)
+	}
+}
+
+// A checkout can ship a binary at any path; resolution must not look there.
+func TestResolveGraphExtensionIgnoresWorkingDirectory(t *testing.T) {
+	checkout := t.TempDir()
+	for _, relative := range []string{
+		"extensions/corkscrew-graph/build/" + graphExtensionFile,
+		"extensions/corkscrew-graph/target/release/" + graphExtensionFile,
+		"build/" + graphExtensionFile,
+		graphExtensionFile,
+	} {
+		path := filepath.Join(checkout, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("planted"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(graphExtensionEnv, "")
+	t.Chdir(checkout)
+
+	if resolved, err := ResolveGraphExtension(""); err == nil {
+		t.Fatalf("resolved %q from the working directory, want an error", resolved)
+	}
+
+	t.Setenv(graphExtensionEnv, "build/"+graphExtensionFile)
+	_, err := ResolveGraphExtension("")
+	if err == nil || !strings.Contains(err.Error(), "absolute") {
+		t.Fatalf("relative %s: error = %v, want absolute-path error", graphExtensionEnv, err)
+	}
+	t.Setenv(graphExtensionEnv, "")
+
+	installed := filepath.Join(home, ".corkscrew", "extensions", graphExtensionFile)
+	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("installed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ResolveGraphExtension("")
+	if err != nil {
+		t.Fatalf("ResolveGraphExtension with installed extension: %v", err)
+	}
+	if resolved != installed {
+		t.Fatalf("resolved = %q, want %q", resolved, installed)
+	}
+}
+
+func TestReadOnlyRejectsResultsOverRowLimit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	target := filepath.Join(t.TempDir(), "rows.duckdb")
+	session, err := OpenSession(ctx, target, withMaxRows(3))
+	if err != nil {
+		t.Fatalf("OpenSession(): %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	result, err := session.ReadOnly(ctx, "SELECT * FROM range(3)")
+	if err != nil || len(result.Rows) != 3 {
+		t.Fatalf("rows at the limit = %v, %v; want 3 rows", result, err)
+	}
+	_, err = session.ReadOnly(ctx, "SELECT * FROM range(4)")
+	if !errors.Is(err, ErrRowLimitExceeded) {
+		t.Fatalf("rows over the limit error = %v, want ErrRowLimitExceeded", err)
 	}
 }

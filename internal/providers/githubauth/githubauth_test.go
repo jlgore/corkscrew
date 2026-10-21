@@ -1,11 +1,14 @@
 package githubauth
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +82,45 @@ func TestManifestCallbackHandlerValidatesState(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected code to be forwarded on the channel")
+	}
+}
+
+func TestConvertManifestEscapesCode(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		_ = json.NewEncoder(w).Encode(AppConversion{ID: 7, Name: "app"})
+	}))
+	defer server.Close()
+
+	conversion, err := convertManifest(context.Background(), server.Client(), server.URL,
+		"../../user?x=1")
+	if err != nil {
+		t.Fatalf("convertManifest: %v", err)
+	}
+	if conversion.ID != 7 {
+		t.Fatalf("conversion id = %d, want 7", conversion.ID)
+	}
+	want := "/app-manifests/..%2F..%2Fuser%3Fx=1/conversions"
+	if gotPath != want {
+		t.Fatalf("request path = %q, want %q", gotPath, want)
+	}
+}
+
+func TestConvertManifestRejectsOversizeBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("x"), maxManifestConversionBytes+1))
+	}))
+	defer server.Close()
+
+	_, err := convertManifest(context.Background(), server.Client(), server.URL, "code")
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversize body error = %v, want size-limit error", err)
+	}
+}
+
+func TestManifestClientHasTimeout(t *testing.T) {
+	if manifestClient.Timeout != manifestConversionTimeout || manifestClient.Timeout <= 0 {
+		t.Fatalf("manifest client timeout = %v", manifestClient.Timeout)
 	}
 }

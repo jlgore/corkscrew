@@ -14,6 +14,7 @@ pub mod correlate_security;
 pub mod info;
 pub mod list_patterns;
 pub mod match_pattern;
+pub mod params;
 pub mod paths;
 pub mod reachable;
 pub mod traverse;

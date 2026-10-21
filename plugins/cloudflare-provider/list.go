@@ -8,21 +8,30 @@ import (
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 )
 
 const listCacheTTL = 10 * time.Minute
 
+// listPageSizeDefault applies when a ListResources caller sets no MaxResults. It used to mean
+// "every ref in one response", which for a large account can exceed gRPC's message size limit.
+const listPageSizeDefault = 1000
+
+// listEntry caches one listing. errors holds the scan's entries; any non-notice entry means
+// refs may be incomplete.
 type listEntry struct {
 	refs      []*pb.ResourceRef
+	errors    []string
 	expiresAt time.Time
 }
 
 func (p *CloudflareProvider) listResourcesPaged(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
 	key := listCacheKey(req.GetService(), req.GetFilters())
-	refs, err := p.refsForKey(ctx, key, req)
+	entry, err := p.refsForKey(ctx, key, req)
 	if err != nil {
 		return nil, err
 	}
+	refs := entry.refs
 
 	offset := 0
 	if req.NextToken != "" {
@@ -34,22 +43,45 @@ func (p *CloudflareProvider) listResourcesPaged(ctx context.Context, req *pb.Lis
 		offset = len(refs)
 	}
 
+	pageSize := listPageSizeDefault
+	if req.MaxResults > 0 {
+		pageSize = int(req.MaxResults)
+	}
 	page := refs[offset:]
 	nextToken := ""
-	if req.MaxResults > 0 && int(req.MaxResults) < len(page) {
-		page = page[:req.MaxResults]
+	if pageSize < len(page) {
+		page = page[:pageSize]
 		nextToken = strconv.Itoa(offset + len(page))
 	}
 
-	return &pb.ListResourcesResponse{Resources: page, TotalCount: int32(len(refs)), NextToken: nextToken}, nil
+	response := &pb.ListResourcesResponse{
+		Resources:  page,
+		TotalCount: int32(len(refs)),
+		NextToken:  nextToken,
+	}
+	if scanErrors, _ := shared.SplitScanErrors(entry.errors); len(scanErrors) > 0 {
+		// The listing may be missing resources; say so instead of presenting it as complete.
+		response.Metadata = map[string]string{
+			"partial": "true",
+			"errors":  strings.Join(scanErrors, "\n"),
+		}
+	}
+	return response, nil
 }
 
-func (p *CloudflareProvider) refsForKey(ctx context.Context, key string, req *pb.ListResourcesRequest) ([]*pb.ResourceRef, error) {
+// refsForKey returns the cached listing for key, scanning when there is none. A partial
+// listing is still cached so continuation pages stay consistent, but a first-page request
+// (no NextToken) rescans rather than replaying the failure for the rest of the TTL.
+func (p *CloudflareProvider) refsForKey(
+	ctx context.Context, key string, req *pb.ListResourcesRequest,
+) (*listEntry, error) {
 	p.gcListCache()
 	if cached, ok := p.listCache.Load(key); ok {
 		entry := cached.(*listEntry)
-		if time.Now().Before(entry.expiresAt) {
-			return entry.refs, nil
+		scanErrors, _ := shared.SplitScanErrors(entry.errors)
+		fresh := time.Now().Before(entry.expiresAt)
+		if fresh && (len(scanErrors) == 0 || req.GetNextToken() != "") {
+			return entry, nil
 		}
 		p.listCache.Delete(key)
 	}
@@ -80,8 +112,13 @@ func (p *CloudflareProvider) refsForKey(ctx context.Context, key string, req *pb
 		}
 		refs = append(refs, ref)
 	}
-	p.listCache.Store(key, &listEntry{refs: refs, expiresAt: time.Now().Add(listCacheTTL)})
-	return refs, nil
+	entry := &listEntry{
+		refs:      refs,
+		errors:    append([]string(nil), resp.Errors...),
+		expiresAt: time.Now().Add(listCacheTTL),
+	}
+	p.listCache.Store(key, entry)
+	return entry, nil
 }
 
 func (p *CloudflareProvider) gcListCache() {

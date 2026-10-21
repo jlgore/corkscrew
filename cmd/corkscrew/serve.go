@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -9,13 +10,13 @@ import (
 )
 
 // runServe starts the gRPC API server.
-func runServe(args []string) {
-	if err := runServeE(args); err != nil {
+func runServe(ctx context.Context, args []string) {
+	if err := runServeE(ctx, args); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
-func runServeE(args []string) error {
+func runServeE(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 
 	port := fs.Int("port", 9090, "Port to listen on")
@@ -34,5 +35,15 @@ func runServeE(args []string) error {
 	fmt.Printf("\n📖 For more gRPC client examples, visit the documentation\n")
 	fmt.Printf("⏹️  Press Ctrl+C to stop the server\n\n")
 
-	return server.StartAPIServer(*port)
+	// StartAPIServer blocks and takes no context, so race it against the root context: the
+	// root context owns SIGINT/SIGTERM, and without this Ctrl-C would no longer stop the server.
+	served := make(chan error, 1)
+	go func() { served <- server.StartAPIServer(*port) }()
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
+		fmt.Printf("\n👋 Shutting down Corkscrew gRPC API server\n")
+		return nil
+	}
 }

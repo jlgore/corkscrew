@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ import (
 )
 
 // runPack handles all pack management commands
-func runPack(args []string) {
+func runPack(ctx context.Context, args []string) {
 	if len(args) == 0 {
 		printPackUsage()
 		return
@@ -25,19 +26,19 @@ func runPack(args []string) {
 	command := args[0]
 	switch command {
 	case "search":
-		runPackSearch(args[1:])
+		runPackSearch(ctx, args[1:])
 	case "install":
-		runPackInstall(args[1:])
+		runPackInstall(ctx, args[1:])
 	case "list":
-		runPackList(args[1:])
+		runPackList(ctx, args[1:])
 	case "update":
-		runPackUpdate(args[1:])
+		runPackUpdate(ctx, args[1:])
 	case "validate":
-		runPackValidate(args[1:])
+		runPackValidate(ctx, args[1:])
 	case "info":
-		runPackInfo(args[1:])
+		runPackInfo(ctx, args[1:])
 	case "cache":
-		runPackCache(args[1:])
+		runPackCache(ctx, args[1:])
 	default:
 		fmt.Printf("Unknown pack command: %s\n", command)
 		printPackUsage()
@@ -82,7 +83,7 @@ func printPackUsage() {
 }
 
 // runPackSearch searches the registry for compliance packs
-func runPackSearch(args []string) {
+func runPackSearch(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("pack search", flag.ExitOnError)
 
 	provider := fs.String("provider", "", "Filter by provider (aws, azure, gcp, kubernetes)")
@@ -133,8 +134,6 @@ func runPackSearch(args []string) {
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		registryClient = registryClient.WithGitHubToken(token)
 	}
-
-	ctx := context.Background()
 
 	// Update registry cache if needed
 	if err := registryClient.UpdateRegistry(ctx, false); err != nil {
@@ -253,7 +252,7 @@ func displaySearchResults(result *compliance.SearchResult, verbose bool) {
 }
 
 // runPackInstall installs a compliance pack
-func runPackInstall(args []string) {
+func runPackInstall(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("pack install", flag.ExitOnError)
 
 	version := fs.String("version", "latest", "Specific version to install")
@@ -305,21 +304,16 @@ func runPackInstall(args []string) {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
-
-	// Check if it's a direct GitHub reference
-	if strings.Contains(packRef, "github.com/") || strings.Contains(packRef, "/") && !strings.Contains(packRef, "@") {
-		err := installFromGitHub(ctx, packRef, *version, installDir, *force, *dryRun, *verbose)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
-			os.Exit(1)
-		}
+	var err error
+	if isGitHubPackRef(packRef) {
+		err = installFromGitHub(ctx, packRef, *version, installDir, *force, *dryRun, *verbose)
 	} else {
-		err := installFromRegistry(ctx, packRef, *version, installDir, *force, *dryRun, *installDeps, *verbose)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
-			os.Exit(1)
-		}
+		err = installFromRegistry(ctx, packRef, *version, installDir, *force, *dryRun,
+			*installDeps, *verbose)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	if !*dryRun {
@@ -352,6 +346,10 @@ func installFromRegistry(ctx context.Context, packRef, version, installDir strin
 		}
 	}
 
+	if err := checkExistingPack(filepath.Join(installDir, packRef), force); err != nil {
+		return err
+	}
+
 	if dryRun {
 		fmt.Printf("🔍 [DRY-RUN] Would install pack '%s' version '%s' to '%s'\n", packRef, version, installDir)
 		return nil
@@ -374,6 +372,31 @@ func installFromRegistry(ctx context.Context, packRef, version, installDir strin
 	return nil
 }
 
+// isGitHubPackRef reports whether ref names a GitHub repository directly.
+// Only an explicit github.com/ prefix counts: a bare owner/name such as
+// jlgore/cfi-ccc is a registry namespace, not a repository path.
+func isGitHubPackRef(ref string) bool {
+	ref = strings.TrimPrefix(ref, "https://")
+	ref = strings.TrimPrefix(ref, "http://")
+	return strings.HasPrefix(ref, "github.com/")
+}
+
+// checkExistingPack refuses to install over a pack already at dir unless
+// force is set, so a reinstall is always something the user asked for.
+func checkExistingPack(dir string, force bool) error {
+	_, err := os.Stat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check existing pack %s: %w", dir, err)
+	}
+	if !force {
+		return fmt.Errorf("pack already installed at %s (use --force to reinstall)", dir)
+	}
+	return nil
+}
+
 // installFromGitHub installs a pack directly from GitHub
 func installFromGitHub(ctx context.Context, packRef, version, installDir string, force, dryRun, verbose bool) error {
 	if verbose {
@@ -390,7 +413,7 @@ func installFromGitHub(ctx context.Context, packRef, version, installDir string,
 }
 
 // runPackList lists installed compliance packs
-func runPackList(args []string) {
+func runPackList(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("pack list", flag.ExitOnError)
 
 	output := fs.String("output", "table", "Output format: table, json")
@@ -406,8 +429,6 @@ func runPackList(args []string) {
 
 	// Create pack loader
 	loader := compliance.NewPackLoader()
-
-	ctx := context.Background()
 
 	// Discover all available packs
 	packs, err := loader.DiscoverPacks(ctx)
@@ -556,7 +577,7 @@ func displayInstalledPacks(packs []*compliance.QueryPack, verbose, showQueries b
 }
 
 // runPackUpdate updates installed packs
-func runPackUpdate(args []string) {
+func runPackUpdate(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("pack update", flag.ExitOnError)
 
 	all := fs.Bool("all", false, "Update all installed packs")
@@ -583,8 +604,6 @@ func runPackUpdate(args []string) {
 
 		// Load all installed packs
 		loader := compliance.NewPackLoader()
-		ctx := context.Background()
-
 		packs, err := loader.DiscoverPacks(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to discover packs: %v\n", err)
@@ -646,7 +665,7 @@ func updateSinglePack(packRef string, force, verbose bool) error {
 }
 
 // runPackValidate validates pack integrity and dependencies
-func runPackValidate(args []string) {
+func runPackValidate(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("pack validate", flag.ExitOnError)
 
 	all := fs.Bool("all", false, "Validate all installed packs")
@@ -667,8 +686,6 @@ func runPackValidate(args []string) {
 	}
 
 	loader := compliance.NewPackLoader()
-	ctx := context.Background()
-
 	if *all {
 		if *verbose {
 			fmt.Printf("🔍 Validating all installed compliance packs...\n\n")
@@ -742,7 +759,7 @@ func validateSinglePack(ctx context.Context, loader *compliance.PackLoader, pack
 }
 
 // runPackInfo shows detailed information about a pack
-func runPackInfo(args []string) {
+func runPackInfo(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("pack info", flag.ExitOnError)
 
 	output := fs.String("output", "table", "Output format: table, json")
@@ -759,8 +776,6 @@ func runPackInfo(args []string) {
 	packRef := fs.Args()[0]
 
 	loader := compliance.NewPackLoader()
-	ctx := context.Background()
-
 	pack, err := loader.LoadPack(ctx, packRef)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to load pack '%s': %v\n", packRef, err)
@@ -855,7 +870,7 @@ func displayPackInfo(pack *compliance.QueryPack, verbose bool) {
 }
 
 // runPackCache manages registry cache
-func runPackCache(args []string) {
+func runPackCache(ctx context.Context, args []string) {
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "❌ Cache action is required\n")
 		fmt.Fprintf(os.Stderr, "💡 Available actions: info, clear, update\n")
@@ -869,7 +884,7 @@ func runPackCache(args []string) {
 	case "clear":
 		runPackCacheClear()
 	case "update":
-		runPackCacheUpdate()
+		runPackCacheUpdate(ctx)
 	default:
 		fmt.Fprintf(os.Stderr, "❌ Unknown cache action: %s\n", action)
 		fmt.Fprintf(os.Stderr, "💡 Available actions: info, clear, update\n")
@@ -906,14 +921,12 @@ func runPackCacheClear() {
 }
 
 // runPackCacheUpdate updates the registry cache
-func runPackCacheUpdate() {
+func runPackCacheUpdate(ctx context.Context) {
 	registryClient := compliance.NewRegistryClient()
 
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		registryClient = registryClient.WithGitHubToken(token)
 	}
-
-	ctx := context.Background()
 
 	fmt.Printf("🔄 Updating registry cache...\n")
 
