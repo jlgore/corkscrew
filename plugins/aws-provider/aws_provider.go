@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -89,8 +91,10 @@ const unsupportedCodegenReason = "Cloud Control API handles resource discovery d
 // handles per-resource enrichment. The legacy reflection scanner, codegen
 // pipeline, parameter inference, and analysis JSON have all been removed.
 type AWSProvider struct {
-	mu          sync.RWMutex
-	initialized bool
+	mu sync.RWMutex
+	// initialized is atomic because every RPC checks it before taking mu,
+	// while Initialize and Cleanup flip it under mu.
+	initialized atomic.Bool
 	config      aws.Config
 
 	scanner   activeScanner
@@ -108,6 +112,8 @@ type AWSProvider struct {
 	rateLimiter    *rate.Limiter
 	maxConcurrency int
 
+	// currentProgressTracker is guarded by mu: BatchScans for different
+	// regions run concurrently and each replaces it.
 	currentProgressTracker *ScanProgressTracker
 }
 
@@ -141,7 +147,7 @@ func (p *AWSProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	}
 	p.explorer = p.wireExplorer(ctx, cfg, p.scanner)
 
-	p.initialized = true
+	p.initialized.Store(true)
 	return &pb.InitializeResponse{
 		Success: true,
 		Version: "4.0.0",
@@ -191,34 +197,45 @@ func defaultViewArn(ctx context.Context, cfg aws.Config) string {
 	return *out.ViewArn
 }
 
+// errNotInitialized is returned when an RPC arrives before Initialize or
+// after Cleanup.
+var errNotInitialized = errors.New("provider not initialized")
+
 // scannerFor returns the scanner for region: the one built at Initialize
 // when region is empty or the configured region, otherwise one built for
-// that region on first use and kept for the rest of the process.
-func (p *AWSProvider) scannerFor(ctx context.Context, region string) activeScanner {
+// that region on first use and kept for the rest of the process. It fails
+// once Cleanup has run, since an RPC may pass the initialized check just
+// before Cleanup clears the scanners.
+func (p *AWSProvider) scannerFor(ctx context.Context, region string) (activeScanner, error) {
 	p.mu.RLock()
-	base, home := p.scanner, p.config.Region
+	base, cfg := p.scanner, p.config.Copy()
 	cached, ok := p.regional[region]
 	p.mu.RUnlock()
-	if region == "" || region == home {
-		return base
+	if base == nil {
+		return nil, errNotInitialized
+	}
+	if region == "" || region == cfg.Region {
+		return base, nil
 	}
 	if ok {
-		return cached
+		return cached, nil
 	}
 
-	cfg := p.config.Copy()
 	cfg.Region = region
 	built := buildScanner(cfg)
 	p.wireExplorer(ctx, cfg, built)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.regional == nil {
+		return nil, errNotInitialized
+	}
 	// Two scopes of one region can race here; the first one kept wins.
 	if existing, ok := p.regional[region]; ok {
-		return existing
+		return existing, nil
 	}
 	p.regional[region] = built
-	return built
+	return built, nil
 }
 
 func (p *AWSProvider) GetProviderInfo(ctx context.Context, _ *pb.Empty) (*pb.ProviderInfoResponse, error) {
@@ -240,7 +257,7 @@ func (p *AWSProvider) GetProviderInfo(ctx context.Context, _ *pb.Empty) (*pb.Pro
 }
 
 func (p *AWSProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServicesRequest) (*pb.DiscoverServicesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	services := p.scanner.SupportedServices()
@@ -252,16 +269,18 @@ func (p *AWSProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServ
 }
 
 func (p *AWSProvider) ListResources(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	if err := p.rateLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit exceeded: %w", err)
 	}
 
-	regional := p.scannerFor(ctx, req.Region)
+	regional, err := p.scannerFor(ctx, req.Region)
+	if err != nil {
+		return nil, err
+	}
 	var refs []*pb.ResourceRef
-	var err error
 	if req.Service != "" {
 		refs, err = regional.ScanService(ctx, req.Service)
 	} else {
@@ -288,15 +307,25 @@ func (p *AWSProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 }
 
 func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
+	}
+	regional, err := p.scannerFor(ctx, req.Region)
+	if err != nil {
+		return nil, err
 	}
 	scanStartTime := time.Now()
 	// UnixNano keeps scan IDs unique across rapid back-to-back BatchScan
 	// calls (e.g. one per region in multi-region runs). Unix() collided
 	// when two regions started in the same second.
 	scanID := fmt.Sprintf("scan_%d", scanStartTime.UnixNano())
-	p.currentProgressTracker = NewScanProgressTracker(scanID, req.Services)
+	// The local tracker is what this scan reports to; the field only points
+	// GetScanProgress at the most recent scan, so it is the only part that
+	// needs mu.
+	tracker := NewScanProgressTracker(scanID, req.Services)
+	p.mu.Lock()
+	p.currentProgressTracker = tracker
+	p.mu.Unlock()
 
 	stats := &pb.ScanStats{
 		ResourceCounts: map[string]int32{},
@@ -305,61 +334,34 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	var allResources []*pb.Resource
 	var errs []string
 
-	regional := p.scannerFor(ctx, req.Region)
 	services := req.Services
 	if len(services) == 0 {
 		services = regional.SupportedServices()
 	}
 
-	// describeConcurrency caps in-flight GetResource calls. Empirically 20 is
-	// well under Cloud Control's per-account burst (~100) but high enough to
-	// fan out a 1000-resource service in seconds rather than minutes.
-	const describeConcurrency = 20
-
-	var statsMu sync.Mutex
-
 	for _, svc := range services {
-		p.currentProgressTracker.StartService(svc)
+		tracker.StartService(svc)
 		refs, err := regional.ScanService(ctx, svc)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("Service %s: %v", svc, err))
-			p.currentProgressTracker.CompleteService(svc, 0, err)
+			tracker.CompleteService(svc, 0, err)
 			continue
 		}
 
-		// Concurrent GetResource enrichment with bounded parallelism.
-		results := make(chan *pb.Resource, len(refs))
-		sem := make(chan struct{}, describeConcurrency)
-		var wg sync.WaitGroup
-		for _, ref := range refs {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(r *pb.ResourceRef) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				res, derr := regional.DescribeResource(ctx, r)
-				if derr != nil {
-					log.Printf("Describe %s/%s failed: %v", r.Type, r.Id, derr)
-					// Discovery already found the resource; losing it
-					// because enrichment failed would make the inventory
-					// silently incomplete. Keep what the ref knows, as
-					// ScanService does.
-					res = unenrichedResource(r, res)
-				}
-				results <- res
-			}(ref)
-		}
-		wg.Wait()
-		close(results)
-
-		for res := range results {
+		described, err := describeAll(ctx, regional, refs)
+		for _, res := range described {
 			allResources = append(allResources, res)
-			statsMu.Lock()
 			stats.ResourceCounts[res.Type]++
-			statsMu.Unlock()
 		}
-		stats.ServiceCounts[svc] = int32(len(refs))
-		p.currentProgressTracker.CompleteService(svc, len(refs), nil)
+		stats.ServiceCounts[svc] = int32(len(described))
+		if err != nil {
+			// Cancelled mid-service: keep what was described, report the
+			// service as failed, and start no further services.
+			errs = append(errs, fmt.Sprintf("Service %s: %v", svc, err))
+			tracker.CompleteService(svc, len(described), err)
+			break
+		}
+		tracker.CompleteService(svc, len(refs), nil)
 	}
 	stats.TotalResources = int32(len(allResources))
 	stats.DurationMs = time.Since(scanStartTime).Milliseconds()
@@ -379,12 +381,62 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	}, nil
 }
 
+// describeConcurrency caps in-flight GetResource calls. Empirically 20 is
+// well under Cloud Control's per-account burst (~100) but high enough to
+// fan out a 1000-resource service in seconds rather than minutes.
+const describeConcurrency = 20
+
+// describeAll enriches refs with bounded parallelism. When ctx is cancelled
+// it stops starting describes, waits for the ones in flight, and returns
+// what they produced together with ctx's error.
+func describeAll(ctx context.Context, s activeScanner, refs []*pb.ResourceRef) ([]*pb.Resource, error) {
+	results := make(chan *pb.Resource, len(refs))
+	sem := make(chan struct{}, describeConcurrency)
+	var wg sync.WaitGroup
+	var cancelled error
+refLoop:
+	for _, ref := range refs {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			cancelled = ctx.Err()
+			break refLoop
+		}
+		wg.Add(1)
+		go func(r *pb.ResourceRef) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			res, derr := s.DescribeResource(ctx, r)
+			if derr != nil {
+				log.Printf("Describe %s/%s failed: %v", r.Type, r.Id, derr)
+				// Discovery already found the resource; losing it
+				// because enrichment failed would make the inventory
+				// silently incomplete. Keep what the ref knows, as
+				// ScanService does.
+				res = unenrichedResource(r, res)
+			}
+			results <- res
+		}(ref)
+	}
+	wg.Wait()
+	close(results)
+
+	out := make([]*pb.Resource, 0, len(refs))
+	for res := range results {
+		out = append(out, res)
+	}
+	return out, cancelled
+}
+
 func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 	ctx := stream.Context()
-	regional := p.scannerFor(ctx, req.Region)
+	regional, err := p.scannerFor(ctx, req.Region)
+	if err != nil {
+		return err
+	}
 	services := req.Services
 	if len(services) == 0 {
 		services = regional.SupportedServices()
@@ -409,20 +461,24 @@ func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 }
 
 func (p *AWSProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	return p.schemaGen.GenerateSchemas(req.Services), nil
 }
 
 func (p *AWSProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	if req.ResourceRef == nil {
 		return &pb.DescribeResourceResponse{Error: "resource_ref is required"}, nil
 	}
-	res, err := p.scannerFor(ctx, req.ResourceRef.Region).DescribeResource(ctx, req.ResourceRef)
+	regional, err := p.scannerFor(ctx, req.ResourceRef.Region)
+	if err != nil {
+		return nil, err
+	}
+	res, err := regional.DescribeResource(ctx, req.ResourceRef)
 	if err != nil {
 		return &pb.DescribeResourceResponse{Error: err.Error()}, nil
 	}
@@ -430,14 +486,17 @@ func (p *AWSProvider) DescribeResource(ctx context.Context, req *pb.DescribeReso
 }
 
 func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	if err := p.rateLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit exceeded: %w", err)
 	}
 
-	regional := p.scannerFor(ctx, req.Region)
+	regional, err := p.scannerFor(ctx, req.Region)
+	if err != nil {
+		return nil, err
+	}
 	refs, err := regional.ScanService(ctx, req.Service)
 	if err != nil {
 		return nil, fmt.Errorf("scan service %s: %w", req.Service, err)
@@ -463,7 +522,7 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 }
 
 func (p *AWSProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 	return &pb.ServiceInfoResponse{
@@ -472,11 +531,14 @@ func (p *AWSProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfo
 }
 
 func (p *AWSProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 	ctx := stream.Context()
-	regional := p.scannerFor(ctx, req.Region)
+	regional, err := p.scannerFor(ctx, req.Region)
+	if err != nil {
+		return err
+	}
 	refs, err := regional.ScanService(ctx, req.Service)
 	if err != nil {
 		return err
@@ -520,7 +582,7 @@ func (p *AWSProvider) Cleanup() error {
 	p.explorer = nil
 	p.scanner = nil
 	p.regional = nil
-	p.initialized = false
+	p.initialized.Store(false)
 	return nil
 }
 
