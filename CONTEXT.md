@@ -50,7 +50,7 @@ A completed scan with the same provider and canonical service/scope key as anoth
 
 ### Partial scan
 
-A scan in which at least one scope reported an error, meaning resources may be missing. Partial scans are persisted but are never comparable, so they never resolve findings. Informational provider notices, such as an unsupported resource type, do not make a scan partial (ADR 0023).
+A scan in which at least one scope reported an error, meaning resources may be missing. Partial scans are persisted but are never comparable, so they never resolve findings. Informational provider notices do not make a scan partial: an unsupported resource type, a permission the credential lacks, or a disabled feature. Permission gaps and disabled features are reported as coverage warnings (ADR 0023).
 
 ### Correlation evidence
 

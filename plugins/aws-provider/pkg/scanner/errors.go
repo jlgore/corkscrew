@@ -1,5 +1,19 @@
 package scanner
 
+import "fmt"
+
+// AccessDeniedError is a type the credential is not permitted to list.
+type AccessDeniedError struct {
+	Type string
+	Err  error
+}
+
+func (e *AccessDeniedError) Error() string {
+	return fmt.Sprintf("access_denied:%s: %v", e.Type, e.Err)
+}
+
+func (e *AccessDeniedError) Unwrap() error { return e.Err }
+
 // FlattenErrors returns the leaf errors of err, expanding errors.Join, so
 // each failed type or account becomes its own entry in a scan's Errors
 // instead of one entry with every failure on separate lines. A nil err

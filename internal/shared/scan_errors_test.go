@@ -12,15 +12,20 @@ import (
 func TestSplitScanErrorsKeepsUnknownEntriesAsErrors(t *testing.T) {
 	entries := []string{
 		UnsupportedTypeNotice("AWS::S3::AccessGrant", "not supported in region"),
+		AccessDeniedNotice("AWS::EC2::Instance", errors.New("AccessDenied")),
+		NotEnabledNotice("acme/web code scanning", "404 Not Found"),
 		ServiceScanError("ec2", errors.New("throttled")),
 		"Service s3: legacy format",
 	}
 	errs, notices := SplitScanErrors(entries)
-	if want := entries[1:]; !reflect.DeepEqual(errs, want) {
+	if want := entries[3:]; !reflect.DeepEqual(errs, want) {
 		t.Fatalf("errors = %v, want %v", errs, want)
 	}
-	if want := entries[:1]; !reflect.DeepEqual(notices, want) {
+	if want := entries[:3]; !reflect.DeepEqual(notices, want) {
 		t.Fatalf("notices = %v, want %v", notices, want)
+	}
+	if IsCoverageNotice(entries[0]) || !IsCoverageNotice(entries[1]) || !IsCoverageNotice(entries[2]) {
+		t.Fatal("only access_denied and not_enabled are coverage notices")
 	}
 }
 

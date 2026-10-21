@@ -265,12 +265,12 @@ func (s *CloudControlScanner) scanTypes(
 	return all, errors.Join(errs...)
 }
 
-// typeListError names the type that failed. Access errors are labelled
-// apart from other failures because the fix is an IAM change, but they are
-// still errors: resources of that type may exist and were not observed.
+// typeListError names the type that failed. An access denial becomes an
+// *AccessDeniedError so the provider can report it as a coverage notice: the
+// credential's real scope, fixed by an IAM change, not a broken scan.
 func typeListError(typeName string, err error) error {
 	if isAccessDeniedErr(err) {
-		return fmt.Errorf("access_denied:%s: %w", typeName, err)
+		return &AccessDeniedError{Type: typeName, Err: err}
 	}
 	return fmt.Errorf("%s: %w", typeName, err)
 }

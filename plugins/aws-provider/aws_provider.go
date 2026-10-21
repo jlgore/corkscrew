@@ -93,11 +93,17 @@ type activeScanner interface {
 
 // serviceErrorEntries turns a ScanService error into BatchScanResponse
 // Errors entries, one per failed type or account, so each is visible on
-// its own. None is a notice: every one means resources may be missing.
+// its own. An access denial is a coverage notice (the credential's scope, an
+// IAM fix); every other failure is an error, since resources may be missing.
 func serviceErrorEntries(service string, err error) []string {
 	leaves := scanner.FlattenErrors(err)
 	entries := make([]string, 0, len(leaves))
 	for _, e := range leaves {
+		var denied *scanner.AccessDeniedError
+		if errors.As(e, &denied) {
+			entries = append(entries, shared.AccessDeniedNotice(denied.Type, denied.Err))
+			continue
+		}
 		entries = append(entries, shared.ServiceScanError(service, e))
 	}
 	return entries

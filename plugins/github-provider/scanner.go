@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/google/go-github/v71/github"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -683,13 +685,25 @@ func compactResources(resources []*pb.Resource) []*pb.Resource {
 	return compact
 }
 
+// appendAPIError records err for one listing. A 403 means the token lacks the scope and a 404
+// means the feature is off (or hidden from this token) for target: both describe the scan's
+// coverage, so they are notices and the scan stays comparable (ADR 0023). Rate limits are retried
+// by the transport before reaching here. Any other failure is an error: resources may be missing.
 func appendAPIError(errors *[]string, operation, target string, err error) {
 	if err == nil {
 		return
 	}
-	if ghErr, ok := err.(*github.ErrorResponse); ok && (ghErr.Response.StatusCode == http.StatusForbidden || ghErr.Response.StatusCode == http.StatusNotFound) {
-		*errors = append(*errors, fmt.Sprintf("%s %s skipped: %s", operation, target, ghErr.Response.Status))
-		return
+	subject := operation + " " + target
+	var ghErr *github.ErrorResponse
+	if stderrors.As(err, &ghErr) && ghErr.Response != nil {
+		switch ghErr.Response.StatusCode {
+		case http.StatusForbidden:
+			*errors = append(*errors, shared.AccessDeniedNotice(subject, fmt.Errorf("%s", ghErr.Response.Status)))
+			return
+		case http.StatusNotFound:
+			*errors = append(*errors, shared.NotEnabledNotice(subject, ghErr.Response.Status))
+			return
+		}
 	}
-	*errors = append(*errors, fmt.Sprintf("%s %s failed: %v", operation, target, err))
+	*errors = append(*errors, fmt.Sprintf("%s failed: %v", subject, err))
 }

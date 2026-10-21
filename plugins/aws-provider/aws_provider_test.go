@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
+	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
 	"golang.org/x/time/rate"
 )
 
@@ -175,7 +176,8 @@ func batchScan(t *testing.T, s activeScanner, services ...string) *pb.BatchScanR
 
 // One failed service must not drop the others, and must be reported as an
 // error, not a notice, so the scan is partial and resolves no findings
-// (ADR 0023). An unsupported type stays a notice.
+// (ADR 0023). An access denial and an unsupported type are notices: they
+// describe the credential's coverage, not a broken scan.
 func TestBatchScanReportsFailedServiceAndKeepsTheRest(t *testing.T) {
 	s := &fakeScanner{
 		refs: []*pb.ResourceRef{
@@ -183,7 +185,7 @@ func TestBatchScanReportsFailedServiceAndKeepsTheRest(t *testing.T) {
 			{Service: "ec2", Type: "AWS::EC2::Subnet", Id: "subnet-1"},
 		},
 		scanErrs: map[string]error{"ec2": errors.Join(
-			errors.New("access_denied:AWS::EC2::Instance: AccessDenied"),
+			&scanner.AccessDeniedError{Type: "AWS::EC2::Instance", Err: errors.New("AccessDenied")},
 			errors.New("AWS::EC2::VPC: Throttling"),
 		)},
 		unsupported: map[string]string{"AWS::EC2::Thing": "TypeNotFoundException"},
@@ -194,19 +196,21 @@ func TestBatchScanReportsFailedServiceAndKeepsTheRest(t *testing.T) {
 		t.Fatalf("got %d resources, want kms and the partial ec2", len(resp.Resources))
 	}
 	errs, notices := shared.SplitScanErrors(resp.Errors)
-	if len(errs) != 2 {
-		t.Fatalf("errors = %v, want one per failed ec2 type", errs)
+	if len(errs) != 1 || !strings.HasPrefix(errs[0], "service:ec2: ") ||
+		!strings.Contains(errs[0], "AWS::EC2::VPC") {
+		t.Fatalf("errors = %v, want only the throttled ec2 type", errs)
 	}
-	for _, e := range errs {
-		if !strings.HasPrefix(e, "service:ec2: ") || shared.IsScanNotice(e) {
-			t.Fatalf("entry %q is not an ec2 error", e)
+	var denied, unsupported int
+	for _, n := range notices {
+		if shared.IsCoverageNotice(n) && strings.Contains(n, "AWS::EC2::Instance") {
+			denied++
+		}
+		if !shared.IsCoverageNotice(n) && strings.Contains(n, "AWS::EC2::Thing") {
+			unsupported++
 		}
 	}
-	if !strings.Contains(errs[0], "access_denied:AWS::EC2::Instance") {
-		t.Fatalf("access denied entry = %q", errs[0])
-	}
-	if len(notices) != 1 || !strings.Contains(notices[0], "AWS::EC2::Thing") {
-		t.Fatalf("notices = %v, want the unsupported type", notices)
+	if len(notices) != 2 || denied != 1 || unsupported != 1 {
+		t.Fatalf("notices = %v, want the access denial and the unsupported type", notices)
 	}
 }
 

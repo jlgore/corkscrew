@@ -50,3 +50,12 @@ scan where every region reported one was `failed`, and its findings were never e
 
 Per-provider "inject a failure and expect partial" tests belong with each provider's change
 (issues 09–11), since each needs its own fake-scanner seam.
+
+2026-10-21: Maintainer decision: permission gaps and disabled features are notices, not errors,
+following how Wiz surfaces them: the scan is complete for what the credential can see, and the gaps
+show up as warnings. Added `AccessDeniedNotice` and `NotEnabledNotice` (`IsCoverageNotice`). AWS
+access-denied types and GitHub 403 (access) / 404 (not enabled) listings use them. Org member
+accounts whose role can't be assumed stay errors. Scans now print one `coverage` warning and one
+`incomplete` warning, each quoting up to 3 examples. ADR 0023 records the tradeoff: a finding behind a
+denied type can be resolved without the resource being seen.
+
