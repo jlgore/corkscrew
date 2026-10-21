@@ -61,12 +61,13 @@ func DefaultConfig() Config {
 // have to know which mode is active.
 type OrgScanner struct {
 	cfg     aws.Config // management-account credentials
-	stsAPI  *sts.Client
+	stsAPI  stscreds.AssumeRoleAPIClient
 	orgAPI  accountLister
 	options Config
 
 	// scannerFor builds the scanner for one member account. A field so tests
-	// can substitute accounts whose role assumption fails.
+	// can substitute accounts whose role assumption fails. Callers go through
+	// accountScanner, which caches what it builds.
 	scannerFor func(ctx context.Context, acctID string) (accountScanner, error)
 
 	// Resource Explorer is wired through to each per-account scanner if
@@ -78,6 +79,12 @@ type OrgScanner struct {
 
 	mu               sync.Mutex
 	unsupportedTypes map[string]string
+	// accountsListed is the set of accounts the latest listing returned, and
+	// scanners holds one scanner per account in it, so the cache never holds
+	// more scanners than the organization has listed accounts. Building a
+	// scanner per resource cost one sts:AssumeRole per resource.
+	accountsListed map[string]bool
+	scanners       map[string]accountScanner
 }
 
 // accountScanner is what OrgScanner needs from a per-account scanner.
@@ -111,6 +118,8 @@ func New(cfg aws.Config, opts Config) *OrgScanner {
 		orgAPI:           organizations.NewFromConfig(cfg),
 		options:          opts,
 		unsupportedTypes: map[string]string{},
+		accountsListed:   map[string]bool{},
+		scanners:         map[string]accountScanner{},
 	}
 	o.scannerFor = o.scannerForAccount
 	return o
@@ -143,16 +152,58 @@ type accountResult struct {
 	err    error
 }
 
-// ScanService fans the scan out across every targeted account. It returns
-// the refs of every account that answered, even when others failed, joined
-// with one "account:<id>: ..." error per failure so the caller can report
-// the service as incomplete without discarding the accounts that worked.
+// ScanService lists the targeted accounts and fans the scan out across them.
+// A scan of several services should go through ForScan, which lists the
+// accounts once for all of them.
 func (o *OrgScanner) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
 	accounts, err := o.targetAccounts(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return o.scanAccounts(ctx, accounts, serviceName)
+}
 
+// Scan is one scan's view of the organization: it lists the accounts on its
+// first ScanService and reuses that list for every later service, where
+// OrgScanner.ScanService lists them per service. Build one per scan with
+// ForScan and drop it when the scan ends, so the next scan sees accounts
+// that joined or left the organization. Every other method is the
+// OrgScanner's, including the per-account scanner cache.
+type Scan struct {
+	*OrgScanner
+
+	once     sync.Once
+	accounts []string
+	err      error
+}
+
+// ForScan returns a Scan for one scan of one or more services.
+func (o *OrgScanner) ForScan() *Scan {
+	return &Scan{OrgScanner: o}
+}
+
+// ScanService fans the scan out across the scan's accounts. A failed account
+// listing is returned by every service, so each one is reported incomplete.
+func (s *Scan) ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error) {
+	s.once.Do(func() {
+		s.accounts, s.err = s.targetAccounts(ctx)
+	})
+	if s.err != nil {
+		return nil, s.err
+	}
+	if len(s.accounts) == 0 {
+		panic("orgscan: account listing succeeded with no accounts")
+	}
+	return s.scanAccounts(ctx, s.accounts, serviceName)
+}
+
+// scanAccounts fans the scan out across accounts. It returns
+// the refs of every account that answered, even when others failed, joined
+// with one "account:<id>: ..." error per failure so the caller can report
+// the service as incomplete without discarding the accounts that worked.
+func (o *OrgScanner) scanAccounts(
+	ctx context.Context, accounts []string, serviceName string,
+) ([]*pb.ResourceRef, error) {
 	results := make(chan accountResult, len(accounts))
 	sem := make(chan struct{}, o.options.MaxConcurrentAccounts)
 	var wg sync.WaitGroup
@@ -208,7 +259,7 @@ func (o *OrgScanner) DescribeResource(ctx context.Context, ref *pb.ResourceRef) 
 	if ref.AccountId == "" {
 		return nil, fmt.Errorf("orgscan: ResourceRef missing AccountId; can't pick which account to assume")
 	}
-	sc, err := o.scannerFor(ctx, ref.AccountId)
+	sc, err := o.accountScanner(ctx, ref.AccountId)
 	if err != nil {
 		return nil, fmt.Errorf("orgscan: assume account %s: %w", ref.AccountId, err)
 	}
@@ -253,7 +304,7 @@ func (o *OrgScanner) mergeUnsupported(other map[string]string) {
 
 // scanOneAccount assumes into acctID and runs a single CC scan there.
 func (o *OrgScanner) scanOneAccount(ctx context.Context, acctID, serviceName string) ([]*pb.ResourceRef, error) {
-	sc, err := o.scannerFor(ctx, acctID)
+	sc, err := o.accountScanner(ctx, acctID)
 	if err != nil {
 		return nil, fmt.Errorf("assume role: %w", err)
 	}
@@ -262,12 +313,88 @@ func (o *OrgScanner) scanOneAccount(ctx context.Context, acctID, serviceName str
 	return refs, err
 }
 
+// accountScanner returns acctID's scanner, building it on first use. The
+// scanner is cached while acctID is in the latest account listing, so its
+// credentials cache serves every scan and describe of the account instead of
+// one sts:AssumeRole per resource. An account outside the listing (a
+// describe of an arbitrary ref) gets a scanner that is not cached, which
+// keeps the cache bounded by the organization's account count. A failed
+// build is not cached either, so the next call tries again.
+func (o *OrgScanner) accountScanner(ctx context.Context, acctID string) (accountScanner, error) {
+	if acctID == "" {
+		panic("orgscan: accountScanner needs an account ID")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if sc, ok := o.scanners[acctID]; ok {
+		return sc, nil
+	}
+	// Building under mu keeps two accounts' workers from both building one
+	// account's scanner; it is cheap, since the role is assumed lazily.
+	sc, err := o.scannerFor(ctx, acctID)
+	if err != nil {
+		return nil, err
+	}
+	if sc == nil {
+		panic("orgscan: scannerFor returned neither a scanner nor an error")
+	}
+	if o.accountsListed[acctID] {
+		o.scanners[acctID] = sc
+	}
+	if len(o.scanners) > len(o.accountsListed) {
+		panic("orgscan: more cached scanners than listed accounts")
+	}
+	return sc, nil
+}
+
+// retainAccounts records accounts as the latest listing and drops the cached
+// scanners of accounts no longer in it.
+func (o *OrgScanner) retainAccounts(accounts []string) {
+	if len(accounts) == 0 {
+		panic("orgscan: retainAccounts needs the listed accounts")
+	}
+	listed := make(map[string]bool, len(accounts))
+	for _, acctID := range accounts {
+		listed[acctID] = true
+	}
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	o.accountsListed = listed
+	for acctID := range o.scanners {
+		if !listed[acctID] {
+			delete(o.scanners, acctID)
+		}
+	}
+	if len(o.scanners) > len(o.accountsListed) {
+		panic("orgscan: more cached scanners than listed accounts")
+	}
+}
+
+// cachedScannerCount returns how many account scanners are cached.
+func (o *OrgScanner) cachedScannerCount() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.scanners)
+}
+
 // scannerForAccount builds a CloudControlScanner whose aws.Config is
-// scoped to the assumed-role credentials for acctID. Constructed fresh
-// per call — STS credentials cache themselves, and the cost of creating
-// CC clients is small. The role is assumed lazily, so an AssumeRole failure
-// surfaces from the scanner's first call (its STS account lookup).
-func (o *OrgScanner) scannerForAccount(ctx context.Context, acctID string) (accountScanner, error) {
+// scoped to the assumed-role credentials for acctID. The role is assumed
+// lazily, so an AssumeRole failure surfaces from the scanner's first call
+// (its STS account lookup).
+func (o *OrgScanner) scannerForAccount(_ context.Context, acctID string) (accountScanner, error) {
+	cfg := o.cfg.Copy()
+	cfg.Credentials = o.accountCredentials(acctID)
+	return scanner.NewCloudControlScanner(cfg), nil
+}
+
+// accountCredentials returns the assumed-role credentials for acctID behind
+// a credentials cache, so sts:AssumeRole runs once per credential lifetime
+// rather than on every request. The cache is only shared if the scanner
+// holding it is: accountScanner caches that.
+func (o *OrgScanner) accountCredentials(acctID string) *aws.CredentialsCache {
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", acctID, o.options.RoleName)
 	provider := stscreds.NewAssumeRoleProvider(o.stsAPI, roleArn, func(p *stscreds.AssumeRoleOptions) {
 		p.RoleSessionName = o.options.SessionName
@@ -275,10 +402,7 @@ func (o *OrgScanner) scannerForAccount(ctx context.Context, acctID string) (acco
 			p.ExternalID = aws.String(o.options.ExternalID)
 		}
 	})
-
-	cfg := o.cfg.Copy()
-	cfg.Credentials = aws.NewCredentialsCache(provider)
-	return scanner.NewCloudControlScanner(cfg), nil
+	return aws.NewCredentialsCache(provider)
 }
 
 // targetAccounts returns the account IDs to scan after applying the
@@ -320,6 +444,7 @@ func (o *OrgScanner) targetAccounts(ctx context.Context) ([]string, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("no active accounts matched the include/exclude filters")
 	}
+	o.retainAccounts(ids)
 	return ids, nil
 }
 

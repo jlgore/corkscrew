@@ -42,8 +42,10 @@ func (f fakeAccount) ScanService(context.Context, string) ([]*pb.ResourceRef, er
 	return []*pb.ResourceRef{{Type: "AWS::KMS::Key", Id: "key-" + f.id}}, nil
 }
 
-func (f fakeAccount) DescribeResource(context.Context, *pb.ResourceRef) (*pb.Resource, error) {
-	return nil, errors.New("not faked")
+func (f fakeAccount) DescribeResource(
+	_ context.Context, ref *pb.ResourceRef,
+) (*pb.Resource, error) {
+	return &pb.Resource{Id: ref.Id, AccountId: ref.AccountId}, nil
 }
 
 func (f fakeAccount) UnsupportedTypes() map[string]string { return nil }

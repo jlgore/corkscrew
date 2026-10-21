@@ -145,7 +145,7 @@ func (p *GitHubProvider) ScanService(ctx context.Context, req *pb.ScanServiceReq
 	}
 
 	start := time.Now()
-	ctx = withProtectionCache(ctx)
+	ctx = withScanCache(ctx)
 	service := req.Service
 	if service == "" {
 		service = "repos"
@@ -209,7 +209,7 @@ func (p *GitHubProvider) DescribeResource(ctx context.Context, req *pb.DescribeR
 func (p *GitHubProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
 	start := time.Now()
 	// One protection cache for the whole batch: `findings` reuses what `repos` fetched.
-	ctx = withProtectionCache(ctx)
+	ctx = withScanCache(ctx)
 	services := req.Services
 	if len(services) == 0 {
 		services = []string{"repos", "security", "findings"}
@@ -240,7 +240,7 @@ func (p *GitHubProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudPr
 	if len(services) == 0 {
 		services = []string{"repos", "security", "findings"}
 	}
-	ctx := withProtectionCache(stream.Context())
+	ctx := withScanCache(stream.Context())
 	for _, service := range services {
 		resp, err := p.ScanService(ctx, &pb.ScanServiceRequest{Service: service, IncludeRelationships: req.IncludeRelationships})
 		if err != nil {
