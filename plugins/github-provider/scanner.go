@@ -214,6 +214,10 @@ func (p *GitHubProvider) parallelRepos(
 	var resources []*pb.Resource
 	var errors []string
 
+	// The label matters: a bare break inside the select would only leave the
+	// select, and the loop would then start a goroutine that never acquired a
+	// slot. That goroutine's release (<-sem) can block forever, hanging Wait.
+repoLoop:
 	for _, repo := range repos {
 		if ctx.Err() != nil {
 			break
@@ -222,7 +226,7 @@ func (p *GitHubProvider) parallelRepos(
 		select {
 		case sem <- struct{}{}:
 		case <-ctx.Done():
-			break
+			break repoLoop
 		}
 		wg.Add(1)
 		go func() {

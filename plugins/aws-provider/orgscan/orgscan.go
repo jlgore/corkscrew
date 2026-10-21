@@ -120,9 +120,18 @@ func (o *OrgScanner) ScanService(ctx context.Context, serviceName string) ([]*pb
 	sem := make(chan struct{}, o.options.MaxConcurrentAccounts)
 	var wg sync.WaitGroup
 
+	// A cancelled scan must stop starting accounts: without the ctx case the
+	// loop would keep assuming roles until every account had been tried.
+	var cancelled error
+acctLoop:
 	for _, acct := range accounts {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			cancelled = ctx.Err()
+			break acctLoop
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(acctID string) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -140,6 +149,9 @@ func (o *OrgScanner) ScanService(ctx context.Context, serviceName string) ([]*pb
 	}
 	wg.Wait()
 	close(results)
+	if cancelled != nil {
+		return nil, fmt.Errorf("orgscan: service %s: %w", serviceName, cancelled)
+	}
 
 	var all []*pb.ResourceRef
 	for refs := range results {

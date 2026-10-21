@@ -26,8 +26,7 @@ func runPluginE(args []string) error {
 	case "install":
 		return installPlugin(args[1:])
 	case "groups":
-		listServiceGroups()
-		return nil
+		return listServiceGroups()
 	default:
 		return fmt.Errorf("unknown plugin command: %s", args[0])
 	}
@@ -110,7 +109,7 @@ func installPlugin(args []string) error {
 	return nil
 }
 
-func listServiceGroups() {
+func listServiceGroups() error {
 	fmt.Println("📦 Available AWS Service Groups:")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "Group\tServices")
@@ -118,5 +117,5 @@ func listServiceGroups() {
 	for _, group := range scanapp.ServiceGroupNames() {
 		fmt.Fprintf(w, "%s\t%s\n", group, strings.Join(groups[group], ", "))
 	}
-	_ = w.Flush()
+	return w.Flush()
 }

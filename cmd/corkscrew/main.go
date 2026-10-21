@@ -1284,11 +1284,10 @@ func runCrossCloudScan(args []string) {
 
 	providers := fs.String("providers", "", "Comma-separated list of providers (aws,azure,gcp)")
 	regions := fs.String("regions", "", "Comma-separated list of regions")
-	_ = fs.String("services", "", "Comma-separated list of services")
 	output := fs.String("output", "table", "Output format (table, json, csv)")
 	confidence := fs.Float64("confidence", 0.7, "Minimum confidence score for correlations")
-	_ = fs.Int("parallel", 3, "Number of parallel provider scans")
-	_ = fs.Duration("timeout", 30*time.Minute, "Scan timeout")
+	// --services, --parallel and --timeout were accepted here and silently
+	// ignored; runNetworkScan no longer scans, so they had nothing to drive.
 
 	if err := fs.Parse(args); err != nil {
 		log.Fatal(err)
