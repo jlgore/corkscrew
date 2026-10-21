@@ -2127,3 +2127,157 @@ fn graph_correlate_secrets_finds_shared_hash_across_providers() {
     assert_eq!(confidence, 0.91);
     assert!(evidence.contains("hash-123"));
 }
+
+/// Every table function with its positional arguments as SQL literals. `$DB`
+/// is replaced with the fixture path. The FFI tests substitute bad values into
+/// each position and check bind rejects them instead of aborting the process.
+const FFI_SIGNATURES: &[(&str, &[&str])] = &[
+    ("graph_info", &["$DB"]),
+    ("graph_cache_invalidate", &["$DB"]),
+    (
+        "graph_traverse",
+        &["$DB", "'r1'", "3", "'outbound'", "'NULL'"],
+    ),
+    ("graph_shortest_path", &["$DB", "'r1'", "'r3'", "false"]),
+    ("graph_blast_radius", &["$DB", "'r1'", "3"]),
+    ("graph_reachable", &["$DB", "'r1'", "'s3'", "3"]),
+    ("graph_match_pattern", &["$DB", "'public_s3_via_instance'"]),
+    ("graph_correlate_ips", &["$DB", "0.8"]),
+    ("graph_correlate_dns", &["$DB", "true", "0.8"]),
+    ("graph_correlate_networks", &["$DB", "0.8"]),
+    ("graph_correlate_load_balancers", &["$DB", "0.8"]),
+    ("graph_correlate_connectivity", &["$DB", "0.8"]),
+    ("graph_correlate_security", &["$DB", "0.8"]),
+    ("graph_correlate_domains", &["$DB", "0.8"]),
+    ("graph_correlate_identity", &["$DB", "0.8"]),
+    ("graph_correlate_policies", &["$DB", "0.8"]),
+    ("graph_correlate_secrets", &["$DB", "0.8"]),
+];
+
+/// Renders a call to `name`, replacing argument `position` with `value`.
+fn ffi_query(name: &str, args: &[&str], db: &str, position: usize, value: &str) -> String {
+    let rendered: Vec<String> = args
+        .iter()
+        .enumerate()
+        .map(|(index, arg)| {
+            if index == position {
+                value.to_string()
+            } else {
+                arg.replace("$DB", &format!("'{db}'"))
+            }
+        })
+        .collect();
+    format!("SELECT * FROM {name}({})", rendered.join(", "))
+}
+
+fn ffi_fixture() -> (TempDir, String, Connection) {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make_fixture(&fixture_conn);
+    drop(fixture_conn);
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+    (temp_dir, fixture_path, conn)
+}
+
+fn ffi_run(conn: &Connection, sql: &str) -> Result<usize, duckdb::Error> {
+    let mut stmt = conn.prepare(sql)?;
+    let mut rows = stmt.query([])?;
+    let mut count = 0;
+    while rows.next()?.is_some() {
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn ffi_expect_error(conn: &Connection, sql: &str, needle: &str) {
+    match ffi_run(conn, sql) {
+        Ok(_) => panic!("expected an error for {sql}"),
+        Err(error) => {
+            let message = error.to_string();
+            assert!(
+                message.contains(needle),
+                "{sql}: unexpected error {message}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_table_function_rejects_null_in_every_parameter() {
+    let (_temp_dir, db, conn) = ffi_fixture();
+    for (name, args) in FFI_SIGNATURES {
+        // The unmodified call must succeed, so the errors below come from the
+        // substituted NULL and not from a broken signature.
+        let valid = ffi_query(name, args, &db, usize::MAX, "");
+        ffi_run(&conn, &valid).unwrap_or_else(|error| panic!("{valid}: {error}"));
+
+        for position in 0..args.len() {
+            // `filter_type` is the one documented optional parameter.
+            if *name == "graph_traverse" && position == 4 {
+                continue;
+            }
+            let sql = ffi_query(name, args, &db, position, "NULL");
+            ffi_expect_error(&conn, &sql, "must not be NULL");
+        }
+    }
+    // The process survived every case, and the connection still works.
+    let patterns = ffi_run(&conn, "SELECT * FROM graph_list_patterns()").unwrap();
+    assert!(patterns > 0);
+}
+
+#[test]
+fn every_double_parameter_rejects_non_finite_values() {
+    let (_temp_dir, db, conn) = ffi_fixture();
+    let mut checked = 0;
+    for (name, args) in FFI_SIGNATURES {
+        for (position, arg) in args.iter().enumerate() {
+            if *arg != "0.8" {
+                continue;
+            }
+            for value in ["'NaN'::DOUBLE", "'Infinity'::DOUBLE", "'-Infinity'::DOUBLE"] {
+                let sql = ffi_query(name, args, &db, position, value);
+                ffi_expect_error(&conn, &sql, "must be finite");
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 10 * 3);
+}
+
+#[test]
+fn hop_parameters_reject_values_outside_range() {
+    let (_temp_dir, db, conn) = ffi_fixture();
+    let too_many = (corkscrew_graph_tests::functions::params::HOPS_MAX + 1).to_string();
+    let mut checked = 0;
+    for (name, args) in FFI_SIGNATURES {
+        for (position, arg) in args.iter().enumerate() {
+            if *arg != "3" {
+                continue;
+            }
+            for value in ["-1", too_many.as_str()] {
+                let sql = ffi_query(name, args, &db, position, value);
+                ffi_expect_error(&conn, &sql, "must be in 0..=");
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 3 * 2);
+}
+
+#[test]
+fn guard_converts_panics_and_nul_bytes_into_plain_errors() {
+    use corkscrew_graph_tests::functions::params::guard;
+
+    let result: Result<(), _> = guard("test::bind", || panic!("boom"));
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("test::bind panicked: boom"), "{message}");
+
+    let result: Result<(), _> = guard("test::init", || Err("nul\0byte".into()));
+    assert_eq!(result.unwrap_err().to_string(), "nul\\0byte");
+}

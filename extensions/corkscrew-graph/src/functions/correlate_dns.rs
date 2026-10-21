@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::params::{bind_data, guard, param_bool, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
 pub struct CorrelateDNSBindData {
@@ -56,39 +57,38 @@ impl VTab for GraphCorrelateDNSVTab {
     type InitData = CorrelateDNSInitData;
     type BindData = CorrelateDNSBindData;
 
-    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        add_standard_columns(bind);
-        Ok(CorrelateDNSBindData {
-            db_path: bind.get_parameter(0).to_string(),
-            include_cname: bind.get_parameter(1).to_string().parse::<bool>()?,
-            min_confidence: bind.get_parameter(2).to_string().parse::<f64>()?,
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, BoxError> {
+        guard("GraphCorrelateDNSVTab::bind", || {
+            add_standard_columns(bind);
+            Ok(CorrelateDNSBindData {
+                db_path: param_varchar(bind, 0, "db_path")?,
+                include_cname: param_bool(bind, 1, "include_cname")?,
+                min_confidence: param_f64(bind, 2, "min_confidence")?,
+            })
         })
     }
 
-    fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe {
-            init.get_bind_data::<CorrelateDNSBindData>()
-                .as_ref()
-                .unwrap()
-        };
-        let conn = Connection::open(&bind_ref.db_path)?;
-        let rows =
-            collect_dns_correlations(&conn, bind_ref.include_cname, bind_ref.min_confidence)?;
-        Ok(CorrelateDNSInitData {
-            cursor: AtomicUsize::new(0),
-            rows,
+    fn init(init: &InitInfo) -> Result<Self::InitData, BoxError> {
+        guard("GraphCorrelateDNSVTab::init", || {
+            let bind_ref = bind_data::<Self>(init)?;
+            let conn = Connection::open(&bind_ref.db_path)?;
+            let rows =
+                collect_dns_correlations(&conn, bind_ref.include_cname, bind_ref.min_confidence)?;
+            Ok(CorrelateDNSInitData {
+                cursor: AtomicUsize::new(0),
+                rows,
+            })
         })
     }
 
-    fn func(
-        func: &TableFunctionInfo<Self>,
-        output: &mut DataChunkHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        emit_rows(
-            &func.get_init_data().cursor,
-            &func.get_init_data().rows,
-            output,
-        )
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), BoxError> {
+        guard("GraphCorrelateDNSVTab::func", || {
+            emit_rows(
+                &func.get_init_data().cursor,
+                &func.get_init_data().rows,
+                output,
+            )
+        })
     }
 
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
@@ -104,7 +104,7 @@ fn collect_dns_correlations(
     conn: &Connection,
     include_cname: bool,
     min_confidence: f64,
-) -> Result<Vec<CorrelationRow>, Box<dyn std::error::Error>> {
+) -> Result<Vec<CorrelationRow>, BoxError> {
     if !table_exists(conn, "cross_cloud_dns_records")? {
         return Ok(Vec::new());
     }
@@ -287,7 +287,7 @@ fn values_overlap(left: &[String], right: &[String]) -> bool {
         .any(|v| right_set.contains(&v))
 }
 
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
     let mut stmt = conn.prepare(
         "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
     )?;
@@ -378,7 +378,7 @@ fn emit_rows(
     cursor: &AtomicUsize,
     rows: &[CorrelationRow],
     output: &mut DataChunkHandle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let Some((start, end)) = next_chunk(cursor, rows.len(), chunk_capacity()) else {
         output.set_len(0);
         return Ok(());

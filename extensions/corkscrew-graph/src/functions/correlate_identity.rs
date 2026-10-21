@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
 pub struct CorrelateIdentityBindData {
@@ -37,35 +38,34 @@ impl VTab for GraphCorrelateIdentityVTab {
     type InitData = CorrelateIdentityInitData;
     type BindData = CorrelateIdentityBindData;
 
-    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        add_standard_columns(bind);
-        Ok(CorrelateIdentityBindData {
-            db_path: bind.get_parameter(0).to_string(),
-            min_confidence: bind.get_parameter(1).to_string().parse::<f64>()?,
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, BoxError> {
+        guard("GraphCorrelateIdentityVTab::bind", || {
+            add_standard_columns(bind);
+            Ok(CorrelateIdentityBindData {
+                db_path: param_varchar(bind, 0, "db_path")?,
+                min_confidence: param_f64(bind, 1, "min_confidence")?,
+            })
         })
     }
-    fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe {
-            init.get_bind_data::<CorrelateIdentityBindData>()
-                .as_ref()
-                .unwrap()
-        };
-        let conn = Connection::open(&bind_ref.db_path)?;
-        let rows = collect_identity_correlations(&conn, bind_ref.min_confidence)?;
-        Ok(CorrelateIdentityInitData {
-            cursor: AtomicUsize::new(0),
-            rows,
+    fn init(init: &InitInfo) -> Result<Self::InitData, BoxError> {
+        guard("GraphCorrelateIdentityVTab::init", || {
+            let bind_ref = bind_data::<Self>(init)?;
+            let conn = Connection::open(&bind_ref.db_path)?;
+            let rows = collect_identity_correlations(&conn, bind_ref.min_confidence)?;
+            Ok(CorrelateIdentityInitData {
+                cursor: AtomicUsize::new(0),
+                rows,
+            })
         })
     }
-    fn func(
-        func: &TableFunctionInfo<Self>,
-        output: &mut DataChunkHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        emit_rows(
-            &func.get_init_data().cursor,
-            &func.get_init_data().rows,
-            output,
-        )
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), BoxError> {
+        guard("GraphCorrelateIdentityVTab::func", || {
+            emit_rows(
+                &func.get_init_data().cursor,
+                &func.get_init_data().rows,
+                output,
+            )
+        })
     }
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
         Some(vec![
@@ -78,7 +78,7 @@ impl VTab for GraphCorrelateIdentityVTab {
 fn collect_identity_correlations(
     conn: &Connection,
     min_confidence: f64,
-) -> Result<Vec<CorrelationRow>, Box<dyn std::error::Error>> {
+) -> Result<Vec<CorrelationRow>, BoxError> {
     let threshold = min_confidence.clamp(0.0, 1.0);
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -93,7 +93,7 @@ fn collect_federation(
     threshold: f64,
     seen: &mut HashSet<String>,
     out: &mut Vec<CorrelationRow>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     if !table_exists(conn, "identity_federation_relationships")? {
         return Ok(());
     }
@@ -150,7 +150,7 @@ fn collect_roles(
     threshold: f64,
     seen: &mut HashSet<String>,
     out: &mut Vec<CorrelationRow>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     if !table_exists(conn, "security_role_relationships")? {
         return Ok(());
     }
@@ -218,7 +218,7 @@ fn ordered_values(
         (target_id, source_id, target_provider, source_provider, true)
     }
 }
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
     let mut stmt = conn.prepare(
         "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
     )?;
@@ -256,7 +256,7 @@ fn emit_rows(
     cursor: &AtomicUsize,
     rows: &[CorrelationRow],
     output: &mut DataChunkHandle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let Some((start, end)) = next_chunk(cursor, rows.len(), chunk_capacity()) else {
         output.set_len(0);
         return Ok(());
