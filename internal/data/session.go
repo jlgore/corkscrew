@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,11 +26,22 @@ type Result struct {
 	Rows    [][]any
 }
 
+// MaxReadOnlyRows caps the rows one ReadOnly query may return. Results are held in memory
+// and rendered whole, so an unbounded SELECT over a large inventory would exhaust memory; a
+// million rows is far beyond any table a person reads, and callers can add LIMIT or filters.
+const MaxReadOnlyRows = 1_000_000
+
+// ErrRowLimitExceeded reports that a ReadOnly query returned more than the session's row cap.
+// The result is rejected rather than truncated so that no caller mistakes a prefix for the
+// whole answer, which for compliance checks would hide failing resources.
+var ErrRowLimitExceeded = errors.New("query result exceeds row limit")
+
 type sessionOptions struct {
 	databaseOptions []db.Option
 	graphExtension  string
 	scanWriter      ScanWriter
 	sandbox         bool
+	maxRows         int
 }
 
 // SessionOption configures a data session.
@@ -57,6 +69,11 @@ func WithSandbox() SessionOption {
 	return func(config *sessionOptions) { config.sandbox = true }
 }
 
+// withMaxRows lowers the ReadOnly row cap so tests can exercise it without a million rows.
+func withMaxRows(limit int) SessionOption {
+	return func(config *sessionOptions) { config.maxRows = limit }
+}
+
 // WithScanWriter substitutes the session's scan-persistence adapter. Production
 // sessions use the default DuckDB graph store; tests inject a fake.
 func WithScanWriter(writer ScanWriter) SessionOption {
@@ -71,6 +88,7 @@ type Session struct {
 	graphAvailable bool
 	ownsDatabase   bool
 	scanWriter     ScanWriter
+	maxRows        int
 }
 
 func OpenSession(ctx context.Context, target string, options ...SessionOption) (*Session, error) {
@@ -94,7 +112,7 @@ func openSessionWith(ctx context.Context, target string, opener databaseOpener, 
 	if err != nil {
 		return nil, err
 	}
-	config := sessionOptions{}
+	config := sessionOptions{maxRows: MaxReadOnlyRows}
 	for _, option := range options {
 		option(&config)
 	}
@@ -109,7 +127,8 @@ func openSessionWith(ctx context.Context, target string, opener databaseOpener, 
 		_ = database.Close()
 		return nil, fmt.Errorf("establish data session schema: %w", err)
 	}
-	session := &Session{database: database, target: parsed, ownsDatabase: true, scanWriter: config.scanWriter}
+	session := &Session{database: database, target: parsed, ownsDatabase: true,
+		scanWriter: config.scanWriter, maxRows: config.maxRows}
 	if session.scanWriter == nil {
 		session.scanWriter = graphStoreWriter{store: db.NewGraphStore(database)}
 	}
@@ -278,9 +297,28 @@ func (s *Session) ReadOnly(ctx context.Context, statement string, args ...any) (
 	for index, name := range columnNames {
 		result.Columns[index] = Column{Name: name, Type: columnTypes[index].DatabaseTypeName()}
 	}
+	maxRows := s.maxRows
+	if maxRows <= 0 {
+		// A Session built as a struct literal (tests) has no cap set; never run uncapped.
+		maxRows = MaxReadOnlyRows
+	}
+	result.Rows, err = scanResultRows(rows, len(columnNames), maxRows)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// scanResultRows reads every row, failing once more than maxRows arrive.
+func scanResultRows(rows *sql.Rows, columnCount, maxRows int) ([][]any, error) {
+	var out [][]any
 	for rows.Next() {
-		values := make([]any, len(columnNames))
-		pointers := make([]any, len(columnNames))
+		if len(out) >= maxRows {
+			return nil, fmt.Errorf("%w of %d rows; add LIMIT or narrow the query",
+				ErrRowLimitExceeded, maxRows)
+		}
+		values := make([]any, columnCount)
+		pointers := make([]any, columnCount)
 		for index := range values {
 			pointers[index] = &values[index]
 		}
@@ -292,12 +330,12 @@ func (s *Session) ReadOnly(ctx context.Context, statement string, args ...any) (
 				values[index] = string(bytes)
 			}
 		}
-		result.Rows = append(result.Rows, values)
+		out = append(out, values)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate query rows: %w", err)
 	}
-	return result, nil
+	return out, nil
 }
 
 // ValidateReadOnlyStatement performs a conservative lexical check: one
