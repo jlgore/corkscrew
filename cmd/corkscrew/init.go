@@ -1,10 +1,8 @@
 package main
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jlgore/corkscrew/internal/archive"
 	appconfig "github.com/jlgore/corkscrew/internal/config"
 )
 
@@ -395,7 +394,6 @@ func downloadAndInstallDependency(ctx context.Context, config *InitConfig, dep D
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer out.Close()
 
 	// Copy with progress
 	tracker := &ProgressTracker{
@@ -404,9 +402,13 @@ func downloadAndInstallDependency(ctx context.Context, config *InitConfig, dep D
 		StartTime: time.Now(),
 	}
 
-	_, err = io.Copy(out, &progressReader{resp.Body, tracker})
-	if err != nil {
+	body := io.LimitReader(&progressReader{resp.Body, tracker}, dependencyDownloadBytesMax+1)
+	n, copyErr := io.Copy(out, body)
+	if err := errors.Join(copyErr, out.Close()); err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
+	}
+	if n > dependencyDownloadBytesMax {
+		return fmt.Errorf("download exceeds %d bytes", dependencyDownloadBytesMax)
 	}
 
 	// Extract and install
@@ -424,96 +426,42 @@ func downloadAndInstallDependency(ctx context.Context, config *InitConfig, dep D
 	return nil
 }
 
+// protoc and duckdb archives are tens of MiB; these limits leave headroom for growth while
+// stopping a hostile mirror from filling the disk.
+const (
+	dependencyDownloadBytesMax = 512 << 20
+	dependencyBytesMax         = 512 << 20
+	dependencyEntryCountMax    = 10_000
+	dependencyEntryBytesMax    = 512 << 20
+)
+
 func extractDependency(config *InitConfig, dep DependencyInfo, archivePath string) error {
-	if strings.HasSuffix(dep.ArchiveName, ".zip") {
-		return extractZip(archivePath, config.BinDir, dep.BinaryName)
-	} else if strings.HasSuffix(dep.ArchiveName, ".tar.gz") {
-		return extractTarGz(archivePath, config.BinDir, dep.BinaryName)
+	var format archive.Format
+	switch {
+	case strings.HasSuffix(dep.ArchiveName, ".zip"):
+		format = archive.FormatZip
+	case strings.HasSuffix(dep.ArchiveName, ".tar.gz"):
+		format = archive.FormatTarGz
+	default:
+		return fmt.Errorf("unsupported archive format: %s", dep.ArchiveName)
 	}
-	return fmt.Errorf("unsupported archive format: %s", dep.ArchiveName)
-}
 
-func extractZip(archivePath, destDir, binaryName string) error {
-	r, err := zip.OpenReader(archivePath)
+	binDir, err := filepath.Abs(config.BinDir)
 	if err != nil {
 		return err
 	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		// Look for the binary file (might be in subdirectory)
-		if strings.HasSuffix(f.Name, binaryName) || strings.HasSuffix(f.Name, binaryName+".exe") {
-			rc, err := f.Open()
-			if err != nil {
-				return err
-			}
-			defer rc.Close()
-
-			destPath := filepath.Join(destDir, binaryName)
-			if runtime.GOOS == "windows" {
-				destPath += ".exe"
-			}
-
-			out, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-			if err != nil {
-				return err
-			}
-			defer out.Close()
-
-			_, err = io.Copy(out, rc)
-			return err
-		}
+	destPath := filepath.Join(binDir, dep.BinaryName)
+	if runtime.GOOS == "windows" {
+		destPath += ".exe"
 	}
-	return fmt.Errorf("binary %s not found in archive", binaryName)
+	limits := archive.Limits{
+		BytesMax:      dependencyBytesMax,
+		EntryCountMax: dependencyEntryCountMax,
+		EntryBytesMax: dependencyEntryBytesMax,
+	}
+	return archive.ExtractFile(format, archivePath, dep.BinaryName, destPath, limits)
 }
 
-func extractTarGz(archivePath, destDir, binaryName string) error {
-	file, err := os.Open(archivePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	gzr, err := gzip.NewReader(file)
-	if err != nil {
-		return err
-	}
-	defer gzr.Close()
-
-	tr := tar.NewReader(gzr)
-
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		// Look for the binary file
-		if header.Typeflag == tar.TypeReg &&
-			(strings.HasSuffix(header.Name, binaryName) || strings.HasSuffix(header.Name, binaryName+".exe")) {
-
-			destPath := filepath.Join(destDir, binaryName)
-			if runtime.GOOS == "windows" {
-				destPath += ".exe"
-			}
-
-			out, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-			if err != nil {
-				return err
-			}
-			defer out.Close()
-
-			_, err = io.Copy(out, tr)
-			return err
-		}
-	}
-	return fmt.Errorf("binary %s not found in archive", binaryName)
-}
-
-// Platform-specific URL generators
 func getProtocURL(version, platform string) string {
 	archiveExt := "zip"
 	osArch := platform
