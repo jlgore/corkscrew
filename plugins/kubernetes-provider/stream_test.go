@@ -54,9 +54,8 @@ func (s *fakeStream) Send(resource *pb.Resource) error {
 // newStreamTestProvider wires two healthy clusters to fake streamers, so the stream
 // loops must move on from the first cluster's closed channel to the second.
 func newStreamTestProvider(count int, err error) *KubernetesProvider {
-	return &KubernetesProvider{
-		initialized: true,
-		config:      &ProviderConfig{},
+	p := &KubernetesProvider{
+		config: &ProviderConfig{},
 		clusters: map[string]*ClusterConnection{
 			"a": {Name: "a", Healthy: true},
 			"b": {Name: "b", Healthy: true},
@@ -65,6 +64,8 @@ func newStreamTestProvider(count int, err error) *KubernetesProvider {
 			return &fakeStreamer{count: count, err: err}
 		},
 	}
+	p.initialized.Store(true)
+	return p
 }
 
 func TestStreamScanSendsAllResources(t *testing.T) {

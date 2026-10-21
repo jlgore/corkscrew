@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,9 +45,12 @@ func NewResourceScannerForCluster(cluster *ClusterConnection) *ResourceScanner {
 	}
 }
 
-// ScanResources scans the specified resource types across namespaces
+// ScanResources scans the specified resource types across namespaces. A failed type or
+// namespace does not stop the others: every resource listed is returned together with the
+// joined failures, so callers keep what they observed and still report the gap.
 func (s *ResourceScanner) ScanResources(ctx context.Context, resourceTypes []string, namespaces []string) ([]*pb.Resource, error) {
 	var allResources []*pb.Resource
+	var errs []error
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -68,19 +73,18 @@ func (s *ResourceScanner) ScanResources(ctx context.Context, resourceTypes []str
 			defer wg.Done()
 
 			resources, err := s.scanResourceType(ctx, resType, namespaces)
-			if err != nil {
-				fmt.Printf("Failed to scan %s: %v\n", resType, err)
-				return
-			}
 
 			mu.Lock()
+			defer mu.Unlock()
 			allResources = append(allResources, resources...)
-			mu.Unlock()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("scan %s: %w", resType, err))
+			}
 		}(resourceType)
 	}
 
 	wg.Wait()
-	return allResources, nil
+	return allResources, errors.Join(errs...)
 }
 
 // scanResourceType scans a specific resource type
@@ -101,13 +105,13 @@ func (s *ResourceScanner) scanResourceType(ctx context.Context, resourceType str
 	resourceClient := s.clientFactory.dynamicClient.Resource(gvr)
 
 	var resources []*pb.Resource
-
+	var errs []error
 	if resourceDef.Namespaced {
-		// Scan each namespace
+		// Scan each namespace; a failed namespace is reported, not skipped silently.
 		for _, namespace := range namespaces {
 			nsResources, err := s.scanNamespacedResource(ctx, resourceClient, namespace, resourceDef)
 			if err != nil {
-				fmt.Printf("Failed to scan %s in namespace %s: %v\n", resourceType, namespace, err)
+				errs = append(errs, fmt.Errorf("namespace %s: %w", namespace, err))
 				continue
 			}
 			resources = append(resources, nsResources...)
@@ -121,7 +125,7 @@ func (s *ResourceScanner) scanResourceType(ctx context.Context, resourceType str
 		resources = append(resources, clusterResources...)
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 // scanNamespacedResource scans resources in a specific namespace
@@ -266,15 +270,19 @@ func (s *ResourceScanner) StreamScanResources(ctx context.Context, resourceTypes
 		}
 	}
 
-	// Scan each resource type
+	// Scan each resource type. A failed type does not stop the others, but its error is
+	// returned so the stream does not end as if the scan were complete.
+	var errs []error
 	for _, resourceType := range resourceTypes {
 		if err := s.streamResourceType(ctx, resourceType, resourceChan); err != nil {
-			fmt.Printf("Failed to stream %s: %v\n", resourceType, err)
-			// Continue with other resources
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			errs = append(errs, fmt.Errorf("stream %s: %w", resourceType, err))
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // streamResourceType streams a specific resource type
@@ -289,8 +297,9 @@ func (s *ResourceScanner) streamResourceType(ctx context.Context, resourceType s
 	gvr := GetGVR(resourceDef)
 	resourceClient := s.clientFactory.dynamicClient.Resource(gvr)
 
-	// List with pagination
+	// List with pagination. The guard stops a server that never ends or repeats a token.
 	continueToken := ""
+	guard := paging.New("list "+resourceType, paging.PagesMax)
 	for {
 		listOptions := metav1.ListOptions{
 			Limit:    100, // Process in chunks
@@ -322,6 +331,9 @@ func (s *ResourceScanner) streamResourceType(ctx context.Context, resourceType s
 		continueToken = list.GetContinue()
 		if continueToken == "" {
 			break
+		}
+		if err := guard.Next(continueToken); err != nil {
+			return err
 		}
 	}
 
@@ -487,10 +499,12 @@ func (s *ResourceScanner) ScanWithLabelSelector(ctx context.Context, resourceTyp
 		LabelSelector: labelSelector,
 	}
 
+	var errs []error
 	if resourceDef.Namespaced {
 		for _, namespace := range namespaces {
 			list, err := resourceClient.Namespace(namespace).List(ctx, listOptions)
 			if err != nil {
+				errs = append(errs, fmt.Errorf("namespace %s: %w", namespace, err))
 				continue
 			}
 			resources = append(resources, s.convertUnstructuredList(list, resourceDef.Kind)...)
@@ -503,7 +517,7 @@ func (s *ResourceScanner) ScanWithLabelSelector(ctx context.Context, resourceTyp
 		resources = append(resources, s.convertUnstructuredList(list, resourceDef.Kind)...)
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 // ScanWithFieldSelector scans resources matching field selectors
@@ -523,10 +537,12 @@ func (s *ResourceScanner) ScanWithFieldSelector(ctx context.Context, resourceTyp
 		FieldSelector: fieldSelector,
 	}
 
+	var errs []error
 	if resourceDef.Namespaced {
 		for _, namespace := range namespaces {
 			list, err := resourceClient.Namespace(namespace).List(ctx, listOptions)
 			if err != nil {
+				errs = append(errs, fmt.Errorf("namespace %s: %w", namespace, err))
 				continue
 			}
 			resources = append(resources, s.convertUnstructuredList(list, resourceDef.Kind)...)
@@ -539,5 +555,5 @@ func (s *ResourceScanner) ScanWithFieldSelector(ctx context.Context, resourceTyp
 		resources = append(resources, s.convertUnstructuredList(list, resourceDef.Kind)...)
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
