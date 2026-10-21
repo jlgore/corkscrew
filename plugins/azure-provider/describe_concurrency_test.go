@@ -60,7 +60,7 @@ func TestScanServiceForResourcesDescribesConcurrently(t *testing.T) {
 			ids[7]: errors.New("throttled"),
 		},
 	}}
-	scanner := &AzureResourceScanner{subscriptionID: testSubscription, resourcesClient: arm}
+	scanner := testScanner(arm)
 
 	resources, err := scanner.ScanServiceForResources(context.Background(), "storage", nil)
 	if len(resources) != len(ids) {

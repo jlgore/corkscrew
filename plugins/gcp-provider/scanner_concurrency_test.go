@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,6 +64,55 @@ func TestScanAllServicesBoundsConcurrency(t *testing.T) {
 	}
 	if peak := inFlightPeak.Load(); peak != 2 {
 		t.Fatalf("peak in-flight scans = %d, want 2", peak)
+	}
+}
+
+// cancellingScanner cancels the scan's context from inside its own Scan, so
+// the cancellation lands while ScanAllServices is still launching services.
+type cancellingScanner struct {
+	service string
+	calls   *atomic.Int32
+	cancel  context.CancelFunc
+}
+
+func (c *cancellingScanner) Scan(context.Context) ([]*pb.ResourceRef, error) {
+	c.calls.Add(1)
+	c.cancel()
+	return []*pb.ResourceRef{{Id: c.service + "-0", Service: c.service}}, nil
+}
+
+func (c *cancellingScanner) DescribeResource(context.Context, string) (*pb.Resource, error) {
+	return nil, errors.New("not implemented")
+}
+
+// ScanAllServices used to block on a free slot without watching ctx, so after
+// cancellation it kept launching every remaining service. It must stop
+// launching, keep what the launched scan observed, and report each unlaunched
+// service as a cancellation error so the scan is partial (ADR 0023).
+func TestScanAllServicesStopsLaunchingAfterCancel(t *testing.T) {
+	const serviceCount = 6
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls atomic.Int32
+	scanners := map[string]ServiceScanner{}
+	for index := 0; index < serviceCount; index++ {
+		service := fmt.Sprintf("service-%d", index)
+		scanners[service] = &cancellingScanner{service: service, calls: &calls, cancel: cancel}
+	}
+	rs := &ResourceScanner{scanners: scanners, concurrency: 1}
+
+	resources, err := rs.ScanAllServices(ctx)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("Scan calls = %d, want 1: no scan may start after cancellation", got)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want the 1 the launched scan observed", len(resources))
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if got := strings.Count(err.Error(), "not scanned"); got != serviceCount-1 {
+		t.Fatalf("err reports %d unscanned services, want %d: %v", got, serviceCount-1, err)
 	}
 }
 
