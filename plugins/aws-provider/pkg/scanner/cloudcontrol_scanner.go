@@ -36,6 +36,9 @@ type CloudControlScanner struct {
 	identity callerIdentityAPI
 	cfg      aws.Config
 
+	// getResourceTimeoutOverride replaces getResourceTimeout when positive.
+	getResourceTimeoutOverride time.Duration
+
 	mu        sync.RWMutex
 	accountID string
 	explorer  ResourceExplorer
@@ -407,14 +410,15 @@ func (s *CloudControlScanner) DescribeResource(ctx context.Context, ref *pb.Reso
 		}
 	}
 
-	// No per-call timeout — bounded parallelism in the caller and the parent
-	// context handle pacing. The previous 5s budget was tripping false-negative
-	// "deadline exceeded" while the SDK was still mid-retry on slow handlers.
+	// The deadline spans all SDK retries of this one call, so it is sized to
+	// the retryer (see getResourceTimeout) rather than to a single attempt.
 	s.getCalls.Add(1)
-	out, err := s.client.GetResource(ctx, &cloudcontrol.GetResourceInput{
+	callCtx, cancel := context.WithTimeout(ctx, s.describeTimeout())
+	out, err := s.client.GetResource(callCtx, &cloudcontrol.GetResourceInput{
 		TypeName:   aws.String(typeName),
 		Identifier: aws.String(ref.Id),
 	})
+	cancel()
 
 	var properties string
 	switch {
@@ -471,7 +475,25 @@ const (
 	// of many services does not re-run ListTypes (and its throttle cost) for
 	// every service while CloudFormation is unavailable.
 	discoveryRetryAfter = 5 * time.Minute
+	// getResourceTimeout bounds one GetResource call including SDK retries.
+	// The provider's retryer (retryAttemptsMax 5, retryBackoffMax 5s, in
+	// auth.go) backs off at most 16s across its retries, so 45s leaves
+	// ~30s for the attempts themselves on slow handlers; an earlier 5s
+	// budget cut calls off mid-retry. The caller runs 20 describes at once
+	// (describeConcurrency) inside a 5-minute scope, so a hung handler now
+	// holds one slot for 45s instead of the whole scope, and the resource
+	// falls back to what ListResources returned.
+	getResourceTimeout = 45 * time.Second
 )
+
+// describeTimeout returns the GetResource deadline. Tests set
+// getResourceTimeoutOverride so a blocked call times out in milliseconds.
+func (s *CloudControlScanner) describeTimeout() time.Duration {
+	if s.getResourceTimeoutOverride > 0 {
+		return s.getResourceTimeoutOverride
+	}
+	return getResourceTimeout
+}
 
 // discovery is the package-level type discovery cache. Type discovery via
 // cloudformation.ListTypes pulls ~1,400 types and burns CFN throttle budget;
