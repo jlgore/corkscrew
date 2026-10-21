@@ -60,7 +60,8 @@ func TestClientOptionsMaxRetries(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	client := newCloudflareClient(testAuth(srv.URL))
-	if _, err := client.Accounts.List(context.Background(), accounts.AccountListParams{}); err == nil {
+	_, err := client.Accounts.List(context.Background(), accounts.AccountListParams{})
+	if err == nil {
 		t.Fatal("List succeeded against a server that always returns 503")
 	}
 	if got, want := requests.Load(), int32(retriesMax+1); got != want {
