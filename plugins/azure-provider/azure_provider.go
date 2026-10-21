@@ -911,13 +911,11 @@ func (p *AzureProvider) batchScanWithResourceGraph(
 	log.Printf("Resource Graph returned %d resources", len(resourceRefs))
 
 	describeErrs := newDescribeErrors()
-	resources = make([]*pb.Resource, 0, len(resourceRefs))
-	for _, ref := range resourceRefs {
-		resource, err := p.resourceFromGraphRef(ctx, ref)
-		if err != nil {
-			describeErrs.add(ref.Service, err)
+	resources, errs := describeEach(ctx, resourceRefs, p.resourceFromGraphRef)
+	for index, ref := range resourceRefs {
+		if errs[index] != nil {
+			describeErrs.add(ref.Service, errs[index])
 		}
-		resources = append(resources, resource)
 	}
 	if queryErr != nil {
 		queryErr = fmt.Errorf("resource graph query failed: %w", queryErr)

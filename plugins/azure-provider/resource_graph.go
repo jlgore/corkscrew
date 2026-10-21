@@ -386,7 +386,7 @@ func (c *ResourceGraphClient) parseQueryResults(result *armresourcegraph.QueryRe
 
 		// Debug log the first resource to see what fields are available
 		if len(resources) == 0 {
-			fmt.Printf("DEBUG: Resource Graph returned fields: %v\n", resourceMap)
+			debugLogf("Resource Graph returned fields: %v", resourceMap)
 		}
 
 		resource := c.parseResourceMap(resourceMap)
