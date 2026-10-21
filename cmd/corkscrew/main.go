@@ -271,7 +271,7 @@ func printUsage() {
 	fmt.Println("  kubernetes  - Kubernetes")
 }
 
-func runDiscover(args []string) {
+func runDiscover(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("discover", flag.ExitOnError)
 
 	providerName := fs.String("provider", "aws", "Cloud provider (aws, azure, cloudflare, gcp, kubernetes)")
@@ -293,7 +293,7 @@ func runDiscover(args []string) {
 	}
 
 	// Execute discovery
-	resp, err := providers.DiscoverServices(context.Background(), *providerName, nil, req)
+	resp, err := providers.DiscoverServices(ctx, *providerName, nil, req)
 	if err != nil {
 		log.Fatalf("Discovery failed: %v", err)
 	}
@@ -348,7 +348,7 @@ func printDiscoverResults(resp *pb.DiscoverServicesResponse) {
 	}
 }
 
-func runList(args []string) {
+func runList(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 
 	providerName := fs.String("provider", "aws", "Cloud provider")
@@ -413,7 +413,7 @@ func runList(args []string) {
 	}
 
 	// Execute list
-	resp, err := providers.ListResources(context.Background(), *providerName, initCfg, req)
+	resp, err := providers.ListResources(ctx, *providerName, initCfg, req)
 	if err != nil {
 		log.Fatalf("List failed: %v", err)
 	}
@@ -496,7 +496,7 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-func runDescribe(args []string) {
+func runDescribe(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("describe", flag.ExitOnError)
 
 	providerName := fs.String("provider", "aws", "Cloud provider")
@@ -534,7 +534,7 @@ func runDescribe(args []string) {
 	}
 
 	// Execute describe
-	resp, err := providers.DescribeResource(context.Background(), *providerName, initCfg, req)
+	resp, err := providers.DescribeResource(ctx, *providerName, initCfg, req)
 	if err != nil {
 		log.Fatalf("Describe failed: %v", err)
 	}
@@ -607,7 +607,7 @@ func printDescribeResults(resp *pb.DescribeResourceResponse) {
 	}
 }
 
-func runInfo(args []string) {
+func runInfo(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("info", flag.ExitOnError)
 
 	providerName := fs.String("provider", "aws", "Cloud provider")
@@ -623,7 +623,7 @@ func runInfo(args []string) {
 	defer providers.Close()
 
 	// Get info
-	info, err := providers.GetInfo(context.Background(), *providerName, nil)
+	info, err := providers.GetInfo(ctx, *providerName, nil)
 	if err != nil {
 		log.Fatalf("GetProviderInfo failed: %v", err)
 	}
@@ -666,7 +666,7 @@ func printInfoResults(resp *pb.ProviderInfoResponse) {
 	}
 }
 
-func runSchemas(args []string) {
+func runSchemas(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("schemas", flag.ExitOnError)
 
 	providerName := fs.String("provider", "aws", "Cloud provider")
@@ -703,7 +703,7 @@ func runSchemas(args []string) {
 		Format:   "sql",
 	}
 
-	resp, err := providers.GetSchemas(context.Background(), *providerName, nil, req)
+	resp, err := providers.GetSchemas(ctx, *providerName, nil, req)
 	if err != nil {
 		log.Fatalf("GetSchemas failed: %v", err)
 	}
@@ -742,7 +742,7 @@ func printSchemaSQL(resp *pb.SchemaResponse, dialect string) {
 }
 
 // runQuery executes SQL queries or compliance checks
-func runQuery(args []string) {
+func runQuery(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
 	defaultDBPath := defaultDatabasePath()
 
@@ -780,7 +780,7 @@ func runQuery(args []string) {
 
 	// Check for pack management subcommand
 	if len(args) > 0 && args[0] == "pack" {
-		runPack(args[1:])
+		runPack(ctx, args[1:])
 		return
 	}
 
@@ -790,7 +790,7 @@ func runQuery(args []string) {
 		if *outputFormat == "csv" {
 			listArgs = []string{"--output", "table"}
 		}
-		runPackList(listArgs)
+		runPackList(ctx, listArgs)
 		return
 	}
 
@@ -800,7 +800,8 @@ func runQuery(args []string) {
 	var sqlQuery string
 	if *control != "" || *pack != "" || *compliance {
 		// Run compliance query
-		runComplianceQuery(resolvedDBPath, *control, *pack, *tags, params, *dryRun, *outputFormat, *verbose)
+		runComplianceQuery(ctx, resolvedDBPath, *control, *pack, *tags, params, *dryRun,
+			*outputFormat, *verbose)
 		return
 	} else if *queryFile != "" {
 		// Read from file
@@ -811,11 +812,11 @@ func runQuery(args []string) {
 		sqlQuery = string(content)
 	} else if *stdin {
 		// Read from stdin
-		content, err := io.ReadAll(os.Stdin)
+		content, err := readQueryInput(os.Stdin, maxQueryInputBytes)
 		if err != nil {
 			log.Fatalf("Failed to read from stdin: %v", err)
 		}
-		sqlQuery = string(content)
+		sqlQuery = content
 	} else if rest := fs.Args(); len(rest) > 0 && rest[0] != "" {
 		// Query provided as a positional argument (works before or after flags)
 		sqlQuery = rest[0]
@@ -829,7 +830,7 @@ func runQuery(args []string) {
 	}
 
 	// Execute query through the application workflow
-	result, err := appquery.Run(context.Background(), appquery.Request{
+	result, err := appquery.Run(ctx, appquery.Request{
 		Target:  resolvedDBPath,
 		Options: quackOpts,
 		SQL:     sqlQuery,
@@ -856,8 +857,26 @@ func runQuery(args []string) {
 	}
 }
 
+// maxQueryInputBytes bounds `query -stdin`. A hand-written or generated SQL statement is far
+// smaller; anything larger is a mis-piped file, and reading it whole would exhaust memory.
+const maxQueryInputBytes = 4 << 20
+
+// readQueryInput reads at most limit bytes of SQL from r and rejects anything longer, rather
+// than silently truncating the statement.
+func readQueryInput(r io.Reader, limit int64) (string, error) {
+	content, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(content)) > limit {
+		return "", fmt.Errorf("query input exceeds %d bytes", limit)
+	}
+	return string(content), nil
+}
+
 // runComplianceQuery handles compliance-specific queries
-func runComplianceQuery(dbPath, controlID, packName, tags string, params map[string]interface{}, dryRun bool, outputFormat string, verbose bool) {
+func runComplianceQuery(ctx context.Context, dbPath, controlID, packName, tags string,
+	params map[string]interface{}, dryRun bool, outputFormat string, verbose bool) {
 	request := appquery.ComplianceRequest{
 		Target:     dbPath,
 		ControlID:  controlID,
@@ -871,7 +890,7 @@ func runComplianceQuery(dbPath, controlID, packName, tags string, params map[str
 	printComplianceOptions(request)
 
 	// Execute compliance check through the application workflow
-	results, err := appquery.RunCompliance(context.Background(), request)
+	results, err := appquery.RunCompliance(ctx, request)
 	if err != nil {
 		log.Fatalf("Compliance check failed: %v", err)
 	}

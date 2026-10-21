@@ -12,7 +12,7 @@ import (
 	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
-func runPluginE(args []string) error {
+func runPluginE(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: corkscrew plugin <list|build|status|install|groups>")
 	}
@@ -20,7 +20,7 @@ func runPluginE(args []string) error {
 	case "list":
 		return listPlugins()
 	case "build":
-		return buildPlugins(context.Background(), args[1:])
+		return buildPlugins(ctx, args[1:])
 	case "status":
 		return checkPluginStatus(args[1:])
 	case "install":

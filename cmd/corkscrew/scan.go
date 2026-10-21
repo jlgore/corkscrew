@@ -13,7 +13,7 @@ import (
 // runScanE is the CLI adapter for the scan application workflow. It owns flag
 // syntax only; normalization, environment precedence, and execution live in
 // internal/app/scan.
-func runScanE(args []string) error {
+func runScanE(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -60,7 +60,7 @@ func runScanE(args []string) error {
 		KubeContext:             *kubeContext,
 		IncludeRelationships:    *includeRels,
 	}
-	outcome, workflowErr := scanapp.Run(context.Background(), request, scanapp.Dependencies{})
+	outcome, workflowErr := scanapp.Run(ctx, request, scanapp.Dependencies{})
 	if outcome.Status != "" {
 		if err := renderScanOutcome(os.Stdout, os.Stderr, request, outcome); err != nil {
 			return err

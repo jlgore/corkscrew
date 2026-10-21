@@ -110,12 +110,12 @@ func TestGraphSessionIsSandboxedAfterExtensionLoads(t *testing.T) {
 		"SELECT * FROM graph_correlate_ips(" + sqlStringLiteral(dbPath) + ", 0.5)",
 		"SELECT * FROM graph_cache_invalidate(" + sqlStringLiteral(dbPath) + ")",
 	} {
-		if _, _, err := executeGraphQuery(dbPath, query, extensionPath); err != nil {
+		if _, _, err := executeGraphQuery(context.Background(), dbPath, query, extensionPath); err != nil {
 			t.Fatalf("%s under sandbox: %v", query, err)
 		}
 	}
 	readSecret := "SELECT * FROM read_text(" + sqlStringLiteral(secret) + ")"
-	_, _, err = executeGraphQuery(dbPath, readSecret, extensionPath)
+	_, _, err = executeGraphQuery(context.Background(), dbPath, readSecret, extensionPath)
 	if err == nil || !strings.Contains(err.Error(), "Permission Error") {
 		t.Fatalf("read_text on a graph session: error = %v, want a DuckDB permission error", err)
 	}

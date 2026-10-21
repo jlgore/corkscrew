@@ -325,3 +325,24 @@ func TestResolveGraphExtensionIgnoresWorkingDirectory(t *testing.T) {
 		t.Fatalf("resolved = %q, want %q", resolved, installed)
 	}
 }
+
+func TestReadOnlyRejectsResultsOverRowLimit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	target := filepath.Join(t.TempDir(), "rows.duckdb")
+	session, err := OpenSession(ctx, target, withMaxRows(3))
+	if err != nil {
+		t.Fatalf("OpenSession(): %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	result, err := session.ReadOnly(ctx, "SELECT * FROM range(3)")
+	if err != nil || len(result.Rows) != 3 {
+		t.Fatalf("rows at the limit = %v, %v; want 3 rows", result, err)
+	}
+	_, err = session.ReadOnly(ctx, "SELECT * FROM range(4)")
+	if !errors.Is(err, ErrRowLimitExceeded) {
+		t.Fatalf("rows over the limit error = %v, want ErrRowLimitExceeded", err)
+	}
+}

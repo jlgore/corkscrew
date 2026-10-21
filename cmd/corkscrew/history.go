@@ -16,7 +16,7 @@ import (
 	dataaccess "github.com/jlgore/corkscrew/internal/data"
 )
 
-func runScans(args []string) int {
+func runScans(ctx context.Context, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: corkscrew scans list|show [options]")
 		return 1
@@ -32,13 +32,13 @@ func runScans(args []string) int {
 		if fs.Parse(args[1:]) != nil {
 			return 1
 		}
-		session, err := dataaccess.OpenSession(context.Background(), *dbPath)
+		session, err := dataaccess.OpenSession(ctx, *dbPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 		defer session.Close()
-		scans, err := session.ListScans(context.Background(), *provider, *limit)
+		scans, err := session.ListScans(ctx, *provider, *limit)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -56,13 +56,13 @@ func runScans(args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: corkscrew scans show <scan-id>")
 			return 1
 		}
-		session, err := dataaccess.OpenSession(context.Background(), *dbPath)
+		session, err := dataaccess.OpenSession(ctx, *dbPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 		defer session.Close()
-		scan, err := session.GetScan(context.Background(), fs.Arg(0))
+		scan, err := session.GetScan(ctx, fs.Arg(0))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -74,7 +74,7 @@ func runScans(args []string) int {
 	}
 }
 
-func runDrift(args []string) int {
+func runDrift(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("drift", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dbPath := fs.String("db", defaultDatabasePath(), "Database path")
@@ -86,7 +86,7 @@ func runDrift(args []string) int {
 	if fs.Parse(args) != nil {
 		return 1
 	}
-	result, err := appdrift.Run(context.Background(), appdrift.Request{Target: *dbPath, Provider: *provider, FromScan: *from, ToScan: *to})
+	result, err := appdrift.Run(ctx, appdrift.Request{Target: *dbPath, Provider: *provider, FromScan: *from, ToScan: *to})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "drift failed: %v\n", err)
 		return 1

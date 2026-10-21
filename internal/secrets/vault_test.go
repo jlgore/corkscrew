@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -112,5 +113,26 @@ func TestVaultReaderReturnsVaultErrors(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestVaultReaderRejectsOversizeResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat(" ", maxVaultResponseBytes+1)))
+	}))
+	defer ts.Close()
+
+	reader := &VaultReader{HTTPClient: ts.Client()}
+	_, err := reader.ReadSecret(context.Background(), Reference{
+		Engine: EngineKVV1, Address: ts.URL, Token: "t", Mount: "secret", Path: "x",
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversize response error = %v, want size-limit error", err)
+	}
+}
+
+func TestDefaultVaultClientHasTimeout(t *testing.T) {
+	if defaultVaultClient.Timeout != vaultRequestTimeout || vaultRequestTimeout <= 0 {
+		t.Fatalf("default vault client timeout = %v", defaultVaultClient.Timeout)
 	}
 }
