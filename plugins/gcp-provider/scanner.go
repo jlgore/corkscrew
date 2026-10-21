@@ -123,7 +123,8 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 	return allResources, nil
 }
 
-// StreamScanResources streams resources as they are discovered
+// StreamScanResources streams resources as they are discovered. It owns resourceChan
+// and closes it on return; callers must only receive.
 func (rs *ResourceScanner) StreamScanResources(ctx context.Context, services []string, resourceChan chan<- *pb.Resource) error {
 	defer close(resourceChan)
 

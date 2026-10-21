@@ -334,7 +334,8 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	return resource, nil
 }
 
-// StreamScanResources streams resources as they are discovered
+// StreamScanResources streams resources as they are discovered. It owns resourceChan
+// and closes it on return; callers must only receive.
 func (s *AzureResourceScanner) StreamScanResources(ctx context.Context, services []string, resourceChan chan<- *pb.Resource) error {
 	defer close(resourceChan)
 

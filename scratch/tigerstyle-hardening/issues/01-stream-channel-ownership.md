@@ -1,6 +1,6 @@
 # Fix stream channel ownership in the GCP, Azure and Kubernetes plugins
 
-Status: ready-for-agent
+Status: complete
 Phase: P0
 
 ## Problem
@@ -34,3 +34,11 @@ Two related bugs live in the same loops:
 - New test: a fake scanner emits resources and then returns an error. StreamScan returns that error
   in 100 out of 100 runs (`-count=100`).
 - `go test -race ./...` passes in all three plugin modules.
+
+## Comments
+
+2026-10-21: Each plugin now has a `streamResources` helper (`stream.go`). The producer alone
+closes the channel; the caller ranges until close, then waits for the producer's error. On a
+send failure the caller cancels and drains. Used plain goroutine + buffered error channel
+instead of errgroup (only an indirect dep in gcp). Fake-scanner tests in `stream_test.go`
+pass with `-race -count=100`.

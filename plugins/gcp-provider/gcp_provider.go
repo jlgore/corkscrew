@@ -33,6 +33,7 @@ type GCPProvider struct {
 	assetInventory  *AssetInventoryClient
 	discovery       *ServiceDiscovery
 	scanner         *ResourceScanner
+	streamer        resourceStreamer // overrides scanner for StreamScan; nil in production
 	enhancedScanner *EnhancedResourceScanner
 	schemaGen       *GCPSchemaGenerator
 	clientFactory   *ClientFactory
@@ -576,35 +577,24 @@ func (p *GCPProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 		return fmt.Errorf("provider not initialized")
 	}
 
-	ctx := stream.Context()
-	resourceChan := make(chan *pb.Resource, 100)
-	errChan := make(chan error, 1)
-
-	// Start async scanning
-	go func() {
-		defer close(resourceChan)
-		err := p.scanner.StreamScanResources(ctx, req.Services, resourceChan)
-		if err != nil {
-			errChan <- err
+	send := func(resource *pb.Resource) error {
+		if err := stream.Send(resource); err != nil {
+			return fmt.Errorf("failed to send resource: %w", err)
 		}
-	}()
-
-	// Stream resources as they come in
-	for {
-		select {
-		case resource, ok := <-resourceChan:
-			if !ok {
-				return nil // Scanning complete
-			}
-			if err := stream.Send(resource); err != nil {
-				return fmt.Errorf("failed to send resource: %w", err)
-			}
-		case err := <-errChan:
-			return fmt.Errorf("scanning error: %w", err)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		return nil
 	}
+	if err := streamResources(stream.Context(), p.streamSource(), req.Services, send); err != nil {
+		return fmt.Errorf("stream scan: %w", err)
+	}
+	return nil
+}
+
+// streamSource returns the producer for StreamScan. Tests inject a fake via p.streamer.
+func (p *GCPProvider) streamSource() resourceStreamer {
+	if p.streamer != nil {
+		return p.streamer
+	}
+	return p.scanner
 }
 
 // GetSchemas returns database schemas for resources
