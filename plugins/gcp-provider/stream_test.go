@@ -52,7 +52,9 @@ func (s *fakeStream) Send(resource *pb.Resource) error {
 }
 
 func newStreamTestProvider(streamer resourceStreamer) *GCPProvider {
-	return &GCPProvider{initialized: true, streamer: streamer}
+	p := &GCPProvider{streamer: streamer}
+	p.initialized.Store(true)
+	return p
 }
 
 func TestStreamScanSendsAllResources(t *testing.T) {

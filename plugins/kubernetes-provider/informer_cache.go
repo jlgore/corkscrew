@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -32,7 +33,9 @@ func NewInformerCache(clientFactory *ClientFactory) *InformerCache {
 	}
 }
 
-// SetupInformers sets up informers for the specified resource types
+// SetupInformers sets up informers for the specified resource types. A type it cannot resolve
+// would never be watched, so it is reported rather than skipped; the informers that could be
+// built are returned alongside the joined error.
 func (ic *InformerCache) SetupInformers(ctx context.Context, resourceTypes []string) (map[string]cache.SharedIndexInformer, error) {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
@@ -46,12 +49,13 @@ func (ic *InformerCache) SetupInformers(ctx context.Context, resourceTypes []str
 	}
 
 	informers := make(map[string]cache.SharedIndexInformer)
+	var errs []error
 
 	for _, resourceType := range resourceTypes {
 		// Get resource definition
 		resourceDef, err := ic.getResourceDefinition(resourceType)
 		if err != nil {
-			fmt.Printf("Failed to get definition for %s: %v\n", resourceType, err)
+			errs = append(errs, fmt.Errorf("informer for %s: %w", resourceType, err))
 			continue
 		}
 
@@ -71,7 +75,7 @@ func (ic *InformerCache) SetupInformers(ctx context.Context, resourceTypes []str
 		informers[resourceType] = informer
 	}
 
-	return informers, nil
+	return informers, errors.Join(errs...)
 }
 
 // StartInformers starts the informers and begins streaming events

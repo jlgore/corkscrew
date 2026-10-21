@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,12 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// Page sizes requested from Cloud Asset Inventory; each is the API's documented maximum.
+const (
+	assetListPageSize   = 1000
+	assetSearchPageSize = 500
 )
 
 // AssetInventoryClient provides efficient resource querying using Cloud Asset Inventory
@@ -63,150 +70,104 @@ func (aic *AssetInventoryClient) SetScope(scope string, projectIDs []string, org
 	aic.folderID = folderID
 }
 
-// QueryAllAssets queries all assets across the configured scope
+// QueryAllAssets queries all assets across the configured scope. A failed project or page does
+// not stop the others: the assets that were listed are returned together with the joined error,
+// so callers keep what they observed and still report the scope as not fully observed.
 func (aic *AssetInventoryClient) QueryAllAssets(ctx context.Context) ([]*pb.ResourceRef, error) {
-	var allResources []*pb.ResourceRef
-
-	// Query based on scope
 	switch aic.scope {
 	case "organizations":
 		if aic.orgID == "" {
 			return nil, fmt.Errorf("organization ID required for organization scope")
 		}
-		resources, err := aic.queryAssetsForParent(ctx, fmt.Sprintf("organizations/%s", aic.orgID))
-		if err != nil {
-			return nil, err
-		}
-		allResources = append(allResources, resources...)
-
+		return aic.queryAssetsForParent(ctx, fmt.Sprintf("organizations/%s", aic.orgID))
 	case "folders":
 		if aic.folderID == "" {
 			return nil, fmt.Errorf("folder ID required for folder scope")
 		}
-		resources, err := aic.queryAssetsForParent(ctx, fmt.Sprintf("folders/%s", aic.folderID))
-		if err != nil {
-			return nil, err
-		}
-		allResources = append(allResources, resources...)
-
+		return aic.queryAssetsForParent(ctx, fmt.Sprintf("folders/%s", aic.folderID))
 	case "projects":
-		// Query multiple projects
+		var allResources []*pb.ResourceRef
+		var errs []error
 		for _, projectID := range aic.projectIDs {
 			resources, err := aic.queryAssetsForParent(ctx, fmt.Sprintf("projects/%s", projectID))
-			if err != nil {
-				// Log error but continue with other projects
-				fmt.Printf("Error querying project %s: %v\n", projectID, err)
-				continue
-			}
 			allResources = append(allResources, resources...)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("project %s: %w", projectID, err))
+			}
 		}
+		return allResources, errors.Join(errs...)
 	}
-
-	return allResources, nil
+	return nil, nil
 }
 
-// queryAssetsForParent queries assets for a specific parent (project/folder/org)
+// queryAssetsForParent queries assets for a specific parent (project/folder/org). It returns the
+// assets listed before any failure along with the error.
 func (aic *AssetInventoryClient) queryAssetsForParent(ctx context.Context, parent string) ([]*pb.ResourceRef, error) {
 	req := &assetpb.ListAssetsRequest{
 		Parent:      parent,
 		ContentType: assetpb.ContentType_RESOURCE,
-		PageSize:    1000,
 	}
+	return aic.listAssets(ctx, req)
+}
 
+// listAssets runs one ListAssets request to completion, keeping the assets from pages that
+// arrived before a failure.
+func (aic *AssetInventoryClient) listAssets(
+	ctx context.Context, req *assetpb.ListAssetsRequest,
+) ([]*pb.ResourceRef, error) {
 	var resources []*pb.ResourceRef
-	it := aic.client.ListAssets(ctx, req)
-
-	for {
-		asset, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to list assets for %s: %w", parent, err)
-		}
-
-		resource := aic.convertAssetToResourceRef(asset)
-		if resource != nil {
-			resources = append(resources, resource)
-		}
+	label := "list assets for " + req.Parent
+	err := listPages(label, aic.client.ListAssets(ctx, req), assetListPageSize,
+		func(asset *assetpb.Asset) {
+			if resource := aic.convertAssetToResourceRef(asset); resource != nil {
+				resources = append(resources, resource)
+			}
+		})
+	if err != nil {
+		return resources, fmt.Errorf("failed to list assets for %s: %w", req.Parent, err)
 	}
-
 	return resources, nil
 }
 
-// QueryAssetsByType queries assets of specific types
+// QueryAssetsByType queries assets of specific types. A failed parent does not stop the others;
+// see QueryAllAssets for how partial results are returned.
 func (aic *AssetInventoryClient) QueryAssetsByType(ctx context.Context, assetTypes []string) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
-
-	// Iterate through configured scope
-	parents := aic.getParents()
-
-	for _, parent := range parents {
+	var errs []error
+	for _, parent := range aic.getParents() {
 		req := &assetpb.ListAssetsRequest{
 			Parent:      parent,
 			AssetTypes:  assetTypes,
 			ContentType: assetpb.ContentType_RESOURCE,
-			PageSize:    1000,
 		}
-
-		it := aic.client.ListAssets(ctx, req)
-
-		for {
-			asset, err := it.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				// Log error but continue with other parents
-				fmt.Printf("Error querying assets by type for %s: %v\n", parent, err)
-				break
-			}
-
-			resource := aic.convertAssetToResourceRef(asset)
-			if resource != nil {
-				allResources = append(allResources, resource)
-			}
+		resources, err := aic.listAssets(ctx, req)
+		allResources = append(allResources, resources...)
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
-
-	return allResources, nil
+	return allResources, errors.Join(errs...)
 }
 
-// SearchAssets performs advanced search using Cloud Asset Inventory search
+// SearchAssets performs advanced search using Cloud Asset Inventory search. A failed scope does
+// not stop the others; see QueryAllAssets for how partial results are returned.
 func (aic *AssetInventoryClient) SearchAssets(ctx context.Context, query string) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
-
-	// Determine search scope
-	scopes := aic.getSearchScopes()
-
-	for _, scope := range scopes {
-		req := &assetpb.SearchAllResourcesRequest{
-			Scope:    scope,
-			Query:    query,
-			PageSize: 500,
-		}
-
+	var errs []error
+	for _, scope := range aic.getSearchScopes() {
+		req := &assetpb.SearchAllResourcesRequest{Scope: scope, Query: query}
 		it := aic.client.SearchAllResources(ctx, req)
-
-		for {
-			result, err := it.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				// Log error but continue with other scopes
-				fmt.Printf("Error searching assets in scope %s: %v\n", scope, err)
-				break
-			}
-
-			resource := aic.convertSearchResultToResourceRef(result)
-			if resource != nil {
-				allResources = append(allResources, resource)
-			}
+		err := listPages("search assets in "+scope, it, assetSearchPageSize,
+			func(result *assetpb.ResourceSearchResult) {
+				if resource := aic.convertSearchResultToResourceRef(result); resource != nil {
+					allResources = append(allResources, resource)
+				}
+			})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to search assets in %s: %w", scope, err))
 		}
 	}
-
-	return allResources, nil
+	return allResources, errors.Join(errs...)
 }
 
 // QueryAssetHistory queries the history of changes for specific assets

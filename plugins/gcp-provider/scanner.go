@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -53,29 +54,31 @@ func (rs *ResourceScanner) registerScanners() {
 	// Add more scanners as needed
 }
 
-// ScanService scans resources for a specific service
+// ScanService scans resources for a specific service. It may return resources together with an
+// error: the resources were observed, but the service was not fully observed.
 func (rs *ResourceScanner) ScanService(ctx context.Context, service string) ([]*pb.ResourceRef, error) {
-	// Try Asset Inventory first if available
+	scanner, hasScanner := rs.scanners[service]
 	if rs.assetInventory != nil {
 		assetTypes := mapServiceToAssetTypes(service)
 		resources, err := rs.assetInventory.QueryAssetsByType(ctx, assetTypes)
 		if err == nil {
 			return resources, nil
 		}
-		// Fall back to API scanning on error
+		// Without an API scanner to fall back on, the partial Asset Inventory listing is the
+		// best observation available; keep it and report the failure.
+		if !hasScanner {
+			return resources, fmt.Errorf("asset inventory for service %s: %w", service, err)
+		}
 		log.Printf("Asset Inventory failed for service %s, falling back to API: %v", service, err)
 	}
-
-	// Use service-specific scanner
-	scanner, ok := rs.scanners[service]
-	if !ok {
+	if !hasScanner {
 		return nil, fmt.Errorf("no scanner available for service: %s", service)
 	}
-
 	return scanner.Scan(ctx)
 }
 
-// ScanAllServices scans resources across all enabled services
+// ScanAllServices scans resources across all enabled services. Resources from every service are
+// returned, including those from a service that failed part way, with the failures joined.
 func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceRef, error) {
 	// Try Asset Inventory first if available
 	if rs.assetInventory != nil {
@@ -110,29 +113,28 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 		close(resultChan)
 	}()
 
-	// Collect results
 	var allResources []*pb.ResourceRef
+	var errs []error
 	for result := range resultChan {
-		if result.err != nil {
-			log.Printf("Error scanning %s: %v", result.service, result.err)
-			continue
-		}
 		allResources = append(allResources, result.resources...)
+		if result.err != nil {
+			errs = append(errs, fmt.Errorf("service %s: %w", result.service, result.err))
+		}
 	}
-
-	return allResources, nil
+	return allResources, errors.Join(errs...)
 }
 
 // StreamScanResources streams resources as they are discovered. It owns resourceChan
-// and closes it on return; callers must only receive.
+// and closes it on return; callers must only receive. A failed service does not stop the
+// others, but its error is returned so the stream does not end as if the scan were complete.
 func (rs *ResourceScanner) StreamScanResources(ctx context.Context, services []string, resourceChan chan<- *pb.Resource) error {
 	defer close(resourceChan)
 
+	var errs []error
 	for _, service := range services {
 		refs, err := rs.ScanService(ctx, service)
 		if err != nil {
-			log.Printf("Error scanning service %s: %v", service, err)
-			continue
+			errs = append(errs, fmt.Errorf("service %s: %w", service, err))
 		}
 
 		for _, ref := range refs {
@@ -145,7 +147,7 @@ func (rs *ResourceScanner) StreamScanResources(ctx context.Context, services []s
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // DescribeResource gets detailed information about a specific resource
@@ -174,6 +176,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := cs.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
@@ -209,7 +212,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			}
 			return nil
 		}); err != nil {
-			log.Printf("Failed to list instances for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list instances for project %s: %w", projectID, err))
 			continue
 		}
 
@@ -246,7 +249,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			}
 			return nil
 		}); err != nil {
-			log.Printf("Failed to list disks for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list disks for project %s: %w", projectID, err))
 			continue
 		}
 
@@ -274,7 +277,7 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			}
 			return nil
 		}); err != nil {
-			log.Printf("Failed to list networks for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list networks for project %s: %w", projectID, err))
 			continue
 		}
 
@@ -309,12 +312,12 @@ func (cs *ComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			}
 			return nil
 		}); err != nil {
-			log.Printf("Failed to list subnetworks for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list subnetworks for project %s: %w", projectID, err))
 			continue
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (cs *ComputeScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -419,6 +422,7 @@ func (ss *StorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := ss.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
@@ -449,12 +453,12 @@ func (ss *StorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error) {
 			}
 			return nil
 		}); err != nil {
-			log.Printf("Failed to list buckets for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list buckets for project %s: %w", projectID, err))
 			continue
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (ss *StorageScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
@@ -518,6 +522,7 @@ func (cs *ContainerScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := cs.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
@@ -525,7 +530,7 @@ func (cs *ContainerScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 		parent := fmt.Sprintf("projects/%s/locations/-", projectID)
 		resp, err := client.Projects.Locations.Clusters.List(parent).Context(ctx).Do()
 		if err != nil {
-			log.Printf("Failed to list clusters for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list clusters for project %s: %w", projectID, err))
 			continue
 		}
 
@@ -580,7 +585,7 @@ func (cs *ContainerScanner) Scan(ctx context.Context) ([]*pb.ResourceRef, error)
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (cs *ContainerScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {

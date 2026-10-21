@@ -62,3 +62,16 @@ Typed go-github loops use `strconv.Itoa(resp.NextPage)` as the token. Every site
 `paging.PagesMax`, not a per-site constant. Cloudflare has no hand-written page loops; its
 `ListAutoPaging` iterators are bounded by an item cap instead (issue 11). The `internal/architecture`
 grep check is still open.
+
+2026-10-21: GCP, Azure and Kubernetes loops guarded (issue 10 commits).
+- GCP: Google iterators hide continuation tokens, so `listPages` (gcp-provider/paging.go) drives
+  an `iterator.Pager` and guards each token. Used by `asset_inventory.go` ListAssets (all-assets
+  and by-type) and SearchAllResources, `gcp_provider.go` SearchOrganizations and ListProjects.
+  `discovery.go` Service Usage loop guards `NextPageToken` directly. Limit: the SDK's own fill
+  loop still spins on empty pages that repeat a token; only the context deadline bounds that.
+- Azure: `guardNextLink` (azure-provider/paging.go) checks `page.NextLink` in `scanner.go`
+  `scanWithFilter`, `discovery.go` DiscoverProviders, `management_group_client.go` management
+  group and subscription listings; `resource_graph.go` `executeQuery` guards `SkipToken`.
+- Kubernetes: `scanner.go` `streamResourceType` guards the continue token. The `for { select }`
+  loops in `kubernetes_provider.go` are informer event loops, not pagination.
+

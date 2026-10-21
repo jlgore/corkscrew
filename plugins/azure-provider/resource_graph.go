@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared/paging"
 )
 
 // ResourceSchema represents the discovered schema for a resource type
@@ -42,9 +43,18 @@ type RelationshipPattern struct {
 	RelationshipType  string   `json:"relationship_type"` // DEPENDS_ON, CONTAINS, REFERENCES
 }
 
+// resourceGraphAPI is the part of armresourcegraph.Client the provider uses; tests fake it.
+type resourceGraphAPI interface {
+	Resources(
+		ctx context.Context,
+		query armresourcegraph.QueryRequest,
+		options *armresourcegraph.ClientResourcesOptions,
+	) (armresourcegraph.ClientResourcesResponse, error)
+}
+
 // ResourceGraphClient provides efficient resource querying using Azure Resource Graph
 type ResourceGraphClient struct {
-	client         *armresourcegraph.Client
+	client         resourceGraphAPI
 	subscriptions  []string
 	queryCache     *QueryCache
 	queryOptimizer *QueryOptimizer
@@ -64,6 +74,11 @@ func NewResourceGraphClient(credential azcore.TokenCredential, subscriptions []s
 		queryCache:     NewQueryCache(15 * time.Minute),
 		queryOptimizer: NewQueryOptimizer(),
 	}, nil
+}
+
+// coversOnly reports whether the client queries exactly the one subscription subscriptionID.
+func (c *ResourceGraphClient) coversOnly(subscriptionID string) bool {
+	return len(c.subscriptions) == 1 && c.subscriptions[0] == subscriptionID
 }
 
 // QueryAllResources queries all resources efficiently using Resource Graph
@@ -176,10 +191,11 @@ func (c *ResourceGraphClient) QueryResourcesWithFilter(ctx context.Context, filt
 		return cached, nil
 	}
 
-	// Execute query
+	// Execute query. A partial answer is returned with its error but never cached, so the next
+	// scan asks again instead of reusing an incomplete listing.
 	resources, err := c.executeQuery(ctx, query)
 	if err != nil {
-		return nil, err
+		return resources, err
 	}
 
 	// Cache results
@@ -295,10 +311,12 @@ func (c *ResourceGraphClient) QueryResourceCosts(ctx context.Context, resourceGr
 	return costs, nil
 }
 
-// executeQuery executes a KQL query with pagination support
+// executeQuery executes a KQL query with pagination support. On a failed page it returns the
+// resources from earlier pages along with the error, so callers keep what they observed.
 func (c *ResourceGraphClient) executeQuery(ctx context.Context, query string) ([]*pb.ResourceRef, error) {
 	var allResources []*pb.ResourceRef
 	skipToken := ""
+	guard := paging.New("resource graph query", paging.PagesMax)
 
 	// Convert []string to []*string
 	subscriptions := make([]*string, len(c.subscriptions))
@@ -322,13 +340,13 @@ func (c *ResourceGraphClient) executeQuery(ctx context.Context, query string) ([
 
 		result, err := c.client.Resources(ctx, request, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to execute resource graph query: %w", err)
+			return allResources, fmt.Errorf("failed to execute resource graph query: %w", err)
 		}
 
 		// Parse results
 		resources, err := c.parseQueryResults(&result.QueryResponse)
 		if err != nil {
-			return nil, err
+			return allResources, err
 		}
 
 		allResources = append(allResources, resources...)
@@ -336,6 +354,9 @@ func (c *ResourceGraphClient) executeQuery(ctx context.Context, query string) ([
 		// Check if there are more results
 		if result.SkipToken == nil || *result.SkipToken == "" {
 			break
+		}
+		if err := guard.Next(*result.SkipToken); err != nil {
+			return allResources, err
 		}
 		skipToken = *result.SkipToken
 	}
@@ -683,7 +704,7 @@ func (c *ResourceGraphClient) analyzeRelationships(resourceID string, resources 
 			var properties map[string]interface{}
 			if err := json.Unmarshal([]byte(propsJSON), &properties); err == nil {
 				// Look for references to the resource ID
-				if c.containsReference(properties, resourceID) {
+				if c.containsReference(properties, resourceID, 0) {
 					relationships = append(relationships, &ResourceRelationship{
 						SourceID:     resource.Id,
 						TargetID:     resourceID,
@@ -698,20 +719,30 @@ func (c *ResourceGraphClient) analyzeRelationships(resourceID string, resources 
 	return relationships
 }
 
-// containsReference checks if a data structure contains a reference to a resource ID
-func (c *ResourceGraphClient) containsReference(data interface{}, resourceID string) bool {
+// maxJSONDepth bounds recursion into resource properties. ARM documents nest a handful of
+// levels; the bound keeps a hostile or malformed document from exhausting the stack.
+const maxJSONDepth = 32
+
+// containsReference checks if a data structure contains a reference to a resource ID. It does
+// not descend below depth maxJSONDepth; anything deeper is treated as not referencing.
+func (c *ResourceGraphClient) containsReference(
+	data interface{}, resourceID string, depth int,
+) bool {
+	if depth > maxJSONDepth {
+		return false
+	}
 	switch v := data.(type) {
 	case string:
 		return strings.Contains(v, resourceID)
 	case map[string]interface{}:
 		for _, value := range v {
-			if c.containsReference(value, resourceID) {
+			if c.containsReference(value, resourceID, depth+1) {
 				return true
 			}
 		}
 	case []interface{}:
 		for _, item := range v {
-			if c.containsReference(item, resourceID) {
+			if c.containsReference(item, resourceID, depth+1) {
 				return true
 			}
 		}
@@ -879,7 +910,7 @@ func (c *ResourceGraphClient) extractSchemaFromSamples(resourceType string, samp
 		if propsJSON, ok := sample.BasicAttributes["properties"]; ok {
 			var properties map[string]interface{}
 			if err := json.Unmarshal([]byte(propsJSON), &properties); err == nil {
-				c.analyzeProperties(properties, "", propertyTypes)
+				c.analyzeProperties(properties, "", propertyTypes, 0)
 			}
 		}
 	}
@@ -906,8 +937,14 @@ func (c *ResourceGraphClient) extractSchemaFromSamples(resourceType string, samp
 	return schema, nil
 }
 
-// analyzeProperties recursively analyzes properties to determine types
-func (c *ResourceGraphClient) analyzeProperties(properties map[string]interface{}, prefix string, propertyTypes map[string]map[string]bool) {
+// analyzeProperties recursively analyzes properties to determine types. Objects nested below
+// depth maxJSONDepth are recorded as "object" without descending further.
+func (c *ResourceGraphClient) analyzeProperties(
+	properties map[string]interface{},
+	prefix string,
+	propertyTypes map[string]map[string]bool,
+	depth int,
+) {
 	for key, value := range properties {
 		fullKey := key
 		if prefix != "" {
@@ -929,8 +966,10 @@ func (c *ResourceGraphClient) analyzeProperties(properties map[string]interface{
 			propertyTypes[fullKey]["boolean"] = true
 		case map[string]interface{}:
 			propertyTypes[fullKey]["object"] = true
-			// Recursively analyze nested objects
-			c.analyzeProperties(v, fullKey, propertyTypes)
+			// Recursively analyze nested objects, up to the depth bound
+			if depth < maxJSONDepth {
+				c.analyzeProperties(v, fullKey, propertyTypes, depth+1)
+			}
 		case []interface{}:
 			propertyTypes[fullKey]["array"] = true
 		default:

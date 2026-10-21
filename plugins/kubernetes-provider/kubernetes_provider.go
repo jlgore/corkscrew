@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -23,8 +25,10 @@ import (
 
 // KubernetesProvider implements the CloudProvider interface for Kubernetes
 type KubernetesProvider struct {
-	mu          sync.RWMutex
-	initialized bool
+	mu sync.RWMutex
+	// initialized is set last in Initialize. RPC handlers read it without p.mu, so it is atomic;
+	// a true Load also publishes the fields Initialize wrote before it.
+	initialized atomic.Bool
 
 	// Kubernetes configuration
 	kubeConfig    *rest.Config
@@ -140,7 +144,7 @@ func (p *KubernetesProvider) Initialize(ctx context.Context, req *pb.InitializeR
 	p.relationships = NewRelationshipMapper()
 	p.informerCache = NewInformerCache(p.clientFactory)
 
-	p.initialized = true
+	p.initialized.Store(true)
 
 	return &pb.InitializeResponse{
 		Success: true,
@@ -287,7 +291,7 @@ func (p *KubernetesProvider) GetProviderInfo(ctx context.Context, req *pb.Empty)
 
 // DiscoverServices discovers all available Kubernetes resources
 func (p *KubernetesProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServicesRequest) (*pb.DiscoverServicesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -354,11 +358,12 @@ func (p *KubernetesProvider) DiscoverServices(ctx context.Context, req *pb.Disco
 
 // ListResources lists all resources of specified types
 func (p *KubernetesProvider) ListResources(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
 	var allResources []*pb.Resource
+	var errs []error
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -377,19 +382,22 @@ func (p *KubernetesProvider) ListResources(ctx context.Context, req *pb.ListReso
 			defer func() { <-semaphore }() // Release
 
 			resources, err := p.scanClusterResources(ctx, c, req)
-			if err != nil {
-				// Log error but continue with other clusters
-				fmt.Printf("Failed to scan cluster %s: %v\n", c.Name, err)
-				return
-			}
 
 			mu.Lock()
+			defer mu.Unlock()
 			allResources = append(allResources, resources...)
-			mu.Unlock()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("cluster %s: %w", c.Name, err))
+			}
 		}(cluster)
 	}
 
 	wg.Wait()
+	// ListResourcesResponse has no field for partial results, so a listing that may be
+	// missing resources is an error rather than a short answer that looks complete.
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
 
 	// Convert Resources to ResourceRefs
 	var resourceRefs []*pb.ResourceRef
@@ -444,7 +452,8 @@ func (p *KubernetesProvider) getClustersToScan(req *pb.ListResourcesRequest) []*
 	return result
 }
 
-// scanClusterResources scans resources in a specific cluster
+// scanClusterResources scans resources in a specific cluster. It returns every resource listed
+// together with the joined failures of any type, namespace, or namespace listing.
 func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest) ([]*pb.Resource, error) {
 	// Create scanner with cluster-specific clients
 	scanner := NewResourceScannerForCluster(cluster)
@@ -462,7 +471,7 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 	}
 
 	// Determine namespaces
-	namespaces := p.getNamespacesToScan(ctx, cluster, req)
+	namespaces, nsErr := p.getNamespacesToScan(ctx, cluster, req)
 
 	// Apply optional label/field selectors
 	labelSel := ""
@@ -475,6 +484,7 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 	// If selectors present, scan per resource type using specialized paths
 	if labelSel != "" || fieldSel != "" {
 		var all []*pb.Resource
+		errs := []error{nsErr}
 		for _, rt := range resourcesToScan {
 			var res []*pb.Resource
 			var err error
@@ -483,33 +493,37 @@ func (p *KubernetesProvider) scanClusterResources(ctx context.Context, cluster *
 			} else {
 				res, err = scanner.ScanWithFieldSelector(ctx, rt, fieldSel, namespaces)
 			}
-			if err != nil {
-				fmt.Printf("Failed to scan %s with selector: %v\n", rt, err)
-				continue
-			}
 			all = append(all, res...)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("scan %s with selector: %w", rt, err))
+			}
 		}
-		return all, nil
+		return all, errors.Join(errs...)
 	}
 
 	// Default: scan across resource types/namespaces
-	return scanner.ScanResources(ctx, resourcesToScan, namespaces)
+	resources, err := scanner.ScanResources(ctx, resourcesToScan, namespaces)
+	return resources, errors.Join(nsErr, err)
 }
 
-// getNamespacesToScan determines which namespaces to scan
-func (p *KubernetesProvider) getNamespacesToScan(ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest) []string {
+// getNamespacesToScan determines which namespaces to scan. If listing namespaces fails it
+// still returns "default" so that namespace is scanned, but also the error: every other
+// namespace went unobserved.
+func (p *KubernetesProvider) getNamespacesToScan(
+	ctx context.Context, cluster *ClusterConnection, req *pb.ListResourcesRequest,
+) ([]string, error) {
 	if namespace := req.Filters["namespace"]; namespace != "" {
-		return []string{namespace}
+		return []string{namespace}, nil
 	}
 
 	if !p.config.AllNamespaces {
-		return []string{"default"}
+		return []string{"default"}, nil
 	}
 
 	// List all namespaces
 	namespaceList, err := cluster.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return []string{"default"}
+		return []string{"default"}, fmt.Errorf("list namespaces: %w", err)
 	}
 
 	var namespaces []string
@@ -521,12 +535,12 @@ func (p *KubernetesProvider) getNamespacesToScan(ctx context.Context, cluster *C
 		namespaces = append(namespaces, ns.Name)
 	}
 
-	return namespaces
+	return namespaces, nil
 }
 
 // DescribeResource gets detailed information about a specific resource
 func (p *KubernetesProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -592,7 +606,7 @@ func (p *KubernetesProvider) GenerateServiceScanners(ctx context.Context, req *p
 
 // GetSchemas returns database schemas for Kubernetes resources
 func (p *KubernetesProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -612,7 +626,7 @@ func (p *KubernetesProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasR
 
 // BatchScan performs concurrent scanning of multiple services
 func (p *KubernetesProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -632,10 +646,10 @@ func (p *KubernetesProvider) BatchScan(ctx context.Context, req *pb.BatchScanReq
 	var errors []string
 
 	for _, cluster := range clusters {
+		// A cluster that failed part way keeps what it listed and reports the rest.
 		resources, err := p.scanClusterResources(ctx, cluster, listReq)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("cluster %s: %v", cluster.Name, err))
-			continue
+			errors = append(errors, shared.ServiceScanError("cluster/"+cluster.Name, err))
 		}
 		allResources = append(allResources, resources...)
 		// Optionally enrich with relationships (basic + cross-resource)
@@ -845,7 +859,7 @@ func (p *KubernetesProvider) getResourcesForAPIGroup(apiGroup string) []string {
 
 // GetServiceInfo returns information about a specific Kubernetes API group/service
 func (p *KubernetesProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -895,7 +909,7 @@ func (p *KubernetesProvider) GetServiceInfo(ctx context.Context, req *pb.GetServ
 
 // ScanService scans resources for a specific Kubernetes API group
 func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -936,17 +950,19 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 		}
 	}
 
-	// Scan resources across all configured clusters
+	// Scan resources across all configured clusters. A cluster that failed part way keeps
+	// what it listed and adds an error entry.
 	var allResources []*pb.Resource
+	var scanErrors []string
 	clusters := p.getClustersToScan(&pb.ListResourcesRequest{})
 
 	for _, cluster := range clusters {
 		scanner := NewResourceScannerForCluster(cluster)
-		namespaces := p.getNamespacesToScan(ctx, cluster, &pb.ListResourcesRequest{})
+		namespaces, nsErr := p.getNamespacesToScan(ctx, cluster, &pb.ListResourcesRequest{})
 
 		resources, err := scanner.ScanResources(ctx, resourceTypes, namespaces)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan resources for cluster %s: %w", cluster.Name, err)
+		if err := errors.Join(nsErr, err); err != nil {
+			scanErrors = append(scanErrors, shared.ServiceScanError("cluster/"+cluster.Name, err))
 		}
 
 		// Enrich with relationships if requested
@@ -969,6 +985,7 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	return &pb.ScanServiceResponse{
 		Service:   apiGroup,
 		Resources: allResources,
+		Errors:    scanErrors,
 		Stats: &pb.ScanStats{
 			TotalResources: int32(len(allResources)),
 			DurationMs:     time.Since(startTime).Milliseconds(),
@@ -982,7 +999,7 @@ func (p *KubernetesProvider) ScanService(ctx context.Context, req *pb.ScanServic
 
 // StreamScanService streams resources as they are discovered for a specific API group
 func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 

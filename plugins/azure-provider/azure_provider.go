@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -68,8 +69,10 @@ func NewErrorHandler() *ErrorHandler {
 
 // AzureProvider implements the CloudProvider interface for Azure
 type AzureProvider struct {
-	mu             sync.RWMutex
-	initialized    bool
+	mu sync.RWMutex
+	// initialized is set last in Initialize. RPC handlers read it without p.mu, so it is atomic;
+	// a true Load also publishes the fields Initialize wrote before it.
+	initialized    atomic.Bool
 	credential     azcore.TokenCredential
 	subscriptionID string
 	tenantID       string
@@ -80,13 +83,17 @@ type AzureProvider struct {
 	streamer      resourceStreamer // overrides scanner for StreamScan; nil in production
 	schemaGen     *AzureSchemaGenerator
 	clientFactory *AzureClientFactory
-	resourceGraph *ResourceGraphClient
+	// resourceGraph is replaced by SetManagementGroupScope while scans may be reading it.
+	resourceGraph atomic.Pointer[ResourceGraphClient]
 
 	// Management group and enterprise app support
 	managementGroupClient *ManagementGroupClient
 	entraIDAppDeployer    *EntraIDAppDeployer
 	currentScopes         []*ManagementGroupScope
 	scopeType             string // "subscription", "management_group", "tenant"
+	// scopeErr is why the current scope may be narrower than the credential can see: a partly
+	// failed hierarchy walk. Guarded by mu; reported by scopeScanErrors.
+	scopeErr error
 
 	// Performance components
 	cache        *ResourceCache
@@ -168,9 +175,24 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 	p.tenantID = tenantID
 	p.cacheDir = req.CacheDir
 
-	// Initialize components
-	p.discovery = NewAzureServiceDiscovery(cred, subscriptionID)
-	p.scanner = NewAzureResourceScanner(cred, subscriptionID)
+	// Initialize components. A client that cannot be built fails initialization here instead
+	// of panicking on first use.
+	discovery, err := NewAzureServiceDiscovery(cred, subscriptionID)
+	if err != nil {
+		return &pb.InitializeResponse{
+			Success: false,
+			Error:   fmt.Sprintf("service discovery: %v", err),
+		}, nil
+	}
+	scanner, err := NewAzureResourceScanner(cred, subscriptionID)
+	if err != nil {
+		return &pb.InitializeResponse{
+			Success: false,
+			Error:   fmt.Sprintf("resource scanner: %v", err),
+		}, nil
+	}
+	p.discovery = discovery
+	p.scanner = scanner
 	p.schemaGen = NewAzureSchemaGenerator()
 	p.clientFactory = NewAzureClientFactory(cred, subscriptionID)
 
@@ -194,38 +216,7 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 		log.Printf("Entra ID app deployer initialized successfully")
 	}
 
-	// Discover management group scopes if available
-	if p.managementGroupClient != nil {
-		scopes, err := p.managementGroupClient.DiscoverManagementGroupHierarchy(ctx)
-		if err != nil {
-			log.Printf("Warning: Failed to discover management group hierarchy: %v", err)
-			// Fall back to subscription-only scope
-			p.currentScopes = []*ManagementGroupScope{{
-				Type:          "subscription",
-				ID:            subscriptionID,
-				Name:          subscriptionID,
-				Subscriptions: []string{subscriptionID},
-			}}
-			p.scopeType = "subscription"
-		} else {
-			p.currentScopes = scopes
-			if len(scopes) > 0 && scopes[0].Type == "management_group" {
-				p.scopeType = "management_group"
-			} else {
-				p.scopeType = "subscription"
-			}
-			log.Printf("Discovered %d management group scopes (type: %s)", len(scopes), p.scopeType)
-		}
-	} else {
-		// No management group support, use subscription scope
-		p.currentScopes = []*ManagementGroupScope{{
-			Type:          "subscription",
-			ID:            subscriptionID,
-			Name:          subscriptionID,
-			Subscriptions: []string{subscriptionID},
-		}}
-		p.scopeType = "subscription"
-	}
+	p.discoverInitialScope(ctx, subscriptionID)
 
 	// Get all subscriptions in scope for Resource Graph
 	var subscriptions []string
@@ -242,11 +233,11 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 		log.Printf("Warning: Failed to initialize Resource Graph client: %v", err)
 		// Continue without Resource Graph - fall back to ARM APIs
 	} else {
-		p.resourceGraph = resourceGraph
+		p.resourceGraph.Store(resourceGraph)
 		log.Printf("Resource Graph client initialized successfully with %d subscriptions", len(subscriptions))
 	}
 
-	p.initialized = true
+	p.initialized.Store(true)
 
 	return &pb.InitializeResponse{
 		Success: true,
@@ -255,13 +246,59 @@ func (p *AzureProvider) Initialize(ctx context.Context, req *pb.InitializeReques
 			"subscription_id":      subscriptionID,
 			"tenant_id":            tenantID,
 			"auth_method":          authMethod,
-			"resource_graph":       fmt.Sprintf("%t", p.resourceGraph != nil),
+			"resource_graph":       fmt.Sprintf("%t", p.resourceGraph.Load() != nil),
 			"management_groups":    fmt.Sprintf("%t", p.managementGroupClient != nil),
 			"entraid_app_deployer": fmt.Sprintf("%t", p.entraIDAppDeployer != nil),
 			"scope_type":           p.scopeType,
 			"scopes_count":         fmt.Sprintf("%d", len(p.currentScopes)),
 		},
 	}, nil
+}
+
+// discoverInitialScope sets the scan scope from the management group hierarchy, falling back to
+// the configured subscription. Called from Initialize with p.mu held.
+//
+// A credential without management group access (403) has the subscription as its whole scope.
+// Any other failure, including a walk that failed part way, leaves a scope that may be narrower
+// than the credential can see, so it is kept in p.scopeErr and every scan reports it.
+func (p *AzureProvider) discoverInitialScope(ctx context.Context, subscriptionID string) {
+	subscriptionScope := []*ManagementGroupScope{{
+		Type:          "subscription",
+		ID:            subscriptionID,
+		Name:          subscriptionID,
+		Subscriptions: []string{subscriptionID},
+	}}
+	p.currentScopes = subscriptionScope
+	p.scopeType = "subscription"
+	p.scopeErr = nil
+	if p.managementGroupClient == nil {
+		return
+	}
+
+	scopes, err := p.managementGroupClient.DiscoverManagementGroupHierarchy(ctx)
+	if err != nil && !isForbidden(err) {
+		p.scopeErr = fmt.Errorf("management group discovery: %w", err)
+		log.Printf("Warning: management group hierarchy incomplete: %v", err)
+	}
+	if len(scopes) == 0 {
+		return
+	}
+	p.currentScopes = scopes
+	if scopes[0].Type == "management_group" {
+		p.scopeType = "management_group"
+	}
+	log.Printf("Discovered %d management group scopes (type: %s)", len(scopes), p.scopeType)
+}
+
+// scopeScanErrors returns an error entry when the scan scope may be narrower than it should be
+// (see discoverInitialScope), so such a scan is partial and resolves no findings.
+func (p *AzureProvider) scopeScanErrors() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.scopeErr == nil {
+		return nil
+	}
+	return []string{shared.ServiceScanError("managementgroups", p.scopeErr)}
 }
 
 // GetProviderInfo returns information about the Azure provider
@@ -299,7 +336,7 @@ func (p *AzureProvider) GetProviderInfo(ctx context.Context, req *pb.Empty) (*pb
 
 // DiscoverServices discovers available Azure services using Resource Graph
 func (p *AzureProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverServicesRequest) (*pb.DiscoverServicesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -318,9 +355,9 @@ func (p *AzureProvider) DiscoverServices(ctx context.Context, req *pb.DiscoverSe
 	var err error
 
 	// Try Resource Graph discovery first (superior method)
-	if p.resourceGraph != nil {
+	if p.resourceGraph.Load() != nil {
 		log.Printf("Using Resource Graph for dynamic service discovery...")
-		services, err = p.resourceGraph.DiscoverAllResourceTypes(ctx)
+		services, err = p.resourceGraph.Load().DiscoverAllResourceTypes(ctx)
 		if err != nil {
 			log.Printf("Resource Graph discovery failed, falling back to provider discovery: %v", err)
 			// Fall back to traditional provider discovery
@@ -411,7 +448,7 @@ func (p *AzureProvider) discoverServicesViaProviders(ctx context.Context, req *p
 
 // ListResources lists resources for specified services
 func (p *AzureProvider) ListResources(ctx context.Context, req *pb.ListResourcesRequest) (*pb.ListResourcesResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -432,8 +469,8 @@ func (p *AzureProvider) ListResources(ctx context.Context, req *pb.ListResources
 		resources = serviceResources
 	} else {
 		// List all resources - use Resource Graph for efficiency if available
-		if p.resourceGraph != nil {
-			allResources, err := p.resourceGraph.QueryAllResources(ctx)
+		if p.resourceGraph.Load() != nil {
+			allResources, err := p.resourceGraph.Load().QueryAllResources(ctx)
 			if err != nil {
 				log.Printf("Resource Graph query failed, falling back to ARM: %v", err)
 				// Fall back to ARM scanning
@@ -465,42 +502,18 @@ func (p *AzureProvider) ListResources(ctx context.Context, req *pb.ListResources
 
 // BatchScan performs batch scanning of multiple services
 func (p *AzureProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
 	startTime := time.Now()
-	var allResources []*pb.Resource
-	var errors []string
 	stats := &pb.ScanStats{
 		ResourceCounts: make(map[string]int32),
 		ServiceCounts:  make(map[string]int32),
 	}
 
-	// Use Resource Graph for efficient batch scanning if available
-	if p.resourceGraph != nil && len(req.Services) > 1 {
-		resources, err := p.batchScanWithResourceGraph(ctx, req)
-		if err != nil {
-			log.Printf("Resource Graph batch scan failed, falling back to ARM: %v", err)
-			// Fall back to ARM scanning
-			resources, err = p.batchScanWithARM(ctx, req)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("Batch scan failed: %v", err))
-			} else {
-				allResources = resources
-			}
-		} else {
-			allResources = resources
-		}
-	} else {
-		// Use ARM scanning
-		resources, err := p.batchScanWithARM(ctx, req)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("Batch scan failed: %v", err))
-		} else {
-			allResources = resources
-		}
-	}
+	allResources, errors := p.scanBatch(ctx, req)
+	errors = append(errors, p.scopeScanErrors()...)
 
 	// Calculate statistics
 	stats.TotalResources = int32(len(allResources))
@@ -519,9 +532,49 @@ func (p *AzureProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest)
 	}, nil
 }
 
+// scanBatch runs the scan BatchScan asked for. It returns every resource observed and one error
+// entry per failure that may have dropped resources, so the scan is partial rather than
+// silently smaller (ADR 0023).
+func (p *AzureProvider) scanBatch(
+	ctx context.Context, req *pb.BatchScanRequest,
+) ([]*pb.Resource, []string) {
+	rg := p.resourceGraph.Load()
+	if rg == nil || len(req.Services) <= 1 {
+		return p.batchScanWithARM(ctx, req)
+	}
+	resources, scanErrors, err := p.batchScanWithResourceGraph(ctx, rg, req)
+	if err == nil {
+		return resources, scanErrors
+	}
+
+	log.Printf("Resource Graph batch scan failed, falling back to ARM: %v", err)
+	armResources, armErrors := p.batchScanWithARM(ctx, req)
+	scanErrors = append(scanErrors, armErrors...)
+	// ARM lists only the provider's own subscription. When Resource Graph covered more, the
+	// fallback cannot observe the whole scope, so the Resource Graph failure stays reported.
+	if !rg.coversOnly(p.subscriptionID) {
+		scanErrors = append(scanErrors, shared.ServiceScanError("resourcegraph", err))
+	}
+	return mergeResources(armResources, resources), scanErrors
+}
+
+// mergeResources returns primary plus every resource in extra whose ID primary lacks.
+func mergeResources(primary, extra []*pb.Resource) []*pb.Resource {
+	seen := make(map[string]bool, len(primary))
+	for _, resource := range primary {
+		seen[resource.Id] = true
+	}
+	for _, resource := range extra {
+		if !seen[resource.Id] {
+			primary = append(primary, resource)
+		}
+	}
+	return primary
+}
+
 // StreamScan streams resources as they are discovered
 func (p *AzureProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 
@@ -547,7 +600,7 @@ func (p *AzureProvider) streamSource() resourceStreamer {
 
 // GetSchemas returns database schemas for resources
 func (p *AzureProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -710,7 +763,7 @@ func (p *AzureProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasReques
 
 // DescribeResource provides detailed information about a specific resource
 func (p *AzureProvider) DescribeResource(ctx context.Context, req *pb.DescribeResourceRequest) (*pb.DescribeResourceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -730,8 +783,8 @@ func (p *AzureProvider) DescribeResource(ctx context.Context, req *pb.DescribeRe
 	}
 
 	// Add relationships if requested
-	if req.IncludeRelationships && p.resourceGraph != nil {
-		relationships, err := p.resourceGraph.QueryResourceRelationships(ctx, resourceRef.Id)
+	if req.IncludeRelationships && p.resourceGraph.Load() != nil {
+		relationships, err := p.resourceGraph.Load().QueryResourceRelationships(ctx, resourceRef.Id)
 		if err != nil {
 			log.Printf("Failed to query relationships for %s: %v", resourceRef.Id, err)
 		} else {
@@ -795,13 +848,18 @@ func (p *AzureProvider) isServiceIncluded(service string, includeList []string) 
 }
 
 func (p *AzureProvider) getScanMethod() string {
-	if p.resourceGraph != nil {
+	if p.resourceGraph.Load() != nil {
 		return "resource_graph"
 	}
 	return "arm_api"
 }
 
-func (p *AzureProvider) batchScanWithResourceGraph(ctx context.Context, req *pb.BatchScanRequest) ([]*pb.Resource, error) {
+// batchScanWithResourceGraph queries Resource Graph for the requested services. err means the
+// query failed and resources holds only what arrived first; scanErrors reports resources whose
+// full details could not be fetched.
+func (p *AzureProvider) batchScanWithResourceGraph(
+	ctx context.Context, rg *ResourceGraphClient, req *pb.BatchScanRequest,
+) (resources []*pb.Resource, scanErrors []string, err error) {
 	// Use Resource Graph for efficient batch scanning
 	filters := make(map[string]interface{})
 
@@ -849,94 +907,79 @@ func (p *AzureProvider) batchScanWithResourceGraph(ctx context.Context, req *pb.
 	}
 
 	log.Printf("Resource Graph query filters: %+v", filters)
-	resourceRefs, err := p.resourceGraph.QueryResourcesWithFilter(ctx, filters)
-	if err != nil {
-		return nil, fmt.Errorf("resource graph query failed: %w", err)
-	}
-	log.Printf("Resource Graph returned %d resources (VERSION 2)", len(resourceRefs))
+	resourceRefs, queryErr := rg.QueryResourcesWithFilter(ctx, filters)
+	log.Printf("Resource Graph returned %d resources", len(resourceRefs))
 
-	// Debug: Log the first few resources to see what data we have
-	for i, ref := range resourceRefs {
-		if i < 3 && ref.BasicAttributes != nil {
-			keys := make([]string, 0, len(ref.BasicAttributes))
-			for k := range ref.BasicAttributes {
-				keys = append(keys, k)
-			}
-			log.Printf("DEBUG Resource %d: Name=%s, Type=%s, BasicAttributes keys=%v",
-				i, ref.Name, ref.Type, keys)
-			if rawData, ok := ref.BasicAttributes["raw_data"]; ok {
-				log.Printf("  raw_data length: %d", len(rawData))
-			}
-			if props, ok := ref.BasicAttributes["properties"]; ok {
-				log.Printf("  properties length: %d", len(props))
-			}
-		}
-	}
-
-	// Convert ResourceRef to Resource
-	resources := make([]*pb.Resource, 0, len(resourceRefs))
+	describeErrs := newDescribeErrors()
+	resources = make([]*pb.Resource, 0, len(resourceRefs))
 	for _, ref := range resourceRefs {
-		resource := &pb.Resource{
-			Provider:     "azure",
-			Service:      ref.Service,
-			Type:         ref.Type,
-			Id:           ref.Id,
-			Name:         ref.Name,
-			Region:       ref.Region,
-			Tags:         make(map[string]string),
-			DiscoveredAt: timestamppb.Now(),
+		resource, err := p.resourceFromGraphRef(ctx, ref)
+		if err != nil {
+			describeErrs.add(ref.Service, err)
 		}
-
-		// Extract metadata
-		if ref.BasicAttributes != nil {
-			if rg, ok := ref.BasicAttributes["resource_group"]; ok {
-				resource.ParentId = rg
-			}
-			if subID, ok := ref.BasicAttributes["subscription_id"]; ok {
-				resource.AccountId = subID
-			}
-
-			// Extract tags
-			for k, v := range ref.BasicAttributes {
-				if strings.HasPrefix(k, "tag_") {
-					tagName := strings.TrimPrefix(k, "tag_")
-					resource.Tags[tagName] = v
-				}
-			}
-
-			// Store raw data - prefer full raw_data over just properties
-			if rawData, ok := ref.BasicAttributes["raw_data"]; ok {
-				resource.RawData = rawData
-				log.Printf("DEBUG: Using raw_data for %s: %d bytes", ref.Name, len(rawData))
-			} else if props, ok := ref.BasicAttributes["properties"]; ok {
-				// Fallback to just properties if raw_data not available
-				resource.RawData = props
-				log.Printf("DEBUG: Using properties for %s: %d bytes", ref.Name, len(props))
-			} else {
-				log.Printf("DEBUG: No raw_data or properties for %s (type: %s)", ref.Name, ref.Type)
-
-				// For resources without metadata, especially storage accounts, fetch full details
-				if strings.Contains(strings.ToLower(ref.Type), "storage") || resource.RawData == "" {
-					log.Printf("DEBUG: Fetching full details for %s via DescribeResource", ref.Name)
-					if fullResource, err := p.scanner.DescribeResource(ctx, ref); err == nil {
-						resource.RawData = fullResource.RawData
-						log.Printf("DEBUG: Successfully fetched full details for %s, RawData length: %d", ref.Name, len(resource.RawData))
-					} else {
-						log.Printf("DEBUG: Failed to fetch full details for %s: %v", ref.Name, err)
-					}
-				}
-			}
-		}
-
 		resources = append(resources, resource)
 	}
-
-	return resources, nil
+	if queryErr != nil {
+		queryErr = fmt.Errorf("resource graph query failed: %w", queryErr)
+	}
+	return resources, describeErrs.entries(), queryErr
 }
 
-func (p *AzureProvider) batchScanWithARM(ctx context.Context, req *pb.BatchScanRequest) ([]*pb.Resource, error) {
-	// Fall back to ARM API scanning
+// resourceFromGraphRef converts a Resource Graph row to a Resource. A row without properties is
+// described through ARM; if that fails the resource is still returned, from the row alone,
+// with the error, because its configuration was not observed.
+func (p *AzureProvider) resourceFromGraphRef(
+	ctx context.Context, ref *pb.ResourceRef,
+) (*pb.Resource, error) {
+	resource := basicResourceFromRef(ref)
+	if resource.RawData != "" || ref.BasicAttributes == nil {
+		return resource, nil
+	}
+	fullResource, err := p.scanner.DescribeResource(ctx, ref)
+	if err != nil {
+		return resource, err
+	}
+	resource.RawData = fullResource.RawData
+	return resource, nil
+}
+
+// describeErrors summarizes describe failures per service: one entry with a count and the first
+// error, rather than one entry per resource.
+type describeErrors struct {
+	count map[string]int
+	first map[string]error
+	order []string
+}
+
+func newDescribeErrors() *describeErrors {
+	return &describeErrors{count: make(map[string]int), first: make(map[string]error)}
+}
+
+func (d *describeErrors) add(service string, err error) {
+	if d.count[service] == 0 {
+		d.first[service] = err
+		d.order = append(d.order, service)
+	}
+	d.count[service]++
+}
+
+func (d *describeErrors) entries() []string {
+	var entries []string
+	for _, service := range d.order {
+		err := fmt.Errorf("describe failed for %d resources, first: %w",
+			d.count[service], d.first[service])
+		entries = append(entries, shared.ServiceScanError(service, err))
+	}
+	return entries
+}
+
+// batchScanWithARM scans each requested service through ARM. A failed service keeps the
+// resources it returned and adds an error entry.
+func (p *AzureProvider) batchScanWithARM(
+	ctx context.Context, req *pb.BatchScanRequest,
+) ([]*pb.Resource, []string) {
 	var allResources []*pb.Resource
+	var scanErrors []string
 
 	log.Printf("Using ARM API - Batch scanning %d services: %v", len(req.Services), req.Services)
 
@@ -953,15 +996,14 @@ func (p *AzureProvider) batchScanWithARM(ctx context.Context, req *pb.BatchScanR
 		log.Printf("Scanning service: %s", service)
 		resources, err := p.scanner.ScanServiceForResources(ctx, service, cleanFilters)
 		if err != nil {
-			log.Printf("Failed to scan service %s: %v", service, err)
-			continue
+			scanErrors = append(scanErrors, shared.ServiceScanError(service, err))
 		}
 		log.Printf("Found %d resources for service %s", len(resources), service)
 		allResources = append(allResources, resources...)
 	}
 
 	log.Printf("Total resources found in batch scan: %d", len(allResources))
-	return allResources, nil
+	return allResources, scanErrors
 }
 
 func (p *AzureProvider) generateCreateTableSQL(schema *TableSchema) string {
@@ -994,7 +1036,7 @@ func (p *AzureProvider) generateCreateTableSQL(schema *TableSchema) string {
 
 // ConfigureDiscovery configures the auto-discovery system
 func (p *AzureProvider) ConfigureDiscovery(ctx context.Context, req *pb.ConfigureDiscoveryRequest) (*pb.ConfigureDiscoveryResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1006,7 +1048,7 @@ func (p *AzureProvider) ConfigureDiscovery(ctx context.Context, req *pb.Configur
 
 // AnalyzeDiscoveredData analyzes discovered Azure resources and generates insights
 func (p *AzureProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.AnalyzeRequest) (*pb.AnalysisResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1018,7 +1060,7 @@ func (p *AzureProvider) AnalyzeDiscoveredData(ctx context.Context, req *pb.Analy
 
 // GenerateFromAnalysis generates scanners or configurations based on analysis results
 func (p *AzureProvider) GenerateFromAnalysis(ctx context.Context, req *pb.GenerateFromAnalysisRequest) (*pb.GenerateResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1030,7 +1072,7 @@ func (p *AzureProvider) GenerateFromAnalysis(ctx context.Context, req *pb.Genera
 
 // GetServiceInfo returns information about a specific Azure service
 func (p *AzureProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceInfoRequest) (*pb.ServiceInfoResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1084,7 +1126,7 @@ func (p *AzureProvider) GetServiceInfo(ctx context.Context, req *pb.GetServiceIn
 
 // DiscoverManagementGroups discovers the management group hierarchy
 func (p *AzureProvider) DiscoverManagementGroups(ctx context.Context) (*ManagementGroupDiscoveryResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1107,7 +1149,7 @@ func (p *AzureProvider) DiscoverManagementGroups(ctx context.Context) (*Manageme
 
 // DeployEnterpriseApp deploys a Corkscrew enterprise application
 func (p *AzureProvider) DeployEnterpriseApp(ctx context.Context, config *EntraIDAppConfig) (*EntraIDAppResult, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1152,7 +1194,7 @@ func (p *AzureProvider) DeployEnterpriseApp(ctx context.Context, config *EntraID
 
 // SetManagementGroupScope sets the scope for resource operations
 func (p *AzureProvider) SetManagementGroupScope(ctx context.Context, scopeID string, scopeType string) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 
@@ -1165,7 +1207,9 @@ func (p *AzureProvider) SetManagementGroupScope(ctx context.Context, scopeID str
 
 	switch scopeType {
 	case "management_group":
-		scopes, err := p.managementGroupClient.discoverManagementGroupRecursive(ctx, scopeID, 0)
+		visited := make(map[string]bool)
+		scopes, err := p.managementGroupClient.discoverManagementGroupRecursive(
+			ctx, scopeID, 0, visited)
 		if err != nil {
 			return fmt.Errorf("failed to discover management group %s: %w", scopeID, err)
 		}
@@ -1183,10 +1227,12 @@ func (p *AzureProvider) SetManagementGroupScope(ctx context.Context, scopeID str
 		return fmt.Errorf("unsupported scope type: %s", scopeType)
 	}
 
-	// Update the provider scope
+	// Update the provider scope. An explicitly chosen scope replaces any narrowing that
+	// automatic discovery reported.
 	p.mu.Lock()
 	p.currentScopes = newScopes
 	p.scopeType = scopeType
+	p.scopeErr = nil
 	p.mu.Unlock()
 
 	// Reinitialize Resource Graph with new scope
@@ -1196,7 +1242,7 @@ func (p *AzureProvider) SetManagementGroupScope(ctx context.Context, scopeID str
 		if err != nil {
 			log.Printf("Warning: Failed to reinitialize Resource Graph with new scope: %v", err)
 		} else {
-			p.resourceGraph = resourceGraph
+			p.resourceGraph.Store(resourceGraph)
 			log.Printf("Resource Graph reinitialized with %d subscriptions in scope", len(subscriptions))
 		}
 	}
@@ -1206,7 +1252,7 @@ func (p *AzureProvider) SetManagementGroupScope(ctx context.Context, scopeID str
 
 // ScanService performs scanning for a specific Azure service
 func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error) {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return nil, fmt.Errorf("provider not initialized")
 	}
 
@@ -1218,91 +1264,10 @@ func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequ
 	log.Printf("ScanService called for service: %s", req.Service)
 
 	startTime := time.Now()
-	var resources []*pb.Resource
-	var err error
-
-	// Use Resource Graph or ARM API
-	if p.resourceGraph != nil {
-		// Use Resource Graph for efficient scanning
-		serviceMapping := map[string][]string{
-			"storage":           {"microsoft.storage/storageaccounts"},
-			"compute":           {"microsoft.compute/virtualmachines", "microsoft.compute/disks", "microsoft.compute/virtualmachinescalesets"},
-			"network":           {"microsoft.network/virtualnetworks", "microsoft.network/networkinterfaces", "microsoft.network/publicipaddresses"},
-			"keyvault":          {"microsoft.keyvault/vaults"},
-			"sql":               {"microsoft.sql/servers", "microsoft.sql/servers/databases"},
-			"cosmosdb":          {"microsoft.documentdb/databaseaccounts"},
-			"appservice":        {"microsoft.web/sites", "microsoft.web/serverfarms"},
-			"functions":         {"microsoft.web/sites"},
-			"aks":               {"microsoft.containerservice/managedclusters"},
-			"containerregistry": {"microsoft.containerregistry/registries"},
-			"monitor":           {"microsoft.insights/components", "microsoft.operationalinsights/workspaces"},
-			"eventhub":          {"microsoft.eventhub/namespaces"},
-			"managedidentity":   {"microsoft.managedidentity/userassignedidentities"},
-		}
-
-		resourceTypes := []string{}
-		if types, ok := serviceMapping[strings.ToLower(req.Service)]; ok {
-			resourceTypes = types
-		} else {
-			// Generic pattern
-			resourceTypes = []string{fmt.Sprintf("microsoft.%s/*", strings.ToLower(req.Service))}
-		}
-
-		filters := map[string]interface{}{
-			"type": resourceTypes,
-		}
-
-		resourceRefs, err := p.resourceGraph.QueryResourcesWithFilter(ctx, filters)
-		if err != nil {
-			return nil, fmt.Errorf("resource graph query failed: %w", err)
-		}
-
-		// Convert ResourceRef to Resource
-		for _, ref := range resourceRefs {
-			resource := &pb.Resource{
-				Provider:     "azure",
-				Service:      ref.Service,
-				Type:         ref.Type,
-				Id:           ref.Id,
-				Name:         ref.Name,
-				Region:       ref.Region,
-				Tags:         make(map[string]string),
-				DiscoveredAt: timestamppb.Now(),
-			}
-
-			// Extract metadata
-			if ref.BasicAttributes != nil {
-				if rg, ok := ref.BasicAttributes["resource_group"]; ok {
-					resource.ParentId = rg
-				}
-				if subID, ok := ref.BasicAttributes["subscription_id"]; ok {
-					resource.AccountId = subID
-				}
-
-				// Extract tags
-				for k, v := range ref.BasicAttributes {
-					if strings.HasPrefix(k, "tag_") {
-						tagName := strings.TrimPrefix(k, "tag_")
-						resource.Tags[tagName] = v
-					}
-				}
-			}
-
-			// If relationships are requested, enrich the resource
-			if req.IncludeRelationships {
-				// Extract relationships from resource properties
-				// This is simplified - real implementation would parse resource properties
-				resource.Relationships = []*pb.Relationship{}
-			}
-
-			resources = append(resources, resource)
-		}
-	} else {
-		// Fall back to ARM API scanning
-		resources, err = p.scanner.ScanServiceForResources(ctx, req.Service, map[string]string{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan service %s: %w", req.Service, err)
-		}
+	resources, scanErr := p.scanServiceResources(ctx, req)
+	scanErrors := p.scopeScanErrors()
+	if scanErr != nil {
+		scanErrors = append(scanErrors, shared.ServiceScanError(req.Service, scanErr))
 	}
 
 	// Calculate stats
@@ -1314,6 +1279,7 @@ func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequ
 	return &pb.ScanServiceResponse{
 		Service:   req.Service,
 		Resources: resources,
+		Errors:    scanErrors,
 		Stats: &pb.ScanStats{
 			TotalResources: int32(len(resources)),
 			DurationMs:     time.Since(startTime).Milliseconds(),
@@ -1325,9 +1291,65 @@ func (p *AzureProvider) ScanService(ctx context.Context, req *pb.ScanServiceRequ
 	}, nil
 }
 
+// scanServiceResources lists one service through Resource Graph, or ARM without it. It returns
+// the resources observed even when it also returns an error.
+func (p *AzureProvider) scanServiceResources(
+	ctx context.Context, req *pb.ScanServiceRequest,
+) ([]*pb.Resource, error) {
+	rg := p.resourceGraph.Load()
+	if rg == nil {
+		return p.scanner.ScanServiceForResources(ctx, req.Service, map[string]string{})
+	}
+
+	resourceTypes := []string{fmt.Sprintf("microsoft.%s/*", strings.ToLower(req.Service))}
+	if types, ok := scanServiceResourceTypes[strings.ToLower(req.Service)]; ok {
+		resourceTypes = types
+	}
+	filters := map[string]interface{}{"type": resourceTypes}
+	resourceRefs, err := rg.QueryResourcesWithFilter(ctx, filters)
+	if err != nil {
+		err = fmt.Errorf("resource graph query failed: %w", err)
+	}
+
+	resources := make([]*pb.Resource, 0, len(resourceRefs))
+	for _, ref := range resourceRefs {
+		resource := basicResourceFromRef(ref)
+		if req.IncludeRelationships {
+			resource.Relationships = []*pb.Relationship{}
+		}
+		resources = append(resources, resource)
+	}
+	return resources, err
+}
+
+// scanServiceResourceTypes maps service names to the Resource Graph types ScanService queries.
+var scanServiceResourceTypes = map[string][]string{
+	"storage": {"microsoft.storage/storageaccounts"},
+	"compute": {
+		"microsoft.compute/virtualmachines", "microsoft.compute/disks",
+		"microsoft.compute/virtualmachinescalesets",
+	},
+	"network": {
+		"microsoft.network/virtualnetworks", "microsoft.network/networkinterfaces",
+		"microsoft.network/publicipaddresses",
+	},
+	"keyvault":          {"microsoft.keyvault/vaults"},
+	"sql":               {"microsoft.sql/servers", "microsoft.sql/servers/databases"},
+	"cosmosdb":          {"microsoft.documentdb/databaseaccounts"},
+	"appservice":        {"microsoft.web/sites", "microsoft.web/serverfarms"},
+	"functions":         {"microsoft.web/sites"},
+	"aks":               {"microsoft.containerservice/managedclusters"},
+	"containerregistry": {"microsoft.containerregistry/registries"},
+	"monitor": {
+		"microsoft.insights/components", "microsoft.operationalinsights/workspaces",
+	},
+	"eventhub":        {"microsoft.eventhub/namespaces"},
+	"managedidentity": {"microsoft.managedidentity/userassignedidentities"},
+}
+
 // StreamScanService streams resources as they are discovered for a specific Azure service
 func (p *AzureProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.CloudProvider_StreamScanServer) error {
-	if !p.initialized {
+	if !p.initialized.Load() {
 		return fmt.Errorf("provider not initialized")
 	}
 
@@ -1345,11 +1367,15 @@ func (p *AzureProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.
 		return fmt.Errorf("failed to scan Azure service %s: %w", req.Service, err)
 	}
 
-	// Stream each resource
+	// Stream each resource, then report any failure so the stream does not end as complete.
 	for _, resource := range scanResponse.Resources {
 		if err := stream.Send(resource); err != nil {
 			return fmt.Errorf("failed to send resource: %w", err)
 		}
+	}
+	if len(scanResponse.Errors) > 0 {
+		return fmt.Errorf("scan Azure service %s: %s",
+			req.Service, strings.Join(scanResponse.Errors, "; "))
 	}
 
 	return nil

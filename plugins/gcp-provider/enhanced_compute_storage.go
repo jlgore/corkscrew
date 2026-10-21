@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	pb "github.com/jlgore/corkscrew/internal/proto"
@@ -29,13 +29,14 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := ecs.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
 		// Scan instances
 		instanceRefs, err := ecs.scanInstances(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan instances for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan instances for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, instanceRefs...)
 		}
@@ -43,7 +44,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan disks
 		diskRefs, err := ecs.scanDisks(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan disks for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan disks for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, diskRefs...)
 		}
@@ -51,7 +52,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan networks
 		networkRefs, err := ecs.scanNetworks(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan networks for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan networks for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, networkRefs...)
 		}
@@ -59,7 +60,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan subnetworks
 		subnetRefs, err := ecs.scanSubnetworks(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan subnetworks for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan subnetworks for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, subnetRefs...)
 		}
@@ -67,7 +68,8 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan firewall rules
 		firewallRefs, err := ecs.scanFirewallRules(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan firewall rules for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan firewall rules for project %s: %w",
+				projectID, err))
 		} else {
 			resources = append(resources, firewallRefs...)
 		}
@@ -75,7 +77,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan addresses
 		addressRefs, err := ecs.scanAddresses(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan addresses for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan addresses for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, addressRefs...)
 		}
@@ -83,7 +85,7 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan snapshots
 		snapshotRefs, err := ecs.scanSnapshots(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan snapshots for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan snapshots for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, snapshotRefs...)
 		}
@@ -91,13 +93,13 @@ func (ecs *EnhancedComputeScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 		// Scan images
 		imageRefs, err := ecs.scanImages(ctx, client, projectID)
 		if err != nil {
-			log.Printf("Failed to scan images for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("scan images for project %s: %w", projectID, err))
 		} else {
 			resources = append(resources, imageRefs...)
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (ecs *EnhancedComputeScanner) scanInstances(ctx context.Context, client *compute.Service, projectID string) ([]*pb.ResourceRef, error) {
@@ -507,6 +509,7 @@ func (ess *EnhancedStorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 	}
 
 	var resources []*pb.ResourceRef
+	var errs []error
 	projectIDs := ess.clientFactory.GetProjectIDs()
 
 	for _, projectID := range projectIDs {
@@ -584,12 +587,12 @@ func (ess *EnhancedStorageScanner) Scan(ctx context.Context) ([]*pb.ResourceRef,
 			}
 			return nil
 		}); err != nil {
-			log.Printf("Failed to list buckets for project %s: %v", projectID, err)
+			errs = append(errs, fmt.Errorf("list buckets for project %s: %w", projectID, err))
 			continue
 		}
 	}
 
-	return resources, nil
+	return resources, errors.Join(errs...)
 }
 
 func (ess *EnhancedStorageScanner) DescribeResource(ctx context.Context, resourceID string) (*pb.Resource, error) {
