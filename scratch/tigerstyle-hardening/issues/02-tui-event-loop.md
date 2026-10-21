@@ -1,6 +1,6 @@
 # Stop the TUI resize loop and cap the router history
 
-Status: ready-for-agent
+Status: complete
 Phase: P0
 
 ## Problem
@@ -26,3 +26,10 @@ Phase: P0
 - Test: feed one `WindowSizeMsg` into `Update`, run the returned `tea.Cmd`s, and check that none of
   them produces another `WindowSizeMsg`.
 - Test: 100 `SwitchView` calls leave `len(history) <= 32`.
+
+## Comments
+
+2026-10-21: Done. The resize re-emit is gone, history is capped at 32 (oldest dropped), and quit
+cancels the app context that quick scans now use. An unknown view type returns an ErrorMsg and leaves
+the router where it was; a missing current view panics because it is a router bug. Duplicate or stale
+provider completions are ignored rather than asserted, since they are message-delivery conditions.

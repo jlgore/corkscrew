@@ -60,10 +60,16 @@ type CorkscrewApp struct {
 
 	// Ticker for periodic updates
 	ticker *time.Ticker
+
+	// ctx scopes work the app starts, such as quick scans and their plugin processes.
+	// cancel runs on quit so that work does not outlive the program.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewCorkscrewApp creates a new Corkscrew TUI application
 func NewCorkscrewApp() *CorkscrewApp {
+	ctx, cancel := context.WithCancel(context.Background())
 	app := &CorkscrewApp{
 		router:      NewViewRouter(),
 		statusBar:   components.NewStatusBarModel(),
@@ -77,6 +83,8 @@ func NewCorkscrewApp() *CorkscrewApp {
 		startView:   ViewMain,
 		scanning:    false,
 		ticker:      time.NewTicker(time.Second),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	// Configure help
@@ -149,10 +157,8 @@ func (app *CorkscrewApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// The router receives msg below; re-emitting it here would loop Update forever.
 		app.handleWindowSize(msg)
-
-		// Forward to components
-		cmds = append(cmds, func() tea.Msg { return msg })
 
 	case tea.KeyMsg:
 		cmd := app.handleGlobalKeys(msg)
@@ -174,7 +180,7 @@ func (app *CorkscrewApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		app.updateBreadcrumb()
 
 	case QuitMsg:
-		return app, tea.Quit
+		return app, app.quit()
 
 	case ToggleHelpMsg:
 		app.showHelp = !app.showHelp
@@ -329,6 +335,13 @@ func (app *CorkscrewApp) renderHelpOverlay() string {
 	)
 }
 
+// quit cancels in-flight work and stops the ticker before telling bubbletea to exit.
+func (app *CorkscrewApp) quit() tea.Cmd {
+	app.cancel()
+	app.ticker.Stop()
+	return tea.Quit
+}
+
 // Event handlers
 
 func (app *CorkscrewApp) handleWindowSize(msg tea.WindowSizeMsg) {
@@ -354,9 +367,9 @@ func (app *CorkscrewApp) handleWindowSize(msg tea.WindowSizeMsg) {
 func (app *CorkscrewApp) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case msg.String() == "ctrl+c":
-		return tea.Quit
+		return app.quit()
 	case msg.String() == "q" && !app.showHelp:
-		return tea.Quit
+		return app.quit()
 	case msg.String() == "?":
 		return func() tea.Msg { return ToggleHelpMsg{} }
 	case msg.String() == "esc":
@@ -451,6 +464,10 @@ func (app *CorkscrewApp) beginQuickScan() tea.Cmd {
 	if app.config == nil {
 		return func() tea.Msg { return ErrorMsg{Error: fmt.Errorf("scan configuration is not available")} }
 	}
+	if app.quickScanRunning() {
+		// Restarting would reset the counters while a provider scan is still in flight.
+		return func() tea.Msg { return ErrorMsg{Error: fmt.Errorf("a quick scan is already running")} }
+	}
 	providers := make([]string, 0, len(app.config.Providers))
 	for name, provider := range app.config.Providers {
 		if provider.Enabled {
@@ -473,17 +490,30 @@ func (app *CorkscrewApp) beginQuickScan() tea.Cmd {
 }
 
 func (app *CorkscrewApp) runQuickScanProvider(provider string) tea.Cmd {
+	// Capture on the Update goroutine; the command itself runs on another goroutine.
+	ctx, runner := app.ctx, app.scanRunner
 	return func() tea.Msg {
-		outcome, err := app.scanRunner(context.Background(), scanapp.Request{Provider: provider})
+		outcome, err := runner(ctx, scanapp.Request{Provider: provider})
 		return providerScanCompleteMsg{provider: provider, outcome: outcome, err: err}
 	}
 }
 
+// quickScanRunning reports whether a quick scan has providers left to complete.
+func (app *CorkscrewApp) quickScanRunning() bool {
+	return app.quickScanCompleted < len(app.quickScanProviders)
+}
+
 func (app *CorkscrewApp) handleProviderScanComplete(msg providerScanCompleteMsg) tea.Cmd {
+	// Providers run one at a time, so only the provider at quickScanCompleted can be in flight.
+	// Anything else is a duplicate or stale message; counting it would push progress past 1.0.
+	if !app.quickScanRunning() || app.quickScanProviders[app.quickScanCompleted] != msg.provider {
+		return nil
+	}
 	app.quickScanCompleted++
+	total := len(app.quickScanProviders)
 	if app.scanStatus != nil {
 		app.scanStatus.Resources += len(msg.outcome.Resources)
-		app.scanStatus.Progress = float64(app.quickScanCompleted) / float64(len(app.quickScanProviders))
+		app.scanStatus.Progress = float64(app.quickScanCompleted) / float64(total)
 	}
 	if msg.err != nil {
 		app.quickScanErrors = append(app.quickScanErrors, fmt.Errorf("%s: %w", msg.provider, msg.err))
@@ -491,14 +521,17 @@ func (app *CorkscrewApp) handleProviderScanComplete(msg providerScanCompleteMsg)
 			app.scanStatus.Errors++
 		}
 	}
-	if app.quickScanCompleted < len(app.quickScanProviders) {
+	if app.quickScanRunning() {
 		next := app.quickScanProviders[app.quickScanCompleted]
 		if app.scanStatus != nil {
 			app.scanStatus.Operation = fmt.Sprintf("Scanning %s", next)
 		}
 		return app.runQuickScanProvider(next)
 	}
+	return app.finishQuickScan()
+}
 
+func (app *CorkscrewApp) finishQuickScan() tea.Cmd {
 	resources := 0
 	if app.scanStatus != nil {
 		resources = app.scanStatus.Resources
@@ -506,7 +539,9 @@ func (app *CorkscrewApp) handleProviderScanComplete(msg providerScanCompleteMsg)
 	duration := time.Since(app.quickScanStarted)
 	combined := errors.Join(app.quickScanErrors...)
 	return func() tea.Msg {
-		return ScanCompleteMsg{ScanID: "quick-scan", Resources: resources, Duration: duration, Error: combined}
+		return ScanCompleteMsg{
+			ScanID: "quick-scan", Resources: resources, Duration: duration, Error: combined,
+		}
 	}
 }
 
