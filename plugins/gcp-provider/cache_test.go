@@ -82,6 +82,52 @@ func TestCacheSweepsExpiredBeforeEvicting(t *testing.T) {
 	}
 }
 
+// Successive evictions take live entries in expiry order, judged by each key's
+// latest TTL: a key overwritten with a later expiry is not evicted at its old one.
+func TestCacheEvictsInExpiryOrder(t *testing.T) {
+	cache := NewCache(time.Hour, 3)
+	defer cache.Stop()
+
+	cache.SetWithTTL("a", 0, 30*time.Second)
+	cache.SetWithTTL("b", 0, 10*time.Second)
+	cache.SetWithTTL("c", 0, 20*time.Second)
+	cache.SetWithTTL("b", 0, time.Minute) // b now expires last of the three.
+
+	cache.Set("d", 0) // Evicts c, the nearest live expiry.
+	cache.Set("e", 0) // Evicts a.
+	for _, key := range []string{"a", "c"} {
+		if _, ok := cache.Get(key); ok {
+			t.Fatalf("%s survived; eviction must follow expiry order", key)
+		}
+	}
+	for _, key := range []string{"b", "d", "e"} {
+		if _, ok := cache.Get(key); !ok {
+			t.Fatalf("%s evicted out of expiry order", key)
+		}
+	}
+}
+
+// Eviction used to scan the whole map twice per insert into a full cache. The
+// expiry index makes it logarithmic, but overwrites leave stale index entries;
+// they must be compacted so the index stays bounded too.
+func TestCacheExpiryIndexStaysBounded(t *testing.T) {
+	const entriesMax = 8
+	cache := NewCache(time.Hour, entriesMax)
+	defer cache.Stop()
+
+	for index := 0; index < entriesMax*100; index++ {
+		cache.Set(fmt.Sprintf("key-%d", index%(entriesMax*2)), index)
+		cache.Set("hot", index)
+	}
+	if cache.Size() != entriesMax {
+		t.Fatalf("size = %d, want %d", cache.Size(), entriesMax)
+	}
+	if len(cache.order) > 2*entriesMax {
+		t.Fatalf("expiry index holds %d items, want at most %d", len(cache.order),
+			2*entriesMax)
+	}
+}
+
 func TestMultiLevelCacheStop(t *testing.T) {
 	mlc := NewMultiLevelCache()
 	mlc.Stop()
