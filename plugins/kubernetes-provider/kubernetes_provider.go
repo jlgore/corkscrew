@@ -38,6 +38,9 @@ type KubernetesProvider struct {
 	clientFactory *ClientFactory
 	relationships *RelationshipMapper
 
+	// newStreamer overrides the per-cluster stream producer; nil in production.
+	newStreamer func(*ClusterConnection) resourceStreamer
+
 	// Multi-cluster support
 	clusters      map[string]*ClusterConnection
 	activeCluster string
@@ -767,37 +770,16 @@ func (p *KubernetesProvider) StreamScan(req *pb.StreamScanRequest, stream pb.Clo
 
 // streamClusterResources streams resources from a specific cluster
 func (p *KubernetesProvider) streamClusterResources(ctx context.Context, cluster *ClusterConnection, req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
-	scanner := NewResourceScannerForCluster(cluster)
+	return streamResources(ctx, p.clusterStreamer(cluster), req.Services, stream.Send)
+}
 
-	// Create a channel for streaming results
-	resourceChan := make(chan *pb.Resource, 100)
-	errChan := make(chan error, 1)
-
-	// Start scanning in background
-	go func() {
-		defer close(resourceChan)
-		err := scanner.StreamScanResources(ctx, req.Services, resourceChan)
-		if err != nil {
-			errChan <- err
-		}
-	}()
-
-	// Stream resources as they arrive
-	for {
-		select {
-		case resource, ok := <-resourceChan:
-			if !ok {
-				return nil // Channel closed, scanning complete
-			}
-			if err := stream.Send(resource); err != nil {
-				return err
-			}
-		case err := <-errChan:
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+// clusterStreamer returns the stream producer for cluster. Tests inject a fake via
+// p.newStreamer.
+func (p *KubernetesProvider) clusterStreamer(cluster *ClusterConnection) resourceStreamer {
+	if p.newStreamer != nil {
+		return p.newStreamer(cluster)
 	}
+	return NewResourceScannerForCluster(cluster)
 }
 
 // streamWithInformers uses Kubernetes informers for real-time streaming
@@ -1022,44 +1004,21 @@ func (p *KubernetesProvider) StreamScanService(req *pb.ScanServiceRequest, strea
 	// Otherwise, scan and stream from each cluster
 	clusters := p.getClustersToScan(&pb.ListResourcesRequest{})
 
+	send := func(resource *pb.Resource) error {
+		// Enrich with relationships if requested
+		if req.IncludeRelationships && p.relationships != nil {
+			resource.Relationships = p.extractBasicRelationships(resource)
+		}
+		if err := stream.Send(resource); err != nil {
+			return fmt.Errorf("failed to send resource: %w", err)
+		}
+		return nil
+	}
+
 	for _, cluster := range clusters {
-		scanner := NewResourceScannerForCluster(cluster)
-
-		// Create a channel for streaming results
-		resourceChan := make(chan *pb.Resource, 100)
-		errChan := make(chan error, 1)
-
-		// Start scanning in background
-		go func() {
-			defer close(resourceChan)
-			err := scanner.StreamScanResources(ctx, resourceTypes, resourceChan)
-			if err != nil {
-				errChan <- err
-			}
-		}()
-
-		// Stream resources as they arrive
-		for {
-			select {
-			case resource, ok := <-resourceChan:
-				if !ok {
-					// Channel closed, move to next cluster
-					break
-				}
-
-				// Enrich with relationships if requested
-				if req.IncludeRelationships && p.relationships != nil {
-					resource.Relationships = p.extractBasicRelationships(resource)
-				}
-
-				if err := stream.Send(resource); err != nil {
-					return fmt.Errorf("failed to send resource: %w", err)
-				}
-			case err := <-errChan:
-				return fmt.Errorf("scanning error for cluster %s: %w", cluster.Name, err)
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+		streamer := p.clusterStreamer(cluster)
+		if err := streamResources(ctx, streamer, resourceTypes, send); err != nil {
+			return fmt.Errorf("scanning error for cluster %s: %w", cluster.Name, err)
 		}
 	}
 

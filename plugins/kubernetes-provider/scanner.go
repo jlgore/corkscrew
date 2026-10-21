@@ -250,7 +250,8 @@ func (s *ResourceScanner) GetResourceDetails(ctx context.Context, cluster *Clust
 	return s.convertToResource(obj, kind), nil
 }
 
-// StreamScanResources scans resources and streams them through a channel
+// StreamScanResources scans resources and streams them through a channel. It owns
+// resourceChan and closes it on return; callers must only receive.
 func (s *ResourceScanner) StreamScanResources(ctx context.Context, resourceTypes []string, resourceChan chan<- *pb.Resource) error {
 	defer close(resourceChan)
 
