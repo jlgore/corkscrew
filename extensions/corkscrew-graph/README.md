@@ -91,8 +91,34 @@ Cache TTL can be overridden per session with:
 `graph_traverse(..., filter_type)` accepts either SQL `NULL` or the literal
 string `'NULL'` to disable type filtering.
 
-`graph_match_pattern` caps results at 256 distinct matches. Detect truncation
-with `COUNT(DISTINCT match_id) = 256`.
+`graph_match_pattern` caps results at 256 distinct matches. Every row carries a
+`was_truncated` BOOLEAN that is true when the cap was reached and more matches
+may exist: the search found a 257th match, or ran out of its step budget while
+looking for one. Running out of budget before reaching the cap is an error.
+
+Limits. Every query has fixed upper bounds. A limit on work or result size
+fails the query with an error that names the limit. A correlator group that is
+too large is skipped and reported in its own row:
+
+- Patterns need 1 to 8 nodes, at most 56 edges, and at least one node with a
+  non-empty `type_filter` or one edge with a non-empty `rel_filter`. The VF2
+  search fails once it has made 100,000,000 node comparisons, which suggests
+  adding `type_filter` to more nodes.
+- `graph_traverse` fails if it would return more than 1,000,000 rows. Lower
+  `max_hops` or set `filter_type`.
+- A graph load fails past 10,000,000 nodes or 50,000,000 edges.
+- The correlators that pair records sharing a value (`ips`, `dns`, `domains`,
+  `load_balancers`, `secrets`) only compare records from different providers.
+  They skip any group whose cross-provider pairs would exceed 500,000, such as a
+  shared RFC1918 or Docker-bridge address used in several clouds. Same-provider
+  records never count against the limit, so a group with a single provider is
+  never skipped, and 1,100 AWS records sharing an IP with one Azure record are
+  still paired (1,100 pairs). Each skipped group becomes one row with
+  `correlation_type = 'group_skipped'`, `source_id` set to the shared value,
+  confidence `0.0`, and evidence `{group_kind, group_value, group_size,
+  group_providers, group_pairs, group_pairs_max}`. These rows ignore
+  `min_confidence` and sort last under `ORDER BY confidence DESC`. A correlator
+  fails if it would return more than 1,000,000 rows.
 
 Provider tables are detected by convention. Any pair of tables named
 `<prefix>_resources` and `<prefix>_relationships` (excluding the unified
@@ -105,9 +131,15 @@ either per session:
     SET VARIABLE corkscrew_graph_cache_ttl = 0;          -- always reload
     SET VARIABLE corkscrew_graph_cache_max_entries = 1;  -- single-entry cache
 
-Cache entries auto-invalidate when the backing DuckDB file's mtime or size
-changes, so re-running a scan into the same path doesn't need an explicit
-`graph_cache_invalidate` call.
+Each entry holds a whole graph, so `corkscrew_graph_cache_max_entries` is
+clamped to 1 through 16.
+
+Cache entries auto-invalidate when the mtime (in nanoseconds) or size of the
+backing DuckDB file or its `<db>.wal` write-ahead log changes, or the WAL
+appears or disappears, so re-running a scan into the same path doesn't
+need an explicit `graph_cache_invalidate` call. The fingerprint is taken before
+the load starts. A graph whose file changed during its own load goes back to
+that caller but is not cached. Loads of different databases run in parallel.
 
 **Edge weights**: `graph_shortest_path(..., weighted := true)` reads a positive
 integer `weight` field from each edge's JSON `properties` payload. No provider

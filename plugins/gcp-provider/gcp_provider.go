@@ -74,6 +74,15 @@ func NewGCPProvider() *GCPProvider {
 	}
 }
 
+// Close stops the background work the provider owns for its lifetime, the
+// cache cleanup goroutines and their tickers. It is idempotent.
+func (p *GCPProvider) Close() {
+	if p.cache == nil {
+		panic("gcp: provider has no cache; construct it with NewGCPProvider")
+	}
+	p.cache.Stop()
+}
+
 // Initialize sets up the GCP provider with credentials and configuration
 func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest) (*pb.InitializeResponse, error) {
 	p.mu.Lock()
@@ -101,7 +110,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 
 	// Initialize components
 	p.discovery = NewServiceDiscovery(p.clientFactory)
-	p.scanner = NewResourceScanner(p.clientFactory)
+	p.scanner = NewResourceScanner(p.clientFactory, p.maxConcurrency)
 	p.schemaGen = NewSchemaGenerator()
 	p.relationships = NewRelationshipExtractor()
 

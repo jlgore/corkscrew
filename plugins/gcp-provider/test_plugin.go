@@ -15,6 +15,7 @@ func testPlugin() {
 
 	ctx := context.Background()
 	provider := NewGCPProvider()
+	defer provider.Close()
 
 	// Test 1: Provider Info
 	log.Printf("📋 Testing GetProviderInfo...")
@@ -71,6 +72,7 @@ func testRealGCP() {
 
 	ctx := context.Background()
 	provider := NewGCPProvider()
+	defer provider.Close()
 
 	// Test initialization with real credentials
 	log.Printf("🔑 Testing real GCP initialization...")

@@ -2281,3 +2281,833 @@ fn guard_converts_panics_and_nul_bytes_into_plain_errors() {
     let result: Result<(), _> = guard("test::init", || Err("nul\0byte".into()));
     assert_eq!(result.unwrap_err().to_string(), "nul\\0byte");
 }
+
+// ---------------------------------------------------------------------------
+// Issue 16: limits on work, results, and the cache.
+// ---------------------------------------------------------------------------
+
+fn fixture_db(make: impl FnOnce(&Connection)) -> (TempDir, String) {
+    let temp_dir = TempDir::new().unwrap();
+    let fixture_path = temp_dir
+        .path()
+        .join("fixture.duckdb")
+        .to_string_lossy()
+        .into_owned();
+    let fixture_conn = Connection::open(&fixture_path).unwrap();
+    make(&fixture_conn);
+    drop(fixture_conn);
+    (temp_dir, fixture_path)
+}
+
+fn load_fixture(path: &str) -> loader::LoadedGraph {
+    let conn = Connection::open(path).unwrap();
+    let providers = schema::detect_providers(&conn).unwrap();
+    loader::load_graph(&conn, &providers).unwrap()
+}
+
+fn chain_pattern_json(node_count: usize, type_filter: Option<&str>) -> String {
+    let nodes: Vec<String> = (0..node_count)
+        .map(|index| match type_filter {
+            Some(filter) => format!(r#"{{"label":"n{index}","type_filter":"{filter}"}}"#),
+            None => format!(r#"{{"label":"n{index}"}}"#),
+        })
+        .collect();
+    let edges: Vec<String> = (1..node_count)
+        .map(|index| format!(r#"{{"from":"n{}","to":"n{index}"}}"#, index - 1))
+        .collect();
+    format!(
+        r#"{{"name":"chain","nodes":[{}],"edges":[{}]}}"#,
+        nodes.join(","),
+        edges.join(",")
+    )
+}
+
+#[test]
+fn pattern_with_more_than_eight_nodes_is_rejected() {
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    assert!(load_pattern(&chain_pattern_json(8, Some("ec2"))).is_ok());
+    let error = load_pattern(&chain_pattern_json(9, Some("ec2")))
+        .expect_err("nine nodes must be rejected")
+        .to_string();
+    assert!(error.contains("at most 8 nodes"), "{error}");
+}
+
+#[test]
+fn pattern_without_any_type_filter_is_rejected() {
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    let error = load_pattern(&chain_pattern_json(2, None))
+        .expect_err("a pattern with no type_filter must be rejected")
+        .to_string();
+    assert!(error.contains("type_filter"), "{error}");
+
+    let empty = load_pattern(r#"{"name":"empty","nodes":[],"edges":[]}"#)
+        .expect_err("an empty pattern must be rejected")
+        .to_string();
+    assert!(empty.contains("at least one node"), "{empty}");
+}
+
+#[test]
+fn pattern_anchored_only_by_an_edge_relationship_filter_is_accepted() {
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    // A relationship filter prunes VF2 candidates just as a type_filter does, so
+    // a pattern constrained only by its edges is bounded and must load.
+    let assumes_role = load_pattern(
+        r#"{"name":"assume","nodes":[{"label":"a"},{"label":"b"}],
+            "edges":[{"from":"a","to":"b","rel_filter":"assumes_role"}]}"#,
+    )
+    .expect("an edge relationship filter anchors the pattern");
+    assert_eq!(assumes_role.graph.node_count(), 2);
+    assert_eq!(assumes_role.graph.edge_count(), 1);
+
+    // An empty relationship filter matches every edge, so it anchors nothing.
+    let error = load_pattern(
+        r#"{"name":"empty_rel","nodes":[{"label":"a"},{"label":"b"}],
+            "edges":[{"from":"a","to":"b","rel_filter":""}]}"#,
+    )
+    .expect_err("an empty rel_filter must not anchor the pattern")
+    .to_string();
+    assert!(error.contains("rel_filter"), "{error}");
+}
+
+#[test]
+fn builtin_patterns_satisfy_pattern_bounds() {
+    use corkscrew_graph_tests::patterns::{builtin, load_pattern};
+
+    for definition in builtin::list() {
+        load_pattern(&definition.name)
+            .unwrap_or_else(|error| panic!("builtin {}: {error}", definition.name));
+    }
+}
+
+#[test]
+fn graph_match_pattern_flags_truncation_in_a_column() {
+    let (_temp_dir, fixture_path) = fixture_db(make_many_public_s3_matches_fixture);
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    // 300 matches exist; the cap keeps 256 and flags every row as truncated.
+    let (distinct_matches, all_truncated): (i64, bool) = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT match_id), bool_and(was_truncated) FROM graph_match_pattern(?, ?)",
+            [fixture_path.as_str(), "public_s3_via_instance"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(distinct_matches, 256);
+    assert!(all_truncated);
+
+    let (_small_dir, small_path) = fixture_db(make_pattern_fixture);
+    let any_truncated: bool = conn
+        .query_row(
+            "SELECT COALESCE(bool_or(was_truncated), false) FROM graph_match_pattern(?, ?)",
+            [small_path.as_str(), "internet_to_database"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!any_truncated, "a complete result must not be flagged");
+}
+
+#[test]
+fn match_pattern_step_budget_is_an_error() {
+    use corkscrew_graph_tests::functions::match_pattern::{collect_match_rows, MatchLimits};
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    let (_temp_dir, fixture_path) = fixture_db(make_many_public_s3_matches_fixture);
+    let loaded = load_fixture(&fixture_path);
+    let pattern = load_pattern("public_s3_via_instance").unwrap();
+
+    let generous = MatchLimits {
+        matches_max: 1000,
+        steps_max: 1_000_000,
+    };
+    let complete = collect_match_rows(&pattern, &loaded.graph, generous).unwrap();
+    assert!(!complete.truncated);
+    assert_eq!(complete.rows.len(), 300 * 2);
+
+    let starved = MatchLimits {
+        matches_max: 1000,
+        steps_max: 10,
+    };
+    let error = collect_match_rows(&pattern, &loaded.graph, starved)
+        .err()
+        .expect("a starved step budget must fail")
+        .to_string();
+    assert!(error.contains("step budget"), "{error}");
+}
+
+#[test]
+fn match_pattern_budget_spent_probing_past_the_cap_keeps_the_rows() {
+    use corkscrew_graph_tests::functions::match_pattern::{collect_match_rows, MatchLimits};
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    // With the cap equal to the true match count, the search must probe past the last
+    // match to learn nothing more exists. Find the smallest budget that finishes the
+    // search; one step less runs out while probing, after every match was collected,
+    // so the rows come back marked truncated instead of failing the query.
+    let (_temp_dir, fixture_path) = fixture_db(make_many_public_s3_matches_fixture);
+    let loaded = load_fixture(&fixture_path);
+    let pattern = load_pattern("public_s3_via_instance").unwrap();
+    let pattern_nodes = pattern.graph.node_count();
+    let match_count = 300;
+
+    let complete_within = |steps_max: u64| {
+        let limits = MatchLimits {
+            matches_max: match_count,
+            steps_max,
+        };
+        collect_match_rows(&pattern, &loaded.graph, limits).is_ok_and(|result| !result.truncated)
+    };
+    let mut steps_low: u64 = 1;
+    let mut steps_high: u64 = 100_000;
+    assert!(!complete_within(steps_low));
+    assert!(complete_within(steps_high));
+    while steps_high - steps_low > 1 {
+        let steps_middle = steps_low + (steps_high - steps_low) / 2;
+        if complete_within(steps_middle) {
+            steps_high = steps_middle;
+        } else {
+            steps_low = steps_middle;
+        }
+    }
+
+    let probe_starved = MatchLimits {
+        matches_max: match_count,
+        steps_max: steps_high - 1,
+    };
+    let result = collect_match_rows(&pattern, &loaded.graph, probe_starved)
+        .expect("running out while probing past the cap must keep the rows");
+    assert!(result.truncated);
+    assert_eq!(result.rows.len(), match_count * pattern_nodes);
+}
+
+#[test]
+fn traverse_rows_max_is_an_error() {
+    use corkscrew_graph_tests::functions::common::{collect_traverse_rows, TraversalDirection};
+
+    let (_temp_dir, fixture_path) = fixture_db(|conn| make_star_fixture(conn, 50));
+    let loaded = load_fixture(&fixture_path);
+    let outbound = TraversalDirection::Outbound;
+
+    let rows = collect_traverse_rows(&loaded, "hub", 1, outbound, None, 50).unwrap();
+    assert_eq!(rows.len(), 50, "exactly at the cap is fine");
+
+    let error = collect_traverse_rows(&loaded, "hub", 1, outbound, None, 49)
+        .expect_err("one row past the cap must fail")
+        .to_string();
+    assert!(error.contains("exceeds 49 rows"), "{error}");
+
+    // Huge hop limits from direct Rust callers are clamped, not trusted.
+    let rows = collect_traverse_rows(&loaded, "hub", usize::MAX, outbound, None, 50).unwrap();
+    assert_eq!(rows.len(), 50);
+}
+
+#[test]
+fn load_graph_enforces_node_and_edge_limits() {
+    use corkscrew_graph_tests::graph::loader::{load_graph_with_limits, GraphLimits};
+
+    let (_temp_dir, fixture_path) = fixture_db(make_fixture);
+    let conn = Connection::open(&fixture_path).unwrap();
+    let providers = schema::detect_providers(&conn).unwrap();
+
+    // make_fixture has exactly 3 nodes and 2 edges.
+    let exact = GraphLimits {
+        node_count_max: 3,
+        edge_count_max: 2,
+    };
+    let loaded = load_graph_with_limits(&conn, &providers, exact).unwrap();
+    assert_eq!((loaded.node_count, loaded.edge_count), (3, 2));
+
+    let nodes = GraphLimits {
+        node_count_max: 2,
+        edge_count_max: 2,
+    };
+    let error = load_graph_with_limits(&conn, &providers, nodes)
+        .err()
+        .expect("node limit must fail")
+        .to_string();
+    assert!(error.contains("more than 2 nodes"), "{error}");
+
+    let edges = GraphLimits {
+        node_count_max: 3,
+        edge_count_max: 1,
+    };
+    let error = load_graph_with_limits(&conn, &providers, edges)
+        .err()
+        .expect("edge limit must fail")
+        .to_string();
+    assert!(error.contains("more than 1 edges"), "{error}");
+}
+
+#[test]
+fn cache_max_entries_is_clamped_to_one_through_sixteen() {
+    let conn = Connection::open_in_memory().unwrap();
+    assert_eq!(
+        cache::cache_max_entries(&conn).get(),
+        4,
+        "unset uses the default"
+    );
+
+    conn.execute(
+        "SET VARIABLE corkscrew_graph_cache_max_entries = 1000000",
+        [],
+    )
+    .unwrap();
+    assert_eq!(cache::cache_max_entries(&conn).get(), 16);
+
+    conn.execute("SET VARIABLE corkscrew_graph_cache_max_entries = 0", [])
+        .unwrap();
+    assert_eq!(cache::cache_max_entries(&conn).get(), 1);
+
+    conn.execute("SET VARIABLE corkscrew_graph_cache_max_entries = 7", [])
+        .unwrap();
+    assert_eq!(cache::cache_max_entries(&conn).get(), 7);
+}
+
+#[test]
+fn fingerprint_distinguishes_rewrites_within_one_second() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().join("file.bin");
+    std::fs::write(&path, b"abcd").unwrap();
+    let file = std::fs::File::options().write(true).open(&path).unwrap();
+    let path = path.to_string_lossy().into_owned();
+
+    // Same second, same size: only sub-second mtime tells the two apart.
+    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 100))
+        .unwrap();
+    let first = loader::fingerprint_path(&path);
+    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 200_000))
+        .unwrap();
+    let second = loader::fingerprint_path(&path);
+    assert!(first.is_some());
+    assert_ne!(first, second);
+}
+
+#[test]
+fn fingerprint_covers_the_write_ahead_log() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    // DuckDB appends committed writes to `<db>.wal` and leaves the main file alone
+    // until a checkpoint, so the main file's stat alone misses a rescan.
+    let temp_dir = TempDir::new().unwrap();
+    let database = temp_dir.path().join("fixture.duckdb");
+    let wal = temp_dir.path().join("fixture.duckdb.wal");
+    std::fs::write(&database, b"main").unwrap();
+    let file = std::fs::File::options().write(true).open(&database).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 0)).unwrap();
+    let path = database.to_string_lossy().into_owned();
+
+    let without_wal = loader::fingerprint_path(&path);
+    assert!(without_wal.is_some());
+
+    std::fs::write(&wal, b"wal-1").unwrap();
+    let with_wal = loader::fingerprint_path(&path);
+    assert_ne!(without_wal, with_wal, "a WAL appearing is a new state");
+
+    std::fs::write(&wal, b"wal-1 wal-2").unwrap();
+    let grown_wal = loader::fingerprint_path(&path);
+    assert_ne!(with_wal, grown_wal, "a WAL growing is a new state");
+
+    std::fs::remove_file(&wal).unwrap();
+    assert_eq!(loader::fingerprint_path(&path), without_wal);
+}
+
+#[test]
+fn cache_reloads_when_only_the_write_ahead_log_changes() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp_dir = TempDir::new().unwrap();
+    let database = temp_dir.path().join("wal-only.duckdb");
+    std::fs::write(&database, b"main").unwrap();
+    let file = std::fs::File::options().write(true).open(&database).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(2_000, 0)).unwrap();
+    let path = database.to_string_lossy().into_owned();
+
+    let conn = Connection::open_in_memory().unwrap();
+    let load_count = AtomicUsize::new(0);
+    let load = |conn: &Connection| {
+        load_count.fetch_add(1, Ordering::Relaxed);
+        loader::load_graph(conn, &[])
+    };
+    let first = cache::get_or_load_with(&conn, &path, load).unwrap();
+    let cached = cache::get_or_load_with(&conn, &path, load).unwrap();
+    assert!(Arc::ptr_eq(&first, &cached));
+    assert_eq!(load_count.load(Ordering::Relaxed), 1);
+
+    std::fs::write(temp_dir.path().join("wal-only.duckdb.wal"), b"rescan").unwrap();
+    let reloaded = cache::get_or_load_with(&conn, &path, load).unwrap();
+    assert!(!Arc::ptr_eq(&first, &reloaded), "a WAL-only write must invalidate");
+    assert_eq!(load_count.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn cache_does_not_store_a_graph_whose_file_changed_during_load() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let (_temp_dir, fixture_path) = fixture_db(make_fixture);
+    let conn = Connection::open(&fixture_path).unwrap();
+
+    let racing = cache::get_or_load_with(&conn, &fixture_path, |conn| {
+        let providers = schema::detect_providers(conn)?;
+        let loaded = loader::load_graph(conn, &providers)?;
+        // A concurrent writer rewrites the file while this load is running.
+        let file = std::fs::File::options().write(true).open(&fixture_path)?;
+        file.set_modified(UNIX_EPOCH + Duration::new(12_345, 678))?;
+        Ok(loaded)
+    })
+    .unwrap();
+    assert_eq!(racing.node_count, 3);
+
+    let next = cache::get_or_load(&conn, &fixture_path).unwrap();
+    assert!(
+        !Arc::ptr_eq(&racing, &next),
+        "a load that raced a rewrite must not be served as fresh"
+    );
+    let again = cache::get_or_load(&conn, &fixture_path).unwrap();
+    assert!(Arc::ptr_eq(&next, &again), "a clean load is cached");
+}
+
+#[test]
+fn cache_loads_of_different_databases_do_not_serialize() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let path_a = "/nonexistent/corkscrew-issue-16/a.duckdb".to_string();
+    let path_b = (0..64)
+        .map(|index| format!("/nonexistent/corkscrew-issue-16/b{index}.duckdb"))
+        .find(|candidate| cache::load_lock_stripe(candidate) != cache::load_lock_stripe(&path_a))
+        .expect("some key must land on a different load-lock stripe");
+
+    let (started_tx, started_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let loader_a = thread::spawn(move || {
+        let conn = Connection::open_in_memory().unwrap();
+        cache::get_or_load_with(&conn, &path_a, |conn| {
+            started_tx.send(()).unwrap();
+            // Hold the load of `a` open until `b` has finished loading.
+            release_rx
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| anyhow::anyhow!("load of b was blocked behind load of a"))?;
+            loader::load_graph(conn, &[])
+        })
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    });
+
+    started_rx.recv().unwrap();
+    let conn = Connection::open_in_memory().unwrap();
+    cache::get_or_load_with(&conn, &path_b, |conn| loader::load_graph(conn, &[])).unwrap();
+    release_tx.send(()).ok();
+    loader_a.join().unwrap().unwrap();
+}
+
+fn make_parallel_edge_fixture(conn: &Connection, cheap_first: bool) {
+    let cheap = r#"('a','b','cheap','{"weight":1}')"#;
+    let expensive = r#"('a','b','expensive','{"weight":10}')"#;
+    let (first, second) = if cheap_first {
+        (cheap, expensive)
+    } else {
+        (expensive, cheap)
+    };
+    conn.execute_batch(&format!(
+        "CREATE TABLE aws_resources (
+            id VARCHAR, type VARCHAR, name VARCHAR, region VARCHAR,
+            account_id VARCHAR, arn VARCHAR, tags VARCHAR
+        );
+        CREATE TABLE aws_relationships (
+            from_id VARCHAR, to_id VARCHAR,
+            relationship_type VARCHAR, properties VARCHAR
+        );
+        INSERT INTO aws_resources VALUES
+            ('a','ec2','a','us-east-1','123',NULL,NULL),
+            ('b','ec2','b','us-east-1','123',NULL,NULL);
+        INSERT INTO aws_relationships VALUES {first};
+        INSERT INTO aws_relationships VALUES {second};"
+    ))
+    .unwrap();
+}
+
+#[test]
+fn weighted_shortest_path_reports_the_cheapest_parallel_edge() {
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+
+    for cheap_first in [true, false] {
+        let (_temp_dir, fixture_path) =
+            fixture_db(|conn| make_parallel_edge_fixture(conn, cheap_first));
+        let rel_type: String = conn
+            .query_row(
+                "SELECT incoming_rel_type FROM graph_shortest_path(?, 'a', 'b', true)
+                 WHERE hop_number = 1",
+                [fixture_path.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rel_type, "cheap", "cheap_first={cheap_first}");
+    }
+}
+
+/// One record of a correlation group in the `walk_group_pairs` unit tests: `index` is
+/// its position in the group, so a test can check which pairs were visited.
+struct Member {
+    index: usize,
+    provider: &'static str,
+}
+
+impl corkscrew_graph_tests::functions::correlate_common::GroupMember for Member {
+    fn provider(&self) -> &str {
+        self.provider
+    }
+}
+
+fn members(providers: &[&'static str]) -> Vec<Member> {
+    providers
+        .iter()
+        .enumerate()
+        .map(|(index, provider)| Member { index, provider })
+        .collect()
+}
+
+fn test_group_key() -> corkscrew_graph_tests::functions::correlate_common::GroupKey<'static> {
+    corkscrew_graph_tests::functions::correlate_common::GroupKey {
+        kind: "ip_match",
+        value: "10.0.0.1",
+    }
+}
+
+#[test]
+fn walk_group_pairs_visits_only_cross_provider_pairs() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    let group = members(&["aws", "aws", "gcp", "aws", "gcp"]);
+    let mut rows = Vec::new();
+    let mut visited = Vec::new();
+    walk_group_pairs(
+        &group,
+        test_group_key(),
+        CorrelationLimits::DEFAULT,
+        &mut rows,
+        |left, right| {
+            assert_ne!(left.provider, right.provider);
+            assert!(left.index < right.index, "pairs keep group order");
+            visited.push((left.index, right.index));
+            None
+        },
+    )
+    .unwrap();
+    // Three aws records times two gcp records; no aws-aws or gcp-gcp pair.
+    visited.sort_unstable();
+    assert_eq!(visited, [(0, 2), (0, 4), (1, 2), (1, 4), (2, 3), (3, 4)]);
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn walk_group_pairs_never_flags_a_single_provider_group() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    let limits = CorrelationLimits {
+        group_pairs_max: 1,
+        rows_max: 100,
+    };
+    let group = members(&["aws"; 50]);
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 0);
+    assert!(rows.is_empty(), "same-provider records produce no pairs to skip");
+}
+
+#[test]
+fn walk_group_pairs_bounds_cross_provider_pairs_not_group_size() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    // 100 aws records and one gcp record: 101 records but only 100 pairs.
+    let mut providers = vec!["aws"; 100];
+    providers.push("gcp");
+    let group = members(&providers);
+    let limits = CorrelationLimits {
+        group_pairs_max: 100,
+        rows_max: 1_000,
+    };
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 100);
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn walk_group_pairs_flags_groups_with_too_many_pairs_without_visiting_them() {
+    use corkscrew_graph_tests::functions::correlate_common::{
+        walk_group_pairs, CorrelationLimits, GROUP_SKIPPED_TYPE,
+    };
+
+    let limits = CorrelationLimits {
+        group_pairs_max: 3,
+        rows_max: 100,
+    };
+    let group = members(&["aws", "gcp", "aws", "gcp"]);
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 0);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].correlation_type, GROUP_SKIPPED_TYPE);
+    assert_eq!(rows[0].source_id, "10.0.0.1");
+    let evidence: serde_json::Value = serde_json::from_str(&rows[0].evidence).unwrap();
+    assert_eq!(evidence["group_size"], 4);
+    assert_eq!(evidence["group_providers"], 2);
+    assert_eq!(evidence["group_pairs"], 4);
+    assert_eq!(evidence["group_pairs_max"], 3);
+}
+
+#[test]
+fn walk_group_pairs_errors_past_the_total_row_cap() {
+    use corkscrew_graph_tests::functions::correlate_common::{
+        walk_group_pairs, CorrelationLimits, CorrelationRow,
+    };
+
+    let limits = CorrelationLimits {
+        group_pairs_max: 100,
+        rows_max: 5,
+    };
+    let row = CorrelationRow {
+        correlation_id: String::new(),
+        correlation_type: String::new(),
+        source_id: String::new(),
+        target_id: String::new(),
+        source_provider: String::new(),
+        target_provider: String::new(),
+        confidence: 1.0,
+        evidence: String::new(),
+        description: String::new(),
+    };
+    let group = members(&["aws", "gcp", "aws", "gcp", "aws", "gcp"]);
+    let mut rows = Vec::new();
+    let error = walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        Some(row.clone())
+    })
+    .expect_err("9 pairs must exceed a cap of 5")
+    .to_string();
+    assert!(error.contains("exceeds 5 rows"), "{error}");
+    assert_eq!(rows.len(), 5);
+}
+
+/// Runs `sql` (one `?` for the fixture path) and returns
+/// (group_skipped rows, evidence of the first skipped row).
+fn skipped_group_summary(fixture_path: &str, sql: &str) -> (i64, String) {
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+    let query = format!(
+        "SELECT
+            COUNT(*) FILTER (WHERE correlation_type = 'group_skipped'),
+            COALESCE(MIN(evidence) FILTER (WHERE correlation_type = 'group_skipped'), '')
+         FROM ({sql})"
+    );
+    conn.query_row(&query, [fixture_path], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+}
+
+/// The smallest even group, split evenly between two providers, whose
+/// (size / 2)^2 cross-provider pairs exceed `GROUP_PAIRS_MAX`.
+fn oversized_group_size() -> usize {
+    use corkscrew_graph_tests::functions::correlate_common::GROUP_PAIRS_MAX;
+
+    let half = (1..).find(|half: &usize| half * half > GROUP_PAIRS_MAX).unwrap();
+    half * 2
+}
+
+fn assert_one_skipped_group(fixture_path: &str, sql: &str) {
+    let (skipped, evidence) = skipped_group_summary(fixture_path, sql);
+    assert_eq!(skipped, 1, "{sql}");
+    let half = oversized_group_size() / 2;
+    let pairs = format!("\"group_pairs\":{}", half * half);
+    assert!(evidence.contains(&pairs), "{sql}: {evidence}");
+}
+
+// Every oversized-group fixture alternates two providers so each group holds
+// cross-provider pairs that an unbounded walk would emit. Correlators run with
+// min_confidence 0.99: the flag row must bypass the threshold.
+
+#[test]
+fn graph_correlate_ips_flags_oversized_groups() {
+    let size = oversized_group_size();
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_ip_fixture(conn);
+        conn.execute_batch(&format!(
+            "INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-' || i AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'res-' || i AS resource_id,
+                    CASE WHEN i % 2 = 0 THEN 'aws' ELSE 'gcp' END AS provider
+             FROM range({size}) t(i);"
+        ))
+        .unwrap();
+    });
+    assert_one_skipped_group(&fixture_path, "SELECT * FROM graph_correlate_ips(?, 0.99)");
+}
+
+#[test]
+fn graph_correlate_dns_flags_oversized_groups() {
+    let size = oversized_group_size();
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_dns_fixture(conn);
+        conn.execute_batch(&format!(
+            "INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'big-' || i AS id, 'shared.internal' AS dns_name, 'A' AS record_type,
+                    'res-' || i AS resource_id,
+                    CASE WHEN i % 2 = 0 THEN 'aws' ELSE 'gcp' END AS provider
+             FROM range({size}) t(i);"
+        ))
+        .unwrap();
+    });
+    assert_one_skipped_group(
+        &fixture_path,
+        "SELECT * FROM graph_correlate_dns(?, false, 0.99)",
+    );
+}
+
+#[test]
+fn graph_correlate_secrets_flags_oversized_groups() {
+    let size = oversized_group_size();
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_secret_fixture(conn);
+        conn.execute_batch(&format!(
+            "INSERT INTO shared_secrets_correlation BY NAME
+             SELECT 'big-' || i AS id, 'hash-shared' AS secret_hash, 'res-' || i AS resource_id,
+                    CASE WHEN i % 2 = 0 THEN 'aws' ELSE 'gcp' END AS cloud_provider
+             FROM range({size}) t(i);"
+        ))
+        .unwrap();
+    });
+    assert_one_skipped_group(
+        &fixture_path,
+        "SELECT * FROM graph_correlate_secrets(?, 0.99)",
+    );
+}
+
+#[test]
+fn graph_correlate_domains_flags_oversized_groups() {
+    let size = oversized_group_size();
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_domain_fixture(conn);
+        conn.execute_batch(&format!(
+            "INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'big-' || i AS id, 'h' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'res-' || i AS resource_id,
+                    CASE WHEN i % 2 = 0 THEN 'aws' ELSE 'gcp' END AS provider
+             FROM range({size}) t(i);"
+        ))
+        .unwrap();
+    });
+    assert_one_skipped_group(
+        &fixture_path,
+        "SELECT * FROM graph_correlate_domains(?, 0.99)",
+    );
+}
+
+#[test]
+fn graph_correlate_load_balancers_flags_oversized_groups() {
+    let size = oversized_group_size();
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_load_balancer_fixture(conn);
+        conn.execute_batch(&format!(
+            "INSERT INTO cross_cloud_loadbalancer_topology BY NAME
+             SELECT 'big-' || i AS id, 'lb-' || i AS loadbalancer_id,
+                    '[{{\"target\":\"172.17.0.1\"}}]' AS backend_targets,
+                    CASE WHEN i % 2 = 0 THEN 'aws' ELSE 'gcp' END AS provider
+             FROM range({size}) t(i);"
+        ))
+        .unwrap();
+    });
+    assert_one_skipped_group(
+        &fixture_path,
+        "SELECT * FROM graph_correlate_load_balancers(?, 0.99)",
+    );
+}
+
+/// Number of rows `sql` (one `?` for the fixture path) returns whose evidence
+/// mentions `needle`.
+fn rows_mentioning(fixture_path: &str, sql: &str, needle: &str) -> i64 {
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+    let query = format!("SELECT COUNT(*) FROM ({sql}) WHERE evidence LIKE '%{needle}%'");
+    conn.query_row(&query, [fixture_path], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn graph_correlate_ips_pairs_a_lone_provider_against_a_large_same_provider_group() {
+    // 1100 aws records and one azure record share an IP: 1101 records, but only
+    // 1100 cross-provider pairs, so the group is walked rather than skipped.
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_ip_fixture(conn);
+        conn.execute_batch(
+            "INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-' || i AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'big-res-' || i AS resource_id, 'aws' AS provider
+             FROM range(1100) t(i);
+             INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-azure' AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'big-azure-res' AS resource_id, 'azure' AS provider;",
+        )
+        .unwrap();
+    });
+    let sql = "SELECT * FROM graph_correlate_ips(?, 0.0)";
+    let (skipped, _) = skipped_group_summary(&fixture_path, sql);
+    assert_eq!(skipped, 0);
+    assert_eq!(rows_mentioning(&fixture_path, sql, "172.17.0.1"), 1100);
+}
+
+#[test]
+fn graph_correlate_domains_matches_a_small_zone_against_a_large_one() {
+    // A Route53 zone of 1500 records and a GCP zone of 3 records for one domain:
+    // 4500 cross-provider pairs, far below the cap, so none may be lost.
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_domain_fixture(conn);
+        conn.execute_batch(
+            "INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'r53-' || i AS id, 'h' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'r53-res-' || i AS resource_id,
+                    'aws' AS provider
+             FROM range(1500) t(i);
+             INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'gcp-' || i AS id, 'g' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'gcp-res-' || i AS resource_id,
+                    'gcp' AS provider
+             FROM range(3) t(i);",
+        )
+        .unwrap();
+    });
+    let sql = "SELECT * FROM graph_correlate_domains(?, 0.0)";
+    let (skipped, _) = skipped_group_summary(&fixture_path, sql);
+    assert_eq!(skipped, 0);
+    assert_eq!(rows_mentioning(&fixture_path, sql, "big.example"), 1500 * 3);
+}
+
+#[test]
+fn contains_ignore_ascii_case_matches_substrings() {
+    use corkscrew_graph_tests::functions::common::contains_ignore_ascii_case;
+
+    assert!(contains_ignore_ascii_case("aws::EC2::Instance", "ec2"));
+    assert!(contains_ignore_ascii_case("aws::ec2::Instance", "INSTANCE"));
+    assert!(contains_ignore_ascii_case("anything", ""));
+    assert!(!contains_ignore_ascii_case("s3", "s3::bucket"));
+    assert!(!contains_ignore_ascii_case("aws::s3::Bucket", "ec2"));
+}

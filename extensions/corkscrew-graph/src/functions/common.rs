@@ -1,9 +1,10 @@
 use duckdb::core::{FlatVector, Inserter, ListVector};
 use duckdb::Connection;
 use petgraph::algo::astar;
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction::{Incoming, Outgoing};
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -29,7 +30,7 @@ pub fn chunk_capacity() -> usize {
     unsafe { duckdb::ffi::duckdb_vector_size() as usize }
 }
 
-use crate::functions::params::hops_to_i32;
+use crate::functions::params::{hops_to_i32, HOPS_MAX};
 use crate::graph::loader::{CloudGraph, LoadedGraph, RelationshipEdge, ResourceNode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +91,14 @@ pub struct BlastRow {
     pub sample_ids: Vec<String>,
 }
 
+/// BFS parent links: each reached node maps to the node and edge it was first reached
+/// by, or `None` for the traversal's start.
+type Parents = HashMap<NodeIndex, Option<(NodeIndex, EdgeIndex)>>;
+
+/// Matches the core's read-only query cap (one million rows); BFS emits at most one row
+/// per node, so only very wide traversals of the largest graphs reach it.
+pub const TRAVERSE_ROWS_MAX: usize = 1_000_000;
+
 pub fn load_graph_for_path(
     db_path: &str,
 ) -> Result<std::sync::Arc<LoadedGraph>, Box<dyn std::error::Error>> {
@@ -97,59 +106,84 @@ pub fn load_graph_for_path(
     Ok(crate::graph::cache::get_or_load(&conn, db_path)?)
 }
 
+/// Breadth-first traversal from `source_id`, one row per reached node that
+/// matches `filter_type`. Returns an error rather than a silently truncated
+/// result once more than `rows_max` rows would be emitted.
 pub fn collect_traverse_rows(
     loaded: &LoadedGraph,
     source_id: &str,
     max_hops: usize,
     direction: TraversalDirection,
     filter_type: Option<&str>,
-) -> Vec<TraverseRow> {
-    let start = match loaded.node_map.get(source_id) {
-        Some(idx) => *idx,
-        None => return Vec::new(),
+    rows_max: usize,
+) -> Result<Vec<TraverseRow>, Box<dyn std::error::Error>> {
+    assert!(rows_max > 0);
+    let Some(start) = loaded.node_map.get(source_id).copied() else {
+        return Ok(Vec::new());
     };
-
+    let max_hops = clamp_hops(loaded, max_hops);
     let filter_type = filter_type.filter(|value| !value.is_empty());
+
     let mut rows = Vec::new();
-    let mut parents = HashMap::new();
-    let mut visited = HashSet::new();
+    // Every reached node, with the parent and edge it was reached by (`None` for the
+    // start), so it doubles as the visited set. Keyed by node rather than an array
+    // over the whole graph: memory follows the nodes this call visits, so a
+    // one-hop query of a ten-million-node graph stays small.
+    let mut parents: Parents = HashMap::from([(start, None)]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    visited.insert(start);
 
     while let Some((node, hops)) = queue.pop_front() {
+        assert!(hops <= max_hops);
         if hops > 0 {
             let resource = &loaded.graph[node];
             if type_matches(&resource.resource_type, filter_type) {
-                let (path_ids, rel_types) = reconstruct_path(loaded, &parents, start, node);
-                rows.push(TraverseRow {
-                    node_id: resource.id.clone(),
-                    node_type: resource.resource_type.clone(),
-                    node_name: resource.name.clone(),
-                    region: resource.region.clone(),
-                    account_id: resource.account_id.clone(),
-                    provider: resource.provider.clone(),
-                    hop_count: hops_to_i32(hops),
-                    path_ids,
-                    relationship_types: rel_types,
-                });
+                if rows.len() == rows_max {
+                    return Err(format!(
+                        "graph_traverse result exceeds {rows_max} rows; \
+                         lower max_hops or set filter_type"
+                    )
+                    .into());
+                }
+                rows.push(traverse_row(loaded, &parents, start, node, hops));
             }
         }
 
-        if hops >= max_hops {
+        if hops == max_hops {
             continue;
         }
-
-        for (neighbor, rel_type) in neighbors(&loaded.graph, node, direction) {
-            if !visited.insert(neighbor) {
-                continue;
+        for_each_neighbor(&loaded.graph, node, direction, |neighbor, edge| {
+            if let Entry::Vacant(entry) = parents.entry(neighbor) {
+                entry.insert(Some((node, edge)));
+                queue.push_back((neighbor, hops + 1));
             }
-
-            parents.insert(neighbor, (node, rel_type));
-            queue.push_back((neighbor, hops + 1));
-        }
+        });
     }
 
-    rows
+    assert!(rows.len() <= rows_max);
+    assert!(parents.len() <= loaded.graph.node_count());
+    Ok(rows)
+}
+
+fn traverse_row(
+    loaded: &LoadedGraph,
+    parents: &Parents,
+    start: NodeIndex,
+    node: NodeIndex,
+    hops: usize,
+) -> TraverseRow {
+    let resource = &loaded.graph[node];
+    let (path_ids, relationship_types) = reconstruct_path(loaded, parents, start, node, hops);
+    TraverseRow {
+        node_id: resource.id.clone(),
+        node_type: resource.resource_type.clone(),
+        node_name: resource.name.clone(),
+        region: resource.region.clone(),
+        account_id: resource.account_id.clone(),
+        provider: resource.provider.clone(),
+        hop_count: hops_to_i32(hops),
+        path_ids,
+        relationship_types,
+    }
 }
 
 pub fn collect_shortest_path_rows(
@@ -186,11 +220,8 @@ pub fn collect_shortest_path_rows(
             let incoming_rel_type = if index == 0 {
                 None
             } else {
-                let previous = path_nodes[index - 1];
-                loaded
-                    .graph
-                    .find_edge(previous, *node)
-                    .map(|edge_idx| loaded.graph[edge_idx].relationship_type.clone())
+                cheapest_edge(&loaded.graph, path_nodes[index - 1], *node, weighted)
+                    .map(|edge| loaded.graph[edge].relationship_type.clone())
             };
 
             PathRow {
@@ -204,6 +235,21 @@ pub fn collect_shortest_path_rows(
             }
         })
         .collect()
+}
+
+/// The edge A* would have taken from `source` to `target`: the cheapest of
+/// any parallel edges, first in adjacency order on ties. `find_edge` returns
+/// an arbitrary parallel edge, which can name the wrong relationship type.
+fn cheapest_edge(
+    graph: &CloudGraph,
+    source: NodeIndex,
+    target: NodeIndex,
+    weighted: bool,
+) -> Option<EdgeIndex> {
+    graph
+        .edges_connecting(source, target)
+        .min_by_key(|edge| edge_cost(edge.weight(), weighted))
+        .map(|edge| edge.id())
 }
 
 pub fn collect_reachable_row(
@@ -220,6 +266,7 @@ pub fn collect_reachable_row(
             example_id: None,
         };
     };
+    let max_hops = clamp_hops(loaded, max_hops);
     let filter = (!target_type.is_empty()).then_some(target_type);
 
     // Focused BFS — no parent tracking, no path reconstruction. BFS visits in
@@ -228,9 +275,9 @@ pub fn collect_reachable_row(
     let mut match_count: i64 = 0;
     let mut closest_hop: Option<i32> = None;
     let mut example_id: Option<String> = None;
-    let mut visited = HashSet::new();
+    // Hashed, not a bitset over the whole graph: memory follows the visited nodes.
+    let mut visited = HashSet::from([start]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    visited.insert(start);
 
     while let Some((node, hops)) = queue.pop_front() {
         if hops > 0 {
@@ -244,17 +291,22 @@ pub fn collect_reachable_row(
             }
         }
 
-        if hops >= max_hops {
+        if hops == max_hops {
             continue;
         }
-
-        for (neighbor, _) in neighbors(&loaded.graph, node, TraversalDirection::Outbound) {
-            if visited.insert(neighbor) {
-                queue.push_back((neighbor, hops + 1));
-            }
-        }
+        for_each_neighbor(
+            &loaded.graph,
+            node,
+            TraversalDirection::Outbound,
+            |neighbor, _| {
+                if visited.insert(neighbor) {
+                    queue.push_back((neighbor, hops + 1));
+                }
+            },
+        );
     }
 
+    assert_eq!(closest_hop.is_some(), match_count > 0);
     ReachableRow {
         is_reachable: match_count > 0,
         match_count,
@@ -267,13 +319,14 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
     let Some(start) = loaded.node_map.get(source_id).copied() else {
         return Vec::new();
     };
+    let max_hops = clamp_hops(loaded, max_hops);
 
     // Focused BFS — no parent tracking, no path reconstruction. Group inline
     // by resource_type.
     let mut grouped: BTreeMap<String, BlastRow> = BTreeMap::new();
-    let mut visited = HashSet::new();
+    // Hashed, not a bitset over the whole graph: memory follows the visited nodes.
+    let mut visited = HashSet::from([start]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    visited.insert(start);
 
     while let Some((node, hops)) = queue.pop_front() {
         if hops > 0 {
@@ -293,15 +346,19 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
             }
         }
 
-        if hops >= max_hops {
+        if hops == max_hops {
             continue;
         }
-
-        for (neighbor, _) in neighbors(&loaded.graph, node, TraversalDirection::Outbound) {
-            if visited.insert(neighbor) {
-                queue.push_back((neighbor, hops + 1));
-            }
-        }
+        for_each_neighbor(
+            &loaded.graph,
+            node,
+            TraversalDirection::Outbound,
+            |neighbor, _| {
+                if visited.insert(neighbor) {
+                    queue.push_back((neighbor, hops + 1));
+                }
+            },
+        );
     }
 
     grouped.into_values().collect()
@@ -332,22 +389,31 @@ pub fn write_optional_varchar(vector: &mut FlatVector<'_>, row_idx: usize, value
     }
 }
 
-fn neighbors(
+/// Bounds a BFS depth for every caller, not just SQL (bind already rejects
+/// values past `HOPS_MAX`). No shortest path is longer than the node count, so
+/// hops past it only cost loop iterations that can never find anything new.
+fn clamp_hops(loaded: &LoadedGraph, max_hops: usize) -> usize {
+    let clamped = max_hops.min(HOPS_MAX).min(loaded.graph.node_count());
+    assert!(clamped <= HOPS_MAX);
+    clamped
+}
+
+/// Calls `visit(neighbor, edge)` for every edge of `node` in `direction`:
+/// outgoing edges first, then incoming. Neighbors reached by parallel edges are
+/// reported once per edge; the caller's visited set keeps the first, so no
+/// neighbor list is collected per node.
+fn for_each_neighbor(
     graph: &CloudGraph,
     node: NodeIndex,
     direction: TraversalDirection,
-) -> Vec<(NodeIndex, String)> {
-    let mut seen = HashSet::new();
-    let mut results = Vec::new();
-
+    mut visit: impl FnMut(NodeIndex, EdgeIndex),
+) {
     if matches!(
         direction,
         TraversalDirection::Outbound | TraversalDirection::Both
     ) {
         for edge in graph.edges_directed(node, Outgoing) {
-            if seen.insert(edge.target()) {
-                results.push((edge.target(), edge.weight().relationship_type.clone()));
-            }
+            visit(edge.target(), edge.id());
         }
     }
 
@@ -356,41 +422,53 @@ fn neighbors(
         TraversalDirection::Inbound | TraversalDirection::Both
     ) {
         for edge in graph.edges_directed(node, Incoming) {
-            if seen.insert(edge.source()) {
-                results.push((edge.source(), edge.weight().relationship_type.clone()));
-            }
+            visit(edge.source(), edge.id());
         }
     }
+}
 
-    results
+/// Case-insensitive ASCII substring test that allocates nothing: it compares
+/// byte windows with `eq_ignore_ascii_case` instead of lowercasing both strings
+/// for every node. An empty `needle` matches everything, like `str::contains`.
+pub fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn type_matches(resource_type: &str, filter_type: Option<&str>) -> bool {
-    filter_type.is_none_or(|filter| {
-        resource_type
-            .to_ascii_lowercase()
-            .contains(&filter.to_ascii_lowercase())
-    })
+    filter_type.is_none_or(|filter| contains_ignore_ascii_case(resource_type, filter))
 }
 
+/// Walks `parents` from `node` back to `start`. A node `hops` away has exactly
+/// `hops` ancestors, which bounds the walk.
 fn reconstruct_path(
     loaded: &LoadedGraph,
-    parents: &HashMap<NodeIndex, (NodeIndex, String)>,
+    parents: &Parents,
     start: NodeIndex,
     node: NodeIndex,
+    hops: usize,
 ) -> (Vec<String>, Vec<String>) {
-    let mut path_ids = vec![loaded.graph[node].id.clone()];
-    let mut relationship_types = Vec::new();
+    let mut path_ids = Vec::with_capacity(hops + 1);
+    let mut relationship_types = Vec::with_capacity(hops);
+    path_ids.push(loaded.graph[node].id.clone());
     let mut current = node;
 
-    while current != start {
-        let Some((parent, rel_type)) = parents.get(&current) else {
-            break;
-        };
-        relationship_types.push(rel_type.clone());
-        current = *parent;
+    for _ in 0..hops {
+        let (parent, edge) = parents[&current].expect("every reached node but start has a parent");
+        relationship_types.push(loaded.graph[edge].relationship_type.clone());
+        current = parent;
         path_ids.push(loaded.graph[current].id.clone());
     }
+    assert_eq!(current, start);
+    assert_eq!(path_ids.len(), relationship_types.len() + 1);
 
     path_ids.reverse();
     relationship_types.reverse();

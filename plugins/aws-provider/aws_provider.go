@@ -91,6 +91,16 @@ type activeScanner interface {
 	DiscoveryErr() error
 }
 
+// forScan scopes s to one scan of several services. In org mode that lists
+// the organization's accounts once for the scan rather than once per service;
+// a single-account scanner has nothing to scope and is returned as is.
+func forScan(s activeScanner) activeScanner {
+	if org, ok := s.(*orgscan.OrgScanner); ok {
+		return org.ForScan()
+	}
+	return s
+}
+
 // serviceErrorEntries turns a ScanService error into BatchScanResponse
 // Errors entries, one per failed type or account, so each is visible on
 // its own. An access denial is a coverage notice (the credential's scope, an
@@ -315,6 +325,7 @@ func (p *AWSProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 	if err != nil {
 		return nil, err
 	}
+	regional = forScan(regional)
 	services := []string{req.Service}
 	if req.Service == "" {
 		services = regional.SupportedServices()
@@ -349,6 +360,7 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	if err != nil {
 		return nil, err
 	}
+	regional = forScan(regional)
 	scanStartTime := time.Now()
 	// UnixNano keeps scan IDs unique across rapid back-to-back BatchScan
 	// calls (e.g. one per region in multi-region runs). Unix() collided
@@ -516,6 +528,7 @@ func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 	if err != nil {
 		return err
 	}
+	regional = forScan(regional)
 	services := req.Services
 	if len(services) == 0 {
 		services = regional.SupportedServices()

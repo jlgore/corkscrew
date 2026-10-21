@@ -1,5 +1,5 @@
 use corkscrew_graph_tests::functions::common::{
-    collect_blast_rows, collect_traverse_rows, TraversalDirection,
+    collect_blast_rows, collect_traverse_rows, TraversalDirection, TRAVERSE_ROWS_MAX,
 };
 use corkscrew_graph_tests::graph::{loader, schema};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
@@ -70,8 +70,15 @@ fn bench_traverse_depth_five(c: &mut Criterion) {
     let mut group = c.benchmark_group("traverse_depth_five");
     group.bench_function(BenchmarkId::new("total_nodes", loaded.node_count), |b| {
         b.iter(|| {
-            let rows =
-                collect_traverse_rows(&loaded, "inst0", 5, TraversalDirection::Outbound, None);
+            let rows = collect_traverse_rows(
+                &loaded,
+                "inst0",
+                5,
+                TraversalDirection::Outbound,
+                None,
+                TRAVERSE_ROWS_MAX,
+            )
+            .unwrap();
             criterion::black_box(rows.len())
         });
     });

@@ -14,6 +14,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -37,13 +39,33 @@ var newResourcesClient = func(
 	return armresources.NewClient(subID, cred, nil)
 }
 
+// ARM refills a subscription's read bucket at about 25 requests per second from a burst of
+// about 250. The scanner's GETs take tokens at 20 per second so that, with listing pages and
+// other callers sharing the subscription, a long describe run stays under the refill rate
+// instead of draining the bucket and exhausting the SDK's retries on 429s. The burst is small
+// so one scan cannot spend the bucket another scan relies on.
+const (
+	armReadRatePerSecond   rate.Limit = 20
+	armReadBurst                      = 20
+	armReadRefillPerSecond rate.Limit = 25
+)
+
+// armReadWaiter blocks until one ARM read may be sent, or fails when ctx ends first.
+// *rate.Limiter satisfies it; tests count the calls.
+type armReadWaiter interface {
+	Wait(ctx context.Context) error
+}
+
 // AzureResourceScanner handles resource scanning operations
 type AzureResourceScanner struct {
 	credential      azcore.TokenCredential
 	subscriptionID  string
 	resourcesClient armResourcesAPI
 	clientFactory   *AzureClientFactory
-	mu              sync.RWMutex
+	// armReadLimiter paces every ARM GET this scanner sends, across all concurrent scans of
+	// the provider, because ARM throttles per subscription rather than per scan.
+	armReadLimiter armReadWaiter
+	mu             sync.RWMutex
 }
 
 // NewAzureResourceScanner creates a new Azure resource scanner. It fails when the ARM client
@@ -55,11 +77,15 @@ func NewAzureResourceScanner(
 	if err != nil {
 		return nil, fmt.Errorf("create ARM resources client: %w", err)
 	}
+	if armReadRatePerSecond >= armReadRefillPerSecond {
+		panic("azure: ARM read rate must stay under ARM's refill rate")
+	}
 	return &AzureResourceScanner{
 		credential:      cred,
 		subscriptionID:  subID,
 		resourcesClient: client,
 		clientFactory:   NewAzureClientFactory(cred, subID),
+		armReadLimiter:  rate.NewLimiter(armReadRatePerSecond, armReadBurst),
 	}, nil
 }
 
@@ -150,17 +176,24 @@ func (s *AzureResourceScanner) ScanAllResources(ctx context.Context, filters map
 func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, service string, filters map[string]string) ([]*pb.Resource, error) {
 	resourceRefs, listErr := s.ScanService(ctx, service, filters)
 
+	described, describeErrs := describeEach(ctx, resourceRefs,
+		func(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error) {
+			resource, err := s.DescribeResource(ctx, ref)
+			if err != nil {
+				return basicResourceFromRef(ref), err
+			}
+			return resource, nil
+		})
 	resources := make([]*pb.Resource, 0, len(resourceRefs))
 	describeFailures := 0
 	var describeErr error
-	for _, ref := range resourceRefs {
-		resource, err := s.DescribeResource(ctx, ref)
-		if err != nil {
+	for index, ref := range resourceRefs {
+		resource := described[index]
+		if err := describeErrs[index]; err != nil {
 			describeFailures++
 			if describeErr == nil {
 				describeErr = err
 			}
-			resource = basicResourceFromRef(ref)
 		}
 
 		// Extract relationships from the resource
@@ -178,6 +211,42 @@ func (s *AzureResourceScanner) ScanServiceForResources(ctx context.Context, serv
 			describeFailures, len(resourceRefs), describeErr))
 	}
 	return resources, errors.Join(errs...)
+}
+
+// describeConcurrency caps in-flight ARM GETs per scan. It bounds goroutines and hides round
+// trip latency, but it does not keep the request rate under ARM's throttle: 16 GETs of about
+// 100 ms each would send about 160 per second. The rate is set by the scanner's
+// armReadLimiter, which DescribeResource waits on before every GET.
+const describeConcurrency = 16
+
+// describeEach calls describe for every ref with at most describeConcurrency calls in flight
+// and returns resources[i] and errs[i] for refs[i]. A failure does not cancel the others: every
+// resource is still described and every error kept, so the caller can report the scan as
+// partial (ADR 0023) without losing what it did observe.
+func describeEach(
+	ctx context.Context, refs []*pb.ResourceRef,
+	describe func(context.Context, *pb.ResourceRef) (*pb.Resource, error),
+) ([]*pb.Resource, []error) {
+	resources := make([]*pb.Resource, len(refs))
+	errs := make([]error, len(refs))
+	var group errgroup.Group
+	group.SetLimit(describeConcurrency)
+	for index, ref := range refs {
+		group.Go(func() error {
+			// Each goroutine writes only its own index, so the slices need no lock.
+			resources[index], errs[index] = describe(ctx, ref)
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		panic(fmt.Sprintf("azure: describeEach goroutine returned %v; errors go in errs", err))
+	}
+	for index, resource := range resources {
+		if resource == nil {
+			panic(fmt.Sprintf("azure: describe returned no resource for %s", refs[index].Id))
+		}
+	}
+	return resources, errs
 }
 
 // basicResourceFromRef builds a Resource from listing data alone, for when the full resource
@@ -253,19 +322,26 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 		return nil, fmt.Errorf("resource reference is required")
 	}
 
-	log.Printf("DEBUG: DescribeResource called for %s (type: %s)", resourceRef.Id, resourceRef.Type)
+	debugLogf("DescribeResource called for %s (type: %s)", resourceRef.Id, resourceRef.Type)
 
 	// Determine the appropriate API version
 	apiVersion := s.getAPIVersionForResourceType(resourceRef.Type)
-	log.Printf("DEBUG: Using API version %s for resource type %s", apiVersion, resourceRef.Type)
+	debugLogf("Using API version %s for resource type %s", apiVersion, resourceRef.Type)
 
-	// Get resource details using ARM API
+	// Pace the GET: ARM throttles reads per subscription, and describeEach runs many at once.
+	if s.armReadLimiter == nil {
+		panic("azure: scanner built without an ARM read limiter")
+	}
+	if err := s.armReadLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("wait for ARM read token for %s: %w", resourceRef.Id, err)
+	}
+
 	result, err := s.resourcesClient.GetByID(ctx, resourceRef.Id, apiVersion, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource %s with API version %s: %w", resourceRef.Id, apiVersion, err)
 	}
 
-	log.Printf("DEBUG: ARM API returned data for %s", resourceRef.Id)
+	debugLogf("ARM API returned data for %s", resourceRef.Id)
 
 	resource := &pb.Resource{
 		Provider:     "azure",
@@ -359,9 +435,10 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	// Store the complete resource data as raw data
 	if fullData, err := json.Marshal(fullResource); err == nil {
 		resource.RawData = string(fullData)
-		log.Printf("DEBUG: Stored complete resource data for %s, length: %d", resource.Name, len(resource.RawData))
+		debugLogf("Stored complete resource data for %s, length: %d", resource.Name,
+			len(resource.RawData))
 	} else {
-		log.Printf("DEBUG: Failed to marshal resource data for %s: %v", resource.Name, err)
+		log.Printf("Failed to marshal resource data for %s: %v", resource.Name, err)
 	}
 
 	return resource, nil

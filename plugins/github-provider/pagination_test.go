@@ -270,7 +270,7 @@ func TestBranchProtectionTransientErrorNotCached(t *testing.T) {
 	p, _ := newTestProvider(t, mux)
 	repo := &github.Repository{Name: github.Ptr("app"), FullName: github.Ptr("acme/app"),
 		DefaultBranch: github.Ptr("main"), Owner: &github.User{Login: github.Ptr("acme")}}
-	ctx := withProtectionCache(context.Background())
+	ctx := withScanCache(context.Background())
 
 	var errs []string
 	if got := p.checkBranchProtection(ctx, repo, &errs).status; got != bpUnknown {
@@ -286,7 +286,7 @@ func TestBranchProtectionTransientErrorNotCached(t *testing.T) {
 		t.Fatalf("protection requests = %d, want 2 (unknown not cached, protected cached)", got)
 	}
 	// A new scan gets its own cache rather than inheriting this one.
-	fresh := withProtectionCache(context.Background())
+	fresh := withScanCache(context.Background())
 	if protectionCacheFrom(fresh) == protectionCacheFrom(ctx) {
 		t.Fatal("separate scans share a protection cache")
 	}

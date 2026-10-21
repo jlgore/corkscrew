@@ -1,12 +1,14 @@
-use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
+use duckdb::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
 use duckdb::{Connection, Result};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
-use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::correlate_common::{
+    add_standard_columns, clean_string, emit_rows, ordered_values, sort_rows, table_exists,
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey, GroupMember,
+};
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
@@ -26,17 +28,11 @@ struct DNSOwner {
     zone_id: String,
     zone_name: String,
 }
-#[derive(Clone, Debug)]
-struct CorrelationRow {
-    correlation_id: String,
-    correlation_type: String,
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-    confidence: f64,
-    evidence: String,
-    description: String,
+
+impl GroupMember for DNSOwner {
+    fn provider(&self) -> &str {
+        &self.provider
+    }
 }
 
 pub struct CorrelateDomainsInitData {
@@ -135,51 +131,59 @@ fn collect_dns_domain_matches(
             zone_name: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
         });
     }
-    for (domain, owners) in by_domain {
-        for i in 0..owners.len() {
-            for j in (i + 1)..owners.len() {
-                let left = &owners[i];
-                let right = &owners[j];
-                if left.provider == right.provider || left.resource_id == right.resource_id {
-                    continue;
-                }
-                let (source, target) = if (&left.provider, &left.resource_id, &left.id)
-                    <= (&right.provider, &right.resource_id, &right.id)
-                {
-                    (left, right)
-                } else {
-                    (right, left)
-                };
-                let confidence = 0.85;
-                if confidence < threshold {
-                    continue;
-                }
-                let cid = format!(
-                    "domain_dns:{}:{}:{}",
-                    domain, source.resource_id, target.resource_id
-                );
-                if !seen.insert(cid.clone()) {
-                    continue;
-                }
-                let evidence = json!({ "table": "cross_cloud_dns_records", "domain": domain, "source_record_id": source.id, "target_record_id": target.id, "source_zone_id": source.zone_id, "target_zone_id": target.zone_id, "source_zone_name": source.zone_name, "target_zone_name": target.zone_name, "source_region": source.region, "target_region": target.region, "source_account_id": source.account_id, "target_account_id": target.account_id }).to_string();
-                out.push(CorrelationRow {
-                    correlation_id: cid,
-                    correlation_type: "domain_dns_zone_match".to_string(),
-                    source_id: source.resource_id.clone(),
-                    target_id: target.resource_id.clone(),
-                    source_provider: source.provider.clone(),
-                    target_provider: target.provider.clone(),
-                    confidence,
-                    evidence,
-                    description: format!(
-                        "Cross-provider DNS ownership for domain {}",
-                        source.domain
-                    ),
-                });
-            }
-        }
+    for (domain, owners) in &by_domain {
+        let key = GroupKey {
+            kind: "domain_dns_zone_match",
+            value: domain,
+        };
+        walk_group_pairs(
+            owners,
+            key,
+            CorrelationLimits::DEFAULT,
+            out,
+            |left, right| {
+                let row = domain_pair_row(left, right, threshold)?;
+                seen.insert(row.correlation_id.clone()).then_some(row)
+            },
+        )?;
     }
     Ok(())
+}
+
+/// The correlation row for one pair of DNS owners of the same domain, or `None`
+/// when the pair is same-provider, same-resource, or below `threshold`.
+fn domain_pair_row(left: &DNSOwner, right: &DNSOwner, threshold: f64) -> Option<CorrelationRow> {
+    if left.provider == right.provider || left.resource_id == right.resource_id {
+        return None;
+    }
+    let (source, target) = if (&left.provider, &left.resource_id, &left.id)
+        <= (&right.provider, &right.resource_id, &right.id)
+    {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let confidence = 0.85;
+    if confidence < threshold {
+        return None;
+    }
+    assert!(source.domain == target.domain);
+    let domain = &source.domain;
+    let evidence = json!({ "table": "cross_cloud_dns_records", "domain": domain, "source_record_id": source.id, "target_record_id": target.id, "source_zone_id": source.zone_id, "target_zone_id": target.zone_id, "source_zone_name": source.zone_name, "target_zone_name": target.zone_name, "source_region": source.region, "target_region": target.region, "source_account_id": source.account_id, "target_account_id": target.account_id }).to_string();
+    Some(CorrelationRow {
+        correlation_id: format!(
+            "domain_dns:{}:{}:{}",
+            domain, source.resource_id, target.resource_id
+        ),
+        correlation_type: "domain_dns_zone_match".to_string(),
+        source_id: source.resource_id.clone(),
+        target_id: target.resource_id.clone(),
+        source_provider: source.provider.clone(),
+        target_provider: target.provider.clone(),
+        confidence,
+        evidence,
+        description: format!("Cross-provider DNS ownership for domain {}", domain),
+    })
 }
 
 fn collect_certificate_matches(
@@ -246,94 +250,4 @@ fn normalize_domain(value: Option<String>) -> Option<String> {
     clean_string(value)
         .map(|v| v.trim_end_matches('.').to_ascii_lowercase())
         .filter(|v| !v.is_empty())
-}
-fn clean_string(value: Option<String>) -> Option<String> {
-    value
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-fn ordered_values(
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-) -> (String, String, String, String, bool) {
-    if (&source_provider, &source_id) <= (&target_provider, &target_id) {
-        (
-            source_id,
-            target_id,
-            source_provider,
-            target_provider,
-            false,
-        )
-    } else {
-        (target_id, source_id, target_provider, source_provider, true)
-    }
-}
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
-    let mut stmt = conn.prepare(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
-    )?;
-    let count: i64 = stmt.query_row([table_name], |row| row.get(0))?;
-    Ok(count > 0)
-}
-fn sort_rows(a: &CorrelationRow, b: &CorrelationRow) -> std::cmp::Ordering {
-    b.confidence
-        .partial_cmp(&a.confidence)
-        .unwrap_or(std::cmp::Ordering::Equal)
-        .then_with(|| a.source_provider.cmp(&b.source_provider))
-        .then_with(|| a.target_provider.cmp(&b.target_provider))
-        .then_with(|| a.source_id.cmp(&b.source_id))
-        .then_with(|| a.target_id.cmp(&b.target_id))
-}
-fn add_standard_columns(bind: &BindInfo) {
-    for name in [
-        "correlation_id",
-        "correlation_type",
-        "source_id",
-        "target_id",
-        "source_provider",
-        "target_provider",
-    ] {
-        bind.add_result_column(name, LogicalTypeHandle::from(LogicalTypeId::Varchar));
-    }
-    bind.add_result_column("confidence", LogicalTypeHandle::from(LogicalTypeId::Double));
-    bind.add_result_column("evidence", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-    bind.add_result_column(
-        "description",
-        LogicalTypeHandle::from(LogicalTypeId::Varchar),
-    );
-}
-fn emit_rows(
-    cursor: &AtomicUsize,
-    rows: &[CorrelationRow],
-    output: &mut DataChunkHandle,
-) -> Result<(), BoxError> {
-    let Some((start, end)) = next_chunk(cursor, rows.len(), chunk_capacity()) else {
-        output.set_len(0);
-        return Ok(());
-    };
-    let v0 = output.flat_vector(0);
-    let v1 = output.flat_vector(1);
-    let v2 = output.flat_vector(2);
-    let v3 = output.flat_vector(3);
-    let v4 = output.flat_vector(4);
-    let v5 = output.flat_vector(5);
-    let mut v6 = output.flat_vector(6);
-    let v7 = output.flat_vector(7);
-    let v8 = output.flat_vector(8);
-    let confidence = v6.as_mut_slice::<f64>();
-    for (out_idx, row) in rows[start..end].iter().enumerate() {
-        v0.insert(out_idx, CString::new(row.correlation_id.clone())?);
-        v1.insert(out_idx, CString::new(row.correlation_type.clone())?);
-        v2.insert(out_idx, CString::new(row.source_id.clone())?);
-        v3.insert(out_idx, CString::new(row.target_id.clone())?);
-        v4.insert(out_idx, CString::new(row.source_provider.clone())?);
-        v5.insert(out_idx, CString::new(row.target_provider.clone())?);
-        confidence[out_idx] = row.confidence;
-        v7.insert(out_idx, CString::new(row.evidence.clone())?);
-        v8.insert(out_idx, CString::new(row.description.clone())?);
-    }
-    output.set_len(end - start);
-    Ok(())
 }
