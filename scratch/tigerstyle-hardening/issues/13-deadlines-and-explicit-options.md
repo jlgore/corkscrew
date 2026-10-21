@@ -1,6 +1,6 @@
 # Give every external call a deadline and explicit client options
 
-Status: ready-for-agent
+Status: in-progress
 Phase: P3
 
 - CLI: create one `signal.NotifyContext` in `runCLI` and pass it down. Replace `context.Background()`
@@ -25,3 +25,30 @@ Phase: P3
 - `quack.go:73`: the minimum token is 4 characters. Require at least 32 random bytes when
   `allowOther` is set. `fatalf` calls `os.Exit` and skips the deferred cleanup, so return errors
   instead.
+
+## Comments
+
+### 2026-10-21 — core part done (plugins and Kubernetes tracked separately)
+
+- CLI: `runCLI` creates one `signal.NotifyContext` (SIGINT, SIGTERM) after the TUI branch and
+  passes it through `runCommand` to every command that does I/O (pack, discover/list/describe/
+  info/schemas, query and compliance, scan, scans/drift, findings, graph, plugin build, init,
+  aws-org, github, cloudflare auth, serve, quack). `init` reuses it instead of its own.
+  `context.AfterFunc(ctx, stop)` restores default handling after the first signal, so a second
+  Ctrl-C still kills a command that ignores ctx. `serve` and `quack serve` wait on the root
+  context. `graphquery.Runner` gained `RunContext`. Cloudflare auth no longer passes a nil ctx.
+- HTTP: GitHub manifest conversion uses `NewRequestWithContext`, a 30 s client, a 1 MiB
+  `LimitReader` with its error handled and oversize rejected, and `url.PathEscape(code)`.
+  Vault and Cloudflare token validation default to 30 s clients; Vault rejects bodies over
+  1 MiB instead of truncating them.
+- gRPC: `internal/provider/launcher.go` passes `GRPCDialOptions` with
+  `MaxPluginMessageBytes = 256 MiB` for receive and send (go-plugin's `MaxInt32` is overridden
+  because call options apply in order). An interceptor explains `ResourceExhausted`.
+- Caps: `data.MaxReadOnlyRows = 1,000,000`; over it `ReadOnly` returns
+  `ErrRowLimitExceeded` (rejects, never truncates). `query -stdin` rejects input over 4 MiB.
+- Quack: a server reachable from other hosts requires a token of at least 32 characters, or
+  generates 32 random bytes (64 hex chars) when none is given; loopback keeps the 4-character
+  minimum and Quack's own generated token. `fatalf`/`os.Exit` are gone from `runQuackServe`.
+- Still open in this issue: `plugins/github-provider` HTTP clients and transport retry cap,
+  Cloudflare `client.go` options, AWS retry/timeout, Kubernetes `rest.Config.Timeout`.
+
