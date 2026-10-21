@@ -25,3 +25,14 @@ Phase: P3
 - `quack.go:73`: the minimum token is 4 characters. Require at least 32 random bytes when
   `allowOther` is set. `fatalf` calls `os.Exit` and skips the deferred cleanup, so return errors
   instead.
+
+## Comments
+
+2026-10-21: Kubernetes item done (with issue 14). `initializePrimaryCluster` and `addCluster` in
+`plugins/kubernetes-provider/kubernetes_provider.go` set `rest.Config.Timeout = apiRequestTimeout`
+(60 s). client-go makes this the `http.Client` timeout, which also covers reading the response
+body, so it would cut every informer watch short. The primary cluster therefore builds a second
+dynamic client (`watchClient`) from a `rest.CopyConfig` taken before the timeout is set, and only
+the informers use it. Those watches are bounded by the reflector's server-side watch timeout and
+by `cacheSyncTimeout`. Additional clusters are never watched, so they get only the bounded config.
+The other items in this issue are still open.
