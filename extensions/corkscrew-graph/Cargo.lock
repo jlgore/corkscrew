@@ -431,7 +431,6 @@ dependencies = [
  "chrono",
  "dashmap",
  "duckdb",
- "fixedbitset",
  "lru",
  "once_cell",
  "petgraph",

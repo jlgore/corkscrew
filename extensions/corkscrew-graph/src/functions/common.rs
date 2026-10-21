@@ -1,11 +1,11 @@
 use duckdb::core::{FlatVector, Inserter, ListVector};
 use duckdb::Connection;
-use fixedbitset::FixedBitSet;
 use petgraph::algo::astar;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
-use petgraph::visit::{EdgeRef, NodeIndexable};
+use petgraph::visit::EdgeRef;
 use petgraph::Direction::{Incoming, Outgoing};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Returns the half-open [start, end) row range for the next chunk to emit, or
@@ -91,6 +91,10 @@ pub struct BlastRow {
     pub sample_ids: Vec<String>,
 }
 
+/// BFS parent links: each reached node maps to the node and edge it was first reached
+/// by, or `None` for the traversal's start.
+type Parents = HashMap<NodeIndex, Option<(NodeIndex, EdgeIndex)>>;
+
 /// Matches the core's read-only query cap (one million rows); BFS emits at most one row
 /// per node, so only very wide traversals of the largest graphs reach it.
 pub const TRAVERSE_ROWS_MAX: usize = 1_000_000;
@@ -121,11 +125,12 @@ pub fn collect_traverse_rows(
     let filter_type = filter_type.filter(|value| !value.is_empty());
 
     let mut rows = Vec::new();
-    // Indexed by node index: the parent node and the edge used to reach it.
-    let mut parents: Vec<Option<(NodeIndex, EdgeIndex)>> = vec![None; loaded.graph.node_bound()];
-    let mut visited = FixedBitSet::with_capacity(loaded.graph.node_bound());
+    // Every reached node, with the parent and edge it was reached by (`None` for the
+    // start), so it doubles as the visited set. Keyed by node rather than an array
+    // over the whole graph: memory follows the nodes this call visits, so a
+    // one-hop query of a ten-million-node graph stays small.
+    let mut parents: Parents = HashMap::from([(start, None)]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    visited.insert(start.index());
 
     while let Some((node, hops)) = queue.pop_front() {
         assert!(hops <= max_hops);
@@ -147,20 +152,21 @@ pub fn collect_traverse_rows(
             continue;
         }
         for_each_neighbor(&loaded.graph, node, direction, |neighbor, edge| {
-            if !visited.put(neighbor.index()) {
-                parents[neighbor.index()] = Some((node, edge));
+            if let Entry::Vacant(entry) = parents.entry(neighbor) {
+                entry.insert(Some((node, edge)));
                 queue.push_back((neighbor, hops + 1));
             }
         });
     }
 
     assert!(rows.len() <= rows_max);
+    assert!(parents.len() <= loaded.graph.node_count());
     Ok(rows)
 }
 
 fn traverse_row(
     loaded: &LoadedGraph,
-    parents: &[Option<(NodeIndex, EdgeIndex)>],
+    parents: &Parents,
     start: NodeIndex,
     node: NodeIndex,
     hops: usize,
@@ -269,9 +275,9 @@ pub fn collect_reachable_row(
     let mut match_count: i64 = 0;
     let mut closest_hop: Option<i32> = None;
     let mut example_id: Option<String> = None;
-    let mut visited = FixedBitSet::with_capacity(loaded.graph.node_bound());
+    // Hashed, not a bitset over the whole graph: memory follows the visited nodes.
+    let mut visited = HashSet::from([start]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    visited.insert(start.index());
 
     while let Some((node, hops)) = queue.pop_front() {
         if hops > 0 {
@@ -293,7 +299,7 @@ pub fn collect_reachable_row(
             node,
             TraversalDirection::Outbound,
             |neighbor, _| {
-                if !visited.put(neighbor.index()) {
+                if visited.insert(neighbor) {
                     queue.push_back((neighbor, hops + 1));
                 }
             },
@@ -318,9 +324,9 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
     // Focused BFS — no parent tracking, no path reconstruction. Group inline
     // by resource_type.
     let mut grouped: BTreeMap<String, BlastRow> = BTreeMap::new();
-    let mut visited = FixedBitSet::with_capacity(loaded.graph.node_bound());
+    // Hashed, not a bitset over the whole graph: memory follows the visited nodes.
+    let mut visited = HashSet::from([start]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    visited.insert(start.index());
 
     while let Some((node, hops)) = queue.pop_front() {
         if hops > 0 {
@@ -348,7 +354,7 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
             node,
             TraversalDirection::Outbound,
             |neighbor, _| {
-                if !visited.put(neighbor.index()) {
+                if visited.insert(neighbor) {
                     queue.push_back((neighbor, hops + 1));
                 }
             },
@@ -394,8 +400,8 @@ fn clamp_hops(loaded: &LoadedGraph, max_hops: usize) -> usize {
 
 /// Calls `visit(neighbor, edge)` for every edge of `node` in `direction`:
 /// outgoing edges first, then incoming. Neighbors reached by parallel edges are
-/// reported once per edge; the caller's visited set keeps the first, so the BFS
-/// allocates nothing per node.
+/// reported once per edge; the caller's visited set keeps the first, so no
+/// neighbor list is collected per node.
 fn for_each_neighbor(
     graph: &CloudGraph,
     node: NodeIndex,
@@ -445,7 +451,7 @@ fn type_matches(resource_type: &str, filter_type: Option<&str>) -> bool {
 /// `hops` ancestors, which bounds the walk.
 fn reconstruct_path(
     loaded: &LoadedGraph,
-    parents: &[Option<(NodeIndex, EdgeIndex)>],
+    parents: &Parents,
     start: NodeIndex,
     node: NodeIndex,
     hops: usize,
@@ -456,7 +462,7 @@ fn reconstruct_path(
     let mut current = node;
 
     for _ in 0..hops {
-        let (parent, edge) = parents[current.index()].expect("every reached node has a parent");
+        let (parent, edge) = parents[&current].expect("every reached node but start has a parent");
         relationship_types.push(loaded.graph[edge].relationship_type.clone());
         current = parent;
         path_ids.push(loaded.graph[current].id.clone());
