@@ -35,7 +35,7 @@ thiserror = { version = "1.0" }
 # Caching
 dashmap = { version = "5.5" }
 once_cell = "1.18"
-lru = { version = "0.12" }
+lru = { version = "0.16" }
 
 # Keep default features minimal for the scaffold; the above are marked optional
 
