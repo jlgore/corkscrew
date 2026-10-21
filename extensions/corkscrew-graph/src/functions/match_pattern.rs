@@ -35,6 +35,8 @@ impl MatchLimits {
 
 pub struct MatchRows {
     pub rows: Vec<MatchPatternRow>,
+    /// True when the cap was reached and the search either found one more match or
+    /// ran out of steps looking for it.
     pub truncated: bool,
 }
 
@@ -215,7 +217,12 @@ pub fn collect_match_rows(
         match_count += 1;
     }
 
-    if steps.get() > limits.steps_max {
+    let budget_exhausted = steps.get() > limits.steps_max;
+    if budget_exhausted && match_count == limits.matches_max {
+        // Every row the caller can receive was collected; only the probe for one
+        // more ran out, so report "possibly more" instead of discarding the rows.
+        truncated = true;
+    } else if budget_exhausted {
         return Err(format!(
             "graph_match_pattern exceeded its step budget of {} node comparisons; \
              add or narrow type_filter on more pattern nodes",
@@ -224,6 +231,9 @@ pub fn collect_match_rows(
         .into());
     }
     assert!(match_count <= limits.matches_max);
+    if truncated {
+        assert_eq!(match_count, limits.matches_max);
+    }
     assert_eq!(rows.len(), match_count * pattern.graph.node_count());
     Ok(MatchRows { rows, truncated })
 }

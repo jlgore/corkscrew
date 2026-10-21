@@ -16,8 +16,6 @@ duckdb = { version = "1.10502.0", features = ["vtab", "vtab-arrow", "vscalar", "
 
 # Graph data structures & core algorithms
 petgraph = { version = "0.6", features = ["serde-1"] }
-# Same version petgraph already depends on; reused for allocation-free BFS visited sets.
-fixedbitset = "0.4"
 
 # Subgraph isomorphism / pattern matching
 vf2 = { version = "1.0" }

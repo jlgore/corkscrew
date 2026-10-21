@@ -2349,6 +2349,30 @@ fn pattern_without_any_type_filter_is_rejected() {
 }
 
 #[test]
+fn pattern_anchored_only_by_an_edge_relationship_filter_is_accepted() {
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    // A relationship filter prunes VF2 candidates just as a type_filter does, so
+    // a pattern constrained only by its edges is bounded and must load.
+    let assumes_role = load_pattern(
+        r#"{"name":"assume","nodes":[{"label":"a"},{"label":"b"}],
+            "edges":[{"from":"a","to":"b","rel_filter":"assumes_role"}]}"#,
+    )
+    .expect("an edge relationship filter anchors the pattern");
+    assert_eq!(assumes_role.graph.node_count(), 2);
+    assert_eq!(assumes_role.graph.edge_count(), 1);
+
+    // An empty relationship filter matches every edge, so it anchors nothing.
+    let error = load_pattern(
+        r#"{"name":"empty_rel","nodes":[{"label":"a"},{"label":"b"}],
+            "edges":[{"from":"a","to":"b","rel_filter":""}]}"#,
+    )
+    .expect_err("an empty rel_filter must not anchor the pattern")
+    .to_string();
+    assert!(error.contains("rel_filter"), "{error}");
+}
+
+#[test]
 fn builtin_patterns_satisfy_pattern_bounds() {
     use corkscrew_graph_tests::patterns::{builtin, load_pattern};
 
@@ -2412,6 +2436,51 @@ fn match_pattern_step_budget_is_an_error() {
         .expect("a starved step budget must fail")
         .to_string();
     assert!(error.contains("step budget"), "{error}");
+}
+
+#[test]
+fn match_pattern_budget_spent_probing_past_the_cap_keeps_the_rows() {
+    use corkscrew_graph_tests::functions::match_pattern::{collect_match_rows, MatchLimits};
+    use corkscrew_graph_tests::patterns::load_pattern;
+
+    // With the cap equal to the true match count, the search must probe past the last
+    // match to learn nothing more exists. Find the smallest budget that finishes the
+    // search; one step less runs out while probing, after every match was collected,
+    // so the rows come back marked truncated instead of failing the query.
+    let (_temp_dir, fixture_path) = fixture_db(make_many_public_s3_matches_fixture);
+    let loaded = load_fixture(&fixture_path);
+    let pattern = load_pattern("public_s3_via_instance").unwrap();
+    let pattern_nodes = pattern.graph.node_count();
+    let match_count = 300;
+
+    let complete_within = |steps_max: u64| {
+        let limits = MatchLimits {
+            matches_max: match_count,
+            steps_max,
+        };
+        collect_match_rows(&pattern, &loaded.graph, limits).is_ok_and(|result| !result.truncated)
+    };
+    let mut steps_low: u64 = 1;
+    let mut steps_high: u64 = 100_000;
+    assert!(!complete_within(steps_low));
+    assert!(complete_within(steps_high));
+    while steps_high - steps_low > 1 {
+        let steps_middle = steps_low + (steps_high - steps_low) / 2;
+        if complete_within(steps_middle) {
+            steps_high = steps_middle;
+        } else {
+            steps_low = steps_middle;
+        }
+    }
+
+    let probe_starved = MatchLimits {
+        matches_max: match_count,
+        steps_max: steps_high - 1,
+    };
+    let result = collect_match_rows(&pattern, &loaded.graph, probe_starved)
+        .expect("running out while probing past the cap must keep the rows");
+    assert!(result.truncated);
+    assert_eq!(result.rows.len(), match_count * pattern_nodes);
 }
 
 #[test]
@@ -2516,6 +2585,64 @@ fn fingerprint_distinguishes_rewrites_within_one_second() {
     let second = loader::fingerprint_path(&path);
     assert!(first.is_some());
     assert_ne!(first, second);
+}
+
+#[test]
+fn fingerprint_covers_the_write_ahead_log() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    // DuckDB appends committed writes to `<db>.wal` and leaves the main file alone
+    // until a checkpoint, so the main file's stat alone misses a rescan.
+    let temp_dir = TempDir::new().unwrap();
+    let database = temp_dir.path().join("fixture.duckdb");
+    let wal = temp_dir.path().join("fixture.duckdb.wal");
+    std::fs::write(&database, b"main").unwrap();
+    let file = std::fs::File::options().write(true).open(&database).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 0)).unwrap();
+    let path = database.to_string_lossy().into_owned();
+
+    let without_wal = loader::fingerprint_path(&path);
+    assert!(without_wal.is_some());
+
+    std::fs::write(&wal, b"wal-1").unwrap();
+    let with_wal = loader::fingerprint_path(&path);
+    assert_ne!(without_wal, with_wal, "a WAL appearing is a new state");
+
+    std::fs::write(&wal, b"wal-1 wal-2").unwrap();
+    let grown_wal = loader::fingerprint_path(&path);
+    assert_ne!(with_wal, grown_wal, "a WAL growing is a new state");
+
+    std::fs::remove_file(&wal).unwrap();
+    assert_eq!(loader::fingerprint_path(&path), without_wal);
+}
+
+#[test]
+fn cache_reloads_when_only_the_write_ahead_log_changes() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp_dir = TempDir::new().unwrap();
+    let database = temp_dir.path().join("wal-only.duckdb");
+    std::fs::write(&database, b"main").unwrap();
+    let file = std::fs::File::options().write(true).open(&database).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(2_000, 0)).unwrap();
+    let path = database.to_string_lossy().into_owned();
+
+    let conn = Connection::open_in_memory().unwrap();
+    let load_count = AtomicUsize::new(0);
+    let load = |conn: &Connection| {
+        load_count.fetch_add(1, Ordering::Relaxed);
+        loader::load_graph(conn, &[])
+    };
+    let first = cache::get_or_load_with(&conn, &path, load).unwrap();
+    let cached = cache::get_or_load_with(&conn, &path, load).unwrap();
+    assert!(Arc::ptr_eq(&first, &cached));
+    assert_eq!(load_count.load(Ordering::Relaxed), 1);
+
+    std::fs::write(temp_dir.path().join("wal-only.duckdb.wal"), b"rescan").unwrap();
+    let reloaded = cache::get_or_load_with(&conn, &path, load).unwrap();
+    assert!(!Arc::ptr_eq(&first, &reloaded), "a WAL-only write must invalidate");
+    assert_eq!(load_count.load(Ordering::Relaxed), 2);
 }
 
 #[test]
@@ -2625,50 +2752,117 @@ fn weighted_shortest_path_reports_the_cheapest_parallel_edge() {
     }
 }
 
-#[test]
-fn walk_group_pairs_visits_every_pair_within_bounds() {
-    use corkscrew_graph_tests::functions::correlate_common::{
-        walk_group_pairs, CorrelationLimits, GroupKey,
-    };
+/// One record of a correlation group in the `walk_group_pairs` unit tests: `index` is
+/// its position in the group, so a test can check which pairs were visited.
+struct Member {
+    index: usize,
+    provider: &'static str,
+}
 
+impl corkscrew_graph_tests::functions::correlate_common::GroupMember for Member {
+    fn provider(&self) -> &str {
+        self.provider
+    }
+}
+
+fn members(providers: &[&'static str]) -> Vec<Member> {
+    providers
+        .iter()
+        .enumerate()
+        .map(|(index, provider)| Member { index, provider })
+        .collect()
+}
+
+fn test_group_key() -> corkscrew_graph_tests::functions::correlate_common::GroupKey<'static> {
+    corkscrew_graph_tests::functions::correlate_common::GroupKey {
+        kind: "ip_match",
+        value: "10.0.0.1",
+    }
+}
+
+#[test]
+fn walk_group_pairs_visits_only_cross_provider_pairs() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    let group = members(&["aws", "aws", "gcp", "aws", "gcp"]);
     let mut rows = Vec::new();
-    let mut visits = 0;
-    let key = GroupKey {
-        kind: "test",
-        value: "v",
-    };
+    let mut visited = Vec::new();
     walk_group_pairs(
-        &[1, 2, 3, 4],
-        key,
+        &group,
+        test_group_key(),
         CorrelationLimits::DEFAULT,
         &mut rows,
-        |_, _| {
-            visits += 1;
+        |left, right| {
+            assert_ne!(left.provider, right.provider);
+            assert!(left.index < right.index, "pairs keep group order");
+            visited.push((left.index, right.index));
             None
         },
     )
     .unwrap();
-    assert_eq!(visits, 6);
+    // Three aws records times two gcp records; no aws-aws or gcp-gcp pair.
+    visited.sort_unstable();
+    assert_eq!(visited, [(0, 2), (0, 4), (1, 2), (1, 4), (2, 3), (3, 4)]);
     assert!(rows.is_empty());
 }
 
 #[test]
-fn walk_group_pairs_flags_oversized_groups_without_visiting_pairs() {
-    use corkscrew_graph_tests::functions::correlate_common::{
-        walk_group_pairs, CorrelationLimits, GroupKey, GROUP_SKIPPED_TYPE,
-    };
+fn walk_group_pairs_never_flags_a_single_provider_group() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
 
     let limits = CorrelationLimits {
-        group_size_max: 3,
+        group_pairs_max: 1,
         rows_max: 100,
     };
-    let key = GroupKey {
-        kind: "ip_match",
-        value: "10.0.0.1",
+    let group = members(&["aws"; 50]);
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 0);
+    assert!(rows.is_empty(), "same-provider records produce no pairs to skip");
+}
+
+#[test]
+fn walk_group_pairs_bounds_cross_provider_pairs_not_group_size() {
+    use corkscrew_graph_tests::functions::correlate_common::{walk_group_pairs, CorrelationLimits};
+
+    // 100 aws records and one gcp record: 101 records but only 100 pairs.
+    let mut providers = vec!["aws"; 100];
+    providers.push("gcp");
+    let group = members(&providers);
+    let limits = CorrelationLimits {
+        group_pairs_max: 100,
+        rows_max: 1_000,
     };
     let mut rows = Vec::new();
     let mut visits = 0;
-    walk_group_pairs(&[1, 2, 3, 4], key, limits, &mut rows, |_, _| {
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        visits += 1;
+        None
+    })
+    .unwrap();
+    assert_eq!(visits, 100);
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn walk_group_pairs_flags_groups_with_too_many_pairs_without_visiting_them() {
+    use corkscrew_graph_tests::functions::correlate_common::{
+        walk_group_pairs, CorrelationLimits, GROUP_SKIPPED_TYPE,
+    };
+
+    let limits = CorrelationLimits {
+        group_pairs_max: 3,
+        rows_max: 100,
+    };
+    let group = members(&["aws", "gcp", "aws", "gcp"]);
+    let mut rows = Vec::new();
+    let mut visits = 0;
+    walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
         visits += 1;
         None
     })
@@ -2677,26 +2871,22 @@ fn walk_group_pairs_flags_oversized_groups_without_visiting_pairs() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].correlation_type, GROUP_SKIPPED_TYPE);
     assert_eq!(rows[0].source_id, "10.0.0.1");
-    assert!(
-        rows[0].evidence.contains("\"group_size\":4"),
-        "{}",
-        rows[0].evidence
-    );
+    let evidence: serde_json::Value = serde_json::from_str(&rows[0].evidence).unwrap();
+    assert_eq!(evidence["group_size"], 4);
+    assert_eq!(evidence["group_providers"], 2);
+    assert_eq!(evidence["group_pairs"], 4);
+    assert_eq!(evidence["group_pairs_max"], 3);
 }
 
 #[test]
 fn walk_group_pairs_errors_past_the_total_row_cap() {
     use corkscrew_graph_tests::functions::correlate_common::{
-        walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+        walk_group_pairs, CorrelationLimits, CorrelationRow,
     };
 
     let limits = CorrelationLimits {
-        group_size_max: 100,
+        group_pairs_max: 100,
         rows_max: 5,
-    };
-    let key = GroupKey {
-        kind: "test",
-        value: "v",
     };
     let row = CorrelationRow {
         correlation_id: String::new(),
@@ -2709,10 +2899,13 @@ fn walk_group_pairs_errors_past_the_total_row_cap() {
         evidence: String::new(),
         description: String::new(),
     };
+    let group = members(&["aws", "gcp", "aws", "gcp", "aws", "gcp"]);
     let mut rows = Vec::new();
-    let error = walk_group_pairs(&[0; 10], key, limits, &mut rows, |_, _| Some(row.clone()))
-        .expect_err("45 pairs must exceed a cap of 5")
-        .to_string();
+    let error = walk_group_pairs(&group, test_group_key(), limits, &mut rows, |_, _| {
+        Some(row.clone())
+    })
+    .expect_err("9 pairs must exceed a cap of 5")
+    .to_string();
     assert!(error.contains("exceeds 5 rows"), "{error}");
     assert_eq!(rows.len(), 5);
 }
@@ -2732,15 +2925,21 @@ fn skipped_group_summary(fixture_path: &str, sql: &str) -> (i64, String) {
         .unwrap()
 }
 
+/// The smallest even group, split evenly between two providers, whose
+/// (size / 2)^2 cross-provider pairs exceed `GROUP_PAIRS_MAX`.
 fn oversized_group_size() -> usize {
-    corkscrew_graph_tests::functions::correlate_common::GROUP_SIZE_MAX + 1
+    use corkscrew_graph_tests::functions::correlate_common::GROUP_PAIRS_MAX;
+
+    let half = (1..).find(|half: &usize| half * half > GROUP_PAIRS_MAX).unwrap();
+    half * 2
 }
 
 fn assert_one_skipped_group(fixture_path: &str, sql: &str) {
     let (skipped, evidence) = skipped_group_summary(fixture_path, sql);
     assert_eq!(skipped, 1, "{sql}");
-    let size = format!("\"group_size\":{}", oversized_group_size());
-    assert!(evidence.contains(&size), "{sql}: {evidence}");
+    let half = oversized_group_size() / 2;
+    let pairs = format!("\"group_pairs\":{}", half * half);
+    assert!(evidence.contains(&pairs), "{sql}: {evidence}");
 }
 
 // Every oversized-group fixture alternates two providers so each group holds
@@ -2841,6 +3040,65 @@ fn graph_correlate_load_balancers_flags_oversized_groups() {
         &fixture_path,
         "SELECT * FROM graph_correlate_load_balancers(?, 0.99)",
     );
+}
+
+/// Number of rows `sql` (one `?` for the fixture path) returns whose evidence
+/// mentions `needle`.
+fn rows_mentioning(fixture_path: &str, sql: &str, needle: &str) -> i64 {
+    let conn = Connection::open_in_memory().unwrap();
+    register_graph_functions(&conn);
+    let query = format!("SELECT COUNT(*) FROM ({sql}) WHERE evidence LIKE '%{needle}%'");
+    conn.query_row(&query, [fixture_path], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn graph_correlate_ips_pairs_a_lone_provider_against_a_large_same_provider_group() {
+    // 1100 aws records and one azure record share an IP: 1101 records, but only
+    // 1100 cross-provider pairs, so the group is walked rather than skipped.
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_ip_fixture(conn);
+        conn.execute_batch(
+            "INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-' || i AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'big-res-' || i AS resource_id, 'aws' AS provider
+             FROM range(1100) t(i);
+             INSERT INTO cross_cloud_ip_addresses BY NAME
+             SELECT 'big-azure' AS id, '172.17.0.1' AS ip_address, 'private' AS ip_type,
+                    'big-azure-res' AS resource_id, 'azure' AS provider;",
+        )
+        .unwrap();
+    });
+    let sql = "SELECT * FROM graph_correlate_ips(?, 0.0)";
+    let (skipped, _) = skipped_group_summary(&fixture_path, sql);
+    assert_eq!(skipped, 0);
+    assert_eq!(rows_mentioning(&fixture_path, sql, "172.17.0.1"), 1100);
+}
+
+#[test]
+fn graph_correlate_domains_matches_a_small_zone_against_a_large_one() {
+    // A Route53 zone of 1500 records and a GCP zone of 3 records for one domain:
+    // 4500 cross-provider pairs, far below the cap, so none may be lost.
+    let (_temp_dir, fixture_path) = fixture_db(|conn| {
+        make_cross_cloud_domain_fixture(conn);
+        conn.execute_batch(
+            "INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'r53-' || i AS id, 'h' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'r53-res-' || i AS resource_id,
+                    'aws' AS provider
+             FROM range(1500) t(i);
+             INSERT INTO cross_cloud_dns_records BY NAME
+             SELECT 'gcp-' || i AS id, 'g' || i || '.big.example' AS dns_name,
+                    'big.example' AS zone_name, 'gcp-res-' || i AS resource_id,
+                    'gcp' AS provider
+             FROM range(3) t(i);",
+        )
+        .unwrap();
+    });
+    let sql = "SELECT * FROM graph_correlate_domains(?, 0.0)";
+    let (skipped, _) = skipped_group_summary(&fixture_path, sql);
+    assert_eq!(skipped, 0);
+    assert_eq!(rows_mentioning(&fixture_path, sql, "big.example"), 1500 * 3);
 }
 
 #[test]

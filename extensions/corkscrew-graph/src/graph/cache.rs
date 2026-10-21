@@ -97,10 +97,10 @@ fn stripe_for_key(key: &str) -> usize {
     stripe
 }
 
-/// An entry is fresh iff (a) it hasn't aged past TTL and (b) the file's
-/// fingerprint still matches the one taken before the load. A `None`
-/// fingerprint (in-memory DB) is matched against `None`; any divergence means
-/// the file was rewritten and we need to reload.
+/// An entry is fresh iff (a) it hasn't aged past TTL and (b) the fingerprint of
+/// the database file and its WAL still matches the one taken before the load. A
+/// `None` fingerprint (in-memory DB) is matched against `None`; any divergence
+/// means the database was written and we need to reload.
 fn entry_is_fresh(loaded: &LoadedGraph, key: &str, ttl: u64) -> bool {
     if loaded.loaded_at_instant.elapsed().as_secs() >= ttl {
         return false;

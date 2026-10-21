@@ -1,15 +1,14 @@
-use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
+use duckdb::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
 use duckdb::vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab};
 use duckdb::{Connection, Result};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::ffi::CString;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::AtomicUsize;
 
-use crate::functions::common::{chunk_capacity, next_chunk};
 use crate::functions::correlate_common::{
-    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+    add_standard_columns, clean_string, emit_rows, sort_rows, table_exists, walk_group_pairs,
+    CorrelationLimits, CorrelationRow, GroupKey, GroupMember,
 };
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
@@ -35,6 +34,12 @@ struct IPRecord {
     network_interface_id: String,
 }
 
+impl GroupMember for IPRecord {
+    fn provider(&self) -> &str {
+        &self.provider
+    }
+}
+
 pub struct CorrelateIPsInitData {
     cursor: AtomicUsize,
     rows: Vec<CorrelationRow>,
@@ -48,30 +53,7 @@ impl VTab for GraphCorrelateIPsVTab {
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, BoxError> {
         guard("GraphCorrelateIPsVTab::bind", || {
-            bind.add_result_column(
-                "correlation_id",
-                LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            );
-            bind.add_result_column(
-                "correlation_type",
-                LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            );
-            bind.add_result_column("source_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            bind.add_result_column("target_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            bind.add_result_column(
-                "source_provider",
-                LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            );
-            bind.add_result_column(
-                "target_provider",
-                LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            );
-            bind.add_result_column("confidence", LogicalTypeHandle::from(LogicalTypeId::Double));
-            bind.add_result_column("evidence", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            bind.add_result_column(
-                "description",
-                LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            );
+            add_standard_columns(bind);
 
             Ok(CorrelateIPsBindData {
                 db_path: param_varchar(bind, 0, "db_path")?,
@@ -95,37 +77,7 @@ impl VTab for GraphCorrelateIPsVTab {
     fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), BoxError> {
         guard("GraphCorrelateIPsVTab::func", || {
             let init_data = func.get_init_data();
-            let Some((start, end)) =
-                next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
-            else {
-                output.set_len(0);
-                return Ok(());
-            };
-
-            let v0 = output.flat_vector(0);
-            let v1 = output.flat_vector(1);
-            let v2 = output.flat_vector(2);
-            let v3 = output.flat_vector(3);
-            let v4 = output.flat_vector(4);
-            let v5 = output.flat_vector(5);
-            let mut v6 = output.flat_vector(6);
-            let v7 = output.flat_vector(7);
-            let v8 = output.flat_vector(8);
-            let confidence_slice = v6.as_mut_slice::<f64>();
-
-            for (out_idx, row) in init_data.rows[start..end].iter().enumerate() {
-                v0.insert(out_idx, CString::new(row.correlation_id.clone())?);
-                v1.insert(out_idx, CString::new(row.correlation_type.clone())?);
-                v2.insert(out_idx, CString::new(row.source_id.clone())?);
-                v3.insert(out_idx, CString::new(row.target_id.clone())?);
-                v4.insert(out_idx, CString::new(row.source_provider.clone())?);
-                v5.insert(out_idx, CString::new(row.target_provider.clone())?);
-                confidence_slice[out_idx] = row.confidence;
-                v7.insert(out_idx, CString::new(row.evidence.clone())?);
-                v8.insert(out_idx, CString::new(row.description.clone())?);
-            }
-            output.set_len(end - start);
-            Ok(())
+            emit_rows(&init_data.cursor, &init_data.rows, output)
         })
     }
 
@@ -202,15 +154,7 @@ fn collect_ip_correlations(
         })?;
     }
 
-    correlations.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.source_provider.cmp(&b.source_provider))
-            .then_with(|| a.target_provider.cmp(&b.target_provider))
-            .then_with(|| a.source_id.cmp(&b.source_id))
-            .then_with(|| a.target_id.cmp(&b.target_id))
-    });
+    correlations.sort_by(sort_rows);
     Ok(correlations)
 }
 
@@ -268,20 +212,6 @@ fn ip_pair_row(left: &IPRecord, right: &IPRecord, threshold: f64) -> Option<Corr
             source.ip_address
         ),
     })
-}
-
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
-    let mut stmt = conn.prepare(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
-    )?;
-    let count: i64 = stmt.query_row([table_name], |row| row.get(0))?;
-    Ok(count > 0)
-}
-
-fn clean_string(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 fn ordered_pair<'a>(left: &'a IPRecord, right: &'a IPRecord) -> (&'a IPRecord, &'a IPRecord) {
