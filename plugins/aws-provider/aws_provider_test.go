@@ -3,31 +3,49 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
 	pb "github.com/jlgore/corkscrew/internal/proto"
+	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
 )
 
 // fakeScanner discovers the refs it is given and fails every describe,
 // returning the partial resource CloudControlScanner returns on error.
+// scanErrs makes ScanService of a service also return that error, and
+// unsupported and discoveryErr are reported as given.
 type fakeScanner struct {
-	refs []*pb.ResourceRef
+	refs         []*pb.ResourceRef
+	scanErrs     map[string]error
+	unsupported  map[string]string
+	discoveryErr error
 }
 
 func (f *fakeScanner) SupportedServices() []string { return []string{"kms"} }
 
-func (f *fakeScanner) ScanService(context.Context, string) ([]*pb.ResourceRef, error) {
-	return f.refs, nil
+// ScanService returns the refs of serviceName, plus its error if any.
+func (f *fakeScanner) ScanService(
+	_ context.Context, serviceName string,
+) ([]*pb.ResourceRef, error) {
+	var refs []*pb.ResourceRef
+	for _, r := range f.refs {
+		if r.Service == "" || r.Service == serviceName {
+			refs = append(refs, r)
+		}
+	}
+	return refs, f.scanErrs[serviceName]
 }
 
 func (f *fakeScanner) DescribeResource(_ context.Context, ref *pb.ResourceRef) (*pb.Resource, error) {
 	return &pb.Resource{Provider: "aws", Type: ref.Type, Id: ref.Id, Region: ref.Region}, errors.New("GetResource failed")
 }
 
-func (f *fakeScanner) UnsupportedTypes() map[string]string { return nil }
+func (f *fakeScanner) UnsupportedTypes() map[string]string { return f.unsupported }
+
+func (f *fakeScanner) DiscoveryErr() error { return f.discoveryErr }
 
 func testProvider(base activeScanner, wired *[]string) *AWSProvider {
 	p := &AWSProvider{
@@ -141,6 +159,84 @@ func TestBatchScanKeepsResourcesWhoseDescribeFails(t *testing.T) {
 	if got := resp.Resources[0]; got.Id != arn || got.Arn != arn || got.Type != "kms:key" {
 		t.Fatalf("kept resource = {Id:%q Arn:%q Type:%q}", got.Id, got.Arn, got.Type)
 	}
+}
+
+// batchScan runs BatchScan for services against s, failing on an RPC error.
+func batchScan(t *testing.T, s activeScanner, services ...string) *pb.BatchScanResponse {
+	t.Helper()
+	var wired []string
+	resp, err := testProvider(s, &wired).BatchScan(context.Background(),
+		&pb.BatchScanRequest{Services: services})
+	if err != nil {
+		t.Fatalf("BatchScan: %v", err)
+	}
+	return resp
+}
+
+// One failed service must not drop the others, and must be reported as an
+// error, not a notice, so the scan is partial and resolves no findings
+// (ADR 0023). An unsupported type stays a notice.
+func TestBatchScanReportsFailedServiceAndKeepsTheRest(t *testing.T) {
+	s := &fakeScanner{
+		refs: []*pb.ResourceRef{
+			{Service: "kms", Type: "AWS::KMS::Key", Id: "key-1"},
+			{Service: "ec2", Type: "AWS::EC2::Subnet", Id: "subnet-1"},
+		},
+		scanErrs: map[string]error{"ec2": errors.Join(
+			errors.New("access_denied:AWS::EC2::Instance: AccessDenied"),
+			errors.New("AWS::EC2::VPC: Throttling"),
+		)},
+		unsupported: map[string]string{"AWS::EC2::Thing": "TypeNotFoundException"},
+	}
+	resp := batchScan(t, s, "kms", "ec2", "s3")
+
+	if len(resp.Resources) != 2 || resp.Stats.TotalResources != 2 {
+		t.Fatalf("got %d resources, want kms and the partial ec2", len(resp.Resources))
+	}
+	errs, notices := shared.SplitScanErrors(resp.Errors)
+	if len(errs) != 2 {
+		t.Fatalf("errors = %v, want one per failed ec2 type", errs)
+	}
+	for _, e := range errs {
+		if !strings.HasPrefix(e, "service:ec2: ") || shared.IsScanNotice(e) {
+			t.Fatalf("entry %q is not an ec2 error", e)
+		}
+	}
+	if !strings.Contains(errs[0], "access_denied:AWS::EC2::Instance") {
+		t.Fatalf("access denied entry = %q", errs[0])
+	}
+	if len(notices) != 1 || !strings.Contains(notices[0], "AWS::EC2::Thing") {
+		t.Fatalf("notices = %v, want the unsupported type", notices)
+	}
+}
+
+// The curated fallback misses most types, so a failed discovery is an error.
+func TestBatchScanReportsDiscoveryFailure(t *testing.T) {
+	s := &fakeScanner{discoveryErr: errors.New("ListTypes: Throttling")}
+	resp := batchScan(t, s, "kms")
+
+	errs, _ := shared.SplitScanErrors(resp.Errors)
+	if len(errs) != 1 || !strings.HasPrefix(errs[0], "service:discovery: ") {
+		t.Fatalf("errors = %v, want one discovery error", errs)
+	}
+}
+
+// A service named twice must still count each resource once in every total.
+func TestBatchScanCountsAgreeForRepeatedService(t *testing.T) {
+	s := &fakeScanner{refs: []*pb.ResourceRef{{Service: "kms", Type: "AWS::KMS::Key", Id: "k"}}}
+	resp := batchScan(t, s, "kms", "kms")
+	if resp.Stats.TotalResources != 2 || resp.Stats.ServiceCounts["kms"] != 2 {
+		t.Fatalf("stats = %+v", resp.Stats)
+	}
+}
+
+func TestAssertScanStatsPanicsOnMismatch(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("assertScanStats accepted a total that disagrees with its counts")
+		}
+	}()
+	assertScanStats(&pb.ScanStats{TotalResources: 1, ServiceCounts: map[string]int32{"kms": 2}})
 }
 
 func TestUnenrichedResourceFallsBackToTheRef(t *testing.T) {

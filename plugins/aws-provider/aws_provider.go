@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,9 +80,37 @@ func splitCSV(s string) []string {
 // is active — single-account CloudControl, or the org-scan fan-out.
 type activeScanner interface {
 	SupportedServices() []string
+	// ScanService returns the refs it observed even when it also returns an
+	// error. The error, often an errors.Join of one failure per type or
+	// account, means the service was not fully observed.
 	ScanService(ctx context.Context, serviceName string) ([]*pb.ResourceRef, error)
 	DescribeResource(ctx context.Context, ref *pb.ResourceRef) (*pb.Resource, error)
 	UnsupportedTypes() map[string]string
+	// DiscoveryErr is non-nil while dynamic type discovery has failed and
+	// scans use the curated fallback map, which misses most resource types.
+	DiscoveryErr() error
+}
+
+// serviceErrorEntries turns a ScanService error into BatchScanResponse
+// Errors entries, one per failed type or account, so each is visible on
+// its own. None is a notice: every one means resources may be missing.
+func serviceErrorEntries(service string, err error) []string {
+	leaves := scanner.FlattenErrors(err)
+	entries := make([]string, 0, len(leaves))
+	for _, e := range leaves {
+		entries = append(entries, shared.ServiceScanError(service, e))
+	}
+	return entries
+}
+
+// discoveryErrorEntries reports a failed type discovery as an error: the
+// curated fallback leaves most types unscanned, so the scope is incomplete.
+func discoveryErrorEntries(s activeScanner) []string {
+	err := s.DiscoveryErr()
+	if err == nil {
+		return nil
+	}
+	return []string{shared.ServiceScanError("discovery", err)}
 }
 
 const unsupportedCodegenReason = "Cloud Control API handles resource discovery dynamically"
@@ -280,30 +309,30 @@ func (p *AWSProvider) ListResources(ctx context.Context, req *pb.ListResourcesRe
 	if err != nil {
 		return nil, err
 	}
+	services := []string{req.Service}
+	if req.Service == "" {
+		services = regional.SupportedServices()
+	}
 	var refs []*pb.ResourceRef
-	if req.Service != "" {
-		refs, err = regional.ScanService(ctx, req.Service)
-	} else {
-		for _, svc := range regional.SupportedServices() {
-			r, e := regional.ScanService(ctx, svc)
-			if e != nil {
-				log.Printf("ListResources(%s) error: %v", svc, e)
-				continue
-			}
-			refs = append(refs, r...)
-		}
+	errs := discoveryErrorEntries(regional)
+	for _, svc := range services {
+		r, e := regional.ScanService(ctx, svc)
+		refs = append(refs, r...)
+		errs = append(errs, serviceErrorEntries(svc, e)...)
 	}
-	if err != nil {
-		return nil, err
+	metadata := map[string]string{
+		"resource_count": fmt.Sprintf("%d", len(refs)),
+		"scan_time":      time.Now().Format(time.RFC3339),
+		"method":         "cloudcontrol",
 	}
-	return &pb.ListResourcesResponse{
-		Resources: refs,
-		Metadata: map[string]string{
-			"resource_count": fmt.Sprintf("%d", len(refs)),
-			"scan_time":      time.Now().Format(time.RFC3339),
-			"method":         "cloudcontrol",
-		},
-	}, nil
+	// ListResourcesResponse has no Errors field. Report the failures in
+	// metadata so a partial listing is not mistaken for a complete one.
+	if len(errs) > 0 {
+		log.Printf("ListResources: %d failures: %s", len(errs), strings.Join(errs, "; "))
+		metadata["complete"] = "false"
+		metadata["errors"] = strings.Join(errs, "\n")
+	}
+	return &pb.ListResourcesResponse{Resources: refs, Metadata: metadata}, nil
 }
 
 func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (*pb.BatchScanResponse, error) {
@@ -340,35 +369,26 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 	}
 
 	for _, svc := range services {
-		tracker.StartService(svc)
-		refs, err := regional.ScanService(ctx, svc)
-		if err != nil {
-			errs = append(errs, shared.ServiceScanError(svc, err))
-			tracker.CompleteService(svc, 0, err)
-			continue
-		}
-
-		described, err := describeAll(ctx, regional, refs)
+		described, entries, cancelled := batchScanService(ctx, regional, tracker, svc)
 		for _, res := range described {
 			allResources = append(allResources, res)
 			stats.ResourceCounts[res.Type]++
 		}
-		stats.ServiceCounts[svc] = int32(len(described))
-		if err != nil {
-			// Cancelled mid-service: keep what was described, report the
-			// service as failed, and start no further services.
-			errs = append(errs, shared.ServiceScanError(svc, err))
-			tracker.CompleteService(svc, len(described), err)
+		// += because a request may name a service twice.
+		stats.ServiceCounts[svc] += int32(len(described))
+		errs = append(errs, entries...)
+		if cancelled {
+			// Start no further services; the ones not started are covered
+			// by the cancellation entry batchScanService reported.
 			break
 		}
-		tracker.CompleteService(svc, len(refs), nil)
 	}
 	stats.TotalResources = int32(len(allResources))
 	stats.DurationMs = time.Since(scanStartTime).Milliseconds()
+	assertScanStats(stats)
 
-	for typeName, reason := range regional.UnsupportedTypes() {
-		errs = append(errs, shared.UnsupportedTypeNotice(typeName, reason))
-	}
+	errs = append(errs, discoveryErrorEntries(regional)...)
+	errs = append(errs, unsupportedNotices(regional)...)
 
 	log.Printf("Batch scan %s: %d resources across %d services (%d unsupported types)",
 		scanID, len(allResources), len(services), len(regional.UnsupportedTypes()))
@@ -379,6 +399,59 @@ func (p *AWSProvider) BatchScan(ctx context.Context, req *pb.BatchScanRequest) (
 		Stats:     stats,
 		Errors:    errs,
 	}, nil
+}
+
+// batchScanService scans and describes one service. It returns every
+// resource it observed, one Errors entry per failure, and whether ctx was
+// cancelled, in which case the caller starts no further services.
+func batchScanService(
+	ctx context.Context, s activeScanner, tracker *ScanProgressTracker, svc string,
+) ([]*pb.Resource, []string, bool) {
+	tracker.StartService(svc)
+	// A failed scan still returns the refs it got; describe those too, so
+	// one failed type or account does not drop the rest of the service.
+	refs, scanErr := s.ScanService(ctx, svc)
+	entries := serviceErrorEntries(svc, scanErr)
+	described, describeErr := describeAll(ctx, s, refs)
+	if describeErr != nil {
+		entries = append(entries, shared.ServiceScanError(svc, describeErr))
+	}
+	tracker.CompleteService(svc, len(described), errors.Join(scanErr, describeErr))
+	return described, entries, describeErr != nil
+}
+
+// unsupportedNotices reports the types the scanner could not list as notices,
+// sorted so the same scan yields the same Errors.
+func unsupportedNotices(s activeScanner) []string {
+	unsupported := s.UnsupportedTypes()
+	typeNames := make([]string, 0, len(unsupported))
+	for typeName := range unsupported {
+		typeNames = append(typeNames, typeName)
+	}
+	sort.Strings(typeNames)
+	notices := make([]string, 0, len(typeNames))
+	for _, typeName := range typeNames {
+		notices = append(notices, shared.UnsupportedTypeNotice(typeName, unsupported[typeName]))
+	}
+	return notices
+}
+
+// assertScanStats panics when the counts disagree: every resource is counted
+// once by service and once by type, so a mismatch is a programmer error that
+// would report a different inventory size than was returned.
+func assertScanStats(stats *pb.ScanStats) {
+	var byService, byType int64
+	for _, n := range stats.ServiceCounts {
+		byService += int64(n)
+	}
+	for _, n := range stats.ResourceCounts {
+		byType += int64(n)
+	}
+	total := int64(stats.TotalResources)
+	if byService != total || byType != total {
+		panic(fmt.Sprintf("aws: scan stats disagree: total %d, by service %d, by type %d",
+			total, byService, byType))
+	}
 }
 
 // describeConcurrency caps in-flight GetResource calls. Empirically 20 is
@@ -441,20 +514,39 @@ func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 	if len(services) == 0 {
 		services = regional.SupportedServices()
 	}
+	errs := discoveryErrorEntries(regional)
 	for _, svc := range services {
 		refs, err := regional.ScanService(ctx, svc)
-		if err != nil {
-			log.Printf("Stream scan(%s) error: %v", svc, err)
-			continue
+		errs = append(errs, serviceErrorEntries(svc, err)...)
+		if err := streamResources(ctx, regional, refs, stream); err != nil {
+			return err
 		}
-		for _, ref := range refs {
-			res, err := regional.DescribeResource(ctx, ref)
-			if err != nil {
-				continue
-			}
-			if err := stream.Send(res); err != nil {
-				return err
-			}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	// A stream has no Errors field: it is complete only if it ends cleanly
+	// (ADR 0023), so any failure must end it with an error after sending
+	// everything that was observed.
+	if len(errs) > 0 {
+		return fmt.Errorf("aws stream scan incomplete: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// streamResources describes and sends each ref. A ref whose describe fails is
+// sent unenriched, as BatchScan does, rather than dropped from the stream.
+func streamResources(
+	ctx context.Context, s activeScanner, refs []*pb.ResourceRef,
+	stream pb.CloudProvider_StreamScanServer,
+) error {
+	for _, ref := range refs {
+		res, err := s.DescribeResource(ctx, ref)
+		if err != nil {
+			res = unenrichedResource(ref, res)
+		}
+		if err := stream.Send(res); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -497,10 +589,10 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 	if err != nil {
 		return nil, err
 	}
-	refs, err := regional.ScanService(ctx, req.Service)
-	if err != nil {
-		return nil, fmt.Errorf("scan service %s: %w", req.Service, err)
-	}
+	// Keep what was observed and report the failures in Errors, as BatchScan
+	// does, rather than discarding the service on its first failed type.
+	refs, scanErr := regional.ScanService(ctx, req.Service)
+	errs := append(discoveryErrorEntries(regional), serviceErrorEntries(req.Service, scanErr)...)
 	var resources []*pb.Resource
 	if req.IncludeRelationships {
 		for _, ref := range refs {
@@ -518,6 +610,7 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 			TotalResources: int32(len(refs)),
 			ServiceCounts:  map[string]int32{req.Service: int32(len(refs))},
 		},
+		Errors: errs,
 	}, nil
 }
 
@@ -539,18 +632,15 @@ func (p *AWSProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 	if err != nil {
 		return err
 	}
-	refs, err := regional.ScanService(ctx, req.Service)
-	if err != nil {
+	// Send what was observed before reporting the failure: the stream's
+	// error already marks it incomplete, and the refs are still real.
+	refs, scanErr := regional.ScanService(ctx, req.Service)
+	if err := streamResources(ctx, regional, refs, stream); err != nil {
 		return err
 	}
-	for _, ref := range refs {
-		res, err := regional.DescribeResource(ctx, ref)
-		if err != nil {
-			continue
-		}
-		if err := stream.Send(res); err != nil {
-			return err
-		}
+	errs := append(discoveryErrorEntries(regional), serviceErrorEntries(req.Service, scanErr)...)
+	if len(errs) > 0 {
+		return fmt.Errorf("aws stream scan incomplete: %s", strings.Join(errs, "; "))
 	}
 	return nil
 }
