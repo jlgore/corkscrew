@@ -37,3 +37,14 @@ refs, err } }`, and the error flows into Errors under the issue 08 contract. Sta
 - Unit tests for both guard errors.
 - A grep check in `internal/architecture` that fails when a plugin has a `for {` loop around a
   `NextToken|NextPageToken|EndCursor|NextPage` without a `paging.Guard`.
+
+## Comments
+
+2026-10-21: AWS loops guarded with `paging.New(label, paging.PagesMax)` (issue 09 branch):
+`pkg/scanner/cloudcontrol_scanner.go` `listType` (cloudcontrol.ListResources) and
+`discoverTypes` (cloudformation.ListTypes, one guard per provisioning type);
+`resource_explorer.go` `executeQuery` (resourceexplorer2.Search, now also ends on a `""`
+token and returns the pages before a failure); `orgscan/orgscan.go` `targetAccounts`
+(organizations.ListAccounts, fails the listing rather than scanning a truncated account list).
+Guard errors flow into BatchScan Errors as `service:<svc>: …` (or `service:discovery: …`).
+Tests: `TestListTypeStopsOnRepeatedToken`, `TestTargetAccountsStopsOnRepeatedToken`.
