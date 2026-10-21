@@ -1,6 +1,7 @@
 // Placeholder for function registrations and table function implementations.
 pub mod blast;
 pub mod common;
+pub mod correlate_common;
 pub mod correlate_connectivity;
 pub mod correlate_dns;
 pub mod correlate_domains;

@@ -115,6 +115,13 @@ pub mod functions {
         ));
     }
 
+    pub mod correlate_common {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../corkscrew-graph/src/functions/correlate_common.rs"
+        ));
+    }
+
     pub mod correlate_ips {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),

@@ -7,6 +7,9 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::correlate_common::{
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+};
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
@@ -29,18 +32,6 @@ struct SecretRecord {
     method: String,
     evidence: String,
     status: String,
-}
-#[derive(Clone, Debug)]
-struct CorrelationRow {
-    correlation_id: String,
-    correlation_type: String,
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-    confidence: f64,
-    evidence: String,
-    description: String,
 }
 pub struct CorrelateSecretsInitData {
     cursor: AtomicUsize,
@@ -111,46 +102,60 @@ fn collect_secret_correlations(
     let threshold = min_confidence.clamp(0.0, 1.0);
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    for (hash, group) in by_hash {
-        for i in 0..group.len() {
-            for j in (i + 1)..group.len() {
-                let left = &group[i];
-                let right = &group[j];
-                if left.provider == right.provider || left.resource_id == right.resource_id {
-                    continue;
-                }
-                let (source, target) = ordered_pair(left, right);
-                let confidence = source.confidence.min(target.confidence).max(0.9);
-                if confidence < threshold {
-                    continue;
-                }
-                let cid = format!(
-                    "shared_secret:{}:{}:{}",
-                    hash, source.resource_id, target.resource_id
-                );
-                if !seen.insert(cid.clone()) {
-                    continue;
-                }
-                let evidence = json!({ "table": "shared_secrets_correlation", "secret_hash": hash, "secret_type": source.secret_type, "source_record_id": source.id, "target_record_id": target.id, "source_secret_name": source.secret_name, "target_secret_name": target.secret_name, "source_service_name": source.service_name, "target_service_name": target.service_name, "source_region": source.region, "target_region": target.region, "source_account_id": source.account_id, "target_account_id": target.account_id, "source_risk_level": source.risk_level, "target_risk_level": target.risk_level, "source_status": source.status, "target_status": target.status, "source_method": source.method, "target_method": target.method, "source_evidence": source.evidence, "target_evidence": target.evidence }).to_string();
-                out.push(CorrelationRow {
-                    correlation_id: cid,
-                    correlation_type: "shared_secret_match".to_string(),
-                    source_id: source.resource_id.clone(),
-                    target_id: target.resource_id.clone(),
-                    source_provider: source.provider.clone(),
-                    target_provider: target.provider.clone(),
-                    confidence,
-                    evidence,
-                    description: format!(
-                        "Cross-provider shared {} material between {} and {}",
-                        source.secret_type, source.resource_id, target.resource_id
-                    ),
-                });
-            }
-        }
+    for (hash, group) in &by_hash {
+        let key = GroupKey {
+            kind: "shared_secret_match",
+            value: hash,
+        };
+        walk_group_pairs(
+            group,
+            key,
+            CorrelationLimits::DEFAULT,
+            &mut out,
+            |left, right| {
+                let row = secret_pair_row(left, right, hash, threshold)?;
+                seen.insert(row.correlation_id.clone()).then_some(row)
+            },
+        )?;
     }
     out.sort_by(sort_rows);
     Ok(out)
+}
+
+/// The correlation row for one pair of secrets sharing `hash`, or `None` when
+/// the pair is same-provider, same-resource, or below `threshold`.
+fn secret_pair_row(
+    left: &SecretRecord,
+    right: &SecretRecord,
+    hash: &str,
+    threshold: f64,
+) -> Option<CorrelationRow> {
+    if left.provider == right.provider || left.resource_id == right.resource_id {
+        return None;
+    }
+    let (source, target) = ordered_pair(left, right);
+    let confidence = source.confidence.min(target.confidence).max(0.9);
+    if confidence < threshold {
+        return None;
+    }
+    let evidence = json!({ "table": "shared_secrets_correlation", "secret_hash": hash, "secret_type": source.secret_type, "source_record_id": source.id, "target_record_id": target.id, "source_secret_name": source.secret_name, "target_secret_name": target.secret_name, "source_service_name": source.service_name, "target_service_name": target.service_name, "source_region": source.region, "target_region": target.region, "source_account_id": source.account_id, "target_account_id": target.account_id, "source_risk_level": source.risk_level, "target_risk_level": target.risk_level, "source_status": source.status, "target_status": target.status, "source_method": source.method, "target_method": target.method, "source_evidence": source.evidence, "target_evidence": target.evidence }).to_string();
+    Some(CorrelationRow {
+        correlation_id: format!(
+            "shared_secret:{}:{}:{}",
+            hash, source.resource_id, target.resource_id
+        ),
+        correlation_type: "shared_secret_match".to_string(),
+        source_id: source.resource_id.clone(),
+        target_id: target.resource_id.clone(),
+        source_provider: source.provider.clone(),
+        target_provider: target.provider.clone(),
+        confidence,
+        evidence,
+        description: format!(
+            "Cross-provider shared {} material between {} and {}",
+            source.secret_type, source.resource_id, target.resource_id
+        ),
+    })
 }
 
 fn ordered_pair<'a>(

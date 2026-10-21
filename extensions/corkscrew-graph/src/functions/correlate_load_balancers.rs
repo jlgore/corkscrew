@@ -7,6 +7,9 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::correlate_common::{
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+};
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
@@ -25,19 +28,6 @@ struct LBRecord {
     region: String,
     backend_tokens: Vec<String>,
     dns_tokens: Vec<String>,
-}
-
-#[derive(Clone, Debug)]
-struct CorrelationRow {
-    correlation_id: String,
-    correlation_type: String,
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-    confidence: f64,
-    evidence: String,
-    description: String,
 }
 
 pub struct CorrelateLoadBalancersInitData {
@@ -103,8 +93,8 @@ fn collect_lb_correlations(
     let threshold = min_confidence.clamp(0.0, 1.0);
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    correlate_token_groups(&records, false, threshold, &mut seen, &mut out);
-    correlate_token_groups(&records, true, threshold, &mut seen, &mut out);
+    correlate_token_groups(&records, false, threshold, &mut seen, &mut out)?;
+    correlate_token_groups(&records, true, threshold, &mut seen, &mut out)?;
     out.sort_by(sort_rows);
     Ok(out)
 }
@@ -167,7 +157,7 @@ fn correlate_token_groups(
     threshold: f64,
     seen: &mut HashSet<String>,
     out: &mut Vec<CorrelationRow>,
-) {
+) -> Result<(), BoxError> {
     let mut by_token: HashMap<String, Vec<&LBRecord>> = HashMap::new();
     for record in records {
         let tokens = if dns {
@@ -179,60 +169,73 @@ fn correlate_token_groups(
             by_token.entry(token.clone()).or_default().push(record);
         }
     }
-    for (token, group) in by_token {
-        for i in 0..group.len() {
-            for j in (i + 1)..group.len() {
-                let left = group[i];
-                let right = group[j];
-                if left.provider == right.provider || left.lb_id == right.lb_id {
-                    continue;
-                }
-                let (source, target) = ordered_pair(left, right);
-                let confidence = if dns { 0.8 } else { 0.9 };
-                if confidence < threshold {
-                    continue;
-                }
-                let kind = if dns {
-                    "load_balancer_dns_target_match"
-                } else {
-                    "load_balancer_backend_match"
-                };
-                let correlation_id =
-                    format!("{}:{}:{}:{}", kind, token, source.lb_id, target.lb_id);
-                if !seen.insert(correlation_id.clone()) {
-                    continue;
-                }
-                let evidence = json!({
-                    "shared_target": token,
-                    "source_topology_id": source.id,
-                    "target_topology_id": target.id,
-                    "source_name": source.name,
-                    "target_name": target.name,
-                    "source_loadbalancer_type": source.lb_type,
-                    "target_loadbalancer_type": target.lb_type,
-                    "source_region": source.region,
-                    "target_region": target.region,
-                    "match_source": if dns { "cross_cloud_dns_records" } else { "cross_cloud_loadbalancer_topology.backend_targets" }
-                }).to_string();
-                out.push(CorrelationRow {
-                    correlation_id,
-                    correlation_type: kind.to_string(),
-                    source_id: source.lb_id.clone(),
-                    target_id: target.lb_id.clone(),
-                    source_provider: source.provider.clone(),
-                    target_provider: target.provider.clone(),
-                    confidence,
-                    evidence,
-                    description: format!(
-                        "Load balancers {} and {} share target {}",
-                        display_name(source),
-                        display_name(target),
-                        token
-                    ),
-                });
-            }
-        }
+    let kind = if dns {
+        "load_balancer_dns_target_match"
+    } else {
+        "load_balancer_backend_match"
+    };
+    for (token, group) in &by_token {
+        let key = GroupKey { kind, value: token };
+        walk_group_pairs(
+            group,
+            key,
+            CorrelationLimits::DEFAULT,
+            out,
+            |left, right| {
+                let row = lb_pair_row(left, right, key, dns, threshold)?;
+                seen.insert(row.correlation_id.clone()).then_some(row)
+            },
+        )?;
     }
+    Ok(())
+}
+
+/// The correlation row for one pair of load balancers sharing `key.value`, or
+/// `None` when the pair is same-provider, same-balancer, or below `threshold`.
+fn lb_pair_row(
+    left: &LBRecord,
+    right: &LBRecord,
+    key: GroupKey<'_>,
+    dns: bool,
+    threshold: f64,
+) -> Option<CorrelationRow> {
+    if left.provider == right.provider || left.lb_id == right.lb_id {
+        return None;
+    }
+    let (source, target) = ordered_pair(left, right);
+    let confidence = if dns { 0.8 } else { 0.9 };
+    if confidence < threshold {
+        return None;
+    }
+    let token = key.value;
+    let evidence = json!({
+        "shared_target": token,
+        "source_topology_id": source.id,
+        "target_topology_id": target.id,
+        "source_name": source.name,
+        "target_name": target.name,
+        "source_loadbalancer_type": source.lb_type,
+        "target_loadbalancer_type": target.lb_type,
+        "source_region": source.region,
+        "target_region": target.region,
+        "match_source": if dns { "cross_cloud_dns_records" } else { "cross_cloud_loadbalancer_topology.backend_targets" }
+    }).to_string();
+    Some(CorrelationRow {
+        correlation_id: format!("{}:{}:{}:{}", key.kind, token, source.lb_id, target.lb_id),
+        correlation_type: key.kind.to_string(),
+        source_id: source.lb_id.clone(),
+        target_id: target.lb_id.clone(),
+        source_provider: source.provider.clone(),
+        target_provider: target.provider.clone(),
+        confidence,
+        evidence,
+        description: format!(
+            "Load balancers {} and {} share target {}",
+            display_name(source),
+            display_name(target),
+            token
+        ),
+    })
 }
 
 fn extract_tokens(value: Option<String>) -> Vec<String> {

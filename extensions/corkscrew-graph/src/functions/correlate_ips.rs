@@ -8,6 +8,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::correlate_common::{
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+};
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
@@ -30,19 +33,6 @@ struct IPRecord {
     vpc_id: String,
     subnet_id: String,
     network_interface_id: String,
-}
-
-#[derive(Clone, Debug)]
-struct CorrelationRow {
-    correlation_id: String,
-    correlation_type: String,
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-    confidence: f64,
-    evidence: String,
-    description: String,
 }
 
 pub struct CorrelateIPsInitData {
@@ -198,72 +188,18 @@ fn collect_ip_correlations(
     }
 
     let threshold = min_confidence.clamp(0.0, 1.0);
+    let limits = CorrelationLimits::DEFAULT;
     let mut seen = HashSet::new();
     let mut correlations = Vec::new();
-
-    for records in by_ip.values() {
-        for i in 0..records.len() {
-            for j in (i + 1)..records.len() {
-                let left = &records[i];
-                let right = &records[j];
-                if left.provider == right.provider || left.resource_id == right.resource_id {
-                    continue;
-                }
-
-                let (source, target) = ordered_pair(left, right);
-                let confidence = calculate_confidence(source, target);
-                if confidence < threshold {
-                    continue;
-                }
-
-                let correlation_id = format!(
-                    "ip_match:{}:{}:{}",
-                    source.ip_address, source.resource_id, target.resource_id
-                );
-                if !seen.insert(correlation_id.clone()) {
-                    continue;
-                }
-
-                let evidence = json!({
-                    "shared_ip_address": source.ip_address,
-                    "ip_classification": ip_classification(&source.ip_address),
-                    "source_ip_type": source.ip_type,
-                    "target_ip_type": target.ip_type,
-                    "source_record_id": source.record_id,
-                    "target_record_id": target.record_id,
-                    "source_resource_type": source.resource_type,
-                    "target_resource_type": target.resource_type,
-                    "source_region": source.region,
-                    "target_region": target.region,
-                    "source_account_id": source.account_id,
-                    "target_account_id": target.account_id,
-                    "source_vpc_id": source.vpc_id,
-                    "target_vpc_id": target.vpc_id,
-                    "source_subnet_id": source.subnet_id,
-                    "target_subnet_id": target.subnet_id,
-                    "source_network_interface_id": source.network_interface_id,
-                    "target_network_interface_id": target.network_interface_id,
-                })
-                .to_string();
-
-                correlations.push(CorrelationRow {
-                    correlation_id,
-                    correlation_type: "ip_match".to_string(),
-                    source_id: source.resource_id.clone(),
-                    target_id: target.resource_id.clone(),
-                    source_provider: source.provider.clone(),
-                    target_provider: target.provider.clone(),
-                    confidence,
-                    evidence,
-                    description: format!(
-                        "Resources {} and {} share IP address {}",
-                        display_name(source),
-                        display_name(target),
-                        source.ip_address
-                    ),
-                });
-            }
-        }
+    for (ip_address, records) in &by_ip {
+        let key = GroupKey {
+            kind: "ip_match",
+            value: ip_address,
+        };
+        walk_group_pairs(records, key, limits, &mut correlations, |left, right| {
+            let row = ip_pair_row(left, right, threshold)?;
+            seen.insert(row.correlation_id.clone()).then_some(row)
+        })?;
     }
 
     correlations.sort_by(|a, b| {
@@ -276,6 +212,62 @@ fn collect_ip_correlations(
             .then_with(|| a.target_id.cmp(&b.target_id))
     });
     Ok(correlations)
+}
+
+/// The correlation row for one pair of records sharing an IP, or `None` when
+/// the pair is same-provider, same-resource, or below `threshold`.
+fn ip_pair_row(left: &IPRecord, right: &IPRecord, threshold: f64) -> Option<CorrelationRow> {
+    if left.provider == right.provider || left.resource_id == right.resource_id {
+        return None;
+    }
+    let (source, target) = ordered_pair(left, right);
+    let confidence = calculate_confidence(source, target);
+    if confidence < threshold {
+        return None;
+    }
+    assert!(source.ip_address == target.ip_address);
+
+    let evidence = json!({
+        "shared_ip_address": source.ip_address,
+        "ip_classification": ip_classification(&source.ip_address),
+        "source_ip_type": source.ip_type,
+        "target_ip_type": target.ip_type,
+        "source_record_id": source.record_id,
+        "target_record_id": target.record_id,
+        "source_resource_type": source.resource_type,
+        "target_resource_type": target.resource_type,
+        "source_region": source.region,
+        "target_region": target.region,
+        "source_account_id": source.account_id,
+        "target_account_id": target.account_id,
+        "source_vpc_id": source.vpc_id,
+        "target_vpc_id": target.vpc_id,
+        "source_subnet_id": source.subnet_id,
+        "target_subnet_id": target.subnet_id,
+        "source_network_interface_id": source.network_interface_id,
+        "target_network_interface_id": target.network_interface_id,
+    })
+    .to_string();
+
+    Some(CorrelationRow {
+        correlation_id: format!(
+            "ip_match:{}:{}:{}",
+            source.ip_address, source.resource_id, target.resource_id
+        ),
+        correlation_type: "ip_match".to_string(),
+        source_id: source.resource_id.clone(),
+        target_id: target.resource_id.clone(),
+        source_provider: source.provider.clone(),
+        target_provider: target.provider.clone(),
+        confidence,
+        evidence,
+        description: format!(
+            "Resources {} and {} share IP address {}",
+            display_name(source),
+            display_name(target),
+            source.ip_address
+        ),
+    })
 }
 
 fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {

@@ -7,6 +7,9 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::correlate_common::{
+    walk_group_pairs, CorrelationLimits, CorrelationRow, GroupKey,
+};
 use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
@@ -25,18 +28,6 @@ struct DNSOwner {
     account_id: String,
     zone_id: String,
     zone_name: String,
-}
-#[derive(Clone, Debug)]
-struct CorrelationRow {
-    correlation_id: String,
-    correlation_type: String,
-    source_id: String,
-    target_id: String,
-    source_provider: String,
-    target_provider: String,
-    confidence: f64,
-    evidence: String,
-    description: String,
 }
 
 pub struct CorrelateDomainsInitData {
@@ -135,51 +126,59 @@ fn collect_dns_domain_matches(
             zone_name: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
         });
     }
-    for (domain, owners) in by_domain {
-        for i in 0..owners.len() {
-            for j in (i + 1)..owners.len() {
-                let left = &owners[i];
-                let right = &owners[j];
-                if left.provider == right.provider || left.resource_id == right.resource_id {
-                    continue;
-                }
-                let (source, target) = if (&left.provider, &left.resource_id, &left.id)
-                    <= (&right.provider, &right.resource_id, &right.id)
-                {
-                    (left, right)
-                } else {
-                    (right, left)
-                };
-                let confidence = 0.85;
-                if confidence < threshold {
-                    continue;
-                }
-                let cid = format!(
-                    "domain_dns:{}:{}:{}",
-                    domain, source.resource_id, target.resource_id
-                );
-                if !seen.insert(cid.clone()) {
-                    continue;
-                }
-                let evidence = json!({ "table": "cross_cloud_dns_records", "domain": domain, "source_record_id": source.id, "target_record_id": target.id, "source_zone_id": source.zone_id, "target_zone_id": target.zone_id, "source_zone_name": source.zone_name, "target_zone_name": target.zone_name, "source_region": source.region, "target_region": target.region, "source_account_id": source.account_id, "target_account_id": target.account_id }).to_string();
-                out.push(CorrelationRow {
-                    correlation_id: cid,
-                    correlation_type: "domain_dns_zone_match".to_string(),
-                    source_id: source.resource_id.clone(),
-                    target_id: target.resource_id.clone(),
-                    source_provider: source.provider.clone(),
-                    target_provider: target.provider.clone(),
-                    confidence,
-                    evidence,
-                    description: format!(
-                        "Cross-provider DNS ownership for domain {}",
-                        source.domain
-                    ),
-                });
-            }
-        }
+    for (domain, owners) in &by_domain {
+        let key = GroupKey {
+            kind: "domain_dns_zone_match",
+            value: domain,
+        };
+        walk_group_pairs(
+            owners,
+            key,
+            CorrelationLimits::DEFAULT,
+            out,
+            |left, right| {
+                let row = domain_pair_row(left, right, threshold)?;
+                seen.insert(row.correlation_id.clone()).then_some(row)
+            },
+        )?;
     }
     Ok(())
+}
+
+/// The correlation row for one pair of DNS owners of the same domain, or `None`
+/// when the pair is same-provider, same-resource, or below `threshold`.
+fn domain_pair_row(left: &DNSOwner, right: &DNSOwner, threshold: f64) -> Option<CorrelationRow> {
+    if left.provider == right.provider || left.resource_id == right.resource_id {
+        return None;
+    }
+    let (source, target) = if (&left.provider, &left.resource_id, &left.id)
+        <= (&right.provider, &right.resource_id, &right.id)
+    {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let confidence = 0.85;
+    if confidence < threshold {
+        return None;
+    }
+    assert!(source.domain == target.domain);
+    let domain = &source.domain;
+    let evidence = json!({ "table": "cross_cloud_dns_records", "domain": domain, "source_record_id": source.id, "target_record_id": target.id, "source_zone_id": source.zone_id, "target_zone_id": target.zone_id, "source_zone_name": source.zone_name, "target_zone_name": target.zone_name, "source_region": source.region, "target_region": target.region, "source_account_id": source.account_id, "target_account_id": target.account_id }).to_string();
+    Some(CorrelationRow {
+        correlation_id: format!(
+            "domain_dns:{}:{}:{}",
+            domain, source.resource_id, target.resource_id
+        ),
+        correlation_type: "domain_dns_zone_match".to_string(),
+        source_id: source.resource_id.clone(),
+        target_id: target.resource_id.clone(),
+        source_provider: source.provider.clone(),
+        target_provider: target.provider.clone(),
+        confidence,
+        evidence,
+        description: format!("Cross-provider DNS ownership for domain {}", domain),
+    })
 }
 
 fn collect_certificate_matches(
