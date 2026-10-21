@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
 pub struct CorrelatePoliciesBindData {
@@ -34,35 +35,34 @@ pub struct GraphCorrelatePoliciesVTab;
 impl VTab for GraphCorrelatePoliciesVTab {
     type InitData = CorrelatePoliciesInitData;
     type BindData = CorrelatePoliciesBindData;
-    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        add_standard_columns(bind);
-        Ok(CorrelatePoliciesBindData {
-            db_path: bind.get_parameter(0).to_string(),
-            min_confidence: bind.get_parameter(1).to_string().parse::<f64>()?,
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, BoxError> {
+        guard("GraphCorrelatePoliciesVTab::bind", || {
+            add_standard_columns(bind);
+            Ok(CorrelatePoliciesBindData {
+                db_path: param_varchar(bind, 0, "db_path")?,
+                min_confidence: param_f64(bind, 1, "min_confidence")?,
+            })
         })
     }
-    fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe {
-            init.get_bind_data::<CorrelatePoliciesBindData>()
-                .as_ref()
-                .unwrap()
-        };
-        let conn = Connection::open(&bind_ref.db_path)?;
-        let rows = collect_policy_correlations(&conn, bind_ref.min_confidence)?;
-        Ok(CorrelatePoliciesInitData {
-            cursor: AtomicUsize::new(0),
-            rows,
+    fn init(init: &InitInfo) -> Result<Self::InitData, BoxError> {
+        guard("GraphCorrelatePoliciesVTab::init", || {
+            let bind_ref = bind_data::<Self>(init)?;
+            let conn = Connection::open(&bind_ref.db_path)?;
+            let rows = collect_policy_correlations(&conn, bind_ref.min_confidence)?;
+            Ok(CorrelatePoliciesInitData {
+                cursor: AtomicUsize::new(0),
+                rows,
+            })
         })
     }
-    fn func(
-        func: &TableFunctionInfo<Self>,
-        output: &mut DataChunkHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        emit_rows(
-            &func.get_init_data().cursor,
-            &func.get_init_data().rows,
-            output,
-        )
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), BoxError> {
+        guard("GraphCorrelatePoliciesVTab::func", || {
+            emit_rows(
+                &func.get_init_data().cursor,
+                &func.get_init_data().rows,
+                output,
+            )
+        })
     }
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
         Some(vec![
@@ -75,7 +75,7 @@ impl VTab for GraphCorrelatePoliciesVTab {
 fn collect_policy_correlations(
     conn: &Connection,
     min_confidence: f64,
-) -> Result<Vec<CorrelationRow>, Box<dyn std::error::Error>> {
+) -> Result<Vec<CorrelationRow>, BoxError> {
     if !table_exists(conn, "policy_similarity_analysis")? {
         return Ok(Vec::new());
     }
@@ -149,7 +149,7 @@ fn ordered_values(
         (target_id, source_id, target_provider, source_provider, true)
     }
 }
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
     let mut stmt = conn.prepare(
         "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
     )?;
@@ -187,7 +187,7 @@ fn emit_rows(
     cursor: &AtomicUsize,
     rows: &[CorrelationRow],
     output: &mut DataChunkHandle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let Some((start, end)) = next_chunk(cursor, rows.len(), chunk_capacity()) else {
         output.set_len(0);
         return Ok(());

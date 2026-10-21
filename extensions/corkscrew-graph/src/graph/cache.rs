@@ -4,8 +4,8 @@ use duckdb::Connection;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use super::loader::{fingerprint_path, LoadedGraph};
 
@@ -25,6 +25,14 @@ fn cache() -> &'static Mutex<LruCache<String, Arc<LoadedGraph>>> {
 
 fn cache_load_lock() -> &'static Mutex<()> {
     CACHE_LOAD_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Locks `mutex`, recovering from poisoning. A panic in one query (now caught
+/// at the vtab boundary) must not make every later query panic too. Recovery
+/// is sound here: the load lock guards `()`, and every LRU mutation is a single
+/// call whose worst outcome is a stale entry, which `entry_is_fresh` rejects.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Reads the optional DuckDB session setting and falls back to the default TTL.
@@ -77,7 +85,7 @@ pub fn get_or_load(conn: &Connection, db_path: &str) -> Result<Arc<LoadedGraph>>
     let key = cache_key(db_path);
 
     {
-        let mut guard = cache().lock().unwrap();
+        let mut guard = lock(cache());
         // `LruCache::cap()` is the current bound; resize on the fly when the
         // session variable changes so users get the configured behavior without
         // restarting.
@@ -91,10 +99,10 @@ pub fn get_or_load(conn: &Connection, db_path: &str) -> Result<Arc<LoadedGraph>>
         }
     }
 
-    let _load_guard = cache_load_lock().lock().unwrap();
+    let _load_guard = lock(cache_load_lock());
 
     {
-        let mut guard = cache().lock().unwrap();
+        let mut guard = lock(cache());
         if let Some(existing) = guard.get(&key) {
             if entry_is_fresh(existing, &key, ttl) {
                 return Ok(Arc::clone(existing));
@@ -106,11 +114,11 @@ pub fn get_or_load(conn: &Connection, db_path: &str) -> Result<Arc<LoadedGraph>>
     let mut loaded = super::loader::load_graph(conn, &providers)?;
     loaded.file_fingerprint = fingerprint_path(&key);
     let arc = Arc::new(loaded);
-    cache().lock().unwrap().put(key, Arc::clone(&arc));
+    lock(cache()).put(key, Arc::clone(&arc));
     Ok(arc)
 }
 
 pub fn invalidate(db_path: &str) {
     let key = cache_key(db_path);
-    cache().lock().unwrap().pop(&key);
+    lock(cache()).pop(&key);
 }

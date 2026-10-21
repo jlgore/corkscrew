@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
 pub struct CorrelateLoadBalancersBindData {
@@ -49,37 +50,36 @@ impl VTab for GraphCorrelateLoadBalancersVTab {
     type InitData = CorrelateLoadBalancersInitData;
     type BindData = CorrelateLoadBalancersBindData;
 
-    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        add_standard_columns(bind);
-        Ok(CorrelateLoadBalancersBindData {
-            db_path: bind.get_parameter(0).to_string(),
-            min_confidence: bind.get_parameter(1).to_string().parse::<f64>()?,
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, BoxError> {
+        guard("GraphCorrelateLoadBalancersVTab::bind", || {
+            add_standard_columns(bind);
+            Ok(CorrelateLoadBalancersBindData {
+                db_path: param_varchar(bind, 0, "db_path")?,
+                min_confidence: param_f64(bind, 1, "min_confidence")?,
+            })
         })
     }
 
-    fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe {
-            init.get_bind_data::<CorrelateLoadBalancersBindData>()
-                .as_ref()
-                .unwrap()
-        };
-        let conn = Connection::open(&bind_ref.db_path)?;
-        let rows = collect_lb_correlations(&conn, bind_ref.min_confidence)?;
-        Ok(CorrelateLoadBalancersInitData {
-            cursor: AtomicUsize::new(0),
-            rows,
+    fn init(init: &InitInfo) -> Result<Self::InitData, BoxError> {
+        guard("GraphCorrelateLoadBalancersVTab::init", || {
+            let bind_ref = bind_data::<Self>(init)?;
+            let conn = Connection::open(&bind_ref.db_path)?;
+            let rows = collect_lb_correlations(&conn, bind_ref.min_confidence)?;
+            Ok(CorrelateLoadBalancersInitData {
+                cursor: AtomicUsize::new(0),
+                rows,
+            })
         })
     }
 
-    fn func(
-        func: &TableFunctionInfo<Self>,
-        output: &mut DataChunkHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        emit_rows(
-            &func.get_init_data().cursor,
-            &func.get_init_data().rows,
-            output,
-        )
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), BoxError> {
+        guard("GraphCorrelateLoadBalancersVTab::func", || {
+            emit_rows(
+                &func.get_init_data().cursor,
+                &func.get_init_data().rows,
+                output,
+            )
+        })
     }
 
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
@@ -93,7 +93,7 @@ impl VTab for GraphCorrelateLoadBalancersVTab {
 fn collect_lb_correlations(
     conn: &Connection,
     min_confidence: f64,
-) -> Result<Vec<CorrelationRow>, Box<dyn std::error::Error>> {
+) -> Result<Vec<CorrelationRow>, BoxError> {
     if !table_exists(conn, "cross_cloud_loadbalancer_topology")? {
         return Ok(Vec::new());
     }
@@ -109,7 +109,7 @@ fn collect_lb_correlations(
     Ok(out)
 }
 
-fn load_lb_records(conn: &Connection) -> Result<Vec<LBRecord>, Box<dyn std::error::Error>> {
+fn load_lb_records(conn: &Connection) -> Result<Vec<LBRecord>, BoxError> {
     let mut stmt = conn.prepare(
         "SELECT id, loadbalancer_id, loadbalancer_name, loadbalancer_type, provider, region, backend_targets
          FROM cross_cloud_loadbalancer_topology
@@ -134,10 +134,7 @@ fn load_lb_records(conn: &Connection) -> Result<Vec<LBRecord>, Box<dyn std::erro
     Ok(records)
 }
 
-fn attach_dns_tokens(
-    conn: &Connection,
-    records: &mut [LBRecord],
-) -> Result<(), Box<dyn std::error::Error>> {
+fn attach_dns_tokens(conn: &Connection, records: &mut [LBRecord]) -> Result<(), BoxError> {
     if !table_exists(conn, "cross_cloud_dns_records")? {
         return Ok(());
     }
@@ -286,7 +283,7 @@ fn collect_json_tokens(value: &Value, out: &mut Vec<String>) {
     }
 }
 
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
     let mut stmt = conn.prepare(
         "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
     )?;
@@ -351,7 +348,7 @@ fn emit_rows(
     cursor: &AtomicUsize,
     rows: &[CorrelationRow],
     output: &mut DataChunkHandle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), BoxError> {
     let Some((start, end)) = next_chunk(cursor, rows.len(), chunk_capacity()) else {
         output.set_len(0);
         return Ok(());

@@ -8,6 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::AtomicUsize;
 
 use crate::functions::common::{chunk_capacity, next_chunk};
+use crate::functions::params::{bind_data, guard, param_f64, param_varchar, BoxError};
 
 #[repr(C)]
 pub struct CorrelateIPsBindData {
@@ -55,88 +56,87 @@ impl VTab for GraphCorrelateIPsVTab {
     type InitData = CorrelateIPsInitData;
     type BindData = CorrelateIPsBindData;
 
-    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        bind.add_result_column(
-            "correlation_id",
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        );
-        bind.add_result_column(
-            "correlation_type",
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        );
-        bind.add_result_column("source_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column("target_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column(
-            "source_provider",
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        );
-        bind.add_result_column(
-            "target_provider",
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        );
-        bind.add_result_column("confidence", LogicalTypeHandle::from(LogicalTypeId::Double));
-        bind.add_result_column("evidence", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        bind.add_result_column(
-            "description",
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        );
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, BoxError> {
+        guard("GraphCorrelateIPsVTab::bind", || {
+            bind.add_result_column(
+                "correlation_id",
+                LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            );
+            bind.add_result_column(
+                "correlation_type",
+                LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            );
+            bind.add_result_column("source_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+            bind.add_result_column("target_id", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+            bind.add_result_column(
+                "source_provider",
+                LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            );
+            bind.add_result_column(
+                "target_provider",
+                LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            );
+            bind.add_result_column("confidence", LogicalTypeHandle::from(LogicalTypeId::Double));
+            bind.add_result_column("evidence", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+            bind.add_result_column(
+                "description",
+                LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            );
 
-        Ok(CorrelateIPsBindData {
-            db_path: bind.get_parameter(0).to_string(),
-            min_confidence: bind.get_parameter(1).to_string().parse::<f64>()?,
+            Ok(CorrelateIPsBindData {
+                db_path: param_varchar(bind, 0, "db_path")?,
+                min_confidence: param_f64(bind, 1, "min_confidence")?,
+            })
         })
     }
 
-    fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        let bind_ref = unsafe {
-            init.get_bind_data::<CorrelateIPsBindData>()
-                .as_ref()
-                .unwrap()
-        };
-        let conn = Connection::open(&bind_ref.db_path)?;
-        let rows = collect_ip_correlations(&conn, bind_ref.min_confidence)?;
-        Ok(CorrelateIPsInitData {
-            cursor: AtomicUsize::new(0),
-            rows,
+    fn init(init: &InitInfo) -> Result<Self::InitData, BoxError> {
+        guard("GraphCorrelateIPsVTab::init", || {
+            let bind_ref = bind_data::<Self>(init)?;
+            let conn = Connection::open(&bind_ref.db_path)?;
+            let rows = collect_ip_correlations(&conn, bind_ref.min_confidence)?;
+            Ok(CorrelateIPsInitData {
+                cursor: AtomicUsize::new(0),
+                rows,
+            })
         })
     }
 
-    fn func(
-        func: &TableFunctionInfo<Self>,
-        output: &mut DataChunkHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let init_data = func.get_init_data();
-        let Some((start, end)) =
-            next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
-        else {
-            output.set_len(0);
-            return Ok(());
-        };
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), BoxError> {
+        guard("GraphCorrelateIPsVTab::func", || {
+            let init_data = func.get_init_data();
+            let Some((start, end)) =
+                next_chunk(&init_data.cursor, init_data.rows.len(), chunk_capacity())
+            else {
+                output.set_len(0);
+                return Ok(());
+            };
 
-        let v0 = output.flat_vector(0);
-        let v1 = output.flat_vector(1);
-        let v2 = output.flat_vector(2);
-        let v3 = output.flat_vector(3);
-        let v4 = output.flat_vector(4);
-        let v5 = output.flat_vector(5);
-        let mut v6 = output.flat_vector(6);
-        let v7 = output.flat_vector(7);
-        let v8 = output.flat_vector(8);
-        let confidence_slice = v6.as_mut_slice::<f64>();
+            let v0 = output.flat_vector(0);
+            let v1 = output.flat_vector(1);
+            let v2 = output.flat_vector(2);
+            let v3 = output.flat_vector(3);
+            let v4 = output.flat_vector(4);
+            let v5 = output.flat_vector(5);
+            let mut v6 = output.flat_vector(6);
+            let v7 = output.flat_vector(7);
+            let v8 = output.flat_vector(8);
+            let confidence_slice = v6.as_mut_slice::<f64>();
 
-        for (out_idx, row) in init_data.rows[start..end].iter().enumerate() {
-            v0.insert(out_idx, CString::new(row.correlation_id.clone())?);
-            v1.insert(out_idx, CString::new(row.correlation_type.clone())?);
-            v2.insert(out_idx, CString::new(row.source_id.clone())?);
-            v3.insert(out_idx, CString::new(row.target_id.clone())?);
-            v4.insert(out_idx, CString::new(row.source_provider.clone())?);
-            v5.insert(out_idx, CString::new(row.target_provider.clone())?);
-            confidence_slice[out_idx] = row.confidence;
-            v7.insert(out_idx, CString::new(row.evidence.clone())?);
-            v8.insert(out_idx, CString::new(row.description.clone())?);
-        }
-        output.set_len(end - start);
-        Ok(())
+            for (out_idx, row) in init_data.rows[start..end].iter().enumerate() {
+                v0.insert(out_idx, CString::new(row.correlation_id.clone())?);
+                v1.insert(out_idx, CString::new(row.correlation_type.clone())?);
+                v2.insert(out_idx, CString::new(row.source_id.clone())?);
+                v3.insert(out_idx, CString::new(row.target_id.clone())?);
+                v4.insert(out_idx, CString::new(row.source_provider.clone())?);
+                v5.insert(out_idx, CString::new(row.target_provider.clone())?);
+                confidence_slice[out_idx] = row.confidence;
+                v7.insert(out_idx, CString::new(row.evidence.clone())?);
+                v8.insert(out_idx, CString::new(row.description.clone())?);
+            }
+            output.set_len(end - start);
+            Ok(())
+        })
     }
 
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
@@ -150,7 +150,7 @@ impl VTab for GraphCorrelateIPsVTab {
 fn collect_ip_correlations(
     conn: &Connection,
     min_confidence: f64,
-) -> Result<Vec<CorrelationRow>, Box<dyn std::error::Error>> {
+) -> Result<Vec<CorrelationRow>, BoxError> {
     if !table_exists(conn, "cross_cloud_ip_addresses")? {
         return Ok(Vec::new());
     }
@@ -278,7 +278,7 @@ fn collect_ip_correlations(
     Ok(correlations)
 }
 
-fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, BoxError> {
     let mut stmt = conn.prepare(
         "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = lower(?)",
     )?;
