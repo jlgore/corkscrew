@@ -31,6 +31,7 @@ type Request struct {
 	ConfigPath              string
 	MaxConcurrency          int
 	SaveToFile              bool
+	ListResources           bool
 	DatabasePath            string
 	DatabaseExplicit        bool
 	QuackToken              string
@@ -104,6 +105,8 @@ type Outcome struct {
 	Warnings   []Warning
 	Expansions []ServiceGroupExpansion
 	Persisted  bool
+	// Database is the target the scan was stored in, when Persisted.
+	Database string
 }
 
 // serviceGroups name sets of AWS services. Other providers have their own
@@ -216,6 +219,7 @@ func Run(ctx context.Context, request Request, dependencies Dependencies) (Outco
 			outcome.Warnings = append(outcome.Warnings, Warning{Kind: WarningPersistence, Message: persistErr.Error()})
 		} else {
 			outcome.Persisted = true
+			outcome.Database = persistenceTarget
 		}
 	}
 
