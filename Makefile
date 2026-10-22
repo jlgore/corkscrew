@@ -289,14 +289,36 @@ fmt:
 	@go fmt ./...
 	@echo "✅ Code formatted"
 
+# Lint guardrails (docs/contributing/lint.md). Keep GOLANGCI_LINT_VERSION in
+# step with .github/workflows/lint.yml. LINT_BASE is the ref new code is
+# measured against; only lines changed since it are reported.
+GOLANGCI_LINT ?= golangci-lint
+GOLANGCI_LINT_VERSION := 2.14.0
+LINT_BASE ?= origin/main
+GO_MODULES := . $(wildcard plugins/*-provider)
+CLIPPY_CRATES := extensions/corkscrew-graph extensions/corkscrew-graph-tests
+CLIPPY_FLAGS := -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::unwrap_used
+
 .PHONY: lint
-lint:
-	@echo "🔍 Linting code..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "⚠️ golangci-lint not installed, run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-	fi
+lint: lint-go lint-rust
+	@echo "✅ Lint passed"
+
+.PHONY: lint-go
+lint-go:
+	@$(GOLANGCI_LINT) version 2>/dev/null | grep -q "version $(GOLANGCI_LINT_VERSION) " || { \
+		echo "❌ need golangci-lint $(GOLANGCI_LINT_VERSION); see docs/contributing/lint.md"; \
+		exit 1; }
+	@set -e; for module in $(GO_MODULES); do \
+		echo "🔍 golangci-lint $$module (new since $(LINT_BASE))"; \
+		(cd $$module && $(GOLANGCI_LINT) run --new-from-rev=$(LINT_BASE) ./...); \
+	done
+
+.PHONY: lint-rust
+lint-rust:
+	@set -e; for crate in $(CLIPPY_CRATES); do \
+		echo "🔍 clippy $$crate"; \
+		(cd $$crate && cargo clippy --all-targets -- $(CLIPPY_FLAGS)); \
+	done
 
 .PHONY: check
 check: fmt lint test-unit

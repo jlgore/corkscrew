@@ -1,3 +1,10 @@
+// Integration tests: a failed fixture setup or query should abort with a panic and
+// the test harness reports it, so `unwrap()` is the clearest spelling here.
+#![allow(
+    clippy::unwrap_used,
+    reason = "test code: a panic is the failure report"
+)]
+
 use corkscrew_graph_tests::functions::blast::GraphBlastRadiusVTab;
 use corkscrew_graph_tests::functions::correlate_connectivity::GraphCorrelateConnectivityVTab;
 use corkscrew_graph_tests::functions::correlate_dns::GraphCorrelateDNSVTab;
@@ -385,8 +392,8 @@ fn load_graph_counts_nodes_and_edges() {
     make_fixture(&conn);
     let providers = schema::detect_providers(&conn).unwrap();
     let loaded = loader::load_graph(&conn, &providers).unwrap();
-    assert_eq!(loaded.node_count, 3);
-    assert_eq!(loaded.edge_count, 2);
+    assert_eq!(loaded.graph.node_count(), 3);
+    assert_eq!(loaded.graph.edge_count(), 2);
     assert_eq!(
         loaded
             .graph
@@ -395,14 +402,7 @@ fn load_graph_counts_nodes_and_edges() {
             .count(),
         3
     );
-    assert_eq!(
-        loaded
-            .graph
-            .edge_weights()
-            .filter(|edge| edge.provider == "aws")
-            .count(),
-        2
-    );
+    assert_eq!(loaded.provider_counts.get("aws"), Some(&(3, 2)));
 }
 
 #[test]
@@ -441,8 +441,8 @@ fn load_graph_accepts_versioned_schema_relationship_views() {
     let detected = schema::detect_providers(&conn).unwrap();
     let loaded = loader::load_graph(&conn, &detected).unwrap();
     assert_eq!(detected.len(), 6);
-    assert_eq!(loaded.node_count, 6);
-    assert_eq!(loaded.edge_count, 1);
+    assert_eq!(loaded.graph.node_count(), 6);
+    assert_eq!(loaded.graph.edge_count(), 1);
     assert!(detected
         .iter()
         .any(|provider| provider.provider == "github"));
@@ -543,8 +543,8 @@ fn cache_readers_and_invalidator_can_race_safely() {
             let conn = Connection::open(&fixture_path).unwrap();
             for _ in 0..25 {
                 let loaded = cache::get_or_load(&conn, &fixture_path).unwrap();
-                assert_eq!(loaded.node_count, 3);
-                assert_eq!(loaded.edge_count, 2);
+                assert_eq!(loaded.graph.node_count(), 3);
+                assert_eq!(loaded.graph.edge_count(), 2);
             }
         }));
     }
@@ -1377,8 +1377,8 @@ fn load_graph_skips_relationships_with_missing_nodes() {
     let providers = schema::detect_providers(&conn).unwrap();
     let loaded = loader::load_graph(&conn, &providers).unwrap();
 
-    assert_eq!(loaded.node_count, 3);
-    assert_eq!(loaded.edge_count, 2);
+    assert_eq!(loaded.graph.node_count(), 3);
+    assert_eq!(loaded.graph.edge_count(), 2);
 }
 
 #[test]
@@ -1623,7 +1623,7 @@ fn cache_auto_invalidates_when_file_changes_on_disk() {
     // the cache key and the fingerprint source.
     let load_conn = Connection::open(&fixture_path).unwrap();
     let g1 = cache::get_or_load(&load_conn, &fixture_path).unwrap();
-    assert_eq!(g1.node_count, 3);
+    assert_eq!(g1.graph.node_count(), 3);
     drop(load_conn);
 
     // Sleep past mtime resolution (1 s on most filesystems), then rewrite the
@@ -1660,7 +1660,7 @@ fn cache_auto_invalidates_when_file_changes_on_disk() {
         !std::sync::Arc::ptr_eq(&g1, &g2),
         "expected fresh load after file mtime change"
     );
-    assert_eq!(g2.node_count, 4);
+    assert_eq!(g2.graph.node_count(), 4);
 }
 
 #[test]
@@ -2518,7 +2518,8 @@ fn load_graph_enforces_node_and_edge_limits() {
         edge_count_max: 2,
     };
     let loaded = load_graph_with_limits(&conn, &providers, exact).unwrap();
-    assert_eq!((loaded.node_count, loaded.edge_count), (3, 2));
+    assert_eq!(loaded.graph.node_count(), 3);
+    assert_eq!(loaded.graph.edge_count(), 2);
 
     let nodes = GraphLimits {
         node_count_max: 2,
@@ -2661,7 +2662,7 @@ fn cache_does_not_store_a_graph_whose_file_changed_during_load() {
         Ok(loaded)
     })
     .unwrap();
-    assert_eq!(racing.node_count, 3);
+    assert_eq!(racing.graph.node_count(), 3);
 
     let next = cache::get_or_load(&conn, &fixture_path).unwrap();
     assert!(
@@ -3110,4 +3111,128 @@ fn contains_ignore_ascii_case_matches_substrings() {
     assert!(contains_ignore_ascii_case("anything", ""));
     assert!(!contains_ignore_ascii_case("s3", "s3::bucket"));
     assert!(!contains_ignore_ascii_case("aws::s3::Bucket", "ec2"));
+}
+
+// ---------------------------------------------------------------------------
+// Issue 17: runtime assertions. An `assert!` inside a vtab callback must reach
+// DuckDB as a query error, never unwind into C frames (which aborts the host).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn guard_turns_a_failed_assertion_into_an_error() {
+    use corkscrew_graph_tests::functions::params::guard;
+
+    let result: Result<(), _> = guard("test::func", || {
+        let rows_max = 1;
+        assert!(rows_max > 1, "rows stay within ROWS_MAX");
+        Ok(())
+    });
+    let message = result.unwrap_err().to_string();
+    assert!(
+        message.contains("test::func panicked: rows stay within ROWS_MAX"),
+        "{message}"
+    );
+
+    // A bare `assert!` carries its stringified condition as the payload.
+    let result: Result<(), _> = guard("test::bind", || {
+        let index = 3usize;
+        assert!(index < 2);
+        Ok(())
+    });
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("assertion failed: index < 2"), "{message}");
+}
+
+/// A table function whose bind trips an invariant assertion, wrapped in
+/// `guard` like every real vtab callback.
+struct AssertingVTab;
+
+impl duckdb::vtab::VTab for AssertingVTab {
+    type InitData = ();
+    type BindData = ();
+
+    fn bind(
+        bind: &duckdb::vtab::BindInfo,
+    ) -> Result<Self::BindData, corkscrew_graph_tests::functions::params::BoxError> {
+        corkscrew_graph_tests::functions::params::guard("AssertingVTab::bind", || {
+            bind.add_result_column(
+                "value",
+                duckdb::core::LogicalTypeHandle::from(duckdb::core::LogicalTypeId::Integer),
+            );
+            let cache_entries = 17usize;
+            assert!(cache_entries <= 16, "cache entries stay within the cap");
+            Ok(())
+        })
+    }
+
+    fn init(
+        _: &duckdb::vtab::InitInfo,
+    ) -> Result<Self::InitData, corkscrew_graph_tests::functions::params::BoxError> {
+        Ok(())
+    }
+
+    fn func(
+        _: &duckdb::vtab::TableFunctionInfo<Self>,
+        output: &mut duckdb::core::DataChunkHandle,
+    ) -> Result<(), corkscrew_graph_tests::functions::params::BoxError> {
+        output.set_len(0);
+        Ok(())
+    }
+}
+
+#[test]
+fn failed_assertion_in_a_table_function_is_a_query_error() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.register_table_function::<AssertingVTab>("asserting")
+        .unwrap();
+    ffi_expect_error(
+        &conn,
+        "SELECT * FROM asserting()",
+        "cache entries stay within the cap",
+    );
+    // The connection, and the process, are still usable afterwards.
+    assert_eq!(ffi_run(&conn, "SELECT 1").unwrap(), 1);
+}
+
+#[test]
+fn hops_to_i32_asserts_the_hop_bound() {
+    use corkscrew_graph_tests::functions::params::{guard, hops_to_i32, HOPS_MAX};
+
+    assert_eq!(hops_to_i32(HOPS_MAX), HOPS_MAX as i32);
+    let result = guard("test", || Ok(hops_to_i32(HOPS_MAX + 1)));
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("HOPS_MAX"), "{message}");
+}
+
+#[test]
+fn next_chunk_ranges_cover_every_row_once_within_capacity() {
+    use corkscrew_graph_tests::functions::common::next_chunk;
+    use std::sync::atomic::AtomicUsize;
+
+    for (total, capacity) in [(0usize, 4usize), (1, 4), (4, 4), (10, 4), (2048, 2048)] {
+        let cursor = AtomicUsize::new(0);
+        let mut covered = 0;
+        while let Some((start, end)) = next_chunk(&cursor, total, capacity) {
+            assert_eq!(start, covered);
+            assert!(end - start <= capacity);
+            covered = end;
+        }
+        assert_eq!(covered, total);
+    }
+    assert_eq!(next_chunk(&AtomicUsize::new(0), 10, 0), None);
+}
+
+#[test]
+fn cache_never_holds_more_than_its_cap() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute(
+        "SET VARIABLE corkscrew_graph_cache_max_entries = 1000000",
+        [],
+    )
+    .unwrap();
+    for index in 0..cache::CACHE_ENTRIES_MAX + 4 {
+        let path = format!("/nonexistent/corkscrew-issue-17/{index}.duckdb");
+        cache::get_or_load_with(&conn, &path, |conn| loader::load_graph(conn, &[])).unwrap();
+        assert!(cache::cached_entry_count() <= cache::CACHE_ENTRIES_MAX);
+    }
 }

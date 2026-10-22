@@ -1,0 +1,72 @@
+# golangci-lint v2 configuration (pinned in .github/workflows/lint.yml and the
+# Makefile `lint` target). One file serves the root module and every
+# plugins/*-provider module: golangci-lint walks up from the working directory
+# to find it. See docs/contributing/lint.md.
+version: "2"
+
+run:
+  # Paths in exclusions are matched relative to the git root, so the same
+  # patterns work from the root and from each plugin module.
+  relative-path-mode: gitroot
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - funlen
+    - lll
+    - noctx
+
+  settings:
+    funlen:
+      lines: 70
+      statements: -1
+      # Count comment lines too: the limit is what a reader has to scroll.
+      ignore-comments: false
+    lll:
+      line-length: 100
+      tab-width: 4
+    errcheck:
+      # `_ = f.Close()` is the explicit "this error is deliberately dropped"
+      # spelling and stays allowed.
+      check-blank: false
+      check-type-assertions: false
+      exclude-functions:
+        # Test helpers that already fail the test when the assertion does not
+        # fire. The returned assert.Failure (an error) is only there for
+        # callers that want to inspect the message further.
+        - github.com/jlgore/corkscrew/internal/assert/asserttest.Fails
+        - github.com/jlgore/corkscrew/internal/assert/asserttest.FailsWith
+
+  exclusions:
+    # Files with a "Code generated ... DO NOT EDIT." header (protoc output).
+    generated: lax
+    rules:
+      # Close on cleanup paths. errcheck matches callees by name only, so it
+      # cannot tell an error-return path from a happy path. The closest
+      # honest rule: a deferred Close is cleanup that runs on the error
+      # paths, so its error is not reported. A non-deferred Close must be
+      # checked, or dropped explicitly with `_ = x.Close()` on an
+      # error-return path.
+      - linters:
+          - errcheck
+        source: '^\s*defer\s+[\w.()\[\]]+\.Close\(\)\s*$'
+    paths:
+      # Code-generator templates: long template strings and emitter
+      # functions that are data, not logic.
+      - '(^|/)scanner_generator\.go$'
+      - '(^|/)cmd/[^/]*-generator/'
+      - '(^|/)cmd/analyze-[^/]*/'
+      # protoc output (also caught by `generated: lax`).
+      - '\.pb\.go$'
+
+issues:
+  # Only new and changed code is checked, so existing debt never blocks.
+  # CI checks out full history (fetch-depth: 0) so this ref resolves.
+  new-from-rev: origin/main
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # Report every linter's finding on a line, not just the first one.
+  uniq-by-line: false

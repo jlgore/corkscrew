@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/pkg/scanner"
@@ -191,9 +192,8 @@ func (s *Scan) ScanService(ctx context.Context, serviceName string) ([]*pb.Resou
 	if s.err != nil {
 		return nil, s.err
 	}
-	if len(s.accounts) == 0 {
-		panic("orgscan: account listing succeeded with no accounts")
-	}
+	// targetAccounts turns an empty listing into an error, so success implies accounts.
+	assert.That(len(s.accounts) > 0, "orgscan: a successful account listing has accounts")
 	return s.scanAccounts(ctx, s.accounts, serviceName)
 }
 
@@ -321,9 +321,8 @@ func (o *OrgScanner) scanOneAccount(ctx context.Context, acctID, serviceName str
 // keeps the cache bounded by the organization's account count. A failed
 // build is not cached either, so the next call tries again.
 func (o *OrgScanner) accountScanner(ctx context.Context, acctID string) (accountScanner, error) {
-	if acctID == "" {
-		panic("orgscan: accountScanner needs an account ID")
-	}
+	// DescribeResource and targetAccounts reject blank IDs from refs and the API.
+	assert.That(acctID != "", "orgscan: accountScanner gets an account ID")
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
@@ -336,24 +335,19 @@ func (o *OrgScanner) accountScanner(ctx context.Context, acctID string) (account
 	if err != nil {
 		return nil, err
 	}
-	if sc == nil {
-		panic("orgscan: scannerFor returned neither a scanner nor an error")
-	}
+	assert.That(sc != nil, "orgscan: scannerFor returns a scanner or an error")
 	if o.accountsListed[acctID] {
 		o.scanners[acctID] = sc
 	}
-	if len(o.scanners) > len(o.accountsListed) {
-		panic("orgscan: more cached scanners than listed accounts")
-	}
+	assert.That(len(o.scanners) <= len(o.accountsListed),
+		"orgscan: cached scanners are at most the listed accounts")
 	return sc, nil
 }
 
 // retainAccounts records accounts as the latest listing and drops the cached
 // scanners of accounts no longer in it.
 func (o *OrgScanner) retainAccounts(accounts []string) {
-	if len(accounts) == 0 {
-		panic("orgscan: retainAccounts needs the listed accounts")
-	}
+	assert.That(len(accounts) > 0, "orgscan: retainAccounts gets the listed accounts")
 	listed := make(map[string]bool, len(accounts))
 	for _, acctID := range accounts {
 		listed[acctID] = true
@@ -368,9 +362,8 @@ func (o *OrgScanner) retainAccounts(accounts []string) {
 			delete(o.scanners, acctID)
 		}
 	}
-	if len(o.scanners) > len(o.accountsListed) {
-		panic("orgscan: more cached scanners than listed accounts")
-	}
+	assert.That(len(o.scanners) <= len(o.accountsListed),
+		"orgscan: cached scanners are at most the listed accounts")
 }
 
 // cachedScannerCount returns how many account scanners are cached.
@@ -424,6 +417,12 @@ func (o *OrgScanner) targetAccounts(ctx context.Context) ([]string, error) {
 				continue
 			}
 			id := aws.ToString(a.Id)
+			if id == "" {
+				// Skipping it would scan a truncated account list; trusting it would
+				// reach accountScanner with no account to assume into.
+				return nil, fmt.Errorf(
+					"organizations.ListAccounts returned an account without an ID")
+			}
 			if len(include) > 0 && !include[id] {
 				continue
 			}

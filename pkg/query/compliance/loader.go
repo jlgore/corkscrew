@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jlgore/corkscrew/internal/assert"
 	"gopkg.in/yaml.v3"
 )
 
@@ -222,13 +223,28 @@ func (l *PackLoader) LoadPack(ctx context.Context, namespace string) (*QueryPack
 	return l.loadPackInternal(ctx, namespace, make(map[string]bool), make([]string, 0))
 }
 
+// packDepthMax bounds a pack's dependency chain, counting the pack itself. Real packs depend on
+// one or two shared packs; the bound keeps the recursive load from growing without limit on a
+// long (generated or hostile) chain of distinct manifests.
+const packDepthMax = 32
+
 // loadPackInternal loads a pack with dependency tracking to prevent circular dependencies
 func (l *PackLoader) loadPackInternal(ctx context.Context, namespace string, loading map[string]bool, loadPath []string) (*QueryPack, error) {
+	assert.Thatf(len(loadPath) <= packDepthMax,
+		"compliance: load path of %d packs is within packDepthMax %d", len(loadPath), packDepthMax)
 	// Check for circular dependencies
 	if loading[namespace] {
 		return nil, DependencyError{
 			PackName: namespace,
 			Circular: append(loadPath, namespace),
+		}
+	}
+	// Manifests are user files, so an over-deep chain is an operating error, not an assertion.
+	if len(loadPath) >= packDepthMax {
+		return nil, LoaderError{
+			PackName: namespace,
+			Message: fmt.Sprintf("dependency chain deeper than %d packs: %s", packDepthMax,
+				strings.Join(append(loadPath, namespace), " -> ")),
 		}
 	}
 
@@ -241,6 +257,7 @@ func (l *PackLoader) loadPackInternal(ctx context.Context, namespace string, loa
 
 	loading[namespace] = true
 	loadPath = append(loadPath, namespace)
+	assert.That(len(loadPath) <= packDepthMax, "compliance: load path is within packDepthMax")
 	defer func() {
 		delete(loading, namespace)
 	}()

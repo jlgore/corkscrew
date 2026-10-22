@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	scanapp "github.com/jlgore/corkscrew/internal/app/scan"
+	"github.com/jlgore/corkscrew/internal/assert"
 	appconfig "github.com/jlgore/corkscrew/internal/config"
 	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui/components"
@@ -479,6 +480,7 @@ func (app *CorkscrewApp) beginQuickScan() tea.Cmd {
 		return func() tea.Msg { return ErrorMsg{Error: fmt.Errorf("no providers are enabled")} }
 	}
 
+	assert.That(len(providers) > 0, "tui: a quick scan starts with at least one provider")
 	app.quickScanProviders = providers
 	app.quickScanCompleted = 0
 	app.quickScanErrors = nil
@@ -498,6 +500,19 @@ func (app *CorkscrewApp) runQuickScanProvider(provider string) tea.Cmd {
 	}
 }
 
+// quickScanProgress returns the completed fraction of a quick scan. Duplicate and stale
+// completions are filtered before they are counted, so completed never passes total, and
+// beginQuickScan refuses to start without providers.
+func quickScanProgress(completed, total int) float64 {
+	assert.That(total > 0, "tui: a quick scan has providers")
+	assert.That(completed >= 0, "tui: quick scan completions are not negative")
+	assert.Thatf(completed <= total,
+		"tui: quick scan completions %d are at most the provider count %d", completed, total)
+	progress := float64(completed) / float64(total)
+	assert.That(progress <= 1, "tui: quick scan progress is at most 1")
+	return progress
+}
+
 // quickScanRunning reports whether a quick scan has providers left to complete.
 func (app *CorkscrewApp) quickScanRunning() bool {
 	return app.quickScanCompleted < len(app.quickScanProviders)
@@ -510,10 +525,10 @@ func (app *CorkscrewApp) handleProviderScanComplete(msg providerScanCompleteMsg)
 		return nil
 	}
 	app.quickScanCompleted++
-	total := len(app.quickScanProviders)
+	progress := quickScanProgress(app.quickScanCompleted, len(app.quickScanProviders))
 	if app.scanStatus != nil {
 		app.scanStatus.Resources += len(msg.outcome.Resources)
-		app.scanStatus.Progress = float64(app.quickScanCompleted) / float64(total)
+		app.scanStatus.Progress = progress
 	}
 	if msg.err != nil {
 		app.quickScanErrors = append(app.quickScanErrors, fmt.Errorf("%s: %w", msg.provider, msg.err))

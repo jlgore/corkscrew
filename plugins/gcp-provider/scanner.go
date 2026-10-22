@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/storage/v1"
@@ -33,9 +34,7 @@ type ServiceScanner interface {
 // NewResourceScanner creates a new resource scanner that runs at most
 // concurrency service scans at once.
 func NewResourceScanner(cf *ClientFactory, concurrency int) *ResourceScanner {
-	if concurrency <= 0 {
-		panic("gcp: resource scanner concurrency must be positive")
-	}
+	assert.That(concurrency > 0, "gcp: resource scanner concurrency is positive")
 	rs := &ResourceScanner{
 		clientFactory: cf,
 		scanners:      make(map[string]ServiceScanner),
@@ -118,9 +117,7 @@ func (rs *ResourceScanner) ScanAllServices(ctx context.Context) ([]*pb.ResourceR
 func (rs *ResourceScanner) launchServiceScans(
 	ctx context.Context,
 ) (<-chan scanServiceResult, []error) {
-	if rs.concurrency <= 0 {
-		panic("gcp: resource scanner concurrency must be positive")
-	}
+	assert.That(rs.concurrency > 0, "gcp: resource scanner concurrency is positive")
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, rs.concurrency)
 	resultChan := make(chan scanServiceResult, len(rs.scanners))
@@ -150,9 +147,8 @@ func (rs *ResourceScanner) launchServiceScans(
 		wg.Wait()
 		close(resultChan)
 	}()
-	if len(notLaunched) > 0 && ctx.Err() == nil {
-		panic("gcp: services left unlaunched while ctx is live")
-	}
+	assert.That(len(notLaunched) == 0 || ctx.Err() != nil,
+		"gcp: services are left unlaunched only once ctx ends")
 	return resultChan, notLaunched
 }
 

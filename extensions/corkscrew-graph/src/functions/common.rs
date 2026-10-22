@@ -19,7 +19,13 @@ pub fn next_chunk(cursor: &AtomicUsize, total: usize, capacity: usize) -> Option
     if start >= total {
         return None;
     }
-    Some((start, (start + capacity).min(total)))
+    let end = start.saturating_add(capacity).min(total);
+    // Callers index `rows[start..end]` and write `end - start` rows into a vector of
+    // `capacity` slots, so both bounds are checked here rather than at every call site.
+    assert!(start < end, "chunk is not empty");
+    assert!(end <= total, "chunk ends within the rows");
+    assert!(end - start <= capacity, "chunk fits in the output vector");
+    Some((start, end))
 }
 
 /// DuckDB's per-call vector capacity (typically 2048). Read at runtime so it
@@ -280,6 +286,7 @@ pub fn collect_reachable_row(
     let mut queue = VecDeque::from([(start, 0usize)]);
 
     while let Some((node, hops)) = queue.pop_front() {
+        assert!(hops <= max_hops);
         if hops > 0 {
             let resource = &loaded.graph[node];
             if type_matches(&resource.resource_type, filter) {
@@ -329,6 +336,7 @@ pub fn collect_blast_rows(loaded: &LoadedGraph, source_id: &str, max_hops: usize
     let mut queue = VecDeque::from([(start, 0usize)]);
 
     while let Some((node, hops)) = queue.pop_front() {
+        assert!(hops <= max_hops);
         if hops > 0 {
             let resource = &loaded.graph[node];
             let entry = grouped
@@ -378,6 +386,10 @@ pub fn write_varchar_list_column(
         }
         offset += row_values.len();
     }
+    assert!(
+        offset == total_values,
+        "list entries cover the child vector exactly"
+    );
     vector.set_len(total_values);
     Ok(())
 }

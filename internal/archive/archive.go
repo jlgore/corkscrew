@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/jlgore/corkscrew/internal/assert"
 )
 
 // Format names the container format of an archive file.
@@ -52,9 +54,7 @@ const (
 func ExtractTree(
 	format Format, archivePath, destDir string, stripComponents int, limits Limits,
 ) error {
-	if err := checkDestination(destDir); err != nil {
-		return err
-	}
+	assertDestination(destDir)
 	if stripComponents < 0 {
 		return fmt.Errorf("archive: negative strip components %d", stripComponents)
 	}
@@ -77,9 +77,7 @@ func ExtractTree(
 // name+".exe") to destPath and ignores every other entry. An exact base-name match keeps
 // an entry such as "bin/evil-protoc" from being installed as "protoc".
 func ExtractFile(format Format, archivePath, name, destPath string, limits Limits) error {
-	if err := checkDestination(destPath); err != nil {
-		return err
-	}
+	assertDestination(destPath)
 	if name == "" || strings.ContainsAny(name, `/\`) {
 		return fmt.Errorf("archive: invalid binary name %q", name)
 	}
@@ -101,13 +99,13 @@ func ExtractFile(format Format, archivePath, name, destPath string, limits Limit
 	return nil
 }
 
-// checkDestination asserts the caller resolved the destination itself; a relative or
-// unclean path would make the confinement check depend on the working directory.
-func checkDestination(dest string) error {
-	if !filepath.IsAbs(dest) || filepath.Clean(dest) != dest {
-		return fmt.Errorf("archive: destination must be absolute and clean: %q", dest)
-	}
-	return nil
+// assertDestination asserts the caller resolved the destination itself; a relative or
+// unclean path would make the confinement check depend on the working directory. Every caller
+// derives it with filepath.Abs, so a violation is a caller bug, not untrusted input.
+func assertDestination(dest string) {
+	assert.Thatf(filepath.IsAbs(dest), "archive: destination is absolute and clean: %q", dest)
+	assert.Thatf(filepath.Clean(dest) == dest,
+		"archive: destination is absolute and clean: %q", dest)
 }
 
 // confine maps an archive name to a path under destDir. ok is false for names that strip to
@@ -175,11 +173,34 @@ func removeIfExists(name string) error {
 	return nil
 }
 
-// budget tracks the byte limits across one extraction.
+// budget tracks the byte limits across one extraction. Every admitted byte is either
+// written or skipped, so written + skipped + remaining == bytesMax throughout.
 type budget struct {
+	bytesMax  int64
 	remaining int64
 	entryMax  int64
+	written   int64
+	skipped   int64
 	charged   bool // set when the current entry's bytes were counted
+}
+
+func newBudget(limits Limits) *budget {
+	return &budget{
+		bytesMax:  limits.BytesMax,
+		remaining: limits.BytesMax,
+		entryMax:  limits.EntryBytesMax,
+	}
+}
+
+// assertBalanced checks the budget's books after an extraction: the bytes written stay
+// within BytesMax, and every byte is accounted as written, skipped or remaining.
+func (b *budget) assertBalanced() {
+	assert.Thatf(b.written <= b.bytesMax,
+		"archive: bytes written %d are within BytesMax %d", b.written, b.bytesMax)
+	assert.That(b.remaining >= 0, "archive: remaining budget is not negative")
+	assert.Thatf(b.written+b.skipped+b.remaining == b.bytesMax,
+		"archive: every byte is accounted: written %d + skipped %d + remaining %d != %d",
+		b.written, b.skipped, b.remaining, b.bytesMax)
 }
 
 // admit checks a declared entry size against the limits before any bytes are read.
@@ -203,6 +224,8 @@ func (b *budget) skip(size int64) error {
 		return err
 	}
 	b.remaining -= size
+	b.skipped += size
+	assert.That(b.remaining >= 0, "archive: skip stays within the budget")
 	return nil
 }
 
@@ -222,5 +245,7 @@ func (b *budget) copy(dst io.Writer, src io.Reader) error {
 		return fmt.Errorf("archive: total size exceeds limit")
 	}
 	b.remaining -= n
+	b.written += n
+	assert.That(b.remaining >= 0, "archive: copy stays within the budget")
 	return nil
 }
