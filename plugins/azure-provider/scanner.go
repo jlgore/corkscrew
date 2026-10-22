@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"golang.org/x/sync/errgroup"
@@ -77,9 +78,8 @@ func NewAzureResourceScanner(
 	if err != nil {
 		return nil, fmt.Errorf("create ARM resources client: %w", err)
 	}
-	if armReadRatePerSecond >= armReadRefillPerSecond {
-		panic("azure: ARM read rate must stay under ARM's refill rate")
-	}
+	assert.That(armReadRatePerSecond < armReadRefillPerSecond,
+		"azure: ARM read rate stays under ARM's refill rate")
 	return &AzureResourceScanner{
 		credential:      cred,
 		subscriptionID:  subID,
@@ -238,13 +238,12 @@ func describeEach(
 			return nil
 		})
 	}
-	if err := group.Wait(); err != nil {
-		panic(fmt.Sprintf("azure: describeEach goroutine returned %v; errors go in errs", err))
-	}
+	err := group.Wait()
+	assert.Thatf(err == nil, "azure: describeEach goroutines return nil; errors go in errs: %v",
+		err)
 	for index, resource := range resources {
-		if resource == nil {
-			panic(fmt.Sprintf("azure: describe returned no resource for %s", refs[index].Id))
-		}
+		// Every describe passed here falls back to basicResourceFromRef on failure.
+		assert.Thatf(resource != nil, "azure: describe returns a resource for %s", refs[index].Id)
 	}
 	return resources, errs
 }
@@ -329,9 +328,7 @@ func (s *AzureResourceScanner) DescribeResource(ctx context.Context, resourceRef
 	debugLogf("Using API version %s for resource type %s", apiVersion, resourceRef.Type)
 
 	// Pace the GET: ARM throttles reads per subscription, and describeEach runs many at once.
-	if s.armReadLimiter == nil {
-		panic("azure: scanner built without an ARM read limiter")
-	}
+	assert.That(s.armReadLimiter != nil, "azure: scanner has an ARM read limiter")
 	if err := s.armReadLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("wait for ARM read token for %s: %w", resourceRef.Id, err)
 	}
