@@ -101,6 +101,15 @@ The matcher is in `pkg/scanner/cloudcontrol_scanner.go` (see `isUnsupportedTypeE
 3. **Scan**: for each requested service, call `cloudcontrol.ListResources` for
    every CFN type under that service (or query Resource Explorer if available).
    Dedupe by Id within the scan (e.g., Bucket and BucketPolicy share IDs).
+   Resource Explorer returns ARNs, but `GetResource` takes the type's
+   CloudFormation primary identifier (bucket name, instance id, role name, ...),
+   so each type's `primaryIdentifier` is read once per scanner with
+   `cloudformation.DescribeType` and the identifier is derived from the ARN
+   (`pkg/scanner/identifier.go`). A type whose identifier cannot be derived
+   (composite identifiers, ambiguous ARNs, a failed `DescribeType`) is listed
+   with `cloudcontrol.ListResources` instead, replacing its Resource Explorer
+   results in the scanned region. A denied `DescribeType` is reported as an
+   `access_denied:` notice.
 4. **Enrich**: for each resource ref, call `cloudcontrol.GetResource` and store
    the full JSON config as `raw_data`. Extract Arn and Tags into typed columns.
 5. **Persist**: write to DuckDB. Global resources (S3, IAM, Route53, etc.) are
@@ -111,5 +120,9 @@ The matcher is in `pkg/scanner/cloudcontrol_scanner.go` (see `isUnsupportedTypeE
 The role assumed in each account needs `ReadOnlyAccess` (covers Cloud Control's
 list/get + the underlying per-service Describe/Get/List that GetResource calls
 internally). The StackSet template provisions this — see `ORG_SCAN.md`.
+With a Resource Explorer view, the scanner also calls
+`cloudformation:DescribeType` (included in `ReadOnlyAccess` via
+`cloudformation:Describe*`) to resolve identifiers, plus
+`resource-explorer-2:GetDefaultView` and `resource-explorer-2:Search`.
 
 If you scan a single account directly, the calling principal needs the same.
