@@ -91,8 +91,10 @@ type RegistryPackVersion struct {
 	ReleaseDate time.Time         `json:"release_date"`
 	Checksum    string            `json:"checksum"` // SHA256
 	Size        int64             `json:"size"`
-	DownloadURL string            `json:"download_url"`
-	TarballURL  string            `json:"tarball_url"`
+	DownloadURL string            `json:"download_url"` // the pack release asset
+	TarballURL  string            `json:"tarball_url"`  // GitHub's auto source tarball
+	AssetName   string            `json:"asset_name,omitempty"`
+	ChecksumURL string            `json:"checksum_url,omitempty"` // checksums.txt or .sha256
 	Deprecated  bool              `json:"deprecated"`
 	Metadata    map[string]string `json:"metadata"`
 }
@@ -538,29 +540,14 @@ func (c *RegistryClient) fetchPackVersions(ctx context.Context, owner, name stri
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
+	// The response comes from the network, so it is bounded like every other download.
 	var releases []GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	body := io.LimitReader(resp.Body, releasesBytesMax+1)
+	if err := json.NewDecoder(body).Decode(&releases); err != nil {
 		return nil, err
 	}
 
-	var versions []RegistryPackVersion
-	for _, release := range releases {
-		if release.Draft || release.Prerelease {
-			continue // Skip drafts and prereleases
-		}
-
-		version := RegistryPackVersion{
-			Version:     release.TagName,
-			Tag:         release.TagName,
-			ReleaseDate: release.PublishedAt,
-			TarballURL:  release.TarballURL,
-			DownloadURL: release.TarballURL,
-		}
-
-		versions = append(versions, version)
-	}
-
-	return versions, nil
+	return packVersionsFromReleases(releases), nil
 }
 
 // SearchPacks searches for packs based on criteria
@@ -749,6 +736,7 @@ const (
 	packBytesMax         = 64 << 20 // uncompressed, all entries
 	packEntryCountMax    = 10_000
 	packEntryBytesMax    = 16 << 20
+	releasesBytesMax     = 8 << 20 // one page of the GitHub releases API
 )
 
 // Retry settings come from user JSON, so they are capped: a large backoff or retry count must
