@@ -1,12 +1,14 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"google.golang.org/grpc"
@@ -51,8 +53,51 @@ func pluginClientConfig(cmd *exec.Cmd) *plugin.ClientConfig {
 		AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
 		SyncStdout:       os.Stdout,
 		SyncStderr:       os.Stderr,
-		GRPCDialOptions:  pluginDialOptions(MaxPluginMessageBytes),
+		// Plain lines a plugin writes to stderr (its own errors, CORKSCREW_CLOUDFLARE_TRACE
+		// output) reach the user; go-plugin otherwise only logs them at debug level.
+		Stderr:          &plainStderrLines{out: os.Stderr},
+		Logger:          pluginLogger(os.Getenv(pluginLogEnv)),
+		GRPCDialOptions: pluginDialOptions(MaxPluginMessageBytes),
 	}
+}
+
+// plainStderrLines passes a plugin's plain stderr lines through and drops its hclog JSON lines.
+// go-plugin writes every stderr line to ClientConfig.Stderr before applying the log level, and
+// the JSON lines already reach the user through Logger, filtered by level. go-plugin writes a line
+// and its newline separately, so lines are buffered until complete.
+type plainStderrLines struct {
+	out io.Writer
+	buf []byte
+}
+
+func (w *plainStderrLines) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	for {
+		end := bytes.IndexByte(w.buf, '\n')
+		if end < 0 {
+			return len(p), nil
+		}
+		line := w.buf[:end+1]
+		if !bytes.HasPrefix(bytes.TrimSpace(line), []byte(`{"@`)) {
+			if _, err := w.out.Write(line); err != nil {
+				return len(p), err
+			}
+		}
+		w.buf = w.buf[end+1:]
+	}
+}
+
+// pluginLogEnv sets the level of go-plugin's own logging (plugin start, RPC address, exit).
+const pluginLogEnv = "CORKSCREW_PLUGIN_LOG"
+
+// pluginLogger logs go-plugin's lifecycle at level, warn by default. go-plugin's fallback logger
+// is at trace, which printed plugin start-up details on every scan.
+func pluginLogger(level string) hclog.Logger {
+	parsed := hclog.LevelFromString(level)
+	if parsed == hclog.NoLevel {
+		parsed = hclog.Warn
+	}
+	return hclog.New(&hclog.LoggerOptions{Name: "plugin", Level: parsed, Output: os.Stderr})
 }
 
 // pluginDialOptions replaces go-plugin's MaxInt32 message limits. go-plugin appends these

@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
 	github.com/google/uuid v1.6.0
+	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
@@ -52,7 +53,6 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
-	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
