@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"cloud.google.com/go/compute/metadata"
@@ -377,13 +379,21 @@ func (cf *ClientFactory) GetAppEngineClient(ctx context.Context) (*appengine.API
 	return client, nil
 }
 
-// Close cleans up any resources
+// Close closes every cached client that holds a connection and empties the cache. The REST
+// services cached today hold none; a gRPC client added later must not leak. It is idempotent.
 func (cf *ClientFactory) Close() error {
 	cf.mu.Lock()
 	defer cf.mu.Unlock()
 
-	// Clear cached clients
+	var errs []error
+	for name, client := range cf.clients {
+		if closer, ok := client.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("close %s client: %w", name, err))
+			}
+		}
+	}
 	cf.clients = make(map[string]interface{})
 
-	return nil
+	return errors.Join(errs...)
 }
