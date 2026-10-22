@@ -48,8 +48,6 @@ pub struct PatternEdge {
 
 #[derive(Clone, Debug)]
 pub struct PatternGraph {
-    pub name: String,
-    pub description: String,
     pub graph: DiGraph<PatternNode, PatternEdge>,
     pub node_order: Vec<NodeIndex>,
 }
@@ -90,12 +88,7 @@ impl PatternGraph {
 
         assert!(graph.node_count() <= PATTERN_NODES_MAX);
         assert_eq!(node_order.len(), graph.node_count());
-        Ok(Self {
-            name: definition.name,
-            description: definition.description,
-            graph,
-            node_order,
-        })
+        Ok(Self { graph, node_order })
     }
 }
 
