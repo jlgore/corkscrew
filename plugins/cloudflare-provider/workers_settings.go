@@ -99,13 +99,23 @@ func isForbidden(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden
 }
 
+// logsEnabled reports whether a script's invocation logs are collected. Logs default to on with
+// observability, so an absent logs object follows observability.enabled, and an explicit one
+// decides.
+func logsEnabled(o workers.ScriptScriptAndVersionSettingGetResponseObservability) bool {
+	if o.JSON.Logs.IsNull() {
+		return o.Enabled
+	}
+	return o.Logs.Enabled
+}
+
 // addAttributes sets the attributes the detail requests found. An attribute whose request
 // failed is left out, so a pack can tell "unknown" from "false".
 func (d scriptDetail) addAttributes(attrs map[string]string) {
 	if s := d.settings; s != nil {
 		attrs["logpush"] = strconv.FormatBool(s.Logpush)
 		attrs["observability_enabled"] = strconv.FormatBool(s.Observability.Enabled)
-		attrs["observability_logs_enabled"] = strconv.FormatBool(s.Observability.Logs.Enabled)
+		attrs["observability_logs_enabled"] = strconv.FormatBool(logsEnabled(s.Observability))
 		attrs["placement_mode"] = string(s.Placement.Mode)
 		attrs["binding_count"] = strconv.Itoa(len(s.Bindings))
 		consumers := make([]string, 0, len(s.TailConsumers))

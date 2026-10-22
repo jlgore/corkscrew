@@ -12,13 +12,16 @@
   {"op": "GET /accounts/{account_id}/workers/scripts", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
     {"id": "api-gateway", "compatibility_date": "2025-09-01", "created_on": "2024-02-01T10:00:00Z", "modified_on": "2025-09-10T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27a", "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
     {"id": "internal-auth", "compatibility_date": "2023-05-18", "created_on": "2023-05-18T10:00:00Z", "modified_on": "2023-05-18T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27b", "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
-    {"id": "billing-cron", "compatibility_date": "2025-06-01", "created_on": "2025-06-01T10:00:00Z", "modified_on": "2025-06-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27c", "handlers": ["scheduled"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"}
+    {"id": "billing-cron", "compatibility_date": "2025-06-01", "created_on": "2025-06-01T10:00:00Z", "modified_on": "2025-06-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27c", "handlers": ["scheduled"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
+    {"id": "www-site", "compatibility_date": "2025-12-01", "created_on": "2025-12-01T10:00:00Z", "modified_on": "2025-12-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27d", "handlers": ["fetch"], "has_assets": true, "has_modules": true, "logpush": false, "usage_model": "standard"}
   ]},
   {"op": "GET /accounts/{account_id}/workers/domains", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
     {"id": "dbe10b4bc17c295377eabd600e1787fd", "hostname": "api.example.com", "service": "api-gateway", "environment": "production", "enabled": true, "previews_enabled": false, "zone_id": "023e105f4ecef8ad9ca31a8372d0c353", "zone_name": "example.com", "cert_id": "9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f08"}
   ]},
   {"op": "GET /zones/{zone_id}/workers/routes", "params": {"zone_id": "023e105f4ecef8ad9ca31a8372d0c353"}, "items": [
-    {"id": "023e105f4ecef8ad9ca31a8372d0c354", "pattern": "example.com/api/*", "script": "api-gateway"}
+    {"id": "023e105f4ecef8ad9ca31a8372d0c354", "pattern": "example.com/api/*", "script": "api-gateway"},
+    {"id": "023e105f4ecef8ad9ca31a8372d0c357", "pattern": "www.example.com/*", "script": "www-site"},
+    {"id": "023e105f4ecef8ad9ca31a8372d0c358", "pattern": "example.com/old/*", "script": "legacy-redirect"}
   ]},
   {"op": "GET /accounts/{account_id}/r2/buckets", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "result":
     {"buckets": [{"name": "uploads", "creation_date": "2024-03-01T10:00:00Z", "location": "wnam", "jurisdiction": "default", "storage_class": "Standard"}]}
@@ -62,5 +65,11 @@
   },
   {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/subdomain", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "billing-cron"}, "result":
     {"enabled": false, "previews_enabled": false}
+  },
+  {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/settings", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "www-site"}, "result":
+    {"compatibility_date": "2025-12-01", "logpush": false, "bindings": [], "observability": {"enabled": true}, "usage_model": "standard"}
+  },
+  {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/subdomain", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "www-site"}, "result":
+    {"enabled": false, "previews_enabled": true}
   }
 ]

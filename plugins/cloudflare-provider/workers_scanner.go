@@ -41,7 +41,7 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 			errs = append(errs, fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
 		}
 		for _, route := range routes {
-			resources = append(resources, p.workerRouteResource(zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
+			resources = append(resources, p.workerRouteResource(zone.Account.ID, zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
 			if route.Script != "" && zone.Account.ID != "" {
 				exposed(zone.Account.ID, route.Script).route = true
 			}
@@ -167,14 +167,18 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 	return resource
 }
 
-func (p *CloudflareProvider) workerRouteResource(zoneID, zoneName, routeID, pattern, script string, raw interface{}) *pb.Resource {
+// workerRouteResource is a zone's route. accountID is the zone's account, which owns the script
+// the route names; it falls back to the zone ID when the zone's account is unknown, as DNS
+// records do.
+func (p *CloudflareProvider) workerRouteResource(accountID, zoneID, zoneName, routeID, pattern, script string, raw interface{}) *pb.Resource {
 	attrs := map[string]string{
-		"zone_id":   zoneID,
-		"zone_name": zoneName,
-		"pattern":   pattern,
-		"script":    script,
+		"account_id": accountID,
+		"zone_id":    zoneID,
+		"zone_name":  zoneName,
+		"pattern":    pattern,
+		"script":     script,
 	}
-	resource := p.resource("workers", "worker_route", routeID, pattern, zoneID, raw, attrs)
+	resource := p.resource("workers", "worker_route", routeID, pattern, firstNonEmpty(accountID, zoneID), raw, attrs)
 	resource.ParentId = zoneID
 	return resource
 }

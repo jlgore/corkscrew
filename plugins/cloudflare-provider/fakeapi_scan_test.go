@@ -60,9 +60,12 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 		{"workers", []string{
 			"worker_domain dbe10b4bc17c295377eabd600e1787fd",
 			"worker_route 023e105f4ecef8ad9ca31a8372d0c354",
+			"worker_route 023e105f4ecef8ad9ca31a8372d0c357",
+			"worker_route 023e105f4ecef8ad9ca31a8372d0c358",
 			"worker_script " + fixtureAccountID + "/workers/api-gateway",
 			"worker_script " + fixtureAccountID + "/workers/billing-cron",
 			"worker_script " + fixtureAccountID + "/workers/internal-auth",
+			"worker_script " + fixtureAccountID + "/workers/www-site",
 		}},
 		{"storage", []string{
 			"kv_namespace 0f2ac74b498b48028cb68387c421e279",
@@ -111,7 +114,7 @@ func TestScanWorkersAttributesFromBaseline(t *testing.T) {
 		t.Errorf("internal-auth attrs = %v", script)
 	}
 	route := byID["023e105f4ecef8ad9ca31a8372d0c354"]
-	if route["script"] != "api-gateway" || route["zone_name"] != "example.com" {
+	if route["script"] != "api-gateway" || route["zone_name"] != "example.com" || route["account_id"] != fixtureAccountID {
 		t.Errorf("route attrs = %v", route)
 	}
 	domain := byID["dbe10b4bc17c295377eabd600e1787fd"]

@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: QueryPack
+metadata:
+  name: workers-baseline
+  namespace: cloudflare/workers-baseline
+  version: 1.0.0
+  description: "Baseline posture for Cloudflare Workers: exposure, logging, and hygiene."
+  author: Corkscrew
+  tags:
+    - cloudflare
+    - workers
+    - security
+  provider: cloudflare
+  resources:
+    - worker_script
+    - worker_route
+  min_engine_version: 1.0.0
+  labels:
+    category: security
+    domain: serverless
+  annotations:
+    requires: >-
+      A scan of the cloudflare workers service. Attributes a failed request left unknown are
+      not evaluated, so a control evaluates fewer scripts rather than guessing.
+
+spec:
+  parameters:
+    - name: workers_dev_allowlist
+      description: >-
+        Workers allowed on workers.dev alongside a route or custom domain, by script name or
+        Corkscrew ID (<account_id>/workers/<script>).
+      type: list
+      default: []
+      examples:
+        - ["status-page"]
+    - name: max_compat_age_days
+      description: Oldest compatibility_date allowed, in days before as_of_date.
+      type: int
+      default: 365
+    - name: as_of_date
+      description: >-
+        The date compatibility_date ages are measured to, as YYYY-MM-DD. Empty means today.
+      type: string
+      default: ""
+
+  queries:
+    - id: CF.WRK.01
+      title: Routed Worker is also reachable on workers.dev
+      description: |
+        The Worker serves a zone through a route or custom domain, and is also published on its
+        workers.dev subdomain. Requests to workers.dev don't pass through the zone, so the
+        zone's WAF rules, Access policies, rate limiting, and other zone security settings
+        don't apply to them.
+      objective: Routed Workers are reachable only through their zone.
+      severity: HIGH
+      category: security
+      control_family: Boundary Protection
+      tags: [exposure, workers-dev]
+      query_file: queries/workers_dev_bypass.sql
+      parameters: [workers_dev_allowlist]
+      control_mappings:
+        NIST_800_53: [SC-7, AC-4]
+      remediation:
+        description: Turn off the workers.dev route for the Worker.
+        complexity: LOW
+        estimated_time: 5 minutes
+        steps:
+          - Set `workers_dev = false` in the Worker's Wrangler configuration and redeploy, or
+          - In the dashboard, open the Worker, then Settings > Domains & Routes, and disable workers.dev.
+          - If the Worker must stay on workers.dev, add it to workers_dev_allowlist.
+        risks:
+          - Clients calling the workers.dev URL directly stop working.
+      references:
+        - name: workers.dev
+          url: https://developers.cloudflare.com/workers/configuration/routing/workers-dev/
+          type: documentation
+      enabled: true
+
+    - id: CF.WRK.02
+      title: Routed Worker has Preview URLs enabled
+      description: |
+        Preview URLs publish every uploaded version of the Worker on workers.dev, including
+        versions not yet deployed. Like workers.dev itself, they skip the zone's security
+        settings.
+      objective: Unreleased versions of production Workers aren't publicly reachable.
+      severity: MEDIUM
+      category: security
+      control_family: Configuration Management
+      tags: [exposure, previews]
+      query_file: queries/preview_urls.sql
+      control_mappings:
+        NIST_800_53: [CM-7, SC-7]
+      remediation:
+        description: Turn off Preview URLs for the Worker.
+        complexity: LOW
+        estimated_time: 5 minutes
+        steps:
+          - Set `preview_urls = false` in the Worker's Wrangler configuration and redeploy, or
+          - In the dashboard, open the Worker, then Settings > Domains & Routes, and disable Preview URLs.
+      references:
+        - name: Preview URLs
+          url: https://developers.cloudflare.com/workers/configuration/previews/
+          type: documentation
+      enabled: true
+
+    - id: CF.WRK.03
+      title: Worker records no logs
+      description: |
+        The Worker has Workers Logs turned off, no Logpush job, and no tail consumer, so nothing
+        it does is recorded anywhere an investigation could find it.
+      objective: Every Worker produces an audit trail.
+      severity: MEDIUM
+      category: security
+      control_family: Audit and Accountability
+      tags: [logging, observability]
+      query_file: queries/no_logging.sql
+      control_mappings:
+        NIST_800_53: [AU-2, AU-12]
+      remediation:
+        description: Turn on Workers Logs, or send the Worker's logs elsewhere.
+        complexity: LOW
+        estimated_time: 10 minutes
+        steps:
+          - Add `[observability] enabled = true` to the Worker's Wrangler configuration and redeploy, or
+          - Set `logpush = true` and create a Logpush job for Workers trace events, or
+          - Add a tail consumer Worker that forwards events to your log pipeline.
+      references:
+        - name: Workers Logs
+          url: https://developers.cloudflare.com/workers/observability/logs/workers-logs/
+          type: documentation
+        - name: Workers Logpush
+          url: https://developers.cloudflare.com/workers/observability/logs/logpush/
+          type: documentation
+      enabled: true
+
+    - id: CF.WRK.04
+      title: Worker compatibility date is out of date
+      description: |
+        The Worker's compatibility_date is older than max_compat_age_days. An old date pins the
+        Worker to old runtime behavior, including fixes it hasn't opted into.
+      objective: Workers track current runtime behavior.
+      severity: LOW
+      category: operations
+      control_family: System and Information Integrity
+      tags: [hygiene, runtime]
+      query_file: queries/compatibility_date.sql
+      parameters: [max_compat_age_days, as_of_date]
+      control_mappings:
+        NIST_800_53: [SI-2, CM-6]
+      remediation:
+        description: Move the Worker to a recent compatibility date.
+        complexity: MEDIUM
+        estimated_time: 1 hour
+        steps:
+          - Read the compatibility flags enabled between the current date and today.
+          - Update `compatibility_date` in the Wrangler configuration, test, and redeploy.
+        risks:
+          - Newer runtime behavior can change how the Worker behaves.
+      references:
+        - name: Compatibility dates
+          url: https://developers.cloudflare.com/workers/configuration/compatibility-dates/
+          type: documentation
+      enabled: true
+
+    - id: CF.WRK.05
+      title: Route points to a Worker that doesn't exist
+      description: |
+        The route sends a zone's traffic to a script the account doesn't have. Requests that
+        match the route fail, and anyone who can deploy a Worker with that name to the account
+        takes over the route.
+      objective: Every route serves a Worker that exists.
+      severity: LOW
+      category: security
+      control_family: Configuration Management
+      tags: [routing, hygiene]
+      query_file: queries/dangling_route.sql
+      control_mappings:
+        NIST_800_53: [CM-8]
+      remediation:
+        description: Delete the route, or point it at the Worker that should serve it.
+        complexity: LOW
+        estimated_time: 5 minutes
+        steps:
+          - In the dashboard, open the zone, then Workers Routes, and delete or edit the route.
+      references:
+        - name: Routes
+          url: https://developers.cloudflare.com/workers/configuration/routing/routes/
+          type: documentation
+      enabled: true

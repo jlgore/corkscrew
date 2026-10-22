@@ -16,3 +16,7 @@ read scopes, plus a separate deploy token for seeding.
   control outcomes as the hermetic tables.
 - Answers PRD open question 2 (whether settings return `secret_text` bindings) and confirms that
   `workers:read` covers settings and subdomain. Record both answers here.
+- Confirm that a Worker with `[observability] enabled = true` and no `[observability.logs]`
+  section collects logs. The provider assumes it does (`logsEnabled`, issue 07). Also confirm
+  what settings return for `observability.logs` in that case: absent, or present with
+  `enabled: true`.

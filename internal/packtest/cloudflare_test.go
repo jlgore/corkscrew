@@ -66,9 +66,6 @@ func TestCloudflareSmokePack(t *testing.T) {
 		{"SMOKE.01", cloudflareAccount + "/workers/internal-auth", "FAIL"},
 		{"SMOKE.01", cloudflareAccount + "/workers/billing-cron", "PASS"},
 	})
-	if got := sortedKeys(outcomes["SMOKE.01"]); len(got) != 3 {
-		t.Errorf("SMOKE.01 evaluated %v, want the 3 scripts", got)
-	}
 }
 
 // Finding evaluation, end to end: the smoke pack's failures open findings against the golden

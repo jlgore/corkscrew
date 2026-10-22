@@ -187,7 +187,7 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 		if err != nil {
 			return nil, fmt.Errorf("get worker route %s: %w", ref.GetId(), err)
 		}
-		return p.workerRouteResource(zoneID, ref.GetBasicAttributes()["zone_name"], route.ID, route.Pattern, route.Script, *route), nil
+		return p.workerRouteResource(ref.GetBasicAttributes()["account_id"], zoneID, ref.GetBasicAttributes()["zone_name"], route.ID, route.Pattern, route.Script, *route), nil
 	case "worker_domain":
 		accountID := firstNonEmpty(ref.GetBasicAttributes()["account_id"], ref.GetAccountId())
 		if accountID == "" {

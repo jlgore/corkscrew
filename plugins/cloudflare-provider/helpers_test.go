@@ -76,7 +76,7 @@ func TestDNSRecordResourceNormalization(t *testing.T) {
 
 func TestWorkerRouteResourceNormalization(t *testing.T) {
 	p := &CloudflareProvider{}
-	resource := p.workerRouteResource("zone-1", "example.com", "route-1", "example.com/*", "worker-a", workers.RouteListResponse{ID: "route-1", Pattern: "example.com/*", Script: "worker-a"})
+	resource := p.workerRouteResource("acc-1", "zone-1", "example.com", "route-1", "example.com/*", "worker-a", workers.RouteListResponse{ID: "route-1", Pattern: "example.com/*", Script: "worker-a"})
 	attrs := decodeAttrs(resource.Attributes)
 	if resource.Type != "worker_route" || resource.ParentId != "zone-1" {
 		t.Fatalf("unexpected worker route core fields: %#v", resource)

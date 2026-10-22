@@ -374,10 +374,32 @@
    "type": "worker_route",
    "id": "023e105f4ecef8ad9ca31a8372d0c354",
    "name": "example.com/api/*",
-   "account_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
    "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
    "raw_data": "{\"id\":\"023e105f4ecef8ad9ca31a8372d0c354\",\"pattern\":\"example.com/api/*\",\"script\":\"api-gateway\"}",
-   "attributes": "{\"pattern\":\"example.com/api/*\",\"script\":\"api-gateway\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"pattern\":\"example.com/api/*\",\"script\":\"api-gateway\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_route",
+   "id": "023e105f4ecef8ad9ca31a8372d0c357",
+   "name": "www.example.com/*",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "raw_data": "{\"id\":\"023e105f4ecef8ad9ca31a8372d0c357\",\"pattern\":\"www.example.com/*\",\"script\":\"www-site\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"pattern\":\"www.example.com/*\",\"script\":\"www-site\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_route",
+   "id": "023e105f4ecef8ad9ca31a8372d0c358",
+   "name": "example.com/old/*",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "raw_data": "{\"id\":\"023e105f4ecef8ad9ca31a8372d0c358\",\"pattern\":\"example.com/old/*\",\"script\":\"legacy-redirect\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"pattern\":\"example.com/old/*\",\"script\":\"legacy-redirect\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
   },
   {
    "provider": "cloudflare",
@@ -520,6 +542,18 @@
    ],
    "raw_data": "{\"id\":\"internal-auth\",\"compatibility_date\":\"2023-05-18\",\"compatibility_flags\":null,\"created_on\":\"2023-05-18T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27b\",\"handlers\":[\"fetch\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2023-05-18T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
    "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"4\",\"compatibility_date\":\"2023-05-18\",\"etag\":\"ea95132c15732412d22c1476fa83f27b\",\"handlers\":\"fetch\",\"has_assets\":\"false\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"false\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"false\",\"observability_logs_enabled\":\"false\",\"placement_mode\":\"\",\"previews_enabled\":\"true\",\"script_id\":\"internal-auth\",\"script_name\":\"internal-auth\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"true\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_script",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/www-site",
+   "name": "www-site",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2025-12-01T10:00:00Z",
+   "modified_at": "2025-12-01T10:00:00Z",
+   "raw_data": "{\"id\":\"www-site\",\"compatibility_date\":\"2025-12-01\",\"compatibility_flags\":null,\"created_on\":\"2025-12-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27d\",\"handlers\":[\"fetch\"],\"has_assets\":true,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-12-01T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"0\",\"compatibility_date\":\"2025-12-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27d\",\"handlers\":\"fetch\",\"has_assets\":\"true\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"true\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"\",\"previews_enabled\":\"true\",\"script_id\":\"www-site\",\"script_name\":\"www-site\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"false\"}"
   },
   {
    "provider": "cloudflare",

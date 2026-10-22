@@ -51,6 +51,12 @@ func TestScanWorkersScriptSettingsAndExposure(t *testing.T) {
 			"logpush": "false", "observability_enabled": "false", "observability_logs_enabled": "false",
 			"tail_consumers": "", "has_route": "false", "has_custom_domain": "false",
 		},
+		// Observability on with no logs object: logs default to on.
+		"www-site": {
+			"workers_dev_enabled": "false", "previews_enabled": "true",
+			"observability_enabled": "true", "observability_logs_enabled": "true",
+			"has_route": "true", "has_custom_domain": "false",
+		},
 		"billing-cron": {
 			"workers_dev_enabled": "false", "previews_enabled": "false",
 			"observability_enabled": "true", "observability_logs_enabled": "false",
