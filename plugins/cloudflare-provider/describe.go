@@ -150,7 +150,8 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 		if err != nil {
 			return nil, fmt.Errorf("list worker scripts for account %s: %w", accountID, err)
 		}
-		scriptName := firstNonEmpty(ref.GetBasicAttributes()["script_name"], scriptNameFromID(ref.GetId()), ref.GetName())
+		scriptName := firstNonEmpty(ref.GetBasicAttributes()["script_name"],
+			scriptNameFromID(ref.GetId()), ref.GetName())
 		for _, script := range scripts {
 			if script.ID == scriptName {
 				// Describe sees one script, so it can't tell whether a route or domain serves it.
@@ -162,7 +163,8 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 	case "worker_binding":
 		accountID, scriptName, bindingName, ok := parseWorkerBindingID(ref.GetId())
 		if !ok {
-			return nil, fmt.Errorf("worker_binding %s is not <account>/workers/<script>/bindings/<name>", ref.GetId())
+			return nil, fmt.Errorf(
+				"worker_binding %s is not <account>/workers/<script>/bindings/<name>", ref.GetId())
 		}
 		settings, err := p.client.Workers.Scripts.ScriptAndVersionSettings.Get(ctx, scriptName,
 			workers.ScriptScriptAndVersionSettingGetParams{AccountID: cloudflare.F(accountID)})
@@ -187,7 +189,9 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 		if err != nil {
 			return nil, fmt.Errorf("get worker route %s: %w", ref.GetId(), err)
 		}
-		return p.workerRouteResource(ref.GetBasicAttributes()["account_id"], zoneID, ref.GetBasicAttributes()["zone_name"], route.ID, route.Pattern, route.Script, *route), nil
+		attrs := ref.GetBasicAttributes()
+		return p.workerRouteResource(attrs["account_id"], zoneID, attrs["zone_name"],
+			route.ID, route.Pattern, route.Script, *route), nil
 	case "worker_domain":
 		accountID := firstNonEmpty(ref.GetBasicAttributes()["account_id"], ref.GetAccountId())
 		if accountID == "" {

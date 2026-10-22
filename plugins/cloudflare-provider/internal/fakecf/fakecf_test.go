@@ -54,7 +54,11 @@ func fatal(fn func()) (called bool) {
 
 func get(t *testing.T, url string) (int, map[string]any) {
 	t.Helper()
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
@@ -78,7 +82,11 @@ func TestSchemaClassifiesOperations(t *testing.T) {
 	}{
 		{"GET /accounts", true, pagingPage},
 		{"GET /accounts/{account_id}/workers/scripts", true, pagingNone},
-		{"GET /accounts/{account_id}/workers/durable_objects/namespaces/{id}/objects", true, pagingCursor},
+		{
+			"GET /accounts/{account_id}/workers/durable_objects/namespaces/{id}/objects",
+			true,
+			pagingCursor,
+		},
 		{"GET /accounts/{account_id}/r2/buckets", false, pagingNone},
 		{"GET /accounts/{account_id}/workers/scripts/{script_name}/settings", false, pagingNone},
 	}
@@ -212,7 +220,11 @@ func TestFaultAppliesTimesThenClears(t *testing.T) {
 	params := Params{"account_id": "a1"}
 	srv.SetList("GET /accounts/{account_id}/storage/kv/namespaces", params,
 		map[string]any{"id": "0f2ac74b498b48028cb68387c421e279", "title": "cache"})
-	srv.Fail("GET /accounts/{account_id}/storage/kv/namespaces", params, Fault{Status: http.StatusForbidden, Times: 1})
+	srv.Fail(
+		"GET /accounts/{account_id}/storage/kv/namespaces",
+		params,
+		Fault{Status: http.StatusForbidden, Times: 1},
+	)
 
 	status, body := get(t, srv.URL()+"/accounts/a1/storage/kv/namespaces")
 	if status != http.StatusForbidden || body["success"] != false {

@@ -25,7 +25,8 @@ func TestBatchScanServicesAggregatesResourcesStatsAndErrors(t *testing.T) {
 		}
 	}
 
-	response := batchScanServices(context.Background(), []string{"zones", "dns", "bogus"}, false, scan)
+	services := []string{"zones", "dns", "bogus"}
+	response := batchScanServices(context.Background(), services, false, scan)
 	if !reflect.DeepEqual(seen, []string{"zones", "dns", "bogus"}) {
 		t.Fatalf("services scanned = %#v", seen)
 	}

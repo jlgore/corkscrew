@@ -40,7 +40,13 @@ func TestClassifyBindingValue(t *testing.T) {
 	for _, tt := range tests {
 		looks, reason := classifyBindingValue(tt.value)
 		if looks != (tt.reason != "") || reason != tt.reason {
-			t.Errorf("classifyBindingValue(%q) = %t, %q; want %q", tt.value, looks, reason, tt.reason)
+			t.Errorf(
+				"classifyBindingValue(%q) = %t, %q; want %q",
+				tt.value,
+				looks,
+				reason,
+				tt.reason,
+			)
 		}
 	}
 }
@@ -64,7 +70,9 @@ func TestClassifyJSONValueReportsPathNotValue(t *testing.T) {
 
 func TestClassifyJSONValueRedactsCredentialKeys(t *testing.T) {
 	key := "AKIAIOSFODNN7EXAMPLE"
-	looks, reason := classifyJSONValue(map[string]any{key: map[string]any{"secret": "q8Zr2LmX0vTn5KpW3sYb7HdJ4cQe"}})
+	looks, reason := classifyJSONValue(
+		map[string]any{key: map[string]any{"secret": "q8Zr2LmX0vTn5KpW3sYb7HdJ4cQe"}},
+	)
 	if !looks || strings.Contains(reason, key) || !strings.Contains(reason, "[redacted]") {
 		t.Fatalf("classifyJSONValue = %t, %q; want the key redacted", looks, reason)
 	}

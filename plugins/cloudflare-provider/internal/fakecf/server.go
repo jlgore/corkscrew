@@ -174,7 +174,12 @@ func (s *Server) op(op string, params Params) *operation {
 	}
 	for _, p := range o.PathParams {
 		if _, ok := params[p.Name]; !ok {
-			s.t.Fatalf("fakecf: %s takes path params %v, got %v", op, paramNames(o.PathParams), params)
+			s.t.Fatalf(
+				"fakecf: %s takes path params %v, got %v",
+				op,
+				paramNames(o.PathParams),
+				params,
+			)
 		}
 	}
 	return o
@@ -212,35 +217,13 @@ func (s *schema) validate(t *typ, value any) []string {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.reject(w, http.StatusMethodNotAllowed, "%s %s: the fake serves reads only", r.Method, r.URL.Path)
-		return
-	}
-	o, params := s.match(r.URL.Path)
-	if o == nil {
-		s.reject(w, http.StatusNotFound,
-			"%s %s matches no operation; add it to tools/forge-fakecf/operations.ts", r.Method, r.URL.Path)
-		return
-	}
-	if unknown := unknownQuery(o, r); len(unknown) > 0 {
-		s.reject(w, http.StatusBadRequest, "%s: query params %v aren't in the spec", o.Key(), unknown)
+	o, params, ok := s.route(w, r)
+	if !ok {
 		return
 	}
 	key := seedKey(o.Key(), params)
-
-	s.mu.Lock()
-	s.requests[o.Key()]++
-	s.inFlight[o.Key()]++
-	s.peak[o.Key()] = max(s.peak[o.Key()], s.inFlight[o.Key()])
-	fault := s.takeFault(key)
-	items := s.lists[key]
-	result, hasResult := s.results[key]
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.inFlight[o.Key()]--
-		s.mu.Unlock()
-	}()
+	fault, items, result, hasResult := s.begin(o, key)
+	defer s.end(o)
 
 	if fault != nil && fault.Delay > 0 {
 		time.Sleep(fault.Delay)
@@ -250,13 +233,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body any
-	if o.list {
+	switch {
+	case o.list:
 		body = s.page(o, r, items, fault != nil && fault.Repeat)
-	} else if hasResult {
+	case hasResult:
 		body = result
-	} else if o.empty != nil {
+	case o.empty != nil:
 		body = o.empty
-	} else {
+	default:
 		writeError(w, http.StatusNotFound)
 		return
 	}
@@ -266,6 +250,47 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, o, body)
+}
+
+// route matches r to an operation, rejecting a write, an unknown path, or an unknown query
+// parameter.
+func (s *Server) route(w http.ResponseWriter, r *http.Request) (*operation, Params, bool) {
+	if r.Method != http.MethodGet {
+		s.reject(w, http.StatusMethodNotAllowed, "%s %s: the fake serves reads only",
+			r.Method, r.URL.Path)
+		return nil, nil, false
+	}
+	o, params := s.match(r.URL.Path)
+	if o == nil {
+		s.reject(w, http.StatusNotFound,
+			"%s %s matches no operation; add it to tools/forge-fakecf/operations.ts",
+			r.Method, r.URL.Path)
+		return nil, nil, false
+	}
+	if unknown := unknownQuery(o, r); len(unknown) > 0 {
+		s.reject(w, http.StatusBadRequest, "%s: query params %v aren't in the spec",
+			o.Key(), unknown)
+		return nil, nil, false
+	}
+	return o, params, true
+}
+
+// begin counts a request to o and returns what is seeded for key, and its fault if any. Call end
+// when the request is answered.
+func (s *Server) begin(o *operation, key string) (*Fault, []any, any, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests[o.Key()]++
+	s.inFlight[o.Key()]++
+	s.peak[o.Key()] = max(s.peak[o.Key()], s.inFlight[o.Key()])
+	result, hasResult := s.results[key]
+	return s.takeFault(key), s.lists[key], result, hasResult
+}
+
+func (s *Server) end(o *operation) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inFlight[o.Key()]--
 }
 
 // takeFault returns the fault for key, using up one of its Times. Call with s.mu held.

@@ -41,7 +41,11 @@ type scriptDetail struct {
 // scriptDetailConcurrency scripts at a time. details[i] belongs to scripts[i]. A failed request
 // leaves its field nil and adds an entry to errs: a 403 is a coverage notice, anything else an
 // error, so the scan is partial.
-func (p *CloudflareProvider) scriptDetails(ctx context.Context, accountID string, scripts []workers.ScriptListResponse) ([]scriptDetail, []string) {
+func (p *CloudflareProvider) scriptDetails(
+	ctx context.Context,
+	accountID string,
+	scripts []workers.ScriptListResponse,
+) ([]scriptDetail, []string) {
 	details := make([]scriptDetail, len(scripts))
 	scriptErrs := make([][]string, len(scripts))
 	sem := make(chan struct{}, scriptDetailConcurrency)
@@ -56,7 +60,11 @@ func (p *CloudflareProvider) scriptDetails(ctx context.Context, accountID string
 		}(i)
 	}
 	wg.Wait()
-	assert.Thatf(len(sem) == 0, "cloudflare: every script detail slot is released: %d held", len(sem))
+	assert.Thatf(
+		len(sem) == 0,
+		"cloudflare: every script detail slot is released: %d held",
+		len(sem),
+	)
 
 	var errs []string
 	for _, entries := range scriptErrs {
@@ -66,7 +74,10 @@ func (p *CloudflareProvider) scriptDetails(ctx context.Context, accountID string
 }
 
 // scriptDetail fetches one script's settings and subdomain.
-func (p *CloudflareProvider) scriptDetail(ctx context.Context, accountID, scriptName string) (scriptDetail, []string) {
+func (p *CloudflareProvider) scriptDetail(
+	ctx context.Context,
+	accountID, scriptName string,
+) (scriptDetail, []string) {
 	var detail scriptDetail
 	var errs []string
 	settings, err := p.client.Workers.Scripts.ScriptAndVersionSettings.Get(ctx, scriptName,
@@ -88,7 +99,10 @@ func (p *CloudflareProvider) scriptDetail(ctx context.Context, accountID, script
 
 func scriptDetailError(what, accountID, scriptName string, err error) string {
 	if isForbidden(err) {
-		return shared.AccessDeniedNotice(fmt.Sprintf("workers script %s for %s/%s", what, accountID, scriptName), err)
+		return shared.AccessDeniedNotice(
+			fmt.Sprintf("workers script %s for %s/%s", what, accountID, scriptName),
+			err,
+		)
 	}
 	return fmt.Sprintf("workers script %s failed for %s/%s: %v", what, accountID, scriptName, err)
 }

@@ -38,7 +38,10 @@ func TestCloudflareWorkersBaselinePack(t *testing.T) {
 }
 
 func TestCloudflareWorkersBaselineAllowlist(t *testing.T) {
-	params := map[string]any{"as_of_date": "2026-01-01", "workers_dev_allowlist": []any{"api-gateway"}}
+	params := map[string]any{
+		"as_of_date":            "2026-01-01",
+		"workers_dev_allowlist": []any{"api-gateway"},
+	}
 	outcomes := Run(t, cloudflareTarget(t), "cloudflare/workers-baseline", params)
 	if got := outcomes["CF.WRK.01"][script("api-gateway")]; got != "PASS" {
 		t.Errorf("allowlisted api-gateway = %s, want PASS", got)
@@ -50,7 +53,12 @@ func TestCloudflareWorkersBaselineEmptyInventory(t *testing.T) {
 	target := Persist(t, "cloudflare", Golden{Services: []string{"workers"}})
 	for _, result := range Results(t, target, "cloudflare/workers-baseline", nil) {
 		if result.Error != nil || len(result.Rows) != 0 {
-			t.Errorf("%s on an empty inventory: %d rows, error %v", result.ControlID, len(result.Rows), result.Error)
+			t.Errorf(
+				"%s on an empty inventory: %d rows, error %v",
+				result.ControlID,
+				len(result.Rows),
+				result.Error,
+			)
 		}
 	}
 }

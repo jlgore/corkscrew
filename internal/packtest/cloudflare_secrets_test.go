@@ -52,7 +52,10 @@ func TestCloudflareWorkersSecretsPack(t *testing.T) {
 }
 
 func TestCloudflareWorkersSecretsAllowedScopes(t *testing.T) {
-	params := map[string]any{"as_of_date": "2025-10-01", "allowed_secret_scopes": []any{"workers", "ai_gateway"}}
+	params := map[string]any{
+		"as_of_date":            "2025-10-01",
+		"allowed_secret_scopes": []any{"workers", "ai_gateway"},
+	}
 	outcomes := Run(t, cloudflareTarget(t), secretsPack, params)
 	if got := outcomes["CF.SEC.06"][legacyWebhook]; got != "PASS" {
 		t.Errorf("LEGACY_WEBHOOK_SECRET with ai_gateway allowed = %s, want PASS", got)
@@ -80,7 +83,12 @@ func TestCloudflareWorkersSecretsEmptyInventory(t *testing.T) {
 	target := Persist(t, "cloudflare", Golden{Services: []string{"workers", "data"}})
 	for _, result := range Results(t, target, secretsPack, nil) {
 		if result.Error != nil || len(result.Rows) != 0 {
-			t.Errorf("%s on an empty inventory: %d rows, error %v", result.ControlID, len(result.Rows), result.Error)
+			t.Errorf(
+				"%s on an empty inventory: %d rows, error %v",
+				result.ControlID,
+				len(result.Rows),
+				result.Error,
+			)
 		}
 	}
 }

@@ -496,8 +496,10 @@ func TestPackLoader_MalformedManifestReportsParseError(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An unquoted ": " inside a plain scalar is a YAML error.
-	manifest := "apiVersion: v1\nkind: QueryPack\nmetadata:\n  name: broken\n  description: Posture: exposure\n"
-	if err := os.WriteFile(filepath.Join(packDir, "manifest.yaml"), []byte(manifest), 0644); err != nil {
+	manifest := "apiVersion: v1\nkind: QueryPack\nmetadata:\n" +
+		"  name: broken\n  description: Posture: exposure\n"
+	manifestPath := filepath.Join(packDir, "manifest.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
 	loader := NewPackLoader().WithSearchPaths(tempDir).WithEmbeddedPacks(false)
@@ -505,7 +507,9 @@ func TestPackLoader_MalformedManifestReportsParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadPack accepted a malformed manifest")
 	}
-	if strings.Contains(err.Error(), "manifest not found") || !strings.Contains(err.Error(), "parse manifest YAML") {
+	message := err.Error()
+	if strings.Contains(message, "manifest not found") ||
+		!strings.Contains(message, "parse manifest YAML") {
 		t.Fatalf("error = %v; want the YAML parse error", err)
 	}
 }

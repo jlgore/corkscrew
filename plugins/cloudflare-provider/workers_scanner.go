@@ -38,10 +38,12 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 		routes, err := p.listWorkerRoutes(ctx, zone.ID)
 		if err != nil {
 			routesComplete = false
-			errs = append(errs, fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
+			errs = append(errs,
+				fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
 		}
 		for _, route := range routes {
-			resources = append(resources, p.workerRouteResource(zone.Account.ID, zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
+			resources = append(resources, p.workerRouteResource(zone.Account.ID, zone.ID,
+				zone.Name, route.ID, route.Pattern, route.Script, route))
 			if route.Script != "" && zone.Account.ID != "" {
 				exposed(zone.Account.ID, route.Script).route = true
 			}
@@ -63,7 +65,8 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 
 		scripts, scriptsErr := p.listWorkerScripts(ctx, accountID)
 		if scriptsErr != nil {
-			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, scriptsErr))
+			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v",
+				accountID, scriptsErr))
 		}
 		targets := p.newBindingTargets(ctx, accountID, scripts, scriptsErr)
 		details, detailErrs := p.scriptDetails(ctx, accountID, scripts)
@@ -78,7 +81,8 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 			scriptResource := p.workerScriptResource(accountID, script, detail)
 			resources = append(resources, scriptResource)
 			if detail.settings != nil {
-				bindings, bindingErrs := p.workerBindingResources(accountID, script.ID, detail.settings, targets)
+				bindings, bindingErrs := p.workerBindingResources(
+					accountID, script.ID, detail.settings, targets)
 				scriptResource.Relationships = bindingRelationships(bindings)
 				resources = append(resources, bindings...)
 				errs = append(errs, bindingErrs...)
@@ -132,7 +136,9 @@ func scriptNameFromID(id string) string {
 	return id
 }
 
-func (p *CloudflareProvider) workerScriptResource(accountID string, script workers.ScriptListResponse, detail scriptDetail) *pb.Resource {
+func (p *CloudflareProvider) workerScriptResource(
+	accountID string, script workers.ScriptListResponse, detail scriptDetail,
+) *pb.Resource {
 	attrs := map[string]string{
 		"account_id":            accountID,
 		"script_id":             script.ID,
@@ -157,7 +163,8 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 		attrs["tags"] = strings.Join(script.Tags, ",")
 	}
 	detail.addAttributes(attrs)
-	resource := p.resource("workers", "worker_script", workerScriptID(accountID, script.ID), script.ID, accountID, script, attrs)
+	id := workerScriptID(accountID, script.ID)
+	resource := p.resource("workers", "worker_script", id, script.ID, accountID, script, attrs)
 	if !script.CreatedOn.IsZero() {
 		resource.CreatedAt = timestamppb.New(script.CreatedOn)
 	}
@@ -170,7 +177,9 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 // workerRouteResource is a zone's route. accountID is the zone's account, which owns the script
 // the route names; it falls back to the zone ID when the zone's account is unknown, as DNS
 // records do.
-func (p *CloudflareProvider) workerRouteResource(accountID, zoneID, zoneName, routeID, pattern, script string, raw interface{}) *pb.Resource {
+func (p *CloudflareProvider) workerRouteResource(
+	accountID, zoneID, zoneName, routeID, pattern, script string, raw interface{},
+) *pb.Resource {
 	attrs := map[string]string{
 		"account_id": accountID,
 		"zone_id":    zoneID,
@@ -178,7 +187,8 @@ func (p *CloudflareProvider) workerRouteResource(accountID, zoneID, zoneName, ro
 		"pattern":    pattern,
 		"script":     script,
 	}
-	resource := p.resource("workers", "worker_route", routeID, pattern, firstNonEmpty(accountID, zoneID), raw, attrs)
+	owner := firstNonEmpty(accountID, zoneID)
+	resource := p.resource("workers", "worker_route", routeID, pattern, owner, raw, attrs)
 	resource.ParentId = zoneID
 	return resource
 }

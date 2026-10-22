@@ -93,7 +93,11 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 				t.Errorf("errors = %v, want none", resp.Errors)
 			}
 			// Bindings are pinned in workers_bindings_test.go.
-			if got := resourceKeys(withoutType(resp.Resources, "worker_binding")); !reflect.DeepEqual(got, tt.want) {
+			got := resourceKeys(withoutType(resp.Resources, "worker_binding"))
+			if !reflect.DeepEqual(
+				got,
+				tt.want,
+			) {
 				t.Errorf("resources:\n got %v\nwant %v", got, tt.want)
 			}
 			for _, r := range resp.Resources {
@@ -118,7 +122,8 @@ func TestScanWorkersAttributesFromBaseline(t *testing.T) {
 		t.Errorf("internal-auth attrs = %v", script)
 	}
 	route := byID["023e105f4ecef8ad9ca31a8372d0c354"]
-	if route["script"] != "api-gateway" || route["zone_name"] != "example.com" || route["account_id"] != fixtureAccountID {
+	if route["script"] != "api-gateway" || route["zone_name"] != "example.com" ||
+		route["account_id"] != fixtureAccountID {
 		t.Errorf("route attrs = %v", route)
 	}
 	domain := byID["dbe10b4bc17c295377eabd600e1787fd"]
@@ -155,7 +160,11 @@ func TestScanZonesRetriesTransientFailure(t *testing.T) {
 
 	resp := scanService(t, p, "zones")
 	if len(resp.Errors) > 0 || len(resp.Resources) != 1 {
-		t.Errorf("errors %v, %d resources; want a clean scan of 1 zone", resp.Errors, len(resp.Resources))
+		t.Errorf(
+			"errors %v, %d resources; want a clean scan of 1 zone",
+			resp.Errors,
+			len(resp.Resources),
+		)
 	}
 	// The failure, its retry, and the empty page 2 that ends the listing.
 	if got := srv.Requests("GET /zones"); got != 3 {
@@ -167,9 +176,16 @@ func TestScanZonesRetriesTransientFailure(t *testing.T) {
 func TestWorkerScriptIDsAreAccountScoped(t *testing.T) {
 	srv := newFakeAPI(t)
 	const otherAccount = "1b1ba6e3c4b54e2e8f4c5a6b7c8d9e0f"
-	srv.SetList("GET /accounts", nil, map[string]any{"id": otherAccount, "name": "Acme Staging", "type": "standard"})
-	srv.SetList("GET /accounts/{account_id}/workers/scripts", fakecf.Params{"account_id": otherAccount},
-		map[string]any{"id": "api-gateway", "compatibility_date": "2025-09-01"})
+	srv.SetList(
+		"GET /accounts",
+		nil,
+		map[string]any{"id": otherAccount, "name": "Acme Staging", "type": "standard"},
+	)
+	srv.SetList(
+		"GET /accounts/{account_id}/workers/scripts",
+		fakecf.Params{"account_id": otherAccount},
+		map[string]any{"id": "api-gateway", "compatibility_date": "2025-09-01"},
+	)
 	p := newTestProvider(t, srv)
 
 	resp := scanService(t, p, "workers")

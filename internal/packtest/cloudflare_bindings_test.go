@@ -45,7 +45,10 @@ func TestCloudflareWorkersBindingsPack(t *testing.T) {
 		{"CF.BND.06", binding("api-gateway", "SESSIONS"), "PASS"},
 	})
 	// Bindings Corkscrew can't resolve are never called dangling.
-	for _, b := range []string{binding("api-gateway", "NOTIFY"), binding("api-gateway", "API_BASE_URL")} {
+	unresolvable := []string{
+		binding("api-gateway", "NOTIFY"), binding("api-gateway", "API_BASE_URL"),
+	}
+	for _, b := range unresolvable {
 		if _, ok := outcomes["CF.BND.06"][b]; ok {
 			t.Errorf("CF.BND.06 evaluated %s, whose target can't be checked", b)
 		}
@@ -69,7 +72,12 @@ func TestCloudflareWorkersBindingsEmptyInventory(t *testing.T) {
 	target := Persist(t, "cloudflare", Golden{Services: []string{"workers"}})
 	for _, result := range Results(t, target, bindingsPack, nil) {
 		if result.Error != nil || len(result.Rows) != 0 {
-			t.Errorf("%s on an empty inventory: %d rows, error %v", result.ControlID, len(result.Rows), result.Error)
+			t.Errorf(
+				"%s on an empty inventory: %d rows, error %v",
+				result.ControlID,
+				len(result.Rows),
+				result.Error,
+			)
 		}
 	}
 }

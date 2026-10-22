@@ -45,7 +45,9 @@ func TestBindingTargetsResolveAgainstBaseline(t *testing.T) {
 		}
 	}
 	// Kinds Corkscrew doesn't inventory are never resolved, so they can't read as dangling.
-	for _, binding := range []string{"api-gateway/API_BASE_URL", "api-gateway/NOTIFY", "api-gateway/SESSION_SIGNING_KEY"} {
+	for _, binding := range []string{
+		"api-gateway/API_BASE_URL", "api-gateway/NOTIFY", "api-gateway/SESSION_SIGNING_KEY",
+	} {
 		if _, ok := got[binding]["target_resolved"]; ok {
 			t.Errorf("%s has target_resolved %q", binding, got[binding]["target_resolved"])
 		}
@@ -59,7 +61,10 @@ func scriptEdges(resp *pb.ScanServiceResponse) map[string][]string {
 	edges := map[string][]string{}
 	for _, r := range resp.Resources {
 		for _, rel := range r.Relationships {
-			edges[r.Name] = append(edges[r.Name], rel.RelationshipType+" "+rel.TargetType+" "+rel.TargetId)
+			edges[r.Name] = append(
+				edges[r.Name],
+				rel.RelationshipType+" "+rel.TargetType+" "+rel.TargetId,
+			)
 		}
 		sort.Strings(edges[r.Name])
 	}
@@ -72,7 +77,10 @@ func TestBindingEdgesOnlyWhenRequested(t *testing.T) {
 		t.Fatalf("edges without IncludeRelationships: %v", edges)
 	}
 
-	resp, err := p.ScanService(context.Background(), &pb.ScanServiceRequest{Service: "workers", IncludeRelationships: true})
+	resp, err := p.ScanService(
+		context.Background(),
+		&pb.ScanServiceRequest{Service: "workers", IncludeRelationships: true},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +124,11 @@ func TestBindingEdgesOnlyWhenRequested(t *testing.T) {
 // notice rather than a scan error.
 func TestBindingTargetsForbiddenListingIsUnknown(t *testing.T) {
 	srv := newFakeAPI(t)
-	srv.Fail(kvListOp, fakecf.Params{"account_id": fixtureAccountID}, fakecf.Fault{Status: http.StatusForbidden})
+	srv.Fail(
+		kvListOp,
+		fakecf.Params{"account_id": fixtureAccountID},
+		fakecf.Fault{Status: http.StatusForbidden},
+	)
 	p := newTestProvider(t, srv)
 
 	resp := scanService(t, p, "workers")
@@ -124,7 +136,9 @@ func TestBindingTargetsForbiddenListingIsUnknown(t *testing.T) {
 		t.Fatalf("errors = %v, want one coverage notice", resp.Errors)
 	}
 	got := bindingAttrs(t, resp)
-	for _, binding := range []string{"api-gateway/SESSIONS", "internal-auth/SESSIONS", "billing-cron/STAGING_CACHE"} {
+	for _, binding := range []string{
+		"api-gateway/SESSIONS", "internal-auth/SESSIONS", "billing-cron/STAGING_CACHE",
+	} {
 		if v, ok := got[binding]["target_resolved"]; ok {
 			t.Errorf("%s target_resolved = %q after a denied listing", binding, v)
 		}

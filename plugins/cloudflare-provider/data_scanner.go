@@ -67,14 +67,16 @@ func (p *CloudflareProvider) scanData(ctx context.Context) ([]*pb.Resource, []st
 
 func (p *CloudflareProvider) listD1Databases(ctx context.Context, accountID string) ([]d1.DatabaseListResponse, error) {
 	return memoizedList(ctx, "d1/"+accountID, func() ([]d1.DatabaseListResponse, error) {
-		iter := p.client.D1.Database.ListAutoPaging(ctx, d1.DatabaseListParams{AccountID: cloudflare.F(accountID)})
+		params := d1.DatabaseListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.D1.Database.ListAutoPaging(ctx, params)
 		return collectAutoPaging(iter)
 	})
 }
 
 func (p *CloudflareProvider) listDurableObjectNamespaces(ctx context.Context, accountID string) ([]durable_objects.Namespace, error) {
 	return memoizedList(ctx, "do/"+accountID, func() ([]durable_objects.Namespace, error) {
-		iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)})
+		params := durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, params)
 		return collectAutoPaging(iter)
 	})
 }
@@ -85,15 +87,19 @@ func (p *CloudflareProvider) listDurableObjects(ctx context.Context, accountID, 
 }
 
 func (p *CloudflareProvider) listSecretStores(ctx context.Context, accountID string) ([]secrets_store.StoreListResponse, error) {
-	return memoizedList(ctx, "stores/"+accountID, func() ([]secrets_store.StoreListResponse, error) {
-		iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)})
+	type store = secrets_store.StoreListResponse
+	return memoizedList(ctx, "stores/"+accountID, func() ([]store, error) {
+		params := secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, params)
 		return collectAutoPaging(iter)
 	})
 }
 
 func (p *CloudflareProvider) listSecretStoreSecrets(ctx context.Context, accountID, storeID string) ([]secrets_store.StoreSecretListResponse, error) {
-	return memoizedList(ctx, "stores/"+accountID+"/"+storeID, func() ([]secrets_store.StoreSecretListResponse, error) {
-		iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)})
+	type secret = secrets_store.StoreSecretListResponse
+	return memoizedList(ctx, "stores/"+accountID+"/"+storeID, func() ([]secret, error) {
+		params := secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, params)
 		return collectAutoPaging(iter)
 	})
 }

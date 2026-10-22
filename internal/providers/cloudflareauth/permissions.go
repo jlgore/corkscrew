@@ -25,10 +25,11 @@ var permissionBundles = []PermissionBundle{
 		Description: "Rulesets, transforms, and delivery policies",
 	},
 	{
-		Name:        "workers_read",
-		Services:    []string{"workers"},
-		Scopes:      []string{"account:read", "workers:read"},
-		Description: "Workers scripts, settings, bindings, routes, and domains (binding targets resolve with the storage and data scopes)",
+		Name:     "workers_read",
+		Services: []string{"workers"},
+		Scopes:   []string{"account:read", "workers:read"},
+		// Binding targets resolve with the storage and data scopes.
+		Description: "Workers scripts, settings, bindings, routes, and domains",
 	},
 	{
 		Name:        "storage_read",

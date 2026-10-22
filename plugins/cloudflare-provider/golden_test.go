@@ -58,7 +58,11 @@ func TestGoldenScan(t *testing.T) {
 		t.Fatalf("%v (run with -update to create it)", err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Fatalf("the scan differs from %s; if the change is intended, run `go test -run TestGoldenScan -update` and review the diff", goldenScanPath)
+		t.Fatalf(
+			"the scan differs from %s; if the change is intended, run "+
+				"`go test -run TestGoldenScan -update` and review the diff",
+			goldenScanPath,
+		)
 	}
 }
 

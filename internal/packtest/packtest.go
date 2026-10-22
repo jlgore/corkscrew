@@ -74,7 +74,8 @@ func Persist(t testing.TB, provider string, golden Golden) string {
 	started := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	if err := session.PersistScanOutcome(ctx, dataaccess.ScanOutcome{
 		ID: ScanID, Provider: provider, Services: golden.Services, Scopes: []string{"global"},
-		Status: dataaccess.ScanStatusCompleted, StartedAt: started, EndedAt: started.Add(time.Minute),
+		Status:    dataaccess.ScanStatusCompleted,
+		StartedAt: started, EndedAt: started.Add(time.Minute),
 		Resources: golden.Resources,
 	}, dataaccess.PersistScanOptions{}); err != nil {
 		t.Fatalf("packtest: persist golden scan: %v", err)
@@ -85,7 +86,11 @@ func Persist(t testing.TB, provider string, golden Golden) string {
 // Results runs every control of pack against the database at target, as finding evaluation
 // does. Only the embedded packs and ./query-packs (beside the test) are visible: HOME is moved
 // to an empty directory so a pack installed on the machine can't shadow the one under test.
-func Results(t *testing.T, target, pack string, params map[string]any) []compliance.SimpleQueryResult {
+func Results(
+	t *testing.T,
+	target, pack string,
+	params map[string]any,
+) []compliance.SimpleQueryResult {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	executor, err := compliance.NewExecutor(target)
@@ -93,7 +98,10 @@ func Results(t *testing.T, target, pack string, params map[string]any) []complia
 		t.Fatalf("packtest: %v", err)
 	}
 	defer executor.Close()
-	results, err := executor.Execute(context.Background(), compliance.ExecuteOptions{PackName: pack, Parameters: params})
+	results, err := executor.Execute(
+		context.Background(),
+		compliance.ExecuteOptions{PackName: pack, Parameters: params},
+	)
 	if err != nil {
 		t.Fatalf("packtest: run %s: %v", pack, err)
 	}
@@ -117,7 +125,14 @@ func Run(t *testing.T, target, pack string, params map[string]any) Outcomes {
 		statuses := map[string]string{}
 		for _, row := range result.Rows {
 			if previous, ok := statuses[row.ResourceID]; ok && previous != row.Status {
-				t.Errorf("packtest: %s %s gives %s both %s and %s", pack, result.ControlID, row.ResourceID, previous, row.Status)
+				t.Errorf(
+					"packtest: %s %s gives %s both %s and %s",
+					pack,
+					result.ControlID,
+					row.ResourceID,
+					previous,
+					row.Status,
+				)
 			}
 			statuses[row.ResourceID] = strings.ToUpper(row.Status)
 		}

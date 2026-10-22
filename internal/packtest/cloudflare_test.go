@@ -29,7 +29,8 @@ func TestCloudflareGoldenPersists(t *testing.T) {
 
 	var bindings int
 	if err := session.QueryRowContext(context.Background(),
-		`SELECT count(*) FROM cloudflare_resources WHERE type = 'worker_binding'`).Scan(&bindings); err != nil {
+		`SELECT count(*) FROM cloudflare_resources WHERE type = 'worker_binding'`,
+	).Scan(&bindings); err != nil {
 		t.Fatal(err)
 	}
 	if bindings != 28 {
@@ -55,7 +56,8 @@ func TestCloudflareGoldenPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	billing := perScript[cloudflareAccount+"/workers/billing-cron"]
-	if len(perScript[cloudflareAccount+"/workers/api-gateway"]) != 7 || !slices.Contains(billing, "d1_database") {
+	if len(perScript[cloudflareAccount+"/workers/api-gateway"]) != 7 ||
+		!slices.Contains(billing, "d1_database") {
 		t.Errorf("binds edges in cloud_relationships: %v", perScript)
 	}
 }
@@ -81,6 +83,10 @@ func TestCloudflareSmokePackOpensFindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if evaluation.Opened != 2 || evaluation.Resolved != 0 {
-		t.Fatalf("opened %d, resolved %d; want the 2 workers.dev scripts opened", evaluation.Opened, evaluation.Resolved)
+		t.Fatalf(
+			"opened %d, resolved %d; want the 2 workers.dev scripts opened",
+			evaluation.Opened,
+			evaluation.Resolved,
+		)
 	}
 }

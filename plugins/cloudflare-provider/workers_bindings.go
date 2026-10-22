@@ -24,8 +24,9 @@ var bindingReferenceKeys = map[string]bool{
 	"service": true, "entrypoint": true, "service_id": true,
 	"store_id": true, "secret_name": true,
 	"certificate_id": true, "index_name": true, "dataset": true,
-	"destination_address": true, "allowed_destination_addresses": true, "allowed_sender_addresses": true,
-	"pipeline": true, "workflow_name": true, "instance_name": true, "app_id": true,
+	"destination_address": true, "allowed_destination_addresses": true,
+	"allowed_sender_addresses": true,
+	"pipeline":                 true, "workflow_name": true, "instance_name": true, "app_id": true,
 	"network_id": true, "tunnel_id": true, "stream": true, "part": true,
 	"old_name": true, "version_id": true,
 	"algorithm": true, "format": true, "usages": true,
@@ -89,16 +90,32 @@ func workerBindingID(accountID, scriptName, bindingName string) string {
 // workerBindingResources returns a worker_binding for each of a script's bindings. A binding
 // that can't be decoded is reported in errs: it was observed but dropped.
 // targets resolves each binding's target, or is nil to leave targets unresolved.
-func (p *CloudflareProvider) workerBindingResources(accountID, scriptName string, settings *workers.ScriptScriptAndVersionSettingGetResponse, targets *bindingTargets) ([]*pb.Resource, []string) {
+func (p *CloudflareProvider) workerBindingResources(
+	accountID, scriptName string,
+	settings *workers.ScriptScriptAndVersionSettingGetResponse,
+	targets *bindingTargets,
+) ([]*pb.Resource, []string) {
 	resources := make([]*pb.Resource, 0, len(settings.Bindings))
 	var errs []string
 	for i, binding := range settings.Bindings {
 		fields, err := decodeBinding(binding.JSON.RawJSON())
 		if err != nil || fields.str("name") == "" || fields.str("type") == "" {
-			errs = append(errs, fmt.Sprintf("workers binding %d of %s/%s unreadable: %v", i, accountID, scriptName, err))
+			errs = append(
+				errs,
+				fmt.Sprintf(
+					"workers binding %d of %s/%s unreadable: %v",
+					i,
+					accountID,
+					scriptName,
+					err,
+				),
+			)
 			continue
 		}
-		resources = append(resources, p.workerBindingResource(accountID, scriptName, fields, targets))
+		resources = append(
+			resources,
+			p.workerBindingResource(accountID, scriptName, fields, targets),
+		)
 	}
 	return resources, errs
 }
@@ -113,7 +130,11 @@ func decodeBinding(raw string) (bindingFields, error) {
 	return fields, nil
 }
 
-func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string, fields bindingFields, targets *bindingTargets) *pb.Resource {
+func (p *CloudflareProvider) workerBindingResource(
+	accountID, scriptName string,
+	fields bindingFields,
+	targets *bindingTargets,
+) *pb.Resource {
 	name, kind := fields.str("name"), fields.str("type")
 	attrs := map[string]string{
 		"account_id":   accountID,
@@ -134,7 +155,15 @@ func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string,
 			stored[key] = value
 		}
 	}
-	resource := p.resource("workers", "worker_binding", workerBindingID(accountID, scriptName, name), name, accountID, stored, attrs)
+	resource := p.resource(
+		"workers",
+		"worker_binding",
+		workerBindingID(accountID, scriptName, name),
+		name,
+		accountID,
+		stored,
+		attrs,
+	)
 	resource.ParentId = workerScriptID(accountID, scriptName)
 	return resource
 }
@@ -143,7 +172,13 @@ func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string,
 // inventories and, when the target could be checked, whether it exists (target_resolved) and
 // its ID. A target that couldn't be checked gets no target_resolved, so it never reads as
 // dangling.
-func addBindingTargetAttributes(kind string, fields bindingFields, scriptName string, targets *bindingTargets, attrs map[string]string) {
+func addBindingTargetAttributes(
+	kind string,
+	fields bindingFields,
+	scriptName string,
+	targets *bindingTargets,
+	attrs map[string]string,
+) {
 	typeAndService, ok := bindingTargetTypes[kind]
 	if !ok {
 		return

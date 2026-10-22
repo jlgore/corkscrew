@@ -206,8 +206,9 @@ func (s *schema) collectFields(t *typ, into map[string]field, depth int) (open b
 }
 
 var (
-	uuidDashed = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-	uuidPlain  = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
+	uuidDashed = regexp.MustCompile(
+		`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	uuidPlain = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
 )
 
 // validator collects every violation of one value, each prefixed with its JSON path.

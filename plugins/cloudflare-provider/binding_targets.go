@@ -50,7 +50,12 @@ type bindingTargets struct {
 	failOrder []string
 }
 
-func (p *CloudflareProvider) newBindingTargets(ctx context.Context, accountID string, scripts []workers.ScriptListResponse, scriptsErr error) *bindingTargets {
+func (p *CloudflareProvider) newBindingTargets(
+	ctx context.Context,
+	accountID string,
+	scripts []workers.ScriptListResponse,
+	scriptsErr error,
+) *bindingTargets {
 	t := &bindingTargets{
 		p: p, ctx: ctx, accountID: accountID,
 		secrets:  map[string]map[string]string{},
@@ -80,7 +85,11 @@ func (t *bindingTargets) load(listing string, fetch func() error) bool {
 }
 
 // resolve finds the resource a binding of kind reaches, from the binding's fields.
-func (t *bindingTargets) resolve(kind string, f bindingFields, scriptName string) (bindingTarget, targetStatus) {
+func (t *bindingTargets) resolve(
+	kind string,
+	f bindingFields,
+	scriptName string,
+) (bindingTarget, targetStatus) {
 	switch kind {
 	case "r2_bucket":
 		// Buckets outside the default jurisdiction aren't in the default listing.
@@ -111,7 +120,10 @@ func (t *bindingTargets) resolve(kind string, f bindingFields, scriptName string
 	return bindingTarget{}, targetUnknown
 }
 
-func (t *bindingTargets) lookup(listed, found bool, target bindingTarget) (bindingTarget, targetStatus) {
+func (t *bindingTargets) lookup(
+	listed, found bool,
+	target bindingTarget,
+) (bindingTarget, targetStatus) {
 	switch {
 	case !listed:
 		return bindingTarget{}, targetUnknown
@@ -121,7 +133,10 @@ func (t *bindingTargets) lookup(listed, found bool, target bindingTarget) (bindi
 	return target, targetFound
 }
 
-func (t *bindingTargets) resolveDurableObject(f bindingFields, scriptName string) (bindingTarget, targetStatus) {
+func (t *bindingTargets) resolveDurableObject(
+	f bindingFields,
+	scriptName string,
+) (bindingTarget, targetStatus) {
 	ok := t.loadDurableObjects()
 	if id := f.str("namespace_id"); id != "" {
 		return t.lookup(ok, t.doIDs[id], bindingTarget{id})
@@ -255,9 +270,15 @@ func bindingRelationships(bindings []*pb.Resource) []*pb.Relationship {
 			TargetType:       attrs["target_type"],
 			TargetService:    attrs["target_service"],
 			RelationshipType: "binds",
-			Properties:       map[string]string{"binding_name": attrs["binding_name"], "kind": attrs["kind"]},
+			Properties: map[string]string{
+				"binding_name": attrs["binding_name"],
+				"kind":         attrs["kind"],
+			},
 		})
 	}
-	sort.SliceStable(relationships, func(i, j int) bool { return relationships[i].TargetId < relationships[j].TargetId })
+	sort.SliceStable(
+		relationships,
+		func(i, j int) bool { return relationships[i].TargetId < relationships[j].TargetId },
+	)
 	return relationships
 }

@@ -42,14 +42,15 @@ func TestScanWorkersScriptSettingsAndExposure(t *testing.T) {
 	want := map[string]map[string]string{
 		"api-gateway": {
 			"workers_dev_enabled": "true", "previews_enabled": "false",
-			"logpush": "true", "observability_enabled": "true", "observability_logs_enabled": "true",
-			"tail_consumers": "log-shipper", "placement_mode": "smart", "binding_count": "14",
-			"has_route": "true", "has_custom_domain": "true",
+			"logpush": "true", "observability_enabled": "true", "tail_consumers": "log-shipper",
+			"observability_logs_enabled": "true", "placement_mode": "smart",
+			"binding_count": "14", "has_route": "true", "has_custom_domain": "true",
 		},
 		"internal-auth": {
 			"workers_dev_enabled": "true", "previews_enabled": "true",
-			"logpush": "false", "observability_enabled": "false", "observability_logs_enabled": "false",
-			"tail_consumers": "", "has_route": "false", "has_custom_domain": "false",
+			"logpush": "false", "observability_enabled": "false", "tail_consumers": "",
+			"observability_logs_enabled": "false", "has_route": "false",
+			"has_custom_domain": "false",
 		},
 		// Observability on with no logs object: logs default to on.
 		"www-site": {
@@ -77,12 +78,19 @@ func TestScanWorkersScriptSettingsAndExposure(t *testing.T) {
 // the other requests found.
 func TestScanWorkersSettingsFailureIsPartial(t *testing.T) {
 	srv := newFakeAPI(t)
-	srv.Fail(settingsOp, scriptParams("internal-auth"), fakecf.Fault{Status: http.StatusInternalServerError})
+	srv.Fail(
+		settingsOp,
+		scriptParams("internal-auth"),
+		fakecf.Fault{Status: http.StatusInternalServerError},
+	)
 	p := newTestProvider(t, srv)
 
 	resp := scanService(t, p, "workers")
 	if len(resp.Errors) != 1 || shared.IsScanNotice(resp.Errors[0]) ||
-		!strings.Contains(resp.Errors[0], "settings failed for "+fixtureAccountID+"/internal-auth") {
+		!strings.Contains(
+			resp.Errors[0],
+			"settings failed for "+fixtureAccountID+"/internal-auth",
+		) {
 		t.Fatalf("errors = %v, want one settings error", resp.Errors)
 	}
 	got := scriptAttrs(t, resp)
@@ -139,7 +147,11 @@ func TestScanWorkersScriptDetailConcurrencyIsBounded(t *testing.T) {
 		name := fmt.Sprintf("worker-%02d", i)
 		scripts = append(scripts, map[string]any{"id": name})
 		srv.SetResult(settingsOp, scriptParams(name), map[string]any{})
-		srv.SetResult(subdomainOp, scriptParams(name), map[string]any{"enabled": false, "previews_enabled": false})
+		srv.SetResult(
+			subdomainOp,
+			scriptParams(name),
+			map[string]any{"enabled": false, "previews_enabled": false},
+		)
 		srv.Fail(settingsOp, scriptParams(name), fakecf.Fault{Delay: 20 * time.Millisecond})
 	}
 	srv.SetList("GET /accounts/{account_id}/workers/scripts", account, scripts...)
@@ -151,7 +163,11 @@ func TestScanWorkersScriptDetailConcurrencyIsBounded(t *testing.T) {
 		t.Fatalf("errors = %v", resp.Errors)
 	}
 	if got := srv.MaxInFlight(settingsOp); got > scriptDetailConcurrency || got < 2 {
-		t.Errorf("settings requests in flight peaked at %d, want 2..%d", got, scriptDetailConcurrency)
+		t.Errorf(
+			"settings requests in flight peaked at %d, want 2..%d",
+			got,
+			scriptDetailConcurrency,
+		)
 	}
 	if got := srv.Requests(settingsOp); got != 12 {
 		t.Errorf("settings requests = %d, want one per script", got)
