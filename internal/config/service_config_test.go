@@ -20,6 +20,8 @@ func withDiscoveredServices(t *testing.T, services []string) {
 }
 
 func TestLoadServiceConfig(t *testing.T) {
+	// The loader falls back to ~/.corkscrew/config.yaml; don't read the developer's own.
+	t.Setenv("HOME", t.TempDir())
 	tests := []struct {
 		name         string
 		configFile   string

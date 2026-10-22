@@ -11,7 +11,7 @@ import (
 	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
-const LatestSchemaVersion = 6
+const LatestSchemaVersion = 7
 
 var schemaIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS corkscrew_schema_migrations (
 			return fmt.Errorf("record schema version 6: %w", err)
 		}
 	}
+
+	if version < 7 {
+		if err := migrateSchemaV7(ctx, tx); err != nil {
+			return fmt.Errorf("migrate schema to version 7: %w", err)
+		}
+		const record = `INSERT INTO corkscrew_schema_migrations(version, name)
+			VALUES (7, 'observation_resource_times')`
+		if _, err := tx.ExecContext(ctx, record); err != nil {
+			return fmt.Errorf("record schema version 7: %w", err)
+		}
+	}
 	// Query helpers are replaceable session contracts. Re-establish them even
 	// when a manually repaired migration ledger contains a later version.
 	if err := migrateSchemaV3(ctx, tx); err != nil {
@@ -112,6 +123,19 @@ CREATE TABLE IF NOT EXISTS corkscrew_schema_migrations (
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit schema migration: %w", err)
+	}
+	return nil
+}
+
+// migrateSchemaV7 records each observed resource's own creation and modification times, so
+// finding evaluation's snapshot can carry them to packs. Observations from earlier scans keep
+// NULL: their times were never recorded.
+func migrateSchemaV7(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+ALTER TABLE resource_observations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;
+ALTER TABLE resource_observations ADD COLUMN IF NOT EXISTS modified_at TIMESTAMP;
+`); err != nil {
+		return fmt.Errorf("add resource times to observations: %w", err)
 	}
 	return nil
 }

@@ -199,13 +199,7 @@ func (gs *GraphStore) storeCustomScanResource(ctx context.Context, resource *pb.
 	attributes := scanStringJSONOrNil(resource.Attributes)
 	rawData := scanStringJSONOrNil(resource.RawData)
 	arn := scanStringOrFallback(resource.Arn, resource.Id)
-	var createdAt, modifiedAt interface{}
-	if resource.CreatedAt != nil {
-		createdAt = resource.CreatedAt.AsTime()
-	}
-	if resource.ModifiedAt != nil {
-		modifiedAt = resource.ModifiedAt.AsTime()
-	}
+	createdAt, modifiedAt := resourceTimes(resource)
 	_, err := gs.scanExecContext(ctx, `
 		INSERT INTO custom_provider_resources (
 			provider, id, name, type, service, region, account_id, arn,
@@ -229,6 +223,19 @@ func (gs *GraphStore) storeCustomScanResource(ctx context.Context, resource *pb.
 	return nil
 }
 
+// resourceTimes returns the resource's own creation and modification times for the created_at and
+// modified_at columns, or nil (NULL) for a time the provider didn't report. They are never the
+// scan time: packs read them to judge age and rotation.
+func resourceTimes(resource *pb.Resource) (createdAt, modifiedAt interface{}) {
+	if resource.CreatedAt != nil {
+		createdAt = resource.CreatedAt.AsTime()
+	}
+	if resource.ModifiedAt != nil {
+		modifiedAt = resource.ModifiedAt.AsTime()
+	}
+	return createdAt, modifiedAt
+}
+
 func (gs *GraphStore) storeGenericScanResource(ctx context.Context, table string, resource *pb.Resource) error {
 	tagsParam := scanTagsJSONOrNil(resource.Tags)
 	attrsParam := scanStringJSONOrNil(resource.Attributes)
@@ -239,10 +246,7 @@ func (gs *GraphStore) storeGenericScanResource(ctx context.Context, table string
 		arnValue = resource.Id
 	}
 
-	var discoveredAt interface{}
-	if resource.DiscoveredAt != nil {
-		discoveredAt = resource.DiscoveredAt.AsTime()
-	}
+	createdAt, modifiedAt := resourceTimes(resource)
 
 	if _, err := gs.scanExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), resource.Id); err != nil {
 		return fmt.Errorf("delete existing: %w", err)
@@ -269,8 +273,8 @@ func (gs *GraphStore) storeGenericScanResource(ctx context.Context, table string
 		attrsParam,
 		rawParam,
 		"active",
-		discoveredAt,
-		discoveredAt,
+		createdAt,
+		modifiedAt,
 	); err != nil {
 		return fmt.Errorf("insert: %w", err)
 	}
@@ -300,6 +304,15 @@ func (gs *GraphStore) storeAzureScanResource(ctx context.Context, resource *pb.R
 		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
 			changedTime = parsed
 		}
+	}
+
+	// ARM's createdTime and changedTime win; otherwise use what the provider reported.
+	resourceCreated, resourceModified := resourceTimes(resource)
+	if createdTime == nil {
+		createdTime = resourceCreated
+	}
+	if changedTime == nil {
+		changedTime = resourceModified
 	}
 
 	sku := scanMap(rawObject["sku"])
@@ -367,6 +380,7 @@ func (gs *GraphStore) storeGCPScanResource(ctx context.Context, resource *pb.Res
 	if resource.DiscoveredAt != nil {
 		discoveredAt = resource.DiscoveredAt.AsTime()
 	}
+	createdAt, modifiedAt := resourceTimes(resource)
 
 	_, err := gs.scanExecContext(ctx, `
 		INSERT INTO gcp_resources (
@@ -414,8 +428,8 @@ func (gs *GraphStore) storeGCPScanResource(ctx context.Context, resource *pb.Res
 		resource.Id,
 		scanStringJSONOrNil(resource.Attributes),
 		"active",
-		discoveredAt,
-		discoveredAt,
+		createdAt,
+		modifiedAt,
 		discoveredAt,
 	)
 	if err != nil {

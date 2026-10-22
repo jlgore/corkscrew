@@ -1,6 +1,6 @@
 -- CF.SEC.03: a Secrets Store secret was last modified more than max_secret_age_days before
--- as_of_date (today when empty). Reads modified_on, the secret's own time; the modified_at
--- column holds the scan time. Deleted secrets aren't evaluated.
+-- as_of_date (today when empty). Reads the provider's modified_on attribute, the secret's own
+-- last-modified time (also stored as modified_at). Deleted secrets aren't evaluated.
 WITH params AS (
     SELECT coalesce(TRY_CAST(nullif(:as_of_date, '') AS DATE), current_date) AS as_of
 ),
