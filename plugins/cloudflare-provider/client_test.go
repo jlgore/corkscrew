@@ -4,12 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/accounts"
+	"github.com/cloudflare/cloudflare-go/v6/option"
 	"github.com/jlgore/corkscrew/internal/providers/cloudflareauth"
 )
 
@@ -66,5 +68,30 @@ func TestClientOptionsMaxRetries(t *testing.T) {
 	}
 	if got, want := requests.Load(), int32(retriesMax+1); got != want {
 		t.Fatalf("requests = %d, want %d (one attempt plus retriesMax)", got, want)
+	}
+}
+
+// Tracing names each attempt's method, path, status, and duration, and never the credential.
+func TestTraceRequestsLogsAttemptsWithoutCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"errors":[],"messages":[],"result":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	var out strings.Builder
+	opts := append(clientOptions(testAuth(srv.URL), time.Second),
+		option.WithMiddleware(traceRequests(&out)))
+	client := cloudflare.NewClient(opts...)
+	_, err := client.Accounts.List(context.Background(), accounts.AccountListParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "cloudflare GET /accounts") ||
+		!strings.Contains(got, "-> 200 OK in") {
+		t.Errorf("trace = %q", got)
+	}
+	if strings.Contains(got, testAuth(srv.URL).AccessToken) {
+		t.Errorf("trace %q contains the credential", got)
 	}
 }

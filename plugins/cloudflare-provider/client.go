@@ -1,6 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"time"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
@@ -34,6 +38,9 @@ func clientOptions(
 		option.WithRequestTimeout(timeout),
 		option.WithMaxRetries(retriesMax),
 	}
+	if os.Getenv(traceEnv) != "" {
+		opts = append(opts, option.WithMiddleware(traceRequests(os.Stderr)))
+	}
 	if auth.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(auth.BaseURL))
 	}
@@ -45,4 +52,26 @@ func clientOptions(
 		opts = append(opts, option.WithAPIKey(auth.APIKey), option.WithAPIEmail(auth.Email))
 	}
 	return opts
+}
+
+// traceEnv turns on a line per Cloudflare API request attempt on the plugin's stderr, which the
+// CLI passes through. It is for finding which call is slow or failing in a real account.
+const traceEnv = "CORKSCREW_CLOUDFLARE_TRACE"
+
+// traceRequests logs each attempt's method, path and query, outcome, and duration. It never
+// logs headers or bodies, so the credential and response data stay out of the output.
+func traceRequests(out io.Writer) option.Middleware {
+	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+		start := time.Now()
+		res, err := next(req)
+		elapsed := time.Since(start).Round(time.Millisecond)
+		outcome := "error: " + fmt.Sprint(err)
+		if err == nil {
+			outcome = res.Status
+		}
+		// Tracing is best effort: a failed write must not fail the request.
+		_, _ = fmt.Fprintf(out, "cloudflare %s %s -> %s in %s\n",
+			req.Method, req.URL.RequestURI(), outcome, elapsed)
+		return res, err
+	}
 }

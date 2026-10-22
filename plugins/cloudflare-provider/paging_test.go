@@ -49,45 +49,78 @@ func TestCollectAutoPagingCap(t *testing.T) {
 	}
 }
 
-// TestScanStorageItemCapIsErrorEntry runs the real KV pager against a fake that returns the
-// same non-empty page forever. The SDK pager only stops on an empty page, so without the cap
-// the scan would run until its deadline.
-func TestScanStorageItemCapIsErrorEntry(t *testing.T) {
-	setListItemsMax(t, 5)
-	srv := fakecf.New(t)
-	const kvList = "GET /accounts/{account_id}/storage/kv/namespaces"
-	account := fakecf.Params{"account_id": fixtureAccountID}
-	srv.SetList(kvList, account,
-		map[string]any{"id": "0f2ac74b498b48028cb68387c421e27a", "title": "a"},
-		map[string]any{"id": "0f2ac74b498b48028cb68387c421e27b", "title": "b"})
-	srv.Fail(kvList, account, fakecf.Fault{Repeat: true})
+// repeatingPager serves its items as one page, then the same page again for every later page,
+// like a server that ignores the page number.
+type repeatingPager struct {
+	items    []string
+	index    int
+	requests int
+}
+
+func (r *repeatingPager) Next() bool {
+	if r.index%len(r.items) == 0 {
+		r.requests++
+	}
+	r.index++
+	return r.requests <= 1000
+}
+func (r *repeatingPager) Current() string { return r.items[(r.index-1)%len(r.items)] }
+func (r *repeatingPager) Err() error      { return nil }
+
+func TestCollectAutoPagingStopsOnRepeatedItems(t *testing.T) {
+	// A one-page listing served again for every page number is complete.
+	small := &repeatingPager{items: []string{"a", "b"}}
+	got, err := collectAutoPaging[string](small)
+	if err != nil || len(got) != 2 || small.requests != 2 {
+		t.Fatalf("small repeat: %v, %v after %d pages; want 2 items, no error, 2 pages",
+			got, err, small.requests)
+	}
+
+	// A full page repeated may hide later pages: keep the items and report it.
+	full := make([]string, repeatCompleteItemsMax)
+	for i := range full {
+		full[i] = fmt.Sprintf("item-%d", i)
+	}
+	got, err = collectAutoPaging[string](&repeatingPager{items: full})
+	if !errors.Is(err, errListRepeated) || len(got) != repeatCompleteItemsMax {
+		t.Fatalf("full repeat: %d items, %v; want %d and errListRepeated",
+			len(got), err, repeatCompleteItemsMax)
+	}
+}
+
+// The live failure: the accounts listing returned the same account for every page number, so the
+// SDK paged until the scan's deadline. It now stops after the first repeat.
+func TestScanAccountsRepeatedPageCompletes(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.Fail("GET /accounts", nil, fakecf.Fault{Repeat: true})
+	p := newTestProvider(t, srv)
+
+	resp := scanService(t, p, "accounts")
+	if len(resp.Errors) > 0 || len(resp.Resources) != 1 {
+		t.Fatalf("errors %v, %d resources; want the one account and no error",
+			resp.Errors, len(resp.Resources))
+	}
+	if got := srv.Requests("GET /accounts"); got != 2 {
+		t.Errorf("accounts list requests = %d, want 2 (the page and its repeat)", got)
+	}
+}
+
+// With account_ids configured, accounts are fetched directly, not listed.
+func TestScanAccountsScopedGetsDirectly(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.SetResult("GET /accounts/{account_id}", fakecf.Params{"account_id": fixtureAccountID},
+		map[string]any{"id": fixtureAccountID, "name": "Acme Production", "type": "standard"})
 	p := newTestProvider(t, srv)
 	p.config.Scope.AccountIDs = []string{fixtureAccountID}
 
-	var resp *pb.ScanServiceResponse
-	var err error
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		resp, err = p.ScanService(context.Background(), &pb.ScanServiceRequest{Service: "storage"})
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("storage scan did not stop at the item cap")
+	resp := scanService(t, p, "accounts")
+	if len(resp.Errors) > 0 || len(resp.Resources) != 1 ||
+		resp.Resources[0].Id != fixtureAccountID {
+		t.Fatalf("errors %v, resources %v; want the configured account",
+			resp.Errors, resp.Resources)
 	}
-	if err != nil {
-		t.Fatalf("ScanService: %v", err)
-	}
-	if len(resp.Errors) != 1 || !strings.Contains(resp.Errors[0], errListItemCap.Error()) {
-		t.Fatalf("errors = %v, want one item-cap entry", resp.Errors)
-	}
-	// The namespaces collected before the cap are kept; the error entry marks the scope partial.
-	if len(resp.Resources) != 5 {
-		t.Fatalf("resources = %d, want the 5 collected", len(resp.Resources))
-	}
-	if got := srv.Requests(kvList); got != 3 {
-		t.Fatalf("kv requests = %d, want 3 (pages of 2 up to a cap of 5)", got)
+	if got := srv.Requests("GET /accounts"); got != 0 {
+		t.Errorf("accounts list requests = %d, want 0", got)
 	}
 }
 

@@ -161,3 +161,39 @@ func TestEnsureSchemaQuackIntegration(t *testing.T) {
 		t.Fatalf("Quack schema version = %d, want %d", version, LatestSchemaVersion)
 	}
 }
+
+// Databases from before the schema lifecycle indexed their legacy tables. DuckDB can't rename an
+// indexed table, so archiving one has to drop its indexes first.
+func TestEnsureSchemaArchivesIndexedLegacyTables(t *testing.T) {
+	database := openLifecycleTestDB(t)
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `
+		CREATE TABLE aws_relationships (
+			from_id VARCHAR, to_id VARCHAR, relationship_type VARCHAR, properties JSON,
+			created_at TIMESTAMP
+		);
+		CREATE INDEX idx_relationships_from ON aws_relationships(from_id);
+		CREATE INDEX idx_relationships_to ON aws_relationships(to_id);
+		CREATE INDEX idx_relationships_type ON aws_relationships(relationship_type);
+		INSERT INTO aws_relationships VALUES ('vpc-1', 'subnet-1', 'contains', '{}', NULL);
+	`); err != nil {
+		t.Fatalf("seed indexed legacy tables: %v", err)
+	}
+
+	if err := EnsureSchema(ctx, database); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+	var archived, canonical int
+	if err := database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM aws_relationships_legacy_v0`).Scan(&archived); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM cloud_relationships WHERE from_id = 'vpc-1' AND provider = 'aws'`,
+	).Scan(&canonical); err != nil {
+		t.Fatal(err)
+	}
+	if archived != 1 || canonical != 1 {
+		t.Fatalf("archived %d, canonical %d; want the legacy row in both", archived, canonical)
+	}
+}
