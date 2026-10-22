@@ -1,0 +1,104 @@
+name: Lint
+
+# Lint guardrails for new code. golangci-lint only reports issues on lines
+# changed since origin/main (`issues.new-from-rev` in .golangci.yml), so
+# existing debt never blocks. Failures block the PR. See
+# docs/contributing/lint.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOLANGCI_LINT_VERSION: v2.14.0
+  RUST_TOOLCHAIN: '1.96.0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  golangci-lint:
+    name: golangci-lint (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The root module and every plugin module (each has its own go.mod).
+        # All share the root .golangci.yml, found by walking up.
+        module:
+          - .
+          - plugins/aws-provider
+          - plugins/azure-provider
+          - plugins/cloudflare-provider
+          - plugins/gcp-provider
+          - plugins/github-provider
+          - plugins/kubernetes-provider
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history so `new-from-rev: origin/main` resolves.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      # The protobuf Go code is committed under internal/proto, and the DuckDB
+      # driver ships prebuilt static libraries, so the modules type-check
+      # without protoc or a system DuckDB.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: ${{ matrix.module }}
+          args: ./...
+
+  clippy:
+    name: clippy (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - extensions/corkscrew-graph
+          - extensions/corkscrew-graph-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Pinned so a new stable Clippy lint cannot break unrelated PRs; bump it
+      # deliberately and fix what it flags in the same change.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ${{ matrix.crate }}/target
+          key: cargo-${{ runner.os }}-clippy-${{ env.RUST_TOOLCHAIN }}-${{ matrix.crate }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.crate)) }}
+          restore-keys: |
+            cargo-${{ runner.os }}-clippy-${{ env.RUST_TOOLCHAIN }}-${{ matrix.crate }}-
+
+      - name: Clippy
+        working-directory: ${{ matrix.crate }}
+        run: >-
+          cargo clippy --all-targets --locked --
+          -D warnings
+          -W clippy::undocumented_unsafe_blocks
+          -W clippy::unwrap_used
