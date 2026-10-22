@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: QueryPack
+metadata:
+  name: cloudflare-smoke
+  namespace: test/cloudflare-smoke
+  version: 0.0.1
+  description: Proves the packtest plumbing against the Cloudflare golden scan.
+  provider: cloudflare
+spec:
+  queries:
+    - id: SMOKE.01
+      title: Worker is off workers.dev
+      description: A trivial control over worker_script attributes.
+      severity: LOW
+      category: security
+      query_file: queries/workers_dev.sql
+      enabled: true

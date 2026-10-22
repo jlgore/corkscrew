@@ -1,0 +1,537 @@
+{
+ "services": [
+  "accounts",
+  "zones",
+  "dns",
+  "workers",
+  "storage",
+  "data"
+ ],
+ "resources": [
+  {
+   "provider": "cloudflare",
+   "service": "accounts",
+   "type": "account",
+   "id": "9a7806061c88ada191ed06f989cc3dac",
+   "name": "Acme Production",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-01-15T10:00:00Z",
+   "raw_data": "{\"id\":\"9a7806061c88ada191ed06f989cc3dac\",\"name\":\"Acme Production\",\"type\":\"standard\",\"created_on\":\"2024-01-15T10:00:00Z\",\"managed_by\":{\"parent_org_id\":\"\",\"parent_org_name\":\"\"},\"settings\":{\"abuse_contact_email\":\"\",\"enforce_twofactor\":true}}",
+   "attributes": "{\"abuse_contact_email\":\"\",\"enforce_twofactor\":\"true\",\"managed_by_org\":\"\",\"managed_by_org_id\":\"\",\"name\":\"Acme Production\",\"type\":\"standard\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "data",
+   "type": "d1_database",
+   "id": "c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e",
+   "name": "billing",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-03-01T10:00:00Z",
+   "raw_data": "{\"created_at\":\"2024-03-01T10:00:00Z\",\"jurisdiction\":\"eu\",\"name\":\"billing\",\"uuid\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"version\":\"production\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"database_id\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"jurisdiction\":\"eu\",\"name\":\"billing\",\"version\":\"production\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "dns",
+   "type": "dns_record",
+   "id": "372e67954025e0ba6aaa6d586b9e0b59",
+   "name": "www.example.com",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "created_at": "2024-01-16T10:00:00Z",
+   "modified_at": "2024-01-16T10:00:00Z",
+   "raw_data": "{\"id\":\"372e67954025e0ba6aaa6d586b9e0b59\",\"comment\":\"\",\"comment_modified_on\":\"0001-01-01T00:00:00Z\",\"content\":\"198.51.100.4\",\"created_on\":\"2024-01-16T10:00:00Z\",\"data\":null,\"meta\":{},\"modified_on\":\"2024-01-16T10:00:00Z\",\"name\":\"www.example.com\",\"priority\":0,\"private_routing\":false,\"proxiable\":true,\"proxied\":true,\"settings\":{\"ipv4_only\":false,\"ipv6_only\":false},\"tags\":null,\"tags_modified_on\":\"0001-01-01T00:00:00Z\",\"ttl\":1,\"type\":\"A\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"account_name\":\"Acme Production\",\"comment\":\"\",\"content\":\"198.51.100.4\",\"priority\":\"0\",\"private_routing\":\"false\",\"proxiable\":\"true\",\"proxied\":\"true\",\"record_name\":\"www.example.com\",\"record_type\":\"A\",\"ttl\":\"1\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "dns",
+   "type": "dns_record",
+   "id": "372e67954025e0ba6aaa6d586b9e0b60",
+   "name": "example.com",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "created_at": "2024-01-16T10:00:00Z",
+   "modified_at": "2024-01-16T10:00:00Z",
+   "raw_data": "{\"id\":\"372e67954025e0ba6aaa6d586b9e0b60\",\"comment\":\"\",\"comment_modified_on\":\"0001-01-01T00:00:00Z\",\"content\":\"\\\"v=spf1 -all\\\"\",\"created_on\":\"2024-01-16T10:00:00Z\",\"data\":null,\"meta\":{},\"modified_on\":\"2024-01-16T10:00:00Z\",\"name\":\"example.com\",\"priority\":0,\"private_routing\":false,\"proxiable\":false,\"proxied\":false,\"settings\":{\"ipv4_only\":false,\"ipv6_only\":false},\"tags\":null,\"tags_modified_on\":\"0001-01-01T00:00:00Z\",\"ttl\":3600,\"type\":\"TXT\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"account_name\":\"Acme Production\",\"comment\":\"\",\"content\":\"\\\"v=spf1 -all\\\"\",\"priority\":\"0\",\"private_routing\":\"false\",\"proxiable\":\"false\",\"proxied\":\"false\",\"record_name\":\"example.com\",\"record_type\":\"TXT\",\"ttl\":\"3600\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "data",
+   "type": "durable_object",
+   "id": "fe7803fc55b964e09d94666545aab688d360c6bda69ba349ced1e5f28d2fc2c8",
+   "name": "fe7803fc55b964e09d94666545aab688d360c6bda69ba349ced1e5f28d2fc2c8",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "5fd1cafff895419c8bcc647fc64ab8f0",
+   "raw_data": "{\"id\":\"fe7803fc55b964e09d94666545aab688d360c6bda69ba349ced1e5f28d2fc2c8\",\"hasStoredData\":true}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"has_stored_data\":\"true\",\"namespace_id\":\"5fd1cafff895419c8bcc647fc64ab8f0\",\"namespace_name\":\"api-gateway_RateLimiter\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "data",
+   "type": "durable_object_namespace",
+   "id": "5fd1cafff895419c8bcc647fc64ab8f0",
+   "name": "api-gateway_RateLimiter",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "raw_data": "{\"id\":\"5fd1cafff895419c8bcc647fc64ab8f0\",\"class\":\"RateLimiter\",\"name\":\"api-gateway_RateLimiter\",\"script\":\"api-gateway\",\"use_sqlite\":true}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"class\":\"RateLimiter\",\"name\":\"api-gateway_RateLimiter\",\"script\":\"api-gateway\",\"use_sqlite\":\"true\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "storage",
+   "type": "kv_namespace",
+   "id": "0f2ac74b498b48028cb68387c421e279",
+   "name": "sessions",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "raw_data": "{\"id\":\"0f2ac74b498b48028cb68387c421e279\",\"title\":\"sessions\",\"supports_url_encoding\":true}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"namespace_id\":\"0f2ac74b498b48028cb68387c421e279\",\"supports_url_encoding\":\"true\",\"title\":\"sessions\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "storage",
+   "type": "queue",
+   "id": "023e105f4ecef8ad9ca31a8372d0c355",
+   "name": "audit-events",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-03-01T10:00:00Z",
+   "modified_at": "2024-03-01T10:00:00Z",
+   "raw_data": "{\"consumers\":[],\"consumers_total_count\":0,\"created_on\":\"2024-03-01T10:00:00Z\",\"modified_on\":\"2024-03-01T10:00:00Z\",\"producers\":[],\"producers_total_count\":1,\"queue_id\":\"023e105f4ecef8ad9ca31a8372d0c355\",\"queue_name\":\"audit-events\",\"settings\":{\"delivery_delay\":0,\"delivery_paused\":false,\"message_retention_period\":345600}}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"consumers_total_count\":\"0\",\"producers_total_count\":\"1\",\"queue_id\":\"023e105f4ecef8ad9ca31a8372d0c355\",\"queue_name\":\"audit-events\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "storage",
+   "type": "r2_bucket",
+   "id": "9a7806061c88ada191ed06f989cc3dac/r2/uploads",
+   "name": "uploads",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-03-01T10:00:00Z",
+   "raw_data": "{\"creation_date\":\"2024-03-01T10:00:00Z\",\"jurisdiction\":\"default\",\"location\":\"wnam\",\"name\":\"uploads\",\"storage_class\":\"Standard\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"bucket_name\":\"uploads\",\"jurisdiction\":\"default\",\"location\":\"wnam\",\"storage_class\":\"Standard\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "data",
+   "type": "secret_store",
+   "id": "023e105f4ecef8ad9ca31a8372d0c356",
+   "name": "production",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-04-01T10:00:00Z",
+   "modified_at": "2024-04-01T10:00:00Z",
+   "raw_data": "{\"id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"created\":\"2024-04-01T10:00:00Z\",\"modified\":\"2024-04-01T10:00:00Z\",\"name\":\"production\",\"account_id\":\"\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"name\":\"production\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "data",
+   "type": "secret_store_secret",
+   "id": "3fd85f74b32742f1bff64a85009dda07",
+   "name": "STRIPE_KEY",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c356",
+   "created_at": "2024-04-01T10:00:00Z",
+   "modified_at": "2025-08-01T10:00:00Z",
+   "raw_data": "{\"id\":\"3fd85f74b32742f1bff64a85009dda07\",\"created\":\"2024-04-01T10:00:00Z\",\"modified\":\"2025-08-01T10:00:00Z\",\"name\":\"STRIPE_KEY\",\"status\":\"active\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"comment\":\"payments\",\"scopes\":[\"workers\"]}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"comment\":\"payments\",\"name\":\"STRIPE_KEY\",\"scopes\":\"workers\",\"status\":\"active\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"store_name\":\"production\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "data",
+   "type": "secret_store_secret",
+   "id": "3fd85f74b32742f1bff64a85009dda08",
+   "name": "LEGACY_WEBHOOK_SECRET",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c356",
+   "created_at": "2023-01-01T10:00:00Z",
+   "modified_at": "2023-01-01T10:00:00Z",
+   "raw_data": "{\"id\":\"3fd85f74b32742f1bff64a85009dda08\",\"created\":\"2023-01-01T10:00:00Z\",\"modified\":\"2023-01-01T10:00:00Z\",\"name\":\"LEGACY_WEBHOOK_SECRET\",\"status\":\"active\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"comment\":\"\",\"scopes\":[\"workers\",\"ai_gateway\"]}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"comment\":\"\",\"name\":\"LEGACY_WEBHOOK_SECRET\",\"scopes\":\"workers,ai_gateway\",\"status\":\"active\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"store_name\":\"production\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/API_BASE_URL",
+   "name": "API_BASE_URL",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"API_BASE_URL\",\"type\":\"plain_text\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"API_BASE_URL\",\"credential_reason\":\"\",\"kind\":\"plain_text\",\"looks_like_credential\":\"false\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"value_length\":\"26\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/AUDIT",
+   "name": "AUDIT",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"AUDIT\",\"queue_name\":\"audit-events\",\"type\":\"queue\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"AUDIT\",\"kind\":\"queue\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"023e105f4ecef8ad9ca31a8372d0c355\",\"target_ref\":\"audit-events\",\"target_resolved\":\"true\",\"target_service\":\"storage\",\"target_type\":\"queue\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/AUTH",
+   "name": "AUTH",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"environment\":\"production\",\"name\":\"AUTH\",\"service\":\"internal-auth\",\"type\":\"service\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"AUTH\",\"entrypoint\":\"\",\"environment\":\"production\",\"kind\":\"service\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/internal-auth\",\"target_ref\":\"internal-auth\",\"target_resolved\":\"true\",\"target_service\":\"workers\",\"target_type\":\"worker_script\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/DB",
+   "name": "DB",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"database_id\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"name\":\"DB\",\"type\":\"d1\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"DB\",\"kind\":\"d1\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"target_ref\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"d1_database\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/LEGACY_AWS_ACCESS_KEY",
+   "name": "LEGACY_AWS_ACCESS_KEY",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"LEGACY_AWS_ACCESS_KEY\",\"type\":\"plain_text\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"LEGACY_AWS_ACCESS_KEY\",\"credential_reason\":\"prefix:aws_access_key\",\"kind\":\"plain_text\",\"looks_like_credential\":\"true\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"value_length\":\"20\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/NOTIFY",
+   "name": "NOTIFY",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"NOTIFY\",\"type\":\"send_email\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"NOTIFY\",\"destination_restricted\":\"false\",\"kind\":\"send_email\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/RATE_LIMITER",
+   "name": "RATE_LIMITER",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"class_name\":\"RateLimiter\",\"name\":\"RATE_LIMITER\",\"type\":\"durable_object_namespace\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"RATE_LIMITER\",\"kind\":\"durable_object_namespace\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"5fd1cafff895419c8bcc647fc64ab8f0\",\"target_ref\":\"api-gateway#RateLimiter\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"durable_object_namespace\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/SESSIONS",
+   "name": "SESSIONS",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"SESSIONS\",\"namespace_id\":\"0f2ac74b498b48028cb68387c421e279\",\"type\":\"kv_namespace\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"SESSIONS\",\"kind\":\"kv_namespace\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"0f2ac74b498b48028cb68387c421e279\",\"target_ref\":\"0f2ac74b498b48028cb68387c421e279\",\"target_resolved\":\"true\",\"target_service\":\"storage\",\"target_type\":\"kv_namespace\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/SESSION_SIGNING_KEY",
+   "name": "SESSION_SIGNING_KEY",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"SESSION_SIGNING_KEY\",\"type\":\"secret_text\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"SESSION_SIGNING_KEY\",\"kind\":\"secret_text\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/STRIPE",
+   "name": "STRIPE",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"STRIPE\",\"secret_name\":\"STRIPE_KEY\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"type\":\"secrets_store_secret\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"STRIPE\",\"kind\":\"secrets_store_secret\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"3fd85f74b32742f1bff64a85009dda07\",\"target_ref\":\"023e105f4ecef8ad9ca31a8372d0c356/STRIPE_KEY\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"secret_store_secret\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/UPLOADS",
+   "name": "UPLOADS",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"bucket_name\":\"uploads\",\"name\":\"UPLOADS\",\"type\":\"r2_bucket\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"UPLOADS\",\"jurisdiction\":\"\",\"kind\":\"r2_bucket\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_id\":\"9a7806061c88ada191ed06f989cc3dac/r2/uploads\",\"target_ref\":\"uploads\",\"target_resolved\":\"true\",\"target_service\":\"storage\",\"target_type\":\"r2_bucket\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/UPSTREAMS",
+   "name": "UPSTREAMS",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"name\":\"UPSTREAMS\",\"type\":\"json\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"UPSTREAMS\",\"credential_reason\":\"json:$.primary.url:prefix:url_credentials\",\"kind\":\"json\",\"looks_like_credential\":\"true\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"value_length\":\"82\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron/bindings/DB",
+   "name": "DB",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron",
+   "raw_data": "{\"database_id\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"name\":\"DB\",\"type\":\"d1\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"DB\",\"kind\":\"d1\",\"script\":\"billing-cron\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/billing-cron\",\"target_id\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"target_ref\":\"c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"d1_database\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron/bindings/REPORTS",
+   "name": "REPORTS",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron",
+   "raw_data": "{\"destination_address\":\"finance@example.com\",\"name\":\"REPORTS\",\"type\":\"send_email\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"REPORTS\",\"destination_restricted\":\"true\",\"kind\":\"send_email\",\"script\":\"billing-cron\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/billing-cron\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron/bindings/STAGING_CACHE",
+   "name": "STAGING_CACHE",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron",
+   "raw_data": "{\"name\":\"STAGING_CACHE\",\"namespace_id\":\"7d0c3c4b0f1e4c8e9a2b3c4d5e6f7a8b\",\"type\":\"kv_namespace\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"STAGING_CACHE\",\"kind\":\"kv_namespace\",\"script\":\"billing-cron\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/billing-cron\",\"target_ref\":\"7d0c3c4b0f1e4c8e9a2b3c4d5e6f7a8b\",\"target_resolved\":\"false\",\"target_service\":\"storage\",\"target_type\":\"kv_namespace\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth/bindings/DEBUG",
+   "name": "DEBUG",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
+   "raw_data": "{\"name\":\"DEBUG\",\"type\":\"plain_text\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"DEBUG\",\"credential_reason\":\"\",\"kind\":\"plain_text\",\"looks_like_credential\":\"false\",\"script\":\"internal-auth\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/internal-auth\",\"value_length\":\"4\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth/bindings/SESSIONS",
+   "name": "SESSIONS",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
+   "raw_data": "{\"name\":\"SESSIONS\",\"namespace_id\":\"0f2ac74b498b48028cb68387c421e279\",\"type\":\"kv_namespace\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"SESSIONS\",\"kind\":\"kv_namespace\",\"script\":\"internal-auth\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/internal-auth\",\"target_id\":\"0f2ac74b498b48028cb68387c421e279\",\"target_ref\":\"0f2ac74b498b48028cb68387c421e279\",\"target_resolved\":\"true\",\"target_service\":\"storage\",\"target_type\":\"kv_namespace\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth/bindings/SIGNING_TOKEN",
+   "name": "SIGNING_TOKEN",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
+   "raw_data": "{\"name\":\"SIGNING_TOKEN\",\"type\":\"plain_text\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"SIGNING_TOKEN\",\"credential_reason\":\"entropy\",\"kind\":\"plain_text\",\"looks_like_credential\":\"true\",\"script\":\"internal-auth\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/internal-auth\",\"value_length\":\"28\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth/bindings/WEBHOOK",
+   "name": "WEBHOOK",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
+   "raw_data": "{\"name\":\"WEBHOOK\",\"secret_name\":\"LEGACY_WEBHOOK_SECRET\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"type\":\"secrets_store_secret\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"WEBHOOK\",\"kind\":\"secrets_store_secret\",\"script\":\"internal-auth\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/internal-auth\",\"target_id\":\"3fd85f74b32742f1bff64a85009dda08\",\"target_ref\":\"023e105f4ecef8ad9ca31a8372d0c356/LEGACY_WEBHOOK_SECRET\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"secret_store_secret\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_domain",
+   "id": "dbe10b4bc17c295377eabd600e1787fd",
+   "name": "api.example.com",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "raw_data": "{\"id\":\"dbe10b4bc17c295377eabd600e1787fd\",\"cert_id\":\"9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f08\",\"environment\":\"production\",\"hostname\":\"api.example.com\",\"service\":\"api-gateway\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"cert_id\":\"9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f08\",\"corkscrew_correlation\":{\"version\":\"1\",\"evidence\":[{\"id\":\"dns:hostname:api.example.com\",\"kind\":\"dns\",\"confidence\":0.7,\"method\":\"provider_common_fields\",\"values\":{\"dns_name\":\"api.example.com\",\"record_type\":\"REFERENCE\",\"record_values\":[\"api.example.com\"]}}]},\"environment\":\"production\",\"hostname\":\"api.example.com\",\"service\":\"api-gateway\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_route",
+   "id": "023e105f4ecef8ad9ca31a8372d0c354",
+   "name": "example.com/api/*",
+   "account_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "parent_id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "raw_data": "{\"id\":\"023e105f4ecef8ad9ca31a8372d0c354\",\"pattern\":\"example.com/api/*\",\"script\":\"api-gateway\"}",
+   "attributes": "{\"pattern\":\"example.com/api/*\",\"script\":\"api-gateway\",\"zone_id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"zone_name\":\"example.com\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_script",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "name": "api-gateway",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-02-01T10:00:00Z",
+   "modified_at": "2025-09-10T10:00:00Z",
+   "relationships": [
+    {
+     "target_id": "023e105f4ecef8ad9ca31a8372d0c355",
+     "target_type": "queue",
+     "target_service": "storage",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "AUDIT",
+      "kind": "queue"
+     }
+    },
+    {
+     "target_id": "0f2ac74b498b48028cb68387c421e279",
+     "target_type": "kv_namespace",
+     "target_service": "storage",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "SESSIONS",
+      "kind": "kv_namespace"
+     }
+    },
+    {
+     "target_id": "3fd85f74b32742f1bff64a85009dda07",
+     "target_type": "secret_store_secret",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "STRIPE",
+      "kind": "secrets_store_secret"
+     }
+    },
+    {
+     "target_id": "5fd1cafff895419c8bcc647fc64ab8f0",
+     "target_type": "durable_object_namespace",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "RATE_LIMITER",
+      "kind": "durable_object_namespace"
+     }
+    },
+    {
+     "target_id": "9a7806061c88ada191ed06f989cc3dac/r2/uploads",
+     "target_type": "r2_bucket",
+     "target_service": "storage",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "UPLOADS",
+      "kind": "r2_bucket"
+     }
+    },
+    {
+     "target_id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
+     "target_type": "worker_script",
+     "target_service": "workers",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "AUTH",
+      "kind": "service"
+     }
+    },
+    {
+     "target_id": "c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e",
+     "target_type": "d1_database",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "DB",
+      "kind": "d1"
+     }
+    }
+   ],
+   "raw_data": "{\"id\":\"api-gateway\",\"compatibility_date\":\"2025-09-01\",\"compatibility_flags\":null,\"created_on\":\"2024-02-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27a\",\"handlers\":[\"fetch\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-09-10T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"12\",\"compatibility_date\":\"2025-09-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27a\",\"handlers\":\"fetch\",\"has_assets\":\"false\",\"has_custom_domain\":\"true\",\"has_modules\":\"true\",\"has_route\":\"true\",\"last_deployed_from\":\"\",\"logpush\":\"true\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"smart\",\"previews_enabled\":\"false\",\"script_id\":\"api-gateway\",\"script_name\":\"api-gateway\",\"tail_consumers\":\"log-shipper\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"true\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_script",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron",
+   "name": "billing-cron",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2025-06-01T10:00:00Z",
+   "modified_at": "2025-06-01T10:00:00Z",
+   "relationships": [
+    {
+     "target_id": "c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e",
+     "target_type": "d1_database",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "DB",
+      "kind": "d1"
+     }
+    }
+   ],
+   "raw_data": "{\"id\":\"billing-cron\",\"compatibility_date\":\"2025-06-01\",\"compatibility_flags\":null,\"created_on\":\"2025-06-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27c\",\"handlers\":[\"scheduled\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-06-01T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"3\",\"compatibility_date\":\"2025-06-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27c\",\"handlers\":\"scheduled\",\"has_assets\":\"false\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"false\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"false\",\"placement_mode\":\"\",\"previews_enabled\":\"false\",\"script_id\":\"billing-cron\",\"script_name\":\"billing-cron\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"false\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_script",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
+   "name": "internal-auth",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2023-05-18T10:00:00Z",
+   "modified_at": "2023-05-18T10:00:00Z",
+   "relationships": [
+    {
+     "target_id": "0f2ac74b498b48028cb68387c421e279",
+     "target_type": "kv_namespace",
+     "target_service": "storage",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "SESSIONS",
+      "kind": "kv_namespace"
+     }
+    },
+    {
+     "target_id": "3fd85f74b32742f1bff64a85009dda08",
+     "target_type": "secret_store_secret",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "WEBHOOK",
+      "kind": "secrets_store_secret"
+     }
+    }
+   ],
+   "raw_data": "{\"id\":\"internal-auth\",\"compatibility_date\":\"2023-05-18\",\"compatibility_flags\":null,\"created_on\":\"2023-05-18T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27b\",\"handlers\":[\"fetch\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2023-05-18T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"4\",\"compatibility_date\":\"2023-05-18\",\"etag\":\"ea95132c15732412d22c1476fa83f27b\",\"handlers\":\"fetch\",\"has_assets\":\"false\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"false\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"false\",\"observability_logs_enabled\":\"false\",\"placement_mode\":\"\",\"previews_enabled\":\"true\",\"script_id\":\"internal-auth\",\"script_name\":\"internal-auth\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"true\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "zones",
+   "type": "zone",
+   "id": "023e105f4ecef8ad9ca31a8372d0c353",
+   "name": "example.com",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2024-01-15T10:00:00Z",
+   "modified_at": "2024-06-01T10:00:00Z",
+   "raw_data": "{\"id\":\"023e105f4ecef8ad9ca31a8372d0c353\",\"account\":{\"id\":\"9a7806061c88ada191ed06f989cc3dac\",\"name\":\"Acme Production\"},\"activated_on\":\"2024-01-16T10:00:00Z\",\"created_on\":\"2024-01-15T10:00:00Z\",\"development_mode\":0,\"meta\":{\"cdn_only\":false,\"custom_certificate_quota\":0,\"dns_only\":false,\"foundation_dns\":false,\"page_rule_quota\":3,\"phishing_detected\":false,\"step\":2},\"modified_on\":\"2024-06-01T10:00:00Z\",\"name\":\"example.com\",\"name_servers\":[\"ada.ns.cloudflare.com\",\"bob.ns.cloudflare.com\"],\"original_dnshost\":\"\",\"original_name_servers\":null,\"original_registrar\":\"\",\"owner\":{\"id\":\"9a7806061c88ada191ed06f989cc3dac\",\"name\":\"Acme Production\",\"type\":\"organization\"},\"plan\":{\"id\":\"0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"can_subscribe\":false,\"currency\":\"USD\",\"externally_managed\":false,\"frequency\":\"\",\"is_subscribed\":true,\"legacy_discount\":false,\"legacy_id\":\"free\",\"name\":\"Free Website\",\"price\":0},\"cname_suffix\":\"\",\"paused\":false,\"permissions\":null,\"status\":\"active\",\"tenant\":{\"id\":\"\",\"name\":\"\"},\"tenant_unit\":{\"id\":\"\"},\"type\":\"\",\"vanity_name_servers\":null,\"verification_key\":\"\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"account_name\":\"Acme Production\",\"cdn_only\":\"false\",\"custom_certificate_quota\":\"0\",\"development_mode\":\"0\",\"dns_only\":\"false\",\"foundation_dns\":\"false\",\"name_servers\":\"ada.ns.cloudflare.com,bob.ns.cloudflare.com\",\"page_rule_quota\":\"3\",\"paused\":\"false\",\"status\":\"active\",\"type\":\"\",\"verification_key\":\"\"}"
+  }
+ ]
+}
