@@ -2598,8 +2598,12 @@ fn fingerprint_covers_the_write_ahead_log() {
     let database = temp_dir.path().join("fixture.duckdb");
     let wal = temp_dir.path().join("fixture.duckdb.wal");
     std::fs::write(&database, b"main").unwrap();
-    let file = std::fs::File::options().write(true).open(&database).unwrap();
-    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 0)).unwrap();
+    let file = std::fs::File::options()
+        .write(true)
+        .open(&database)
+        .unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(1_000, 0))
+        .unwrap();
     let path = database.to_string_lossy().into_owned();
 
     let without_wal = loader::fingerprint_path(&path);
@@ -2625,8 +2629,12 @@ fn cache_reloads_when_only_the_write_ahead_log_changes() {
     let temp_dir = TempDir::new().unwrap();
     let database = temp_dir.path().join("wal-only.duckdb");
     std::fs::write(&database, b"main").unwrap();
-    let file = std::fs::File::options().write(true).open(&database).unwrap();
-    file.set_modified(UNIX_EPOCH + Duration::new(2_000, 0)).unwrap();
+    let file = std::fs::File::options()
+        .write(true)
+        .open(&database)
+        .unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::new(2_000, 0))
+        .unwrap();
     let path = database.to_string_lossy().into_owned();
 
     let conn = Connection::open_in_memory().unwrap();
@@ -2642,7 +2650,10 @@ fn cache_reloads_when_only_the_write_ahead_log_changes() {
 
     std::fs::write(temp_dir.path().join("wal-only.duckdb.wal"), b"rescan").unwrap();
     let reloaded = cache::get_or_load_with(&conn, &path, load).unwrap();
-    assert!(!Arc::ptr_eq(&first, &reloaded), "a WAL-only write must invalidate");
+    assert!(
+        !Arc::ptr_eq(&first, &reloaded),
+        "a WAL-only write must invalidate"
+    );
     assert_eq!(load_count.load(Ordering::Relaxed), 2);
 }
 
@@ -2824,7 +2835,10 @@ fn walk_group_pairs_never_flags_a_single_provider_group() {
     })
     .unwrap();
     assert_eq!(visits, 0);
-    assert!(rows.is_empty(), "same-provider records produce no pairs to skip");
+    assert!(
+        rows.is_empty(),
+        "same-provider records produce no pairs to skip"
+    );
 }
 
 #[test]
@@ -2931,7 +2945,9 @@ fn skipped_group_summary(fixture_path: &str, sql: &str) -> (i64, String) {
 fn oversized_group_size() -> usize {
     use corkscrew_graph_tests::functions::correlate_common::GROUP_PAIRS_MAX;
 
-    let half = (1..).find(|half: &usize| half * half > GROUP_PAIRS_MAX).unwrap();
+    let half = (1..)
+        .find(|half: &usize| half * half > GROUP_PAIRS_MAX)
+        .unwrap();
     half * 2
 }
 
