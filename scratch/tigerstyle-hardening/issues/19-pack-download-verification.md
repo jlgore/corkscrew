@@ -1,6 +1,6 @@
 # Verify registry pack downloads
 
-Status: ready-for-agent
+Status: complete
 Phase: P1
 Category: enhancement
 Depends on: 05
@@ -108,3 +108,34 @@ so any tagged repo can supply SQL. There is no lockfile.
 - Signature verification (cosign/minisign/GPG); this issue is integrity, not authenticity.
 - Changing GitHub topic-search discovery.
 - Release automation for the in-repo official packs (they ship with the binary).
+
+2026-10-22: Implemented on `hardening/pack-verification`. Docs: `docs/PACK_PUBLISHING.md`
+(authors) and "Installing Packs and Verification" in `docs/USER_GUIDE.md`.
+
+- Releases: `packVersionsFromReleases` sets `DownloadURL` only when a release has exactly one
+  `.tar.gz` asset (never the auto source tarball); new `AssetName` and `ChecksumURL` fields.
+  The checksum is fetched at install time (`<asset>.sha256` first, then `checksums.txt`), not
+  on every registry refresh. Releases JSON capped at 8 MiB.
+- Parsing: sha256sum format (`<hex>  name` / `<hex> *name`; bare digest only in `.sha256`),
+  64 KiB / 1024 lines, CRLF and uppercase accepted; duplicates or garbage are
+  `ErrChecksumMalformed`, which fails even with `--allow-unverified`.
+- Errors: `RegistryError` (Operation `verify`/`lock`) wrapping `ErrChecksumMissing`,
+  `ErrChecksumMalformed`, `ErrChecksumMismatch`, `ErrPinMismatch`. Download hashed while
+  streaming; pin and checksum checked before `archive.ExtractTree`.
+- Lockfile: `<pack dir>/corkscrew-lock.json`,
+  `{"version":1,"packs":{"<source>":{"<version>":{"sha256","url","verified"}}}}`, source
+  `github.com/<owner>/<repo>` or `registry:<namespace>`. Strict read (4 MiB, 10k pins, unknown
+  fields rejected; a malformed lockfile is an error, never overwritten). Atomic write; two
+  concurrent installs into one directory can still lose a pin (no file locking).
+- Re-pin: `corkscrew pack install --force --repin <ref>`; still needs the published checksum
+  to match, warns with old and new hashes. `--force` alone never re-pins (tested).
+- Transitive dependencies: `pack install` never installs dependencies (`--deps` is only
+  printed), so there is nothing extra to verify yet. Whoever implements dependency install
+  must route it through `DownloadPack`.
+- Breaking: versions without a published checksum need `--allow-unverified`; cached registry
+  entries from before this change have no `ChecksumURL` until the 24 h cache refreshes.
+- Left: `pack update` is still a stub; direct `github.com/...` installs are unimplemented;
+  `fetchPackVersions` itself isn't tested over HTTP (api.github.com is hard-coded; the pure
+  `packVersionsFromReleases` is).
+- Process note: the triage commit missed the #37 merge (pushed after the merge) and is
+  re-applied on this branch.
