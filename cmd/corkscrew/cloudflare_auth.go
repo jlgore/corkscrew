@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	appconfig "github.com/jlgore/corkscrew/internal/config"
 	"github.com/jlgore/corkscrew/internal/providers/cloudflareauth"
 )
 
@@ -166,9 +167,9 @@ func runCloudflareAuthStatus(ctx context.Context, args []string) error {
 		return err
 	}
 
-	override := map[string]string{"auth.profile": *profile}
-	if *method != "" {
-		override["auth.method"] = *method
+	override, err := cloudflareAuthOverride(fs, *profile, *method)
+	if err != nil {
+		return err
 	}
 	cfg, err := cloudflareauth.LoadConfig(override)
 	if err != nil {
@@ -239,9 +240,9 @@ func runCloudflareAuthVerify(ctx context.Context, args []string) error {
 		return err
 	}
 
-	override := map[string]string{"auth.profile": *profile}
-	if *method != "" {
-		override["auth.method"] = *method
+	override, err := cloudflareAuthOverride(fs, *profile, *method)
+	if err != nil {
+		return err
 	}
 	cfg, err := cloudflareauth.LoadConfig(override)
 	if err != nil {
@@ -287,9 +288,9 @@ func runCloudflareAuthValidate(ctx context.Context, args []string) error {
 		return err
 	}
 
-	override := map[string]string{"auth.profile": *profile}
-	if *method != "" {
-		override["auth.method"] = *method
+	override, err := cloudflareAuthOverride(fs, *profile, *method)
+	if err != nil {
+		return err
 	}
 	cfg, err := cloudflareauth.LoadConfig(override)
 	if err != nil {
@@ -377,4 +378,31 @@ func printCloudflareAuthUsage() {
 	fmt.Fprintln(w, "  validate\tPing Cloudflare API to verify credentials")
 	fmt.Fprintln(w, "  bootstrap-token\tPrint Terraform bootstrap stub for least-privilege tokens")
 	w.Flush()
+}
+
+// cloudflareAuthOverride is the Cloudflare configuration the auth commands check: the
+// providers.cloudflare.config a scan would use (from corkscrew.yaml or ~/.corkscrew/config.yaml),
+// with the flags given on the command line on top. Without the file, the commands checked a
+// different credential than the scan, such as ignoring auth.token_env.
+func cloudflareAuthOverride(fs *flag.FlagSet, profile, method string) (map[string]string, error) {
+	override := map[string]string{}
+	if path, err := appconfig.ResolveCorkscrewConfigPath(); err == nil {
+		cfg, err := appconfig.LoadCorkscrewConfig(path)
+		if err != nil {
+			return nil, fmt.Errorf("load config %s: %w", path, err)
+		}
+		for key, value := range cfg.Providers["cloudflare"].Config {
+			override[key] = value
+		}
+	}
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	// --profile has a default; it only replaces a profile from the file when given.
+	if given["profile"] || (override["auth.profile"] == "" && override["profile"] == "") {
+		override["auth.profile"] = profile
+	}
+	if method != "" {
+		override["auth.method"] = method
+	}
+	return override, nil
 }
