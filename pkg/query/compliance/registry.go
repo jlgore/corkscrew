@@ -2,7 +2,6 @@ package compliance
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,8 +16,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/jlgore/corkscrew/internal/archive"
 )
 
 // RegistryClient manages discovery, download, and installation of compliance packs
@@ -33,6 +30,12 @@ type RegistryClient struct {
 	baseURLs      []string // Support multiple registry URLs
 	offlineMode   bool
 	warnings      io.Writer // receives unverified-download warnings; os.Stderr by default
+
+	// allowUnverified installs a version that publishes no checksum (--allow-unverified).
+	// It never excuses a checksum or pin mismatch.
+	allowUnverified bool
+	// repin replaces a lockfile pin whose hash no longer matches the download (--repin).
+	repin bool
 }
 
 // RegistryCache represents the local registry cache structure
@@ -241,6 +244,21 @@ func (c *RegistryClient) WithGitHubToken(token string) *RegistryClient {
 // WithOfflineMode enables/disables offline mode
 func (c *RegistryClient) WithOfflineMode(offline bool) *RegistryClient {
 	c.offlineMode = offline
+	return c
+}
+
+// WithAllowUnverified lets DownloadPack install a version whose release publishes no checksum,
+// with a warning. A published checksum or a lockfile pin that does not match still fails.
+func (c *RegistryClient) WithAllowUnverified(allow bool) *RegistryClient {
+	c.allowUnverified = allow
+	return c
+}
+
+// WithRepin lets DownloadPack replace a lockfile pin that no longer matches the download. It is
+// the deliberate path for a publisher who re-released a version on purpose; --force alone never
+// re-pins.
+func (c *RegistryClient) WithRepin(repin bool) *RegistryClient {
+	c.repin = repin
 	return c
 }
 
@@ -746,69 +764,6 @@ const (
 	retryCountMax = 10
 )
 
-// downloadAndExtract downloads and extracts a pack tarball
-func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackInfo, version RegistryPackVersion, destDir string) (*QueryPack, error) {
-	// An unverified tarball lets whoever serves the URL choose the pack's SQL. Versions built
-	// from GitHub release tarballs carry no checksum yet (scratch issue 19), so refusing them
-	// would make every registry pack uninstallable; install them, but say so loudly.
-	if version.Checksum == "" {
-		_, _ = fmt.Fprintf(c.warnings,
-			"⚠️  WARNING: pack %s %s has no checksum; installing an UNVERIFIED download from %s\n",
-			packInfo.Namespace, version.Version, version.TarballURL)
-	}
-
-	extractDir, err := packExtractDir(destDir, packInfo.Namespace)
-	if err != nil {
-		return nil, RegistryError{
-			Operation: "extract",
-			URL:       packInfo.Namespace,
-			Message:   "invalid pack destination",
-			Cause:     err,
-		}
-	}
-
-	tmpPath, err := c.downloadToTemp(ctx, version.TarballURL)
-	if err != nil {
-		return nil, RegistryError{
-			Operation: "download",
-			URL:       version.TarballURL,
-			Message:   "failed to download tarball",
-			Cause:     err,
-		}
-	}
-	defer os.Remove(tmpPath)
-
-	if version.Checksum != "" {
-		if err := c.verifyChecksum(tmpPath, version.Checksum); err != nil {
-			return nil, RegistryError{
-				Operation: "verify",
-				URL:       version.TarballURL,
-				Message:   "checksum verification failed",
-				Cause:     err,
-			}
-		}
-	}
-
-	// GitHub tarballs wrap the pack in one root directory, which is stripped.
-	limits := archive.Limits{
-		BytesMax:      packBytesMax,
-		EntryCountMax: packEntryCountMax,
-		EntryBytesMax: packEntryBytesMax,
-	}
-	if err := archive.ExtractTree(archive.FormatTarGz, tmpPath, extractDir, 1, limits); err != nil {
-		return nil, RegistryError{
-			Operation: "extract",
-			URL:       tmpPath,
-			Message:   "failed to extract tarball",
-			Cause:     err,
-		}
-	}
-
-	// Load the pack using the pack loader
-	loader := NewPackLoader().WithSearchPaths(destDir)
-	return loader.LoadPack(ctx, packInfo.Namespace)
-}
-
 // packExtractDir resolves the pack directory and keeps a registry-supplied namespace such as
 // "../x" from naming a directory outside destDir.
 func packExtractDir(destDir, namespace string) (string, error) {
@@ -825,73 +780,6 @@ func packExtractDir(destDir, namespace string) (string, error) {
 		return "", fmt.Errorf("namespace %q is outside %s", namespace, root)
 	}
 	return dir, nil
-}
-
-// downloadToTemp downloads url into a new temporary file and returns its path.
-func (c *RegistryClient) downloadToTemp(ctx context.Context, url string) (string, error) {
-	tmpFile, err := os.CreateTemp("", "corkscrew-pack-*.tar.gz")
-	if err != nil {
-		return "", err
-	}
-	downloadErr := c.downloadFile(ctx, url, tmpFile)
-	if err := errors.Join(downloadErr, tmpFile.Close()); err != nil {
-		return "", errors.Join(err, os.Remove(tmpFile.Name()))
-	}
-	return tmpFile.Name(), nil
-}
-
-// downloadFile downloads a file from URL
-func (c *RegistryClient) downloadFile(ctx context.Context, url string, dest *os.File) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-
-	if c.githubToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("token %s", c.githubToken))
-	}
-
-	req.Header.Set("User-Agent", c.userAgent)
-
-	resp, err := c.doRequestWithRetry(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
-	}
-
-	n, err := io.Copy(dest, io.LimitReader(resp.Body, packDownloadBytesMax+1))
-	if err != nil {
-		return err
-	}
-	if n > packDownloadBytesMax {
-		return fmt.Errorf("download exceeds %d bytes", packDownloadBytesMax)
-	}
-	return nil
-}
-
-// verifyChecksum verifies file checksum
-func (c *RegistryClient) verifyChecksum(filePath, expectedChecksum string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return err
-	}
-
-	actualChecksum := hex.EncodeToString(hash.Sum(nil))
-	if actualChecksum != expectedChecksum {
-		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
-	}
-
-	return nil
 }
 
 // doRequestWithRetry performs HTTP request with retry logic
