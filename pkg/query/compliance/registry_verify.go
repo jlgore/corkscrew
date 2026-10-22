@@ -46,7 +46,8 @@ func (c *RegistryClient) downloadAndExtract(ctx context.Context, packInfo PackIn
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(download.path)
+	// The download is a temp file; failing to remove it leaks a file in TMPDIR, nothing more.
+	defer func() { _ = os.Remove(download.path) }()
 
 	lock, err := readPackLock(lockPath)
 	if err != nil {

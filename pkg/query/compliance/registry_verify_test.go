@@ -128,7 +128,8 @@ func TestDownloadPackVerifiesChecksumsTxt(t *testing.T) {
 	client, warnings := verifyClient(rs, "/checksums.txt")
 	destDir := t.TempDir()
 
-	if _, err := client.DownloadPack(context.Background(), verifyNamespace, "", destDir); err != nil {
+	_, err := client.DownloadPack(context.Background(), verifyNamespace, "", destDir)
+	if err != nil {
 		t.Fatalf("DownloadPack: %v", err)
 	}
 	if rs.requested("/source.tar.gz") {
@@ -178,7 +179,8 @@ func TestDownloadPackRejectsPublishedChecksumMismatch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(destDir, verifyNamespace)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pack extracted despite mismatch: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(destDir, packLockFileName)); !errors.Is(err, os.ErrNotExist) {
+	_, err = os.Stat(filepath.Join(destDir, packLockFileName))
+	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("lockfile written despite mismatch: %v", err)
 	}
 }
@@ -245,7 +247,8 @@ func TestDownloadPackAllowUnverifiedWarnsAndPins(t *testing.T) {
 	client.WithAllowUnverified(true)
 	destDir := t.TempDir()
 
-	if _, err := client.DownloadPack(context.Background(), verifyNamespace, "", destDir); err != nil {
+	_, err := client.DownloadPack(context.Background(), verifyNamespace, "", destDir)
+	if err != nil {
 		t.Fatalf("DownloadPack: %v", err)
 	}
 	if !strings.Contains(warnings.String(), "UNVERIFIED") {
@@ -269,7 +272,8 @@ func installChanged(t *testing.T, configure func(*RegistryClient)) (string, *byt
 	rs := newReleaseServer(t, files)
 	destDir := t.TempDir()
 	client, _ := verifyClient(rs, "/checksums.txt")
-	if _, err := client.DownloadPack(context.Background(), verifyNamespace, "", destDir); err != nil {
+	_, err := client.DownloadPack(context.Background(), verifyNamespace, "", destDir)
+	if err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 
@@ -281,7 +285,7 @@ func installChanged(t *testing.T, configure func(*RegistryClient)) (string, *byt
 
 	client, warnings := verifyClient(rs, "/checksums.txt")
 	configure(client)
-	_, err := client.DownloadPack(context.Background(), verifyNamespace, "v1.0.0", destDir)
+	_, err = client.DownloadPack(context.Background(), verifyNamespace, "v1.0.0", destDir)
 	return destDir, warnings, err
 }
 
