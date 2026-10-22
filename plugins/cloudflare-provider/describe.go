@@ -159,6 +159,23 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 			}
 		}
 		return nil, fmt.Errorf("worker_script %s not found in account %s", ref.GetId(), accountID)
+	case "worker_binding":
+		accountID, scriptName, bindingName, ok := parseWorkerBindingID(ref.GetId())
+		if !ok {
+			return nil, fmt.Errorf("worker_binding %s is not <account>/workers/<script>/bindings/<name>", ref.GetId())
+		}
+		settings, err := p.client.Workers.Scripts.ScriptAndVersionSettings.Get(ctx, scriptName,
+			workers.ScriptScriptAndVersionSettingGetParams{AccountID: cloudflare.F(accountID)})
+		if err != nil {
+			return nil, fmt.Errorf("get worker settings %s/%s: %w", accountID, scriptName, err)
+		}
+		bindings, _ := p.workerBindingResources(accountID, scriptName, settings)
+		for _, binding := range bindings {
+			if binding.Name == bindingName {
+				return binding, nil
+			}
+		}
+		return nil, fmt.Errorf("worker_binding %s not found", ref.GetId())
 	case "worker_route":
 		zoneID := firstNonEmpty(ref.GetBasicAttributes()["zone_id"], ref.GetAccountId())
 		if zoneID == "" {

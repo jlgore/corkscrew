@@ -154,7 +154,7 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
    collide. Recommendation: switch to `<account_id>/workers/<script>`, the same shape as R2. This
    changes the identity of existing worker rows, so a drift comparison across the change shows
    every script as removed and re-added. See issue 02.
-2. **Does settings return `secret_text` bindings?** The assumption is that settings lists secret
+2. **Does settings return `secret_text` bindings?** (Moot as of 2026-10-22: the provider drops every value field whether or not it is returned. See issue 04.) The assumption is that settings lists secret
    bindings by name without a value, which makes `Scripts.Secrets.List` redundant. The live smoke
    test (issue 10) confirms it. If not, issue 04 adds a `Secrets.List` call for each script.
 3. **Request budget.** Each script adds two requests (settings and subdomain). Cloudflare's
@@ -168,7 +168,7 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
 | 01 | [Forge-generated fake Cloudflare API](issues/01-fake-cloudflare-api-harness.md) | — | complete |
 | 02 | [Account-scoped worker script IDs](issues/02-account-scoped-worker-ids.md) | — | complete |
 | 03 | [Script settings and exposure enrichment](issues/03-script-settings-enrichment.md) | 01 | complete |
-| 04 | [worker_binding resources and credential classifier](issues/04-worker-binding-resources.md) | 01, 02, 03 | ready-for-agent |
+| 04 | [worker_binding resources and credential classifier](issues/04-worker-binding-resources.md) | 01, 02, 03 | complete |
 | 05 | [Binding relationships and target resolution](issues/05-binding-relationships.md) | 04 | ready-for-agent |
 | 06 | [Golden scan and real-SQL pack test harness](issues/06-golden-scan-pack-harness.md) | 05 | ready-for-agent |
 | 07 | [Pack: cloudflare/workers-baseline](issues/07-pack-workers-baseline.md) | 06 | ready-for-agent |

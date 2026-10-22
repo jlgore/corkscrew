@@ -43,7 +43,7 @@ func TestScanWorkersScriptSettingsAndExposure(t *testing.T) {
 		"api-gateway": {
 			"workers_dev_enabled": "true", "previews_enabled": "false",
 			"logpush": "true", "observability_enabled": "true", "observability_logs_enabled": "true",
-			"tail_consumers": "log-shipper", "placement_mode": "smart", "binding_count": "0",
+			"tail_consumers": "log-shipper", "placement_mode": "smart", "binding_count": "12",
 			"has_route": "true", "has_custom_domain": "true",
 		},
 		"internal-auth": {
@@ -90,7 +90,7 @@ func TestScanWorkersSettingsFailureIsPartial(t *testing.T) {
 	if auth["workers_dev_enabled"] != "true" || auth["compatibility_date"] != "2023-05-18" {
 		t.Errorf("internal-auth lost the list and subdomain attributes: %v", auth)
 	}
-	if got["api-gateway"]["binding_count"] != "0" {
+	if got["api-gateway"]["binding_count"] != "12" {
 		t.Errorf("api-gateway attrs = %v, want full settings", got["api-gateway"])
 	}
 }

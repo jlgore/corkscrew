@@ -75,6 +75,11 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 			// Without every route and domain listed, "no route" can't be told from "not seen".
 			detail.exposure.known = routesComplete && domainsComplete
 			resources = append(resources, p.workerScriptResource(accountID, script, detail))
+			if detail.settings != nil {
+				bindings, bindingErrs := p.workerBindingResources(accountID, script.ID, detail.settings)
+				resources = append(resources, bindings...)
+				errs = append(errs, bindingErrs...)
+			}
 		}
 	}
 

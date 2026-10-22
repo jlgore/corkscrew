@@ -355,7 +355,7 @@ func supportedResourcesForService(service string) []string {
 	case "storage":
 		return []string{"r2_bucket", "kv_namespace", "queue"}
 	case "workers":
-		return []string{"worker_script", "worker_route", "worker_domain"}
+		return []string{"worker_script", "worker_binding", "worker_route", "worker_domain"}
 	case "zones":
 		return []string{"zone"}
 	default:

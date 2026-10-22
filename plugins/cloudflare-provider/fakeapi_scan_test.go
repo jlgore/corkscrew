@@ -31,6 +31,16 @@ func resourceKeys(resources []*pb.Resource) []string {
 	return keys
 }
 
+func withoutType(resources []*pb.Resource, typ string) []*pb.Resource {
+	out := make([]*pb.Resource, 0, len(resources))
+	for _, r := range resources {
+		if r.Type != typ {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // TestScanServicesAgainstBaseline pins what each scanner emits for the baseline account.
 func TestScanServicesAgainstBaseline(t *testing.T) {
 	tests := []struct {
@@ -75,7 +85,8 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 			if len(resp.Errors) > 0 {
 				t.Errorf("errors = %v, want none", resp.Errors)
 			}
-			if got := resourceKeys(resp.Resources); !reflect.DeepEqual(got, tt.want) {
+			// Bindings are pinned in workers_bindings_test.go.
+			if got := resourceKeys(withoutType(resp.Resources, "worker_binding")); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("resources:\n got %v\nwant %v", got, tt.want)
 			}
 			for _, r := range resp.Resources {
