@@ -24,6 +24,8 @@ func runScanE(ctx context.Context, args []string) error {
 	configPath := fs.String("config", "", "Path to configuration file")
 	concurrency := fs.Int("concurrency", 3, "Number of regions to scan concurrently")
 	saveToFile := fs.Bool("save", false, "Save results to timestamped JSON file")
+	listResources := fs.Bool("list-resources", false,
+		"Table output only: list each resource instead of counts by service and type")
 	databasePath := fs.String("database", "", "Path to DuckDB database file, or a quack: URI for a remote server (default: config database.path or ~/.corkscrew/db/corkscrew.duckdb)")
 	quackToken := fs.String("token", "", "Auth token for a remote quack: database (or CORKSCREW_QUACK_TOKEN)")
 	dbProviderTable := fs.String("db-provider-table", "", "Override target table for persistence (routes all rows)")
@@ -47,6 +49,7 @@ func runScanE(ctx context.Context, args []string) error {
 		Services:                *servicesStr,
 		OutputFormat:            *outputFormat,
 		SaveToFile:              *saveToFile,
+		ListResources:           *listResources,
 		ConfigPath:              *configPath,
 		MaxConcurrency:          *concurrency,
 		DatabasePath:            *databasePath,

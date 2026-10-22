@@ -855,8 +855,12 @@ corkscrew scan --provider aws --services s3,ec2,lambda --region us-east-1,us-wes
 #### Output Formats
 
 ```bash
-# Table format (default)
+# Table format (default): resource counts by service and type, then the scan ID
+# and the command to evaluate it
 corkscrew scan --provider aws --output table
+
+# Table format with one row per resource
+corkscrew scan --provider aws --list-resources
 
 # JSON format for processing
 corkscrew scan --provider aws --output json
