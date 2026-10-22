@@ -455,8 +455,8 @@ func refIDs(refs []*pb.ResourceRef) map[string]*pb.ResourceRef {
 }
 
 // A type whose identifier is derivable keeps its RE ref, stamped with the identifier. A
-// composite type is listed through Cloud Control instead, replacing the RE refs of the
-// scanner's region; another region's RE ref is left alone.
+// composite type is listed through Cloud Control instead, replacing its RE refs. Another
+// region's RE ref is left to that region's scan.
 func TestScanServiceViaExplorerResolvesOrListsEachType(t *testing.T) {
 	s, cc, _ := ecsScanner(t)
 
@@ -465,10 +465,8 @@ func TestScanServiceViaExplorerResolvesOrListsEachType(t *testing.T) {
 		t.Fatalf("ScanService: %v", err)
 	}
 	byID := refIDs(refs)
-	if len(refs) != 3 || byID[clusterARN] == nil || byID[serviceListedID] == nil ||
-		byID[serviceWestARN] == nil {
-		t.Fatalf("refs = %v, want the cluster, the listed service and the us-west-2 service",
-			byID)
+	if len(refs) != 2 || byID[clusterARN] == nil || byID[serviceListedID] == nil {
+		t.Fatalf("refs = %v, want the cluster and the listed service, not us-west-2's", byID)
 	}
 	if got := byID[clusterARN].BasicAttributes[ccIdentifierAttribute]; got != "prod" {
 		t.Fatalf("cluster identifier = %q, want prod", got)
@@ -504,8 +502,8 @@ func TestScanServiceViaExplorerListsTypeWhenDescribeTypeIsDenied(t *testing.T) {
 		}
 	}
 	byID := refIDs(refs)
-	if len(refs) != 3 || byID["prod"] == nil || byID[serviceListedID] == nil {
-		t.Fatalf("refs = %v, want both types listed and the us-west-2 RE ref", byID)
+	if len(refs) != 2 || byID["prod"] == nil || byID[serviceListedID] == nil {
+		t.Fatalf("refs = %v, want both types listed", byID)
 	}
 }
 
@@ -525,8 +523,8 @@ func TestScanServiceViaExplorerKeepsRefsWhenListingFails(t *testing.T) {
 	if errors.As(leaves[0], &denied) {
 		t.Fatal("a throttled listing was reported as an access denial")
 	}
-	if byID := refIDs(refs); len(refs) != 3 || byID[serviceARN] == nil {
-		t.Fatalf("refs = %v, want every RE ref kept", byID)
+	if byID := refIDs(refs); len(refs) != 2 || byID[serviceARN] == nil {
+		t.Fatalf("refs = %v, want every RE ref of the region kept", byID)
 	}
 }
 

@@ -202,7 +202,8 @@ func (s *CloudControlScanner) SetResourceExplorer(re ResourceExplorer) {
 
 // ScanService lists every resource of every CFN type known for the service.
 // When a Resource Explorer is wired, prefer RE for discovery (one indexed
-// search across regions) and use CC.GetResource only for the type lookup.
+// search, kept to the scanner's region and global resources) and use
+// CC.GetResource only for the type lookup.
 //
 // It returns the refs it observed even when it also returns an error: the
 // error joins one entry per type that failed, so the caller can report the
@@ -692,6 +693,7 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 	if err != nil {
 		err = fmt.Errorf("ResourceExplorer.QueryByService(%s): %w", serviceName, err)
 	}
+	refs = s.ownExplorerRefs(serviceName, refs)
 
 	discovery.mu.Lock()
 	reverse := discovery.reverse
@@ -726,6 +728,42 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 		return refs, err
 	}
 	return s.resolveExplorerRefs(ctx, serviceName, refs)
+}
+
+// explorerRegionGlobal is the region Resource Explorer reports for resources that belong to
+// no region, such as IAM roles.
+const explorerRegionGlobal = "global"
+
+// ownExplorerRefs keeps the Resource Explorer refs this scanner owns. With an aggregator
+// index a search returns every indexed region, but the scanner describes through its own
+// region's Cloud Control client, and when several regions are scanned each region's scanner
+// owns its refs. It keeps the scope Cloud Control listing has: every ref of a global service
+// (whichever region RE indexed it in, as S3 buckets are indexed in their home region), and
+// every ref RE marks global, both stamped Region "" as listType does so scans of several
+// regions dedupe them, and otherwise the refs of the scanner's region.
+//
+// It filters the results rather than adding region: to the query because a region filter
+// cannot express the global-service scope: an S3 bucket outside the scanner's region would
+// be lost to every scanner.
+func (s *CloudControlScanner) ownExplorerRefs(
+	serviceName string, refs []*pb.ResourceRef,
+) []*pb.ResourceRef {
+	global := globalServices[strings.ToLower(serviceName)]
+	own := make([]*pb.ResourceRef, 0, len(refs))
+	for _, r := range refs {
+		if global || r.Region == "" || r.Region == explorerRegionGlobal {
+			r.Region = ""
+			own = append(own, r)
+		} else if r.Region == s.cfg.Region {
+			own = append(own, r)
+		}
+	}
+	if dropped := len(refs) - len(own); dropped > 0 {
+		log.Printf("CloudControl: %s: left %d Resource Explorer refs of other regions to "+
+			"their regions' scans", serviceName, dropped)
+	}
+	assert.That(len(own) <= len(refs), "scanner: keeping own RE refs keeps at most every ref")
+	return own
 }
 
 // explorerTypeOverrides maps Resource Explorer types whose "service:resource"
