@@ -41,3 +41,32 @@ func TestCheckExistingPack(t *testing.T) {
 		t.Fatalf("existing pack with --force: %v", err)
 	}
 }
+
+// --force reinstalls over an existing directory; it must never also accept a changed hash for a
+// pinned version. Only --repin does that.
+func TestParsePackInstallFlagsKeepsForceAndRepinApart(t *testing.T) {
+	opts, err := parsePackInstallFlags([]string{"--force", "jlgore/cfi-ccc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.force || opts.repin || opts.allowUnverified {
+		t.Fatalf("--force parsed as %+v, want force only", opts)
+	}
+	if opts.packRef != "jlgore/cfi-ccc" || opts.version != "latest" {
+		t.Fatalf("ref %q version %q", opts.packRef, opts.version)
+	}
+
+	opts, err = parsePackInstallFlags([]string{"--repin", "--allow-unverified", "jlgore/cfi-ccc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.force || !opts.repin || !opts.allowUnverified {
+		t.Fatalf("--repin --allow-unverified parsed as %+v", opts)
+	}
+}
+
+func TestParsePackInstallFlagsRequiresRef(t *testing.T) {
+	if _, err := parsePackInstallFlags([]string{"--force"}); err == nil {
+		t.Fatal("missing pack ref accepted")
+	}
+}
