@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jlgore/corkscrew/internal/assert/asserttest"
 )
 
 type testEntry struct {
@@ -240,15 +242,46 @@ func TestExtractFileExactNameMatch(t *testing.T) {
 	}
 }
 
+// Both callers resolve the destination with filepath.Abs before extracting, so a relative or
+// unclean destination is a caller bug, not bad input: it trips an assertion.
 func TestDestinationMustBeAbsoluteAndClean(t *testing.T) {
 	src := writeTarGz(t, t.TempDir(), []testEntry{{name: "root/a", body: "x"}})
 	for _, dest := range []string{"relative/dir", "/tmp/a/../b", "/tmp/a/"} {
-		if err := ExtractTree(FormatTarGz, src, dest, 1, testLimits); err == nil {
-			t.Errorf("ExtractTree(%q) succeeded", dest)
-		}
-		if err := ExtractFile(FormatTarGz, src, "a", dest, testLimits); err == nil {
-			t.Errorf("ExtractFile(%q) succeeded", dest)
-		}
+		asserttest.FailsWith(t, "absolute and clean", func() {
+			_ = ExtractTree(FormatTarGz, src, dest, 1, testLimits)
+		})
+		asserttest.FailsWith(t, "absolute and clean", func() {
+			_ = ExtractFile(FormatTarGz, src, "a", dest, testLimits)
+		})
+	}
+}
+
+// Every byte the budget admits is either written or skipped, and the written bytes never pass
+// BytesMax. A budget whose books do not balance would mean a limit check was bypassed.
+func TestBudgetAssertsBytesWrittenWithinLimit(t *testing.T) {
+	limits := Limits{BytesMax: 10, EntryCountMax: 1, EntryBytesMax: 10}
+	b := newBudget(limits)
+	b.written = 11
+	b.remaining = -1
+	asserttest.FailsWith(t, "BytesMax", func() { b.assertBalanced() })
+
+	b = newBudget(limits)
+	b.written = 4
+	asserttest.FailsWith(t, "accounted", func() { b.assertBalanced() })
+
+	b = newBudget(limits)
+	b.written, b.skipped, b.remaining = 4, 3, 3
+	b.assertBalanced()
+}
+
+func TestExtractTreeBalancesBudgetAcrossWrittenAndSkippedEntries(t *testing.T) {
+	src := writeTarGz(t, t.TempDir(), []testEntry{
+		{name: "root/", typeflag: tar.TypeDir},
+		{name: "root/a", body: "abc"},
+		{name: "root/b", body: "defg"},
+	})
+	if err := ExtractTree(FormatTarGz, src, t.TempDir(), 1, testLimits); err != nil {
+		t.Fatal(err)
 	}
 }
 
