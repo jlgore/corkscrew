@@ -81,6 +81,8 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 			"secret_store 023e105f4ecef8ad9ca31a8372d0c356",
 			"secret_store_secret 3fd85f74b32742f1bff64a85009dda07",
 			"secret_store_secret 3fd85f74b32742f1bff64a85009dda08",
+			"secret_store_secret 3fd85f74b32742f1bff64a85009dda09",
+			"secret_store_secret 3fd85f74b32742f1bff64a85009dda0a",
 		}},
 	}
 	for _, tt := range tests {

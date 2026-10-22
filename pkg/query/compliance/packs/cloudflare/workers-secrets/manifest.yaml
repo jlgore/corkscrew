@@ -1,0 +1,228 @@
+apiVersion: v1
+kind: QueryPack
+metadata:
+  name: workers-secrets
+  namespace: cloudflare/workers-secrets
+  version: 1.0.0
+  description: "Secret hygiene for Cloudflare Workers: plaintext credentials, Secrets Store rotation, scope, and sprawl."
+  author: Corkscrew
+  tags:
+    - cloudflare
+    - workers
+    - secrets
+  provider: cloudflare
+  resources:
+    - worker_binding
+    - secret_store_secret
+  min_engine_version: 1.0.0
+  labels:
+    category: security
+    domain: secrets
+  annotations:
+    requires: >-
+      Scans of the cloudflare workers and data services. Corkscrew never stores binding values:
+      the plaintext controls read signals the provider derives (looks_like_credential,
+      credential_reason) and never the value itself.
+
+spec:
+  parameters:
+    - name: secret_name_pattern
+      description: A regular expression matched against plain_text binding names that suggest a secret.
+      type: string
+      default: '(?i)(token|secret|passw|api_?key|access_?key|private_?key|credential)'
+    - name: max_secret_age_days
+      description: Longest a Secrets Store secret may go without being modified (rotated), in days.
+      type: int
+      default: 90
+    - name: as_of_date
+      description: The date secret ages are measured to, as YYYY-MM-DD. Empty means today.
+      type: string
+      default: ""
+    - name: min_duplicate_scripts
+      description: How many Workers holding a secret_text of the same name count as duplication.
+      type: int
+      default: 3
+    - name: allowed_secret_scopes
+      description: The Secrets Store scopes a secret may have.
+      type: list
+      default: [workers]
+
+  queries:
+    - id: CF.SEC.01
+      title: Plaintext binding holds a credential
+      description: |
+        A plain_text or json binding holds a value shaped like a credential: a known key
+        format (AWS, GitHub, Stripe, Slack, GitLab, Google, a private key, a JWT, a URL with a
+        password) or a long, random-looking token. Plaintext bindings are shown in the
+        dashboard and API to anyone who can read the Worker's settings, and they end up in
+        Wrangler configuration files and source control.
+      objective: Credentials are stored as secrets, never as plaintext variables.
+      severity: CRITICAL
+      category: security
+      control_family: Identification and Authentication
+      tags: [secrets, plaintext]
+      query_file: queries/plaintext_credentials.sql
+      control_mappings:
+        NIST_800_53: [IA-5, SC-28]
+      remediation:
+        description: Rotate the credential, and store the new one as a secret.
+        complexity: MEDIUM
+        estimated_time: 30 minutes
+        steps:
+          - Treat the credential as exposed, and revoke or rotate it with its issuer.
+          - Store the new value with `wrangler secret put <NAME>`, or in Secrets Store and bind it.
+          - Remove the variable from `vars` in the Wrangler configuration, and purge it from source control history.
+        risks:
+          - The Worker breaks until the new secret is in place.
+      references:
+        - name: Secrets
+          url: https://developers.cloudflare.com/workers/configuration/secrets/
+          type: documentation
+      enabled: true
+
+    - id: CF.SEC.02
+      title: Plaintext binding is named like a secret
+      description: |
+        A plain_text binding's name (TOKEN, SECRET, PASSWORD, API_KEY, and similar) suggests
+        it holds a secret, even if its value doesn't match a known credential format.
+      objective: Values named as secrets are stored as secrets.
+      severity: HIGH
+      category: security
+      control_family: Identification and Authentication
+      tags: [secrets, plaintext]
+      query_file: queries/plaintext_secret_names.sql
+      parameters: [secret_name_pattern]
+      control_mappings:
+        NIST_800_53: [IA-5, SC-28]
+      remediation:
+        description: Move the value to a secret, or rename the variable if it isn't one.
+        complexity: LOW
+        estimated_time: 15 minutes
+        steps:
+          - If the value is sensitive, store it with `wrangler secret put <NAME>` and remove it from `vars`.
+          - If it isn't, rename it so it doesn't read as a secret.
+      references:
+        - name: Environment variables
+          url: https://developers.cloudflare.com/workers/configuration/environment-variables/
+          type: documentation
+      enabled: true
+
+    - id: CF.SEC.03
+      title: Secrets Store secret hasn't been rotated
+      description: |
+        The secret hasn't been modified in more than max_secret_age_days. A long-lived
+        credential gives a leak a long useful life.
+      objective: Shared secrets are rotated on a schedule.
+      severity: MEDIUM
+      category: security
+      control_family: Identification and Authentication
+      tags: [secrets, rotation]
+      query_file: queries/secret_rotation.sql
+      parameters: [max_secret_age_days, as_of_date]
+      control_mappings:
+        NIST_800_53: [IA-5]
+      remediation:
+        description: Rotate the secret.
+        complexity: MEDIUM
+        estimated_time: 30 minutes
+        steps:
+          - Issue a new credential, update the secret in Secrets Store, and revoke the old credential.
+      references:
+        - name: Secrets Store
+          url: https://developers.cloudflare.com/secrets-store/
+          type: documentation
+      enabled: true
+
+    - id: CF.SEC.04
+      title: Secrets Store secret is unused
+      description: |
+        The secret is scoped to Workers, but no Worker binds it. An unused credential is still a
+        credential: it can leak, and nobody notices when it does.
+      objective: Every stored secret is in use.
+      severity: LOW
+      category: security
+      control_family: Identification and Authentication
+      tags: [secrets, hygiene]
+      query_file: queries/unused_secrets.sql
+      control_mappings:
+        NIST_800_53: [IA-5, CM-7]
+      remediation:
+        description: Delete the secret, after revoking the credential it holds.
+        complexity: LOW
+        estimated_time: 15 minutes
+        steps:
+          - Confirm nothing outside Workers uses it, revoke the credential with its issuer, and delete the secret.
+      enabled: true
+
+    - id: CF.SEC.05
+      title: The same per-Worker secret is copied into many Workers
+      description: |
+        A secret_text of this name is set separately in at least min_duplicate_scripts Workers.
+        Copies are usually the same credential, so rotating it means updating every Worker, and
+        per-Worker secrets record no modification date to show whether anyone did.
+      objective: Shared credentials have one source of truth.
+      severity: LOW
+      category: security
+      control_family: Identification and Authentication
+      tags: [secrets, sprawl]
+      query_file: queries/duplicated_secrets.sql
+      parameters: [min_duplicate_scripts]
+      control_mappings:
+        NIST_800_53: [IA-5]
+      remediation:
+        description: Move the shared credential into Secrets Store.
+        complexity: MEDIUM
+        estimated_time: 1 hour
+        steps:
+          - Create the secret in Secrets Store, bind it to each Worker, and remove the per-Worker copies.
+          - Better still, give each Worker its own credential, so each can be revoked alone.
+      references:
+        - name: Secrets Store and Workers
+          url: https://developers.cloudflare.com/secrets-store/integrations/workers/
+          type: documentation
+      enabled: true
+
+    - id: CF.SEC.06
+      title: Secrets Store secret is scoped beyond what's allowed
+      description: |
+        The secret's scopes include a service outside allowed_secret_scopes. Corkscrew sees only
+        Worker bindings, so it can't tell whether another scope is in use; the allowlist stands
+        in for that decision.
+      objective: Each secret is available only to the services that need it.
+      severity: MEDIUM
+      category: security
+      control_family: Access Control
+      tags: [secrets, least-privilege]
+      query_file: queries/secret_scopes.sql
+      parameters: [allowed_secret_scopes]
+      control_mappings:
+        NIST_800_53: [AC-6]
+      remediation:
+        description: Remove the scopes the secret doesn't need, or allow them.
+        complexity: LOW
+        estimated_time: 10 minutes
+        steps:
+          - Edit the secret in Secrets Store and remove the extra scopes, or add them to allowed_secret_scopes if they're intended.
+      enabled: true
+
+    - id: CF.SEC.07
+      title: Worker binds a secret that isn't active
+      description: |
+        The Worker binds a Secrets Store secret whose status is pending or deleted, so the
+        binding doesn't provide a usable credential: a rotation was left unfinished, or the
+        secret is on its way out while the Worker still depends on it.
+      objective: Workers bind only active secrets.
+      severity: HIGH
+      category: security
+      control_family: Configuration Management
+      tags: [secrets, rotation]
+      query_file: queries/inactive_secret_bindings.sql
+      control_mappings:
+        NIST_800_53: [IA-5, CM-3]
+      remediation:
+        description: Finish the rotation, or point the binding at an active secret.
+        complexity: LOW
+        estimated_time: 15 minutes
+        steps:
+          - Check the secret's status in Secrets Store and complete or roll back the change, or rebind the Worker to an active secret.
+      enabled: true

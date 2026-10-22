@@ -2,6 +2,7 @@ package packtest
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/jlgore/corkscrew/internal/app/findings"
@@ -31,8 +32,8 @@ func TestCloudflareGoldenPersists(t *testing.T) {
 		`SELECT count(*) FROM cloudflare_resources WHERE type = 'worker_binding'`).Scan(&bindings); err != nil {
 		t.Fatal(err)
 	}
-	if bindings != 24 {
-		t.Errorf("%d worker_binding rows, want 24", bindings)
+	if bindings != 28 {
+		t.Errorf("%d worker_binding rows, want 28", bindings)
 	}
 
 	rows, err := session.QueryContext(context.Background(),
@@ -54,7 +55,7 @@ func TestCloudflareGoldenPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	billing := perScript[cloudflareAccount+"/workers/billing-cron"]
-	if len(perScript[cloudflareAccount+"/workers/api-gateway"]) != 7 || len(billing) != 1 || billing[0] != "d1_database" {
+	if len(perScript[cloudflareAccount+"/workers/api-gateway"]) != 7 || !slices.Contains(billing, "d1_database") {
 		t.Errorf("binds edges in cloud_relationships: %v", perScript)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/d1"
@@ -178,6 +179,7 @@ func (p *CloudflareProvider) secretStoreSecretListResource(accountID, storeID, s
 		"status":     string(secret.Status),
 		"comment":    secret.Comment,
 	}
+	addSecretTimes(attrs, secret.Created, secret.Modified)
 	if len(secret.Scopes) > 0 {
 		attrs["scopes"] = strings.Join(secret.Scopes, ",")
 	}
@@ -201,6 +203,7 @@ func (p *CloudflareProvider) secretStoreSecretResource(accountID, storeID, store
 		"status":     string(secret.Status),
 		"comment":    secret.Comment,
 	}
+	addSecretTimes(attrs, secret.Created, secret.Modified)
 	if len(secret.Scopes) > 0 {
 		attrs["scopes"] = strings.Join(secret.Scopes, ",")
 	}
@@ -213,4 +216,15 @@ func (p *CloudflareProvider) secretStoreSecretResource(accountID, storeID, store
 		resource.ModifiedAt = timestamppb.New(secret.Modified)
 	}
 	return resource
+}
+
+// addSecretTimes records when a secret was created and last modified (its last rotation) as
+// attributes. Storage writes created_at and modified_at as scan times, so packs read these.
+func addSecretTimes(attrs map[string]string, created, modified time.Time) {
+	if !created.IsZero() {
+		attrs["created_on"] = created.UTC().Format(time.RFC3339)
+	}
+	if !modified.IsZero() {
+		attrs["modified_on"] = modified.UTC().Format(time.RFC3339)
+	}
 }

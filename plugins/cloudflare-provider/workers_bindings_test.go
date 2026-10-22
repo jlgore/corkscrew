@@ -59,8 +59,8 @@ func TestScanWorkersBindingsFromBaseline(t *testing.T) {
 		"billing-cron/STAGING_CACHE":  {"kind": "kv_namespace"},
 	}
 	got := bindingAttrs(t, resp)
-	if len(got) != 24 {
-		t.Errorf("%d bindings, want 24", len(got))
+	if len(got) != 28 {
+		t.Errorf("%d bindings, want 28", len(got))
 	}
 	for binding, attrs := range want {
 		if got[binding] == nil {
