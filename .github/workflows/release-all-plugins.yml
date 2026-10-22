@@ -21,6 +21,13 @@ on:
   release:
     types: [published]
 
+# The repository's default token is read-only, and each provider workflow this calls asks for
+# contents: write (to publish its release) and packages: write. A caller must grant at least what
+# its called workflows request, or GitHub rejects the run before any job starts.
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
