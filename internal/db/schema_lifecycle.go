@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jlgore/corkscrew/internal/assert"
 	providercatalog "github.com/jlgore/corkscrew/pkg/providers"
 )
 
@@ -576,9 +577,8 @@ func schemaColumns(ctx context.Context, tx *sql.Tx, table string) (map[string]bo
 }
 
 func quoteSchemaIdentifier(name string) string {
-	if !schemaIdentifier.MatchString(name) {
-		panic("unsafe schema identifier: " + name)
-	}
+	// Callers build names from the official provider catalog and literals, never user input.
+	assert.Thatf(schemaIdentifier.MatchString(name), "db: safe schema identifier: %q", name)
 	return `"` + name + `"`
 }
 

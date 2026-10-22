@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jlgore/corkscrew/internal/assert"
 	"gopkg.in/yaml.v3"
 )
 
@@ -144,9 +145,9 @@ func DefaultCorkscrewYAML() string {
 
 func DefaultCorkscrewConfig() *CorkscrewConfig {
 	var cfg CorkscrewConfig
-	if err := yaml.Unmarshal([]byte(defaultConfigYAML), &cfg); err != nil {
-		panic(err)
-	}
+	// defaultConfigYAML is a constant, so failing to parse it is a programmer error.
+	err := yaml.Unmarshal([]byte(defaultConfigYAML), &cfg)
+	assert.Thatf(err == nil, "config: built-in default config parses: %v", err)
 	cfg.ApplyDefaults()
 	return &cfg
 }
