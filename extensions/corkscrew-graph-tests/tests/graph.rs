@@ -1,3 +1,10 @@
+// Integration tests: a failed fixture setup or query should abort with a panic and
+// the test harness reports it, so `unwrap()` is the clearest spelling here.
+#![allow(
+    clippy::unwrap_used,
+    reason = "test code: a panic is the failure report"
+)]
+
 use corkscrew_graph_tests::functions::blast::GraphBlastRadiusVTab;
 use corkscrew_graph_tests::functions::correlate_connectivity::GraphCorrelateConnectivityVTab;
 use corkscrew_graph_tests::functions::correlate_dns::GraphCorrelateDNSVTab;
@@ -385,8 +392,8 @@ fn load_graph_counts_nodes_and_edges() {
     make_fixture(&conn);
     let providers = schema::detect_providers(&conn).unwrap();
     let loaded = loader::load_graph(&conn, &providers).unwrap();
-    assert_eq!(loaded.node_count, 3);
-    assert_eq!(loaded.edge_count, 2);
+    assert_eq!(loaded.graph.node_count(), 3);
+    assert_eq!(loaded.graph.edge_count(), 2);
     assert_eq!(
         loaded
             .graph
@@ -395,14 +402,7 @@ fn load_graph_counts_nodes_and_edges() {
             .count(),
         3
     );
-    assert_eq!(
-        loaded
-            .graph
-            .edge_weights()
-            .filter(|edge| edge.provider == "aws")
-            .count(),
-        2
-    );
+    assert_eq!(loaded.provider_counts.get("aws"), Some(&(3, 2)));
 }
 
 #[test]
@@ -441,8 +441,8 @@ fn load_graph_accepts_versioned_schema_relationship_views() {
     let detected = schema::detect_providers(&conn).unwrap();
     let loaded = loader::load_graph(&conn, &detected).unwrap();
     assert_eq!(detected.len(), 6);
-    assert_eq!(loaded.node_count, 6);
-    assert_eq!(loaded.edge_count, 1);
+    assert_eq!(loaded.graph.node_count(), 6);
+    assert_eq!(loaded.graph.edge_count(), 1);
     assert!(detected
         .iter()
         .any(|provider| provider.provider == "github"));
@@ -543,8 +543,8 @@ fn cache_readers_and_invalidator_can_race_safely() {
             let conn = Connection::open(&fixture_path).unwrap();
             for _ in 0..25 {
                 let loaded = cache::get_or_load(&conn, &fixture_path).unwrap();
-                assert_eq!(loaded.node_count, 3);
-                assert_eq!(loaded.edge_count, 2);
+                assert_eq!(loaded.graph.node_count(), 3);
+                assert_eq!(loaded.graph.edge_count(), 2);
             }
         }));
     }
@@ -1377,8 +1377,8 @@ fn load_graph_skips_relationships_with_missing_nodes() {
     let providers = schema::detect_providers(&conn).unwrap();
     let loaded = loader::load_graph(&conn, &providers).unwrap();
 
-    assert_eq!(loaded.node_count, 3);
-    assert_eq!(loaded.edge_count, 2);
+    assert_eq!(loaded.graph.node_count(), 3);
+    assert_eq!(loaded.graph.edge_count(), 2);
 }
 
 #[test]
@@ -1623,7 +1623,7 @@ fn cache_auto_invalidates_when_file_changes_on_disk() {
     // the cache key and the fingerprint source.
     let load_conn = Connection::open(&fixture_path).unwrap();
     let g1 = cache::get_or_load(&load_conn, &fixture_path).unwrap();
-    assert_eq!(g1.node_count, 3);
+    assert_eq!(g1.graph.node_count(), 3);
     drop(load_conn);
 
     // Sleep past mtime resolution (1 s on most filesystems), then rewrite the
@@ -1660,7 +1660,7 @@ fn cache_auto_invalidates_when_file_changes_on_disk() {
         !std::sync::Arc::ptr_eq(&g1, &g2),
         "expected fresh load after file mtime change"
     );
-    assert_eq!(g2.node_count, 4);
+    assert_eq!(g2.graph.node_count(), 4);
 }
 
 #[test]
@@ -2518,7 +2518,8 @@ fn load_graph_enforces_node_and_edge_limits() {
         edge_count_max: 2,
     };
     let loaded = load_graph_with_limits(&conn, &providers, exact).unwrap();
-    assert_eq!((loaded.node_count, loaded.edge_count), (3, 2));
+    assert_eq!(loaded.graph.node_count(), 3);
+    assert_eq!(loaded.graph.edge_count(), 2);
 
     let nodes = GraphLimits {
         node_count_max: 2,
@@ -2661,7 +2662,7 @@ fn cache_does_not_store_a_graph_whose_file_changed_during_load() {
         Ok(loaded)
     })
     .unwrap();
-    assert_eq!(racing.node_count, 3);
+    assert_eq!(racing.graph.node_count(), 3);
 
     let next = cache::get_or_load(&conn, &fixture_path).unwrap();
     assert!(

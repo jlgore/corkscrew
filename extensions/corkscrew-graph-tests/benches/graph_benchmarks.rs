@@ -1,3 +1,10 @@
+// Benchmarks: a failed fixture setup or query should abort with a panic and
+// the test harness reports it, so `unwrap()` is the clearest spelling here.
+#![allow(
+    clippy::unwrap_used,
+    reason = "test code: a panic is the failure report"
+)]
+
 use corkscrew_graph_tests::functions::common::{
     collect_blast_rows, collect_traverse_rows, TraversalDirection, TRAVERSE_ROWS_MAX,
 };
@@ -67,8 +74,9 @@ fn synthetic_loaded_graph(instance_count: usize, fanout: usize) -> loader::Loade
 fn bench_traverse_depth_five(c: &mut Criterion) {
     let instance_count = TRAVERSE_TARGET_TOTAL_NODES * TRAVERSE_FANOUT / (TRAVERSE_FANOUT + 1);
     let loaded = synthetic_loaded_graph(instance_count, TRAVERSE_FANOUT);
+    let total_nodes = loaded.graph.node_count();
     let mut group = c.benchmark_group("traverse_depth_five");
-    group.bench_function(BenchmarkId::new("total_nodes", loaded.node_count), |b| {
+    group.bench_function(BenchmarkId::new("total_nodes", total_nodes), |b| {
         b.iter(|| {
             let rows = collect_traverse_rows(
                 &loaded,

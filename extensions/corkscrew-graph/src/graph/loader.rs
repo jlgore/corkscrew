@@ -18,8 +18,6 @@ pub struct ResourceNode {
     pub region: String,
     pub account_id: String,
     pub provider: String,
-    pub arn: Option<String>,
-    pub tags: JsonValue,
 }
 
 /// Metadata attached to each graph edge
@@ -27,7 +25,6 @@ pub struct ResourceNode {
 pub struct RelationshipEdge {
     pub relationship_type: String,
     pub properties: JsonValue,
-    pub provider: String,
 }
 
 /// Ten times a very large multi-account estate (~1M resources); at roughly 400 bytes of
@@ -47,8 +44,6 @@ pub struct LoadedGraph {
     pub node_map: NodeMap,
     pub loaded_at: DateTime<Utc>,
     pub loaded_at_instant: Instant,
-    pub node_count: usize,
-    pub edge_count: usize,
     /// Per-provider (nodes, edges) counts populated during load so that
     /// `graph_info` doesn't have to re-walk the whole graph per call.
     pub provider_counts: BTreeMap<String, (i64, i64)>,
@@ -134,17 +129,13 @@ pub fn load_graph_with_limits(
         }
     }
 
-    let node_count = graph.node_count();
-    let edge_count = graph.edge_count();
-    assert!(node_count <= limits.node_count_max);
-    assert!(edge_count <= limits.edge_count_max);
+    assert!(graph.node_count() <= limits.node_count_max);
+    assert!(graph.edge_count() <= limits.edge_count_max);
     Ok(LoadedGraph {
         graph,
         node_map,
         loaded_at: Utc::now(),
         loaded_at_instant: Instant::now(),
-        node_count,
-        edge_count,
         provider_counts,
         file_fingerprint: None,
     })
@@ -160,7 +151,7 @@ fn load_nodes(
     node_map: &mut NodeMap,
 ) -> Result<i64> {
     let sql = format!(
-        "SELECT id, type, name, region, account_id, arn, tags FROM {}",
+        "SELECT id, type, name, region, account_id FROM {}",
         provider.resources_table
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -176,10 +167,6 @@ fn load_nodes(
                 limits.node_count_max
             );
         }
-        let tags = match row.get::<_, Option<String>>(6)?.as_deref() {
-            Some(text) => serde_json::from_str(text).unwrap_or(JsonValue::Null),
-            None => JsonValue::Null,
-        };
         let node = ResourceNode {
             id: id.clone(),
             resource_type: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
@@ -187,8 +174,6 @@ fn load_nodes(
             region: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
             account_id: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
             provider: provider.provider.clone(),
-            arn: row.get(5)?,
-            tags,
         };
         let index = graph.add_node(node);
         node_map.insert(id, index);
@@ -235,7 +220,6 @@ fn load_edges(
         let edge = RelationshipEdge {
             relationship_type: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
             properties,
-            provider: provider.provider.clone(),
         };
         graph.add_edge(from_index, to_index, edge);
         added += 1;
