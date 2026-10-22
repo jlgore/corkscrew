@@ -219,11 +219,23 @@ func hydrateSnapshot(ctx context.Context, target string, scan dataaccess.ScanRec
 		if err := decodeJSONColumn(observation.Tags, &tags); err != nil {
 			return fmt.Errorf("decode tags of %s: %w", observation.ResourceID, err)
 		}
-		resources = append(resources, &pb.Resource{Provider: observation.Provider, Id: observation.ResourceID, Name: observation.Name,
-			Type: observation.Type, Service: observation.Service, Region: observation.Location, AccountId: observation.AccountID,
-			Arn: observation.ARN, ParentId: observation.ParentID, Tags: tags, Attributes: observation.Attributes,
-			RawData: observation.RawData, DiscoveredAt: timestamppb.New(observation.ObservedAt),
-			Relationships: bySource[observation.Provider+"\x00"+observation.ResourceID]})
+		resource := &pb.Resource{
+			Provider: observation.Provider, Id: observation.ResourceID, Name: observation.Name,
+			Type: observation.Type, Service: observation.Service, Region: observation.Location,
+			AccountId: observation.AccountID, Arn: observation.ARN, ParentId: observation.ParentID,
+			Tags: tags, Attributes: observation.Attributes, RawData: observation.RawData,
+			DiscoveredAt:  timestamppb.New(observation.ObservedAt),
+			Relationships: bySource[observation.Provider+"\x00"+observation.ResourceID],
+		}
+		// Packs judge age and rotation from created_at and modified_at; carry the resource's
+		// own times into the snapshot.
+		if observation.CreatedAt != nil {
+			resource.CreatedAt = timestamppb.New(*observation.CreatedAt)
+		}
+		if observation.ModifiedAt != nil {
+			resource.ModifiedAt = timestamppb.New(*observation.ModifiedAt)
+		}
+		resources = append(resources, resource)
 	}
 	// The snapshot's services and scopes decide what the evaluator treats as
 	// observed, so a corrupt value must fail rather than shrink to nothing.

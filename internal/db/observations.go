@@ -29,22 +29,26 @@ func (gs *GraphStore) storeScanObservations(ctx context.Context, resources []*pb
 		if _, ok := seenResources[key]; !ok {
 			seenResources[key] = struct{}{}
 			tags, _ := json.Marshal(resource.Tags)
+			createdAt, modifiedAt := resourceTimes(resource)
 			if _, err := gs.scanExecContext(ctx, `
 INSERT INTO resource_observations (
   scan_id, provider, resource_id, name, type, service, location,
-  account_id, arn, parent_id, tags, attributes, raw_data, semantic_hash, observed_at
+  account_id, arn, parent_id, tags, attributes, raw_data, semantic_hash, observed_at,
+  created_at, modified_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, try_cast(? AS JSON),
-          try_cast(? AS JSON), try_cast(? AS JSON), ?, ?)
+          try_cast(? AS JSON), try_cast(? AS JSON), ?, ?, ?, ?)
 ON CONFLICT(scan_id, provider, resource_id) DO UPDATE SET
   name = excluded.name, type = excluded.type, service = excluded.service,
   location = excluded.location, account_id = excluded.account_id,
   arn = excluded.arn, parent_id = excluded.parent_id, tags = excluded.tags,
   attributes = excluded.attributes, raw_data = excluded.raw_data,
-  semantic_hash = excluded.semantic_hash, observed_at = excluded.observed_at
+  semantic_hash = excluded.semantic_hash, observed_at = excluded.observed_at,
+  created_at = excluded.created_at, modified_at = excluded.modified_at
 `, metadata.ID, provider, resource.Id, resource.Name, resource.Type, resource.Service,
 				resource.Region, resource.AccountId, resource.Arn, resource.ParentId,
 				string(tags), jsonOrNull(resource.Attributes), jsonOrNull(resource.RawData),
-				resourceSemanticHash(resource), metadata.EndedAt); err != nil {
+				resourceSemanticHash(resource), metadata.EndedAt,
+				createdAt, modifiedAt); err != nil {
 				return err
 			}
 		}

@@ -41,6 +41,9 @@ type Observation struct {
 	RawData      string    `json:"raw_data,omitempty"`
 	SemanticHash string    `json:"semantic_hash"`
 	ObservedAt   time.Time `json:"observed_at"`
+	// The resource's own creation and modification times, when the provider reported them.
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	ModifiedAt *time.Time `json:"modified_at,omitempty"`
 }
 
 type RelationshipObservation struct {
@@ -123,7 +126,7 @@ SELECT scan_id, provider, resource_id, COALESCE(name, ''), type,
        COALESCE(service, ''), COALESCE(location, ''), COALESCE(account_id, ''),
        COALESCE(arn, ''), COALESCE(parent_id, ''), COALESCE(CAST(tags AS VARCHAR), ''),
        COALESCE(CAST(attributes AS VARCHAR), ''), COALESCE(CAST(raw_data AS VARCHAR), ''),
-       semantic_hash, observed_at
+       semantic_hash, observed_at, created_at, modified_at
 FROM resource_observations WHERE scan_id = ?
 ORDER BY provider, resource_id`, scanID)
 	if err != nil {
@@ -133,12 +136,19 @@ ORDER BY provider, resource_id`, scanID)
 	var result []Observation
 	for rows.Next() {
 		var observation Observation
+		var createdAt, modifiedAt sql.NullTime
 		if err := rows.Scan(&observation.ScanID, &observation.Provider, &observation.ResourceID,
 			&observation.Name, &observation.Type, &observation.Service, &observation.Location,
 			&observation.AccountID, &observation.ARN, &observation.ParentID, &observation.Tags,
 			&observation.Attributes, &observation.RawData, &observation.SemanticHash,
-			&observation.ObservedAt); err != nil {
+			&observation.ObservedAt, &createdAt, &modifiedAt); err != nil {
 			return nil, err
+		}
+		if createdAt.Valid {
+			observation.CreatedAt = &createdAt.Time
+		}
+		if modifiedAt.Valid {
+			observation.ModifiedAt = &modifiedAt.Time
 		}
 		result = append(result, observation)
 	}

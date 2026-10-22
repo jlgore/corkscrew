@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: QueryPack
+metadata:
+  name: timestamps
+  namespace: test/timestamps
+  version: 0.0.1
+  description: Reads modified_at, to prove resource times survive storage and snapshot hydration.
+  provider: cloudflare
+spec:
+  queries:
+    - id: TIMES.01
+      title: Secret modified since 2024
+      description: Fails a Secrets Store secret whose modified_at is before 2024-01-01.
+      severity: LOW
+      category: security
+      query_file: queries/modified.sql
+      enabled: true
