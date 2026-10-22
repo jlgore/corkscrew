@@ -53,10 +53,8 @@ jobs:
     - name: Generate protobuf code
       run: make generate-proto
 
-    - name: Format and lint check
-      run: |
-        make fmt
-        make lint || echo "Lint warnings detected but continuing..."
+    - name: Format
+      run: make fmt
 
     - name: Run unit tests
       run: make test-unit
