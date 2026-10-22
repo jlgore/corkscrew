@@ -487,3 +487,25 @@ func TestValidateManifest(t *testing.T) {
 		})
 	}
 }
+
+// A manifest that exists but doesn't parse reports the parse error, not "manifest not found".
+func TestPackLoader_MalformedManifestReportsParseError(t *testing.T) {
+	tempDir := t.TempDir()
+	packDir := filepath.Join(tempDir, "test-org", "broken")
+	if err := os.MkdirAll(packDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// An unquoted ": " inside a plain scalar is a YAML error.
+	manifest := "apiVersion: v1\nkind: QueryPack\nmetadata:\n  name: broken\n  description: Posture: exposure\n"
+	if err := os.WriteFile(filepath.Join(packDir, "manifest.yaml"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	loader := NewPackLoader().WithSearchPaths(tempDir).WithEmbeddedPacks(false)
+	_, err := loader.LoadPack(context.Background(), "test-org/broken")
+	if err == nil {
+		t.Fatal("LoadPack accepted a malformed manifest")
+	}
+	if strings.Contains(err.Error(), "manifest not found") || !strings.Contains(err.Error(), "parse manifest YAML") {
+		t.Fatalf("error = %v; want the YAML parse error", err)
+	}
+}
