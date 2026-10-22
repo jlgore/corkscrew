@@ -1,0 +1,83 @@
+[
+  {"op": "GET /accounts", "items": [
+    {"id": "9a7806061c88ada191ed06f989cc3dac", "name": "Acme Production", "type": "standard",
+     "created_on": "2024-01-15T10:00:00Z", "settings": {"enforce_twofactor": true}}
+  ]},
+  {"op": "GET /zones", "items": [
+    {"id": "023e105f4ecef8ad9ca31a8372d0c353", "name": "example.com", "status": "active",
+     "account": {"id": "9a7806061c88ada191ed06f989cc3dac", "name": "Acme Production"},
+     "activated_on": "2024-01-16T10:00:00Z", "created_on": "2024-01-15T10:00:00Z",
+     "modified_on": "2024-06-01T10:00:00Z", "development_mode": 0,
+     "meta": {"cdn_only": false, "custom_certificate_quota": 0, "dns_only": false,
+              "foundation_dns": false, "page_rule_quota": 3, "phishing_detected": false, "step": 2},
+     "name_servers": ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"],
+     "original_dnshost": null, "original_name_servers": null, "original_registrar": null,
+     "owner": {"id": "9a7806061c88ada191ed06f989cc3dac", "name": "Acme Production", "type": "organization"},
+     "plan": {"id": "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "name": "Free Website", "price": 0, "currency": "USD",
+              "frequency": "", "is_subscribed": true, "can_subscribe": false, "legacy_id": "free",
+              "legacy_discount": false, "externally_managed": false}}
+  ]},
+  {"op": "GET /zones/{zone_id}/dns_records", "params": {"zone_id": "023e105f4ecef8ad9ca31a8372d0c353"}, "items": [
+    {"id": "372e67954025e0ba6aaa6d586b9e0b59", "name": "www.example.com", "type": "A", "content": "198.51.100.4",
+     "ttl": 1, "proxied": true, "proxiable": true, "meta": {},
+     "created_on": "2024-01-16T10:00:00Z", "modified_on": "2024-01-16T10:00:00Z"},
+    {"id": "372e67954025e0ba6aaa6d586b9e0b60", "name": "example.com", "type": "TXT", "content": "\"v=spf1 -all\"",
+     "ttl": 3600, "proxied": false, "proxiable": false, "meta": {},
+     "created_on": "2024-01-16T10:00:00Z", "modified_on": "2024-01-16T10:00:00Z"}
+  ]},
+  {"op": "GET /accounts/{account_id}/workers/scripts", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"id": "api-gateway", "compatibility_date": "2025-09-01", "created_on": "2024-02-01T10:00:00Z",
+     "modified_on": "2025-09-10T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27a",
+     "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
+    {"id": "internal-auth", "compatibility_date": "2023-05-18", "created_on": "2023-05-18T10:00:00Z",
+     "modified_on": "2023-05-18T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27b",
+     "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"}
+  ]},
+  {"op": "GET /accounts/{account_id}/workers/domains", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"id": "dbe10b4bc17c295377eabd600e1787fd", "hostname": "api.example.com", "service": "api-gateway",
+     "environment": "production", "enabled": true, "previews_enabled": false,
+     "zone_id": "023e105f4ecef8ad9ca31a8372d0c353", "zone_name": "example.com",
+     "cert_id": "9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f08"}
+  ]},
+  {"op": "GET /zones/{zone_id}/workers/routes", "params": {"zone_id": "023e105f4ecef8ad9ca31a8372d0c353"}, "items": [
+    {"id": "023e105f4ecef8ad9ca31a8372d0c354", "pattern": "example.com/api/*", "script": "api-gateway"}
+  ]},
+  {"op": "GET /accounts/{account_id}/r2/buckets", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "result":
+    {"buckets": [{"name": "uploads", "creation_date": "2024-03-01T10:00:00Z", "location": "wnam",
+                  "jurisdiction": "default", "storage_class": "Standard"}]}
+  },
+  {"op": "GET /accounts/{account_id}/storage/kv/namespaces", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"id": "0f2ac74b498b48028cb68387c421e279", "title": "sessions", "supports_url_encoding": true}
+  ]},
+  {"op": "GET /accounts/{account_id}/queues", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"queue_id": "023e105f4ecef8ad9ca31a8372d0c355", "queue_name": "audit-events",
+     "created_on": "2024-03-01T10:00:00Z", "modified_on": "2024-03-01T10:00:00Z",
+     "producers_total_count": 1, "consumers_total_count": 0, "producers": [], "consumers": [],
+     "settings": {"delivery_delay": 0, "message_retention_period": 345600}}
+  ]},
+  {"op": "GET /accounts/{account_id}/d1/database", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"uuid": "c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e", "name": "billing", "version": "production",
+     "created_at": "2024-03-01T10:00:00Z", "jurisdiction": "eu"}
+  ]},
+  {"op": "GET /accounts/{account_id}/workers/durable_objects/namespaces", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"id": "5fd1cafff895419c8bcc647fc64ab8f0", "name": "api-gateway_RateLimiter", "class": "RateLimiter",
+     "script": "api-gateway", "use_sqlite": true}
+  ]},
+  {"op": "GET /accounts/{account_id}/workers/durable_objects/namespaces/{id}/objects",
+   "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "id": "5fd1cafff895419c8bcc647fc64ab8f0"}, "items": [
+    {"id": "fe7803fc55b964e09d94666545aab688d360c6bda69ba349ced1e5f28d2fc2c8", "hasStoredData": true}
+  ]},
+  {"op": "GET /accounts/{account_id}/secrets_store/stores", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
+    {"id": "023e105f4ecef8ad9ca31a8372d0c356", "name": "production", "created": "2024-04-01T10:00:00Z",
+     "modified": "2024-04-01T10:00:00Z"}
+  ]},
+  {"op": "GET /accounts/{account_id}/secrets_store/stores/{store_id}/secrets",
+   "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "store_id": "023e105f4ecef8ad9ca31a8372d0c356"}, "items": [
+    {"id": "3fd85f74b32742f1bff64a85009dda07", "store_id": "023e105f4ecef8ad9ca31a8372d0c356",
+     "name": "STRIPE_KEY", "status": "active", "comment": "payments", "scopes": ["workers"],
+     "created": "2024-04-01T10:00:00Z", "modified": "2025-08-01T10:00:00Z"},
+    {"id": "3fd85f74b32742f1bff64a85009dda08", "store_id": "023e105f4ecef8ad9ca31a8372d0c356",
+     "name": "LEGACY_WEBHOOK_SECRET", "status": "active", "comment": "", "scopes": ["workers", "ai_gateway"],
+     "created": "2023-01-01T10:00:00Z", "modified": "2023-01-01T10:00:00Z"}
+  ]}
+]

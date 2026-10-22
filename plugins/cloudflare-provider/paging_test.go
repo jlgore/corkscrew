@@ -4,17 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
-	"github.com/cloudflare/cloudflare-go/v6/option"
 	pb "github.com/jlgore/corkscrew/internal/proto"
-	"github.com/jlgore/corkscrew/internal/providers/cloudflareauth"
+	"github.com/jlgore/corkscrew/plugins/cloudflare-provider/internal/fakecf"
 )
 
 // setListItemsMax lowers the listing cap for one test.
@@ -53,40 +49,20 @@ func TestCollectAutoPagingCap(t *testing.T) {
 	}
 }
 
-// TestScanStorageItemCapIsErrorEntry runs the real KV pager against a server that returns the
+// TestScanStorageItemCapIsErrorEntry runs the real KV pager against a fake that returns the
 // same non-empty page forever. The SDK pager only stops on an empty page, so without the cap
 // the scan would run until its deadline.
 func TestScanStorageItemCapIsErrorEntry(t *testing.T) {
 	setListItemsMax(t, 5)
-	var kvRequests atomic.Int32
-	mux := http.NewServeMux()
-	const kvPath = "/accounts/acc-1/storage/kv/namespaces"
-	mux.HandleFunc(kvPath, func(w http.ResponseWriter, r *http.Request) {
-		kvRequests.Add(1)
-		fmt.Fprint(w, `{"success":true,"errors":[],"messages":[],`+
-			`"result":[{"id":"ns-a","title":"a"},{"id":"ns-b","title":"b"}],`+
-			`"result_info":{"page":1,"per_page":2,"count":2,"total_count":2}}`)
-	})
-	mux.HandleFunc("/accounts/acc-1/r2/buckets", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"success":true,"errors":[],"messages":[],"result":{"buckets":[]}}`)
-	})
-	mux.HandleFunc("/accounts/acc-1/queues", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"success":true,"errors":[],"messages":[],"result":[]}`)
-	})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		mux.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-
-	p := &CloudflareProvider{
-		initialized: true,
-		config: &cloudflareauth.CloudflareConfig{
-			Scope: cloudflareauth.ScopeConfig{AccountIDs: []string{"acc-1"}},
-		},
-		client: cloudflare.NewClient(option.WithBaseURL(srv.URL+"/"),
-			option.WithAPIToken("test"), option.WithMaxRetries(0)),
-	}
+	srv := fakecf.New(t)
+	const kvList = "GET /accounts/{account_id}/storage/kv/namespaces"
+	account := fakecf.Params{"account_id": fixtureAccountID}
+	srv.SetList(kvList, account,
+		map[string]any{"id": "0f2ac74b498b48028cb68387c421e27a", "title": "a"},
+		map[string]any{"id": "0f2ac74b498b48028cb68387c421e27b", "title": "b"})
+	srv.Fail(kvList, account, fakecf.Fault{Repeat: true})
+	p := newTestProvider(t, srv)
+	p.config.Scope.AccountIDs = []string{fixtureAccountID}
 
 	var resp *pb.ScanServiceResponse
 	var err error
@@ -110,7 +86,7 @@ func TestScanStorageItemCapIsErrorEntry(t *testing.T) {
 	if len(resp.Resources) != 5 {
 		t.Fatalf("resources = %d, want the 5 collected", len(resp.Resources))
 	}
-	if got := kvRequests.Load(); got != 3 {
+	if got := srv.Requests(kvList); got != 3 {
 		t.Fatalf("kv requests = %d, want 3 (pages of 2 up to a cap of 5)", got)
 	}
 }
