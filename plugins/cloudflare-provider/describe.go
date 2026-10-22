@@ -153,7 +153,9 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 		scriptName := firstNonEmpty(ref.GetBasicAttributes()["script_name"], scriptNameFromID(ref.GetId()), ref.GetName())
 		for _, script := range scripts {
 			if script.ID == scriptName {
-				return p.workerScriptResource(accountID, script), nil
+				// Describe sees one script, so it can't tell whether a route or domain serves it.
+				detail, _ := p.scriptDetail(ctx, accountID, script.ID)
+				return p.workerScriptResource(accountID, script, detail), nil
 			}
 		}
 		return nil, fmt.Errorf("worker_script %s not found in account %s", ref.GetId(), accountID)

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Params are an operation's path parameters, such as {"account_id": "..."}.
@@ -19,8 +20,9 @@ type Params map[string]string
 
 // Fault makes a route misbehave. Times is how many requests it applies to; zero means all.
 type Fault struct {
-	Status int  // respond with this HTTP status and a Cloudflare error envelope
-	Repeat bool // a list route serves its first page for every page asked for
+	Status int           // respond with this HTTP status and a Cloudflare error envelope
+	Repeat bool          // a list route serves its first page for every page asked for
+	Delay  time.Duration // wait this long before answering, to hold requests in flight
 	Times  int
 }
 
@@ -40,6 +42,8 @@ type Server struct {
 	results  map[string]any   // seed key -> result
 	faults   map[string]*Fault
 	requests map[string]int // operation key -> requests served
+	inFlight map[string]int // operation key -> requests being served now
+	peak     map[string]int // operation key -> most requests in flight at once
 }
 
 // New starts a fake API that closes when the test ends.
@@ -56,6 +60,8 @@ func New(t testing.TB) *Server {
 		results:  map[string]any{},
 		faults:   map[string]*Fault{},
 		requests: map[string]int{},
+		inFlight: map[string]int{},
+		peak:     map[string]int{},
 	}
 	server.srv = httptest.NewServer(http.HandlerFunc(server.serve))
 	t.Cleanup(server.srv.Close)
@@ -114,6 +120,13 @@ func (s *Server) Requests(op string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.requests[op]
+}
+
+// MaxInFlight reports the most requests to op the fake was serving at once.
+func (s *Server) MaxInFlight(op string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.peak[op]
 }
 
 // Seed is one entry of a fixture file: a list's items or a single result.
@@ -217,11 +230,21 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.requests[o.Key()]++
+	s.inFlight[o.Key()]++
+	s.peak[o.Key()] = max(s.peak[o.Key()], s.inFlight[o.Key()])
 	fault := s.takeFault(key)
 	items := s.lists[key]
 	result, hasResult := s.results[key]
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.inFlight[o.Key()]--
+		s.mu.Unlock()
+	}()
 
+	if fault != nil && fault.Delay > 0 {
+		time.Sleep(fault.Delay)
+	}
 	if fault != nil && fault.Status != 0 {
 		writeError(w, fault.Status)
 		return

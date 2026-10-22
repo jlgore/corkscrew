@@ -23,31 +23,58 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 		errs = append(errs, fmt.Sprintf("zones list failed: %v", zoneErr))
 	}
 
-	for _, accountID := range accountIDs {
-		scripts, err := p.listWorkerScripts(ctx, accountID)
+	// Routes and custom domains name the script they serve; collect them first so each script
+	// can say whether it is reachable through a zone.
+	exposure := map[string]*scriptExposure{} // workerScriptID -> exposure
+	exposed := func(accountID, script string) *scriptExposure {
+		id := workerScriptID(accountID, script)
+		if exposure[id] == nil {
+			exposure[id] = &scriptExposure{}
+		}
+		return exposure[id]
+	}
+	routesComplete := zoneErr == nil
+	for _, zone := range zonesList {
+		routes, err := p.listWorkerRoutes(ctx, zone.ID)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, err))
+			routesComplete = false
+			errs = append(errs, fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
 		}
-		for _, script := range scripts {
-			resources = append(resources, p.workerScriptResource(accountID, script))
+		for _, route := range routes {
+			resources = append(resources, p.workerRouteResource(zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
+			if route.Script != "" && zone.Account.ID != "" {
+				exposed(zone.Account.ID, route.Script).route = true
+			}
 		}
+	}
 
+	for _, accountID := range accountIDs {
 		domains, err := p.listWorkerDomains(ctx, accountID)
+		domainsComplete := err == nil
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("workers domains list failed for account %s: %v", accountID, err))
 		}
 		for _, domain := range domains {
 			resources = append(resources, p.workerDomainResource(accountID, domain.ID, domain.Hostname, domain.Service, domain.ZoneID, domain.ZoneName, domain.Environment, domain.CERTID, domain))
+			if domain.Service != "" {
+				exposed(accountID, domain.Service).customDomain = true
+			}
 		}
-	}
 
-	for _, zone := range zonesList {
-		routes, err := p.listWorkerRoutes(ctx, zone.ID)
+		scripts, err := p.listWorkerScripts(ctx, accountID)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
+			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, err))
 		}
-		for _, route := range routes {
-			resources = append(resources, p.workerRouteResource(zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
+		details, detailErrs := p.scriptDetails(ctx, accountID, scripts)
+		errs = append(errs, detailErrs...)
+		for i, script := range scripts {
+			detail := details[i]
+			if e := exposure[workerScriptID(accountID, script.ID)]; e != nil {
+				detail.exposure = *e
+			}
+			// Without every route and domain listed, "no route" can't be told from "not seen".
+			detail.exposure.known = routesComplete && domainsComplete
+			resources = append(resources, p.workerScriptResource(accountID, script, detail))
 		}
 	}
 
@@ -96,7 +123,7 @@ func scriptNameFromID(id string) string {
 	return id
 }
 
-func (p *CloudflareProvider) workerScriptResource(accountID string, script workers.ScriptListResponse) *pb.Resource {
+func (p *CloudflareProvider) workerScriptResource(accountID string, script workers.ScriptListResponse, detail scriptDetail) *pb.Resource {
 	attrs := map[string]string{
 		"account_id":            accountID,
 		"script_id":             script.ID,
@@ -120,6 +147,7 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 	if len(script.Tags) > 0 {
 		attrs["tags"] = strings.Join(script.Tags, ",")
 	}
+	detail.addAttributes(attrs)
 	resource := p.resource("workers", "worker_script", workerScriptID(accountID, script.ID), script.ID, accountID, script, attrs)
 	if !script.CreatedOn.IsZero() {
 		resource.CreatedAt = timestamppb.New(script.CreatedOn)

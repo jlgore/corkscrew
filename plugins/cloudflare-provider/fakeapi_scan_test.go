@@ -51,6 +51,7 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 			"worker_domain dbe10b4bc17c295377eabd600e1787fd",
 			"worker_route 023e105f4ecef8ad9ca31a8372d0c354",
 			"worker_script " + fixtureAccountID + "/workers/api-gateway",
+			"worker_script " + fixtureAccountID + "/workers/billing-cron",
 			"worker_script " + fixtureAccountID + "/workers/internal-auth",
 		}},
 		{"storage", []string{
