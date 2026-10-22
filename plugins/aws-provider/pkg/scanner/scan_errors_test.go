@@ -88,6 +88,12 @@ func (f *fakeTypeRegistry) ListTypes(
 	}}, nil
 }
 
+func (f *fakeTypeRegistry) DescribeType(
+	context.Context, *cloudformation.DescribeTypeInput, ...func(*cloudformation.Options),
+) (*cloudformation.DescribeTypeOutput, error) {
+	return nil, errors.New("DescribeType not faked")
+}
+
 // resetDiscovery clears the process-wide discovery cache so each test starts
 // from the curated map, and restores it to that state afterwards.
 func resetDiscovery(t *testing.T) {

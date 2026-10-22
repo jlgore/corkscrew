@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -48,6 +49,10 @@ type CloudControlScanner struct {
 	// to the caller in the scan response so gaps are visible.
 	unsupportedTypes sync.Map // typeName -> string reason
 
+	// identifiers caches each CFN type's primary identifier, used to derive the Cloud
+	// Control identifier of refs found by Resource Explorer (see identifier.go).
+	identifiers identifierCache
+
 	// Metrics
 	listCalls    atomic.Int64
 	getCalls     atomic.Int64
@@ -67,6 +72,8 @@ type cloudControlAPI interface {
 type typeRegistryAPI interface {
 	ListTypes(ctx context.Context, in *cloudformation.ListTypesInput,
 		opts ...func(*cloudformation.Options)) (*cloudformation.ListTypesOutput, error)
+	DescribeType(ctx context.Context, in *cloudformation.DescribeTypeInput,
+		opts ...func(*cloudformation.Options)) (*cloudformation.DescribeTypeOutput, error)
 }
 
 type callerIdentityAPI interface {
@@ -257,15 +264,27 @@ func (s *CloudControlScanner) scanTypes(
 		if err == nil {
 			continue
 		}
-		if isUnsupportedTypeErr(err) {
-			s.unsupportedTypes.Store(typeName, err.Error())
-			continue
+		if listErr := s.typeListFailure(typeName, err); listErr != nil {
+			errs = append(errs, listErr)
 		}
-		s.listFailures.Add(1)
-		log.Printf("CloudControl: ListResources(%s) failed: %v", typeName, err)
-		errs = append(errs, typeListError(typeName, err))
 	}
 	return all, errors.Join(errs...)
+}
+
+// typeListFailure records a failed ListResources of typeName. A type Cloud Control cannot
+// list is kept as an unsupported-type notice and yields nil; any other failure yields the
+// error to report for the type.
+func (s *CloudControlScanner) typeListFailure(typeName string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if isUnsupportedTypeErr(err) {
+		s.unsupportedTypes.Store(typeName, err.Error())
+		return nil
+	}
+	s.listFailures.Add(1)
+	log.Printf("CloudControl: ListResources(%s) failed: %v", typeName, err)
+	return typeListError(typeName, err)
 }
 
 // typeListError names the type that failed. An access denial becomes an
@@ -410,28 +429,15 @@ func (s *CloudControlScanner) DescribeResource(ctx context.Context, ref *pb.Reso
 		}
 	}
 
-	// The deadline spans all SDK retries of this one call, so it is sized to
-	// the retryer (see getResourceTimeout) rather than to a single attempt.
-	s.getCalls.Add(1)
-	callCtx, cancel := context.WithTimeout(ctx, s.describeTimeout())
-	out, err := s.client.GetResource(callCtx, &cloudcontrol.GetResourceInput{
-		TypeName:   aws.String(typeName),
-		Identifier: aws.String(ref.Id),
-	})
-	cancel()
-
-	var properties string
-	switch {
-	case err == nil && out.ResourceDescription != nil:
-		properties = aws.ToString(out.ResourceDescription.Properties)
-	case ref.BasicAttributes["properties"] != "":
-		// Fall back to what ListResources returned.
-		s.getFailures.Add(1)
-		log.Printf("CloudControl: GetResource(%s, %s) failed, using cached properties: %v", typeName, ref.Id, err)
-		properties = ref.BasicAttributes["properties"]
-	default:
-		s.getFailures.Add(1)
+	// A ref found by Resource Explorer carries its ARN as Id; GetResource
+	// takes the type's primary identifier, derived from the ARN.
+	identifier, err := s.ccIdentifier(ctx, typeName, ref)
+	if err != nil {
 		return resource, fmt.Errorf("GetResource(%s, %s): %w", typeName, ref.Id, err)
+	}
+	properties, err := s.getProperties(ctx, typeName, identifier, ref)
+	if err != nil {
+		return resource, err
 	}
 
 	resource.RawData = properties
@@ -452,6 +458,58 @@ func (s *CloudControlScanner) DescribeResource(ctx context.Context, ref *pb.Reso
 	}
 
 	return resource, nil
+}
+
+// getProperties fetches the resource's properties with GetResource, falling back to the
+// properties ListResources cached on the ref. For a ref found by Resource Explorer it checks
+// that the described resource has the ref's ARN, so an identifier derived wrongly can never
+// attach another resource's configuration.
+func (s *CloudControlScanner) getProperties(
+	ctx context.Context, typeName, identifier string, ref *pb.ResourceRef,
+) (string, error) {
+	assert.That(identifier != "", "scanner: GetResource is sent an identifier")
+	// The deadline spans all SDK retries of this one call, so it is sized to
+	// the retryer (see getResourceTimeout) rather than to a single attempt.
+	s.getCalls.Add(1)
+	callCtx, cancel := context.WithTimeout(ctx, s.describeTimeout())
+	out, err := s.client.GetResource(callCtx, &cloudcontrol.GetResourceInput{
+		TypeName:   aws.String(typeName),
+		Identifier: aws.String(identifier),
+	})
+	cancel()
+
+	if err == nil && out.ResourceDescription != nil {
+		properties := aws.ToString(out.ResourceDescription.Properties)
+		if err := checkDescribedARN(properties, explorerARN(ref)); err != nil {
+			s.getFailures.Add(1)
+			return "", fmt.Errorf("GetResource(%s, %s): %w", typeName, identifier, err)
+		}
+		return properties, nil
+	}
+	s.getFailures.Add(1)
+	if cached := ref.BasicAttributes["properties"]; cached != "" {
+		// Fall back to what ListResources returned.
+		log.Printf("CloudControl: GetResource(%s, %s) failed, using cached properties: %v",
+			typeName, identifier, err)
+		return cached, nil
+	}
+	if err == nil {
+		err = errors.New("no resource description")
+	}
+	return "", fmt.Errorf("GetResource(%s, %s): %w", typeName, identifier, err)
+}
+
+// checkDescribedARN fails when arn is set and the described properties name a different Arn.
+func checkDescribedARN(properties, arn string) error {
+	if arn == "" {
+		return nil
+	}
+	props, _ := parseCloudControlProperties(properties)
+	described, ok := props["Arn"].(string)
+	if !ok || described == "" || described == arn {
+		return nil
+	}
+	return fmt.Errorf("described resource has Arn %s, want %s", described, arn)
 }
 
 // GetMetrics implements the UnifiedScannerProvider interface.
@@ -617,7 +675,9 @@ func (s *CloudControlScanner) discoverTypes(
 // each result's CFN type via the reverse map. Resources whose CFN type can't
 // be resolved are returned anyway (with whatever Type the RE result had);
 // the caller can still enrich by passing them to DescribeResource, which
-// falls back to the type already on the ref.
+// falls back to the type already on the ref. Refs with a CFN type then get
+// their Cloud Control identifier, or their type is listed through Cloud
+// Control instead (resolveExplorerRefs).
 //
 // A failed query returns the refs from the pages before the failure along
 // with the error, as listType does.
@@ -641,7 +701,9 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 		// it, stash the canonical CFN type on the ref so DescribeResource can
 		// hit Cloud Control directly.
 		key := strings.ToLower(r.Type)
-		if reverse != nil {
+		if cfnType, ok := explorerTypeOverrides[key]; ok {
+			r.BasicAttributes["cfn_type"] = cfnType
+		} else if reverse != nil {
 			if cfnType, ok := reverse[key]; ok {
 				r.BasicAttributes["cfn_type"] = cfnType
 			}
@@ -652,7 +714,20 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 			r.AccountId = accountID
 		}
 	}
-	return refs, err
+	// Resolve identifiers only for a query that completed: a failed one is
+	// already reported, and listing types for a partial result could not
+	// say which RE refs it replaced.
+	if err != nil {
+		return refs, err
+	}
+	return s.resolveExplorerRefs(ctx, serviceName, refs)
+}
+
+// explorerTypeOverrides maps Resource Explorer types whose "service:resource"
+// name matches the wrong CFN type. RE's iam:policy is a managed policy, which
+// is AWS::IAM::ManagedPolicy; AWS::IAM::Policy is an inline policy.
+var explorerTypeOverrides = map[string]string{
+	"iam:policy": "AWS::IAM::ManagedPolicy",
 }
 
 // reFormatKey converts a CFN type name into the lowercase "service:resource"
