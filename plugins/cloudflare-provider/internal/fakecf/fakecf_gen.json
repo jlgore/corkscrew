@@ -1,0 +1,9685 @@
+{
+ "specVersion": "4.0.0",
+ "operations": [
+  {
+   "method": "GET",
+   "path": "/accounts",
+   "pathParams": [],
+   "queryParams": [
+    {
+     "name": "direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "asc",
+       "desc"
+      ]
+     }
+    },
+    {
+     "name": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "iam_account"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "ref",
+       "r": "iam_result_info"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "iam_account"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/d1/database",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "d1_database-response"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/d1/database/{database_id}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "database_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "fields",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "enum",
+       "v": [
+        "uuid",
+        "name",
+        "created_at",
+        "version",
+        "jurisdiction",
+        "num_tables",
+        "file_size",
+        "running_in_region",
+        "read_replication"
+       ]
+      }
+     }
+    }
+   ],
+   "response": {
+    "k": "ref",
+    "r": "d1_database-details-response"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/queues",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "mq_queue"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_pages",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/queues/{queue_id}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "queue_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "mq_queue"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/r2/buckets",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "cursor",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "asc",
+       "desc"
+      ]
+     }
+    },
+    {
+     "name": "name_contains",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "order",
+     "t": {
+      "k": "enum",
+      "v": [
+       "name"
+      ]
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "name": "start_after",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "buckets",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "r2_bucket"
+       }
+      },
+      "req": true
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/r2/buckets/{bucket_name}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "bucket_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "r2_bucket"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/secrets_store/stores",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "asc",
+       "desc"
+      ]
+     }
+    },
+    {
+     "name": "order",
+     "t": {
+      "k": "enum",
+      "v": [
+       "name",
+       "created",
+       "modified"
+      ]
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "secrets-store_storeObject"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_pages",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/secrets_store/stores/{store_id}/secrets",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "store_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "asc",
+       "desc"
+      ]
+     }
+    },
+    {
+     "name": "order",
+     "t": {
+      "k": "enum",
+      "v": [
+       "name",
+       "comment",
+       "created",
+       "modified",
+       "status"
+      ]
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "name": "scopes",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "enum",
+       "v": [
+        "workers",
+        "ai_gateway",
+        "dex",
+        "access",
+        "containers",
+        "websearch"
+       ]
+      }
+     }
+    },
+    {
+     "name": "search",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "secrets-store_secretObject"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_pages",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/secrets_store/stores/{store_id}/secrets/{secret_id}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "store_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "secret_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "secrets-store_secretObject"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/storage/kv/namespaces",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "asc",
+       "desc"
+      ]
+     }
+    },
+    {
+     "name": "order",
+     "t": {
+      "k": "enum",
+      "v": [
+       "id",
+       "title"
+      ]
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "workers-kv_namespace"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "ref",
+       "r": "workers-kv_result_info"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/storage/kv/namespaces/{namespace_id}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "namespace_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "workers-kv_namespace"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/domains",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "name": "environment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "hostname",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "previews_enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "name": "service",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "zone_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "workers_Domain"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_pages",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/domains/{domain_id}",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "domain_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "workers_Domain"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/durable_objects/namespaces",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "workers_namespace"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_pages",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/durable_objects/namespaces/{id}/objects",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "cursor",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "limit",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "workers_object"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "cursor",
+         "t": {
+          "k": "ref",
+          "r": "workers_cursor"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/scripts",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "tags",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "all",
+        "m": [
+         {
+          "k": "ref",
+          "r": "workers_script-response"
+         },
+         {
+          "k": "object",
+          "f": [
+           {
+            "w": "routes",
+            "t": {
+             "k": "union",
+             "m": [
+              {
+               "k": "array",
+               "e": {
+                "k": "ref",
+                "r": "workers_route"
+               }
+              },
+              {
+               "k": "scalar",
+               "s": "null"
+              }
+             ],
+             "excl": true
+            }
+           }
+          ]
+         }
+        ]
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [],
+       "x": {
+        "k": "scalar",
+        "s": "unknown"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/scripts/{script_name}/secrets",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "script_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "workers_secret"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [],
+       "x": {
+        "k": "scalar",
+        "s": "unknown"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/scripts/{script_name}/settings",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "script_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "workers_script-and-version-settings-item"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{account_id}/workers/scripts/{script_name}/subdomain",
+   "pathParams": [
+    {
+     "name": "account_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "script_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "workers_subdomain"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/zones",
+   "pathParams": [],
+   "queryParams": [
+    {
+     "name": "account.id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "account.name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "asc",
+       "desc"
+      ]
+     }
+    },
+    {
+     "name": "match",
+     "t": {
+      "k": "enum",
+      "v": [
+       "any",
+       "all"
+      ]
+     }
+    },
+    {
+     "name": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "order",
+     "t": {
+      "k": "enum",
+      "v": [
+       "name",
+       "status",
+       "account.id",
+       "account.name",
+       "plan.id"
+      ]
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "name": "status",
+     "t": {
+      "k": "enum",
+      "v": [
+       "initializing",
+       "pending",
+       "active",
+       "moved"
+      ]
+     }
+    },
+    {
+     "name": "type",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "enum",
+       "v": [
+        "full",
+        "partial",
+        "secondary",
+        "internal"
+       ]
+      }
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "zones_zone"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "ref",
+       "r": "zones_result_info"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/zones/{zone_id}",
+   "pathParams": [
+    {
+     "name": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "zones_zone"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/zones/{zone_id}/dns_records",
+   "pathParams": [
+    {
+     "name": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "comment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "comment.absent",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "comment.contains",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "comment.endswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "comment.exact",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "comment.present",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "comment.startswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "content.contains",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "content.endswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "content.exact",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "content.startswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "direction",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_direction"
+     }
+    },
+    {
+     "name": "include_shadow_metadata",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "name": "match",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_match"
+     }
+    },
+    {
+     "name": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "name.contains",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "name.endswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "name.exact",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "name.startswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "order",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_order"
+     }
+    },
+    {
+     "name": "page",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_page"
+     }
+    },
+    {
+     "name": "per_page",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_per_page"
+     }
+    },
+    {
+     "name": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "name": "search",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_search"
+     }
+    },
+    {
+     "name": "shadowed_by_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "shadowing_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag.absent",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag.contains",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag.endswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag.exact",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag.present",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag.startswith",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "tag_match",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tag_match"
+     }
+    },
+    {
+     "name": "type",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_type"
+     }
+    }
+   ],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "dns-records_dns-record-response"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [
+        {
+         "w": "count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "per_page",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_count",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        },
+        {
+         "w": "total_pages",
+         "t": {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/zones/{zone_id}/dns_records/{dns_record_id}",
+   "pathParams": [
+    {
+     "name": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "dns_record_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [
+    {
+     "name": "include_shadow_metadata",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    }
+   ],
+   "response": {
+    "k": "ref",
+    "r": "dns-records_dns-record-response"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/zones/{zone_id}/workers/routes",
+   "pathParams": [
+    {
+     "name": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "object",
+    "f": [
+     {
+      "w": "result",
+      "t": {
+       "k": "array",
+       "e": {
+        "k": "ref",
+        "r": "workers_route"
+       }
+      },
+      "req": true
+     },
+     {
+      "w": "result_info",
+      "t": {
+       "k": "object",
+       "f": [],
+       "x": {
+        "k": "scalar",
+        "s": "unknown"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/zones/{zone_id}/workers/routes/{route_id}",
+   "pathParams": [
+    {
+     "name": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "name": "route_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ],
+   "queryParams": [],
+   "response": {
+    "k": "ref",
+    "r": "workers_route"
+   }
+  }
+ ],
+ "models": {
+  "d1_created-at": {
+   "k": "scalar",
+   "s": "date-time"
+  },
+  "d1_database-details-response": {
+   "k": "object",
+   "f": [
+    {
+     "w": "created_at",
+     "t": {
+      "k": "ref",
+      "r": "d1_created-at"
+     }
+    },
+    {
+     "w": "file_size",
+     "t": {
+      "k": "ref",
+      "r": "d1_file-size"
+     }
+    },
+    {
+     "w": "jurisdiction",
+     "t": {
+      "k": "ref",
+      "r": "d1_jurisdiction-nullable"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "d1_database-name"
+     }
+    },
+    {
+     "w": "num_tables",
+     "t": {
+      "k": "ref",
+      "r": "d1_table-count"
+     }
+    },
+    {
+     "w": "read_replication",
+     "t": {
+      "k": "ref",
+      "r": "d1_read-replication-details-for-response"
+     }
+    },
+    {
+     "w": "uuid",
+     "t": {
+      "k": "ref",
+      "r": "d1_database-identifier"
+     }
+    },
+    {
+     "w": "version",
+     "t": {
+      "k": "ref",
+      "r": "d1_database-version"
+     }
+    }
+   ]
+  },
+  "d1_database-identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "d1_database-name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "d1_database-response": {
+   "k": "object",
+   "f": [
+    {
+     "w": "created_at",
+     "t": {
+      "k": "ref",
+      "r": "d1_created-at"
+     }
+    },
+    {
+     "w": "jurisdiction",
+     "t": {
+      "k": "ref",
+      "r": "d1_jurisdiction-nullable"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "d1_database-name"
+     }
+    },
+    {
+     "w": "uuid",
+     "t": {
+      "k": "ref",
+      "r": "d1_database-identifier"
+     }
+    },
+    {
+     "w": "version",
+     "t": {
+      "k": "ref",
+      "r": "d1_database-version"
+     }
+    }
+   ]
+  },
+  "d1_database-version": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "d1_file-size": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "d1_jurisdiction-nullable": {
+   "k": "union",
+   "m": [
+    {
+     "k": "enum",
+     "v": [
+      "eu",
+      "fedramp",
+      "us"
+     ]
+    },
+    {
+     "k": "scalar",
+     "s": "null"
+    }
+   ],
+   "excl": true
+  },
+  "d1_read-replication-details-for-response": {
+   "k": "object",
+   "f": [
+    {
+     "w": "mode",
+     "t": {
+      "k": "enum",
+      "v": [
+       "auto",
+       "disabled"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "d1_table-count": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "dns-records_AAAARecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "private_routing",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "AAAA"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_ARecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "private_routing",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "A"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_CAARecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_CAARecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "CAA"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_CAARecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "flags",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "value",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "dns-records_CERTRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_CERTRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "CERT"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_CERTRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "algorithm",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "certificate",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "key_tag",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_CNAMERecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_CNAMERecord_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "CNAME"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_CNAMERecord_settings": {
+   "k": "object",
+   "f": [
+    {
+     "w": "flatten_cname",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    }
+   ]
+  },
+  "dns-records_DNSKEYRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_DNSKEYRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "DNSKEY"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_DNSKEYRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "algorithm",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "flags",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "protocol",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "public_key",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "dns-records_DSRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_DSRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "DS"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_DSRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "algorithm",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "digest",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "digest_type",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "key_tag",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_HTTPSRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_HTTPSRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "HTTPS"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_HTTPSRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "priority",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "target",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "value",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "dns-records_LOCRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_LOCRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "LOC"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_LOCRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "altitude",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "lat_degrees",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "lat_direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "N",
+       "S"
+      ]
+     }
+    },
+    {
+     "w": "lat_minutes",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "lat_seconds",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "long_degrees",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "long_direction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "E",
+       "W"
+      ]
+     }
+    },
+    {
+     "w": "long_minutes",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "long_seconds",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "precision_horz",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "precision_vert",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "size",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_MXRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "priority",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_priority"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "MX"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_NAPTRRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_NAPTRRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "NAPTR"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_NAPTRRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "flags",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "order",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "preference",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "regex",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "replacement",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "service",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "dns-records_NSRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "NS"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_OPENPGPKEYRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "OPENPGPKEY"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_PTRRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "PTR"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_SMIMEARecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_SMIMEARecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "SMIMEA"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_SMIMEARecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "certificate",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "matching_type",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "selector",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "usage",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_SRVRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_SRVRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "SRV"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_SRVRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "port",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "priority",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_priority"
+     }
+    },
+    {
+     "w": "target",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "weight",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_SSHFPRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_SSHFPRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "SSHFP"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_SSHFPRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "algorithm",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "fingerprint",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_SVCBRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_SVCBRecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "SVCB"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_SVCBRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "priority",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "target",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "value",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "dns-records_TLSARecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_TLSARecord_data"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "TLSA"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_TLSARecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "certificate",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "matching_type",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "selector",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "usage",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_TXTRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "TXT"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_URIRecord": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_comment"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_name"
+     }
+    },
+    {
+     "w": "proxied",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_proxied"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_settings"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_tags"
+     }
+    },
+    {
+     "w": "ttl",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_ttl"
+     }
+    },
+    {
+     "w": "content",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "data",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_URIRecord_data"
+     }
+    },
+    {
+     "w": "priority",
+     "t": {
+      "k": "ref",
+      "r": "dns-records_priority"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "URI"
+      ]
+     }
+    }
+   ]
+  },
+  "dns-records_URIRecord_data": {
+   "k": "object",
+   "f": [
+    {
+     "w": "target",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "weight",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "dns-records_comment": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "dns-records_direction": {
+   "k": "enum",
+   "v": [
+    "asc",
+    "desc"
+   ]
+  },
+  "dns-records_dns-record-response": {
+   "k": "all",
+   "m": [
+    {
+     "k": "union",
+     "m": [
+      {
+       "k": "ref",
+       "r": "dns-records_dns-record-without-data"
+      },
+      {
+       "k": "ref",
+       "r": "dns-records_dns-record-with-data"
+      }
+     ],
+     "excl": false
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "comment_modified_on",
+       "t": {
+        "k": "scalar",
+        "s": "date-time"
+       }
+      },
+      {
+       "w": "created_on",
+       "t": {
+        "k": "scalar",
+        "s": "date-time"
+       },
+       "req": true
+      },
+      {
+       "w": "id",
+       "t": {
+        "k": "ref",
+        "r": "dns-records_identifier"
+       },
+       "req": true
+      },
+      {
+       "w": "meta",
+       "t": {
+        "k": "object",
+        "f": [
+         {
+          "w": "dead_glue",
+          "t": {
+           "k": "scalar",
+           "s": "boolean"
+          }
+         },
+         {
+          "w": "is_glue",
+          "t": {
+           "k": "scalar",
+           "s": "boolean"
+          }
+         },
+         {
+          "w": "shadowed_by",
+          "t": {
+           "k": "array",
+           "e": {
+            "k": "scalar",
+            "s": "string"
+           }
+          }
+         },
+         {
+          "w": "shadowed_records_count",
+          "t": {
+           "k": "scalar",
+           "s": "number",
+           "n": "int"
+          }
+         }
+        ]
+       },
+       "req": true
+      },
+      {
+       "w": "modified_on",
+       "t": {
+        "k": "scalar",
+        "s": "date-time"
+       },
+       "req": true
+      },
+      {
+       "w": "proxiable",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       },
+       "req": true
+      },
+      {
+       "w": "tags_modified_on",
+       "t": {
+        "k": "scalar",
+        "s": "date-time"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "dns-records_dns-record-with-data": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "dns-records_CAARecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_CERTRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_DNSKEYRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_DSRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_HTTPSRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_LOCRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_NAPTRRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_SMIMEARecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_SRVRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_SSHFPRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_SVCBRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_TLSARecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_URIRecord"
+    }
+   ],
+   "excl": true
+  },
+  "dns-records_dns-record-without-data": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "dns-records_ARecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_AAAARecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_CNAMERecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_MXRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_NSRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_OPENPGPKEYRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_PTRRecord"
+    },
+    {
+     "k": "ref",
+     "r": "dns-records_TXTRecord"
+    }
+   ],
+   "excl": true
+  },
+  "dns-records_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "dns-records_match": {
+   "k": "enum",
+   "v": [
+    "any",
+    "all"
+   ]
+  },
+  "dns-records_name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "dns-records_order": {
+   "k": "enum",
+   "v": [
+    "type",
+    "name",
+    "content",
+    "ttl",
+    "proxied"
+   ]
+  },
+  "dns-records_page": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "dns-records_per_page": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "dns-records_priority": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "dns-records_proxied": {
+   "k": "scalar",
+   "s": "boolean"
+  },
+  "dns-records_search": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "dns-records_settings": {
+   "k": "object",
+   "f": [
+    {
+     "w": "ipv4_only",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "ipv6_only",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    }
+   ]
+  },
+  "dns-records_tag_match": {
+   "k": "enum",
+   "v": [
+    "any",
+    "all"
+   ]
+  },
+  "dns-records_tags": {
+   "k": "array",
+   "e": {
+    "k": "scalar",
+    "s": "string"
+   }
+  },
+  "dns-records_ttl": {
+   "k": "union",
+   "m": [
+    {
+     "k": "scalar",
+     "s": "number",
+     "n": "double"
+    },
+    {
+     "k": "enum",
+     "v": [
+      1
+     ]
+    }
+   ],
+   "excl": false
+  },
+  "dns-records_type": {
+   "k": "enum",
+   "v": [
+    "A",
+    "AAAA",
+    "CAA",
+    "CERT",
+    "CNAME",
+    "DNSKEY",
+    "DS",
+    "HTTPS",
+    "LOC",
+    "MX",
+    "NAPTR",
+    "NS",
+    "OPENPGPKEY",
+    "PTR",
+    "SMIMEA",
+    "SRV",
+    "SSHFP",
+    "SVCB",
+    "TLSA",
+    "TXT",
+    "URI"
+   ]
+  },
+  "iam_account": {
+   "k": "object",
+   "f": [
+    {
+     "w": "created_on",
+     "t": {
+      "k": "scalar",
+      "s": "date-time"
+     }
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "ref",
+      "r": "iam_common_components-schemas-identifier"
+     },
+     "req": true
+    },
+    {
+     "w": "managed_by",
+     "t": {
+      "k": "ref",
+      "r": "iam_account_managed_by"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "iam_account_settings"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "ref",
+      "r": "iam_account-type"
+     },
+     "req": true
+    }
+   ]
+  },
+  "iam_account-type": {
+   "k": "enum",
+   "v": [
+    "standard",
+    "enterprise"
+   ]
+  },
+  "iam_account_managed_by": {
+   "k": "object",
+   "f": [
+    {
+     "w": "parent_org_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "parent_org_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "iam_account_settings": {
+   "k": "object",
+   "f": [
+    {
+     "w": "abuse_contact_email",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "enforce_twofactor",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    }
+   ]
+  },
+  "iam_common_components-schemas-identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "iam_result_info": {
+   "k": "object",
+   "f": [
+    {
+     "w": "count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "total_count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "mq_batch-size": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "mq_consumer-response": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "mq_worker-consumer-response"
+    },
+    {
+     "k": "ref",
+     "r": "mq_http-consumer-response"
+    }
+   ],
+   "excl": true,
+   "d": {
+    "w": "type",
+    "c": {
+     "http_pull": {
+      "k": "ref",
+      "r": "mq_http-consumer-response"
+     },
+     "worker": {
+      "k": "ref",
+      "r": "mq_worker-consumer-response"
+     }
+    }
+   }
+  },
+  "mq_http-consumer-response": {
+   "k": "object",
+   "f": [
+    {
+     "w": "consumer_id",
+     "t": {
+      "k": "ref",
+      "r": "mq_identifier"
+     }
+    },
+    {
+     "w": "created_on",
+     "t": {
+      "k": "scalar",
+      "s": "date-time"
+     }
+    },
+    {
+     "w": "dead_letter_queue",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "queue_name",
+     "t": {
+      "k": "ref",
+      "r": "mq_queue-name"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "mq_http-consumer-response_settings"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "http_pull"
+      ]
+     }
+    }
+   ]
+  },
+  "mq_http-consumer-response_settings": {
+   "k": "object",
+   "f": [
+    {
+     "w": "batch_size",
+     "t": {
+      "k": "ref",
+      "r": "mq_batch-size"
+     }
+    },
+    {
+     "w": "max_retries",
+     "t": {
+      "k": "ref",
+      "r": "mq_max-retries"
+     }
+    },
+    {
+     "w": "retry_delay",
+     "t": {
+      "k": "ref",
+      "r": "mq_retry-delay"
+     }
+    },
+    {
+     "w": "visibility_timeout_ms",
+     "t": {
+      "k": "ref",
+      "r": "mq_visibility-timeout"
+     }
+    }
+   ]
+  },
+  "mq_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "mq_jurisdiction": {
+   "k": "enum",
+   "v": [
+    "eu",
+    "us",
+    "fedramp"
+   ]
+  },
+  "mq_max-concurrency": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "mq_max-retries": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "mq_max-wait-time": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "mq_producer": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "mq_worker-producer"
+    },
+    {
+     "k": "ref",
+     "r": "mq_r2-producer"
+    }
+   ],
+   "excl": true
+  },
+  "mq_queue": {
+   "k": "object",
+   "f": [
+    {
+     "w": "consumers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "mq_consumer-response"
+      }
+     }
+    },
+    {
+     "w": "consumers_total_count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "created_on",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "jurisdiction",
+     "t": {
+      "k": "ref",
+      "r": "mq_jurisdiction"
+     }
+    },
+    {
+     "w": "modified_on",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "producers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "mq_producer"
+      }
+     }
+    },
+    {
+     "w": "producers_total_count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "queue_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "queue_name",
+     "t": {
+      "k": "ref",
+      "r": "mq_queue-name"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "mq_queue-settings"
+     }
+    }
+   ]
+  },
+  "mq_queue-name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "mq_queue-settings": {
+   "k": "object",
+   "f": [
+    {
+     "w": "delivery_delay",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "delivery_paused",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "message_retention_period",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "mq_r2-producer": {
+   "k": "object",
+   "f": [
+    {
+     "w": "bucket_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "r2_bucket"
+      ]
+     }
+    }
+   ]
+  },
+  "mq_retry-delay": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "mq_script-name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "mq_visibility-timeout": {
+   "k": "scalar",
+   "s": "number",
+   "n": "double"
+  },
+  "mq_worker-consumer-response": {
+   "k": "object",
+   "f": [
+    {
+     "w": "consumer_id",
+     "t": {
+      "k": "ref",
+      "r": "mq_identifier"
+     }
+    },
+    {
+     "w": "created_on",
+     "t": {
+      "k": "scalar",
+      "s": "date-time"
+     }
+    },
+    {
+     "w": "dead_letter_queue",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "queue_name",
+     "t": {
+      "k": "ref",
+      "r": "mq_queue-name"
+     }
+    },
+    {
+     "w": "script_name",
+     "t": {
+      "k": "ref",
+      "r": "mq_script-name"
+     }
+    },
+    {
+     "w": "settings",
+     "t": {
+      "k": "ref",
+      "r": "mq_worker-consumer-response_settings"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "worker"
+      ]
+     }
+    }
+   ]
+  },
+  "mq_worker-consumer-response_settings": {
+   "k": "object",
+   "f": [
+    {
+     "w": "batch_size",
+     "t": {
+      "k": "ref",
+      "r": "mq_batch-size"
+     }
+    },
+    {
+     "w": "max_concurrency",
+     "t": {
+      "k": "ref",
+      "r": "mq_max-concurrency"
+     }
+    },
+    {
+     "w": "max_retries",
+     "t": {
+      "k": "ref",
+      "r": "mq_max-retries"
+     }
+    },
+    {
+     "w": "max_wait_time_ms",
+     "t": {
+      "k": "ref",
+      "r": "mq_max-wait-time"
+     }
+    },
+    {
+     "w": "retry_delay",
+     "t": {
+      "k": "ref",
+      "r": "mq_retry-delay"
+     }
+    }
+   ]
+  },
+  "mq_worker-producer": {
+   "k": "object",
+   "f": [
+    {
+     "w": "script",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "worker"
+      ]
+     }
+    }
+   ]
+  },
+  "r2_bucket": {
+   "k": "object",
+   "f": [
+    {
+     "w": "creation_date",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "jurisdiction",
+     "t": {
+      "k": "ref",
+      "r": "r2_jurisdiction"
+     }
+    },
+    {
+     "w": "location",
+     "t": {
+      "k": "ref",
+      "r": "r2_bucket_location"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "r2_bucket_name"
+     }
+    },
+    {
+     "w": "storage_class",
+     "t": {
+      "k": "ref",
+      "r": "r2_storage_class"
+     }
+    }
+   ]
+  },
+  "r2_bucket_location": {
+   "k": "enum",
+   "v": [
+    "apac",
+    "eeur",
+    "enam",
+    "weur",
+    "wnam",
+    "oc"
+   ]
+  },
+  "r2_bucket_name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "r2_jurisdiction": {
+   "k": "enum",
+   "v": [
+    "default",
+    "eu",
+    "us",
+    "fedramp",
+    "fedramp-high"
+   ]
+  },
+  "r2_storage_class": {
+   "k": "enum",
+   "v": [
+    "Standard",
+    "InfrequentAccess"
+   ]
+  },
+  "secrets-store_SecretStatus": {
+   "k": "enum",
+   "v": [
+    "pending",
+    "active",
+    "deleted"
+   ]
+  },
+  "secrets-store_account_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "secrets-store_comment": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "secrets-store_created": {
+   "k": "scalar",
+   "s": "date-time"
+  },
+  "secrets-store_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "secrets-store_modified": {
+   "k": "scalar",
+   "s": "date-time"
+  },
+  "secrets-store_scopes": {
+   "k": "array",
+   "e": {
+    "k": "enum",
+    "v": [
+     "workers",
+     "ai_gateway",
+     "dex",
+     "access",
+     "containers",
+     "websearch"
+    ]
+   }
+  },
+  "secrets-store_secretObject": {
+   "k": "object",
+   "f": [
+    {
+     "w": "comment",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_comment"
+     }
+    },
+    {
+     "w": "created",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_created"
+     },
+     "req": true
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_identifier"
+     },
+     "req": true
+    },
+    {
+     "w": "modified",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_modified"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_secret_name"
+     },
+     "req": true
+    },
+    {
+     "w": "scopes",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_scopes"
+     }
+    },
+    {
+     "w": "status",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_SecretStatus"
+     },
+     "req": true
+    },
+    {
+     "w": "store_id",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_store_identifier"
+     },
+     "req": true
+    }
+   ]
+  },
+  "secrets-store_secret_name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "secrets-store_storeObject": {
+   "k": "object",
+   "f": [
+    {
+     "w": "account_id",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_account_identifier"
+     }
+    },
+    {
+     "w": "created",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_created"
+     },
+     "req": true
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_store_identifier"
+     },
+     "req": true
+    },
+    {
+     "w": "modified",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_modified"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "secrets-store_store_name"
+     },
+     "req": true
+    }
+   ]
+  },
+  "secrets-store_store_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "secrets-store_store_name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers-kv_jurisdiction": {
+   "k": "enum",
+   "v": [
+    "eu",
+    "fedramp",
+    "us"
+   ]
+  },
+  "workers-kv_namespace": {
+   "k": "object",
+   "f": [
+    {
+     "w": "id",
+     "t": {
+      "k": "ref",
+      "r": "workers-kv_namespace_identifier"
+     },
+     "req": true
+    },
+    {
+     "w": "jurisdiction",
+     "t": {
+      "k": "ref",
+      "r": "workers-kv_jurisdiction"
+     }
+    },
+    {
+     "w": "mode",
+     "t": {
+      "k": "ref",
+      "r": "workers-kv_namespace_mode"
+     }
+    },
+    {
+     "w": "supports_url_encoding",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "title",
+     "t": {
+      "k": "ref",
+      "r": "workers-kv_namespace_title"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers-kv_namespace_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers-kv_namespace_mode": {
+   "k": "enum",
+   "v": [
+    "instant"
+   ]
+  },
+  "workers-kv_namespace_title": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers-kv_result_info": {
+   "k": "object",
+   "f": [
+    {
+     "w": "count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "total_count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "workers_Domain": {
+   "k": "object",
+   "f": [
+    {
+     "w": "cert_id",
+     "t": {
+      "k": "scalar",
+      "s": "uuid"
+     },
+     "req": true
+    },
+    {
+     "w": "enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    },
+    {
+     "w": "environment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "hostname",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "previews_enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    },
+    {
+     "w": "service",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "zone_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "zone_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_item": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_ai"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_ai_search"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_ai_search_namespace"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_messaging"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_analytics_engine"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_artifacts"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_assets"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_browser"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_d1"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_data_blob"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_dispatch_namespace"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_durable_object_namespace"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_hyperdrive"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_inherit"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_images"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_json"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_kv_namespace"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_media"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_mtls_certificate"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_plain_text"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_pipelines"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_k2"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_queue"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_ratelimit"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_r2_bucket"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_secret_text"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_send_email"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_service"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_text_blob"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_vectorize"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_version_metadata"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_secrets_store_secret"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_flagship"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_secret_key"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_workflow"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_wasm_module"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_vpc_service"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_vpc_network"
+    }
+   ],
+   "excl": true,
+   "d": {
+    "w": "type",
+    "c": {
+     "ai": {
+      "k": "ref",
+      "r": "workers_binding_kind_ai"
+     },
+     "ai_search": {
+      "k": "ref",
+      "r": "workers_binding_kind_ai_search"
+     },
+     "ai_search_namespace": {
+      "k": "ref",
+      "r": "workers_binding_kind_ai_search_namespace"
+     },
+     "analytics_engine": {
+      "k": "ref",
+      "r": "workers_binding_kind_analytics_engine"
+     },
+     "artifacts": {
+      "k": "ref",
+      "r": "workers_binding_kind_artifacts"
+     },
+     "assets": {
+      "k": "ref",
+      "r": "workers_binding_kind_assets"
+     },
+     "browser": {
+      "k": "ref",
+      "r": "workers_binding_kind_browser"
+     },
+     "d1": {
+      "k": "ref",
+      "r": "workers_binding_kind_d1"
+     },
+     "data_blob": {
+      "k": "ref",
+      "r": "workers_binding_kind_data_blob"
+     },
+     "dispatch_namespace": {
+      "k": "ref",
+      "r": "workers_binding_kind_dispatch_namespace"
+     },
+     "durable_object_namespace": {
+      "k": "ref",
+      "r": "workers_binding_kind_durable_object_namespace"
+     },
+     "flagship": {
+      "k": "ref",
+      "r": "workers_binding_kind_flagship"
+     },
+     "hyperdrive": {
+      "k": "ref",
+      "r": "workers_binding_kind_hyperdrive"
+     },
+     "images": {
+      "k": "ref",
+      "r": "workers_binding_kind_images"
+     },
+     "inherit": {
+      "k": "ref",
+      "r": "workers_binding_kind_inherit"
+     },
+     "json": {
+      "k": "ref",
+      "r": "workers_binding_kind_json"
+     },
+     "k2": {
+      "k": "ref",
+      "r": "workers_binding_kind_k2"
+     },
+     "kv_namespace": {
+      "k": "ref",
+      "r": "workers_binding_kind_kv_namespace"
+     },
+     "media": {
+      "k": "ref",
+      "r": "workers_binding_kind_media"
+     },
+     "messaging": {
+      "k": "ref",
+      "r": "workers_binding_kind_messaging"
+     },
+     "mtls_certificate": {
+      "k": "ref",
+      "r": "workers_binding_kind_mtls_certificate"
+     },
+     "pipelines": {
+      "k": "ref",
+      "r": "workers_binding_kind_pipelines"
+     },
+     "plain_text": {
+      "k": "ref",
+      "r": "workers_binding_kind_plain_text"
+     },
+     "queue": {
+      "k": "ref",
+      "r": "workers_binding_kind_queue"
+     },
+     "r2_bucket": {
+      "k": "ref",
+      "r": "workers_binding_kind_r2_bucket"
+     },
+     "ratelimit": {
+      "k": "ref",
+      "r": "workers_binding_kind_ratelimit"
+     },
+     "secret_key": {
+      "k": "ref",
+      "r": "workers_binding_kind_secret_key"
+     },
+     "secret_text": {
+      "k": "ref",
+      "r": "workers_binding_kind_secret_text"
+     },
+     "secrets_store_secret": {
+      "k": "ref",
+      "r": "workers_binding_kind_secrets_store_secret"
+     },
+     "send_email": {
+      "k": "ref",
+      "r": "workers_binding_kind_send_email"
+     },
+     "service": {
+      "k": "ref",
+      "r": "workers_binding_kind_service"
+     },
+     "text_blob": {
+      "k": "ref",
+      "r": "workers_binding_kind_text_blob"
+     },
+     "vectorize": {
+      "k": "ref",
+      "r": "workers_binding_kind_vectorize"
+     },
+     "version_metadata": {
+      "k": "ref",
+      "r": "workers_binding_kind_version_metadata"
+     },
+     "vpc_network": {
+      "k": "ref",
+      "r": "workers_binding_kind_vpc_network"
+     },
+     "vpc_service": {
+      "k": "ref",
+      "r": "workers_binding_kind_vpc_service"
+     },
+     "wasm_module": {
+      "k": "ref",
+      "r": "workers_binding_kind_wasm_module"
+     },
+     "workflow": {
+      "k": "ref",
+      "r": "workers_binding_kind_workflow"
+     }
+    }
+   }
+  },
+  "workers_binding_kind_ai": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "ai"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_ai_search": {
+   "k": "object",
+   "f": [
+    {
+     "w": "instance_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "ai_search"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_ai_search_namespace": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "ai_search_namespace"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_analytics_engine": {
+   "k": "object",
+   "f": [
+    {
+     "w": "dataset",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "analytics_engine"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_artifacts": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "artifacts"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_assets": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "assets"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_browser": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "browser"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_d1": {
+   "k": "object",
+   "f": [
+    {
+     "w": "database_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "d1"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_data_blob": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "part",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "data_blob"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_dispatch_namespace": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "outbound",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_kind_dispatch_namespace_outbound"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "dispatch_namespace"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_dispatch_namespace_outbound": {
+   "k": "object",
+   "f": [
+    {
+     "w": "params",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_binding_kind_dispatch_namespace_outbound_paramsItem"
+      }
+     }
+    },
+    {
+     "w": "worker",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_kind_dispatch_namespace_outbound_worker"
+     }
+    }
+   ]
+  },
+  "workers_binding_kind_dispatch_namespace_outbound_paramsItem": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_dispatch_namespace_outbound_worker": {
+   "k": "object",
+   "f": [
+    {
+     "w": "entrypoint",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "environment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "service",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_binding_kind_durable_object_namespace": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "dispatch_namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "environment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace_id",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_namespace_identifier"
+       },
+       {
+        "k": "scalar",
+        "s": "string"
+       }
+      ]
+     }
+    },
+    {
+     "w": "script_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "durable_object_namespace"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_flagship": {
+   "k": "object",
+   "f": [
+    {
+     "w": "app_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "flagship"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_hyperdrive": {
+   "k": "object",
+   "f": [
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "hyperdrive"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_images": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "images"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_inherit": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "old_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "inherit"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "version_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_binding_kind_json": {
+   "k": "object",
+   "f": [
+    {
+     "w": "json",
+     "t": {
+      "k": "object",
+      "f": [],
+      "x": {
+       "k": "scalar",
+       "s": "unknown"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "json"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_k2": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "stream",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "k2"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_kv_namespace": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace_id",
+     "t": {
+      "k": "ref",
+      "r": "workers_namespace_identifier"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "kv_namespace"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_media": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "media"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_messaging": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "messaging"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_mtls_certificate": {
+   "k": "object",
+   "f": [
+    {
+     "w": "certificate_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "mtls_certificate"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_pipelines": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "pipeline",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "pipelines"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_plain_text": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "text",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "plain_text"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_queue": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "queue_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "queue"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_r2_bucket": {
+   "k": "object",
+   "f": [
+    {
+     "w": "bucket_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "jurisdiction",
+     "t": {
+      "k": "enum",
+      "v": [
+       "eu",
+       "fedramp",
+       "fedramp-high",
+       "us"
+      ]
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "r2_bucket"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_ratelimit": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "simple",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_kind_ratelimit_simple"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "ratelimit"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_ratelimit_simple": {
+   "k": "object",
+   "f": [
+    {
+     "w": "limit",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     },
+     "req": true
+    },
+    {
+     "w": "mitigation_timeout",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "w": "period",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_secret_key": {
+   "k": "object",
+   "f": [
+    {
+     "w": "algorithm",
+     "t": {
+      "k": "object",
+      "f": [],
+      "x": {
+       "k": "scalar",
+       "s": "unknown"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "format",
+     "t": {
+      "k": "enum",
+      "v": [
+       "raw",
+       "pkcs8",
+       "spki",
+       "jwk"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "key_base64",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "sens": true
+    },
+    {
+     "w": "key_jwk",
+     "t": {
+      "k": "object",
+      "f": [],
+      "x": {
+       "k": "scalar",
+       "s": "unknown"
+      }
+     },
+     "sens": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "secret_key"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "usages",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "enum",
+       "v": [
+        "encrypt",
+        "decrypt",
+        "sign",
+        "verify",
+        "deriveKey",
+        "deriveBits",
+        "wrapKey",
+        "unwrapKey"
+       ]
+      }
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_secret_text": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "text",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true,
+     "sens": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "secret_text"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_secrets_store_secret": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "secret_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "store_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "secrets_store_secret"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_send_email": {
+   "k": "object",
+   "f": [
+    {
+     "w": "allowed_destination_addresses",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "allowed_sender_addresses",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "destination_address",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "send_email"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_service": {
+   "k": "object",
+   "f": [
+    {
+     "w": "entrypoint",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "environment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "service",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "service"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_text_blob": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "part",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "text_blob"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_vectorize": {
+   "k": "object",
+   "f": [
+    {
+     "w": "index_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "vectorize"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_version_metadata": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "version_metadata"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_vpc_network": {
+   "k": "object",
+   "f": [
+    {
+     "w": "identity",
+     "t": {
+      "k": "enum",
+      "v": [
+       "runtime-email-alpha"
+      ]
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "network_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "tunnel_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "vpc_network"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_vpc_service": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "service_id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "vpc_service"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_wasm_module": {
+   "k": "object",
+   "f": [
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "part",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "wasm_module"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_kind_workflow": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "ref",
+      "r": "workers_binding_name"
+     },
+     "req": true
+    },
+    {
+     "w": "script_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "workflow"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "workflow_name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_binding_name": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_bindings": {
+   "k": "array",
+   "e": {
+    "k": "ref",
+    "r": "workers_binding_item"
+   }
+  },
+  "workers_cache_options": {
+   "k": "object",
+   "f": [
+    {
+     "w": "cross_version_cache",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_compatibility_date": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_compatibility_flag": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_compatibility_flags": {
+   "k": "array",
+   "e": {
+    "k": "ref",
+    "r": "workers_compatibility_flag"
+   }
+  },
+  "workers_created_on": {
+   "k": "scalar",
+   "s": "date-time"
+  },
+  "workers_cursor": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_durable_object_deleted_export": {
+   "k": "object",
+   "f": [
+    {
+     "w": "state",
+     "t": {
+      "k": "enum",
+      "v": [
+       "deleted"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "durable-object"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_durable_object_expecting_transfer_export": {
+   "k": "object",
+   "f": [
+    {
+     "w": "container",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "state",
+     "t": {
+      "k": "enum",
+      "v": [
+       "expecting-transfer"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "storage",
+     "t": {
+      "k": "ref",
+      "r": "workers_export_storage"
+     },
+     "req": true
+    },
+    {
+     "w": "transfer_from",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "durable-object"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_durable_object_export": {
+   "k": "object",
+   "f": [
+    {
+     "w": "container",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "state",
+     "t": {
+      "k": "enum",
+      "v": [
+       "created"
+      ]
+     }
+    },
+    {
+     "w": "storage",
+     "t": {
+      "k": "ref",
+      "r": "workers_export_storage"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "durable-object"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_durable_object_export_variants": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "workers_durable_object_export"
+    },
+    {
+     "k": "ref",
+     "r": "workers_durable_object_deleted_export"
+    },
+    {
+     "k": "ref",
+     "r": "workers_durable_object_renamed_export"
+    },
+    {
+     "k": "ref",
+     "r": "workers_durable_object_transferred_export"
+    },
+    {
+     "k": "ref",
+     "r": "workers_durable_object_expecting_transfer_export"
+    }
+   ],
+   "excl": true
+  },
+  "workers_durable_object_renamed_export": {
+   "k": "object",
+   "f": [
+    {
+     "w": "renamed_to",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "state",
+     "t": {
+      "k": "enum",
+      "v": [
+       "renamed"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "durable-object"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_durable_object_transferred_export": {
+   "k": "object",
+   "f": [
+    {
+     "w": "state",
+     "t": {
+      "k": "enum",
+      "v": [
+       "transferred"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "transferred_to",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "durable-object"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_entrypoint_cache_options": {
+   "k": "object",
+   "f": [
+    {
+     "w": "enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_etag": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_export_config": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "workers_worker_export"
+    },
+    {
+     "k": "ref",
+     "r": "workers_durable_object_export_variants"
+    }
+   ],
+   "excl": true,
+   "d": {
+    "w": "type",
+    "c": {
+     "durable-object": {
+      "k": "ref",
+      "r": "workers_durable_object_export_variants"
+     },
+     "worker": {
+      "k": "ref",
+      "r": "workers_worker_export"
+     }
+    }
+   }
+  },
+  "workers_export_storage": {
+   "k": "enum",
+   "v": [
+    "sqlite",
+    "legacy-kv"
+   ]
+  },
+  "workers_exports_config_map": {
+   "k": "object",
+   "f": [],
+   "x": {
+    "k": "ref",
+    "r": "workers_export_config"
+   }
+  },
+  "workers_exports_reconciliation_info": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "message",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace_id",
+     "t": {
+      "k": "scalar",
+      "s": "uuid"
+     }
+    },
+    {
+     "w": "referencing_scripts",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "scenario",
+     "t": {
+      "k": "ref",
+      "r": "workers_exports_reconciliation_scenario"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_exports_reconciliation_rename": {
+   "k": "object",
+   "f": [
+    {
+     "w": "from",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "to",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_exports_reconciliation_result": {
+   "k": "object",
+   "f": [
+    {
+     "w": "created",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "deleted",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "info",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_exports_reconciliation_info"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "removable_entries",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "renamed",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_exports_reconciliation_rename"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "transfer_pending",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_exports_reconciliation_transfer_pending"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "transferred",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_exports_reconciliation_transfer"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "updated",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "warnings",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_exports_reconciliation_warning"
+      }
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_exports_reconciliation_scenario": {
+   "k": "enum",
+   "v": [
+    "code_class_not_in_exports",
+    "provisioned_class_missing_from_config",
+    "config_export_not_in_code",
+    "config_references_nonexistent_class",
+    "orphaned_provisioned_namespace",
+    "storage_type_mismatch",
+    "free_tier_requires_sqlite",
+    "invalid_export",
+    "tombstone_delete_class_still_in_code",
+    "tombstone_delete_blocked_by_external_bindings",
+    "tombstone_renamed_to_occupied",
+    "transferred_pending_not_found",
+    "transferred_target_missing",
+    "transferred_target_mismatch",
+    "phase_one_transfer_source_missing",
+    "phase_one_transfer_source_namespace_missing",
+    "phase_one_transfer_target_class_provisioned",
+    "phase_one_transfer_after_commit_mismatch",
+    "phase_one_transfer_duplicate",
+    "phase_one_transfer_target_in_dispatch_namespace",
+    "phase_one_transfer_source_in_dispatch_namespace",
+    "transferred_source_in_dispatch_namespace",
+    "transferred_target_in_dispatch_namespace",
+    "container_undeclared_reference",
+    "container_class_not_durable_object",
+    "container_wiring_inconsistent",
+    "container_multiple_durable_objects",
+    "transfer_container_parity_mismatch",
+    "transfer_container_parity_mismatch_on_commit",
+    "tombstone_class_still_in_code",
+    "stale_tombstone",
+    "transfer_receive_already_applied",
+    "transfer_receive_cleanup_complete"
+   ]
+  },
+  "workers_exports_reconciliation_transfer": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "phase",
+     "t": {
+      "k": "enum",
+      "v": [
+       "committed"
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "to",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_exports_reconciliation_transfer_pending": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "from",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_exports_reconciliation_warning": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "message",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "namespace_id",
+     "t": {
+      "k": "scalar",
+      "s": "uuid"
+     }
+    },
+    {
+     "w": "scenario",
+     "t": {
+      "k": "ref",
+      "r": "workers_exports_reconciliation_scenario"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_has_assets": {
+   "k": "scalar",
+   "s": "boolean"
+  },
+  "workers_has_modules": {
+   "k": "scalar",
+   "s": "boolean"
+  },
+  "workers_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_limits": {
+   "k": "object",
+   "f": [
+    {
+     "w": "cpu_ms",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "w": "subrequests",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    }
+   ]
+  },
+  "workers_logpush": {
+   "k": "scalar",
+   "s": "boolean"
+  },
+  "workers_migration_step": {
+   "k": "object",
+   "f": [
+    {
+     "w": "deleted_classes",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "new_classes",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "new_sqlite_classes",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "renamed_classes",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_migration_step_renamed_classesItem"
+      }
+     }
+    },
+    {
+     "w": "transferred_classes",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_migration_step_transferred_classesItem"
+      }
+     }
+    }
+   ]
+  },
+  "workers_migration_step_renamed_classesItem": {
+   "k": "object",
+   "f": [
+    {
+     "w": "from",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "to",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_migration_step_transferred_classesItem": {
+   "k": "object",
+   "f": [
+    {
+     "w": "from",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "from_script",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "to",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_migration_tag_conditions": {
+   "k": "object",
+   "f": [
+    {
+     "w": "new_tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "old_tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_modified_on": {
+   "k": "scalar",
+   "s": "date-time"
+  },
+  "workers_multiple_step_migrations": {
+   "k": "object",
+   "f": [
+    {
+     "w": "new_tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "old_tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "steps",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_migration_step"
+      }
+     }
+    }
+   ]
+  },
+  "workers_namespace": {
+   "k": "object",
+   "f": [
+    {
+     "w": "class",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "script",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "use_sqlite",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    }
+   ]
+  },
+  "workers_namespace_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_object": {
+   "k": "object",
+   "f": [
+    {
+     "w": "hasStoredData",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_observability-2": {
+   "k": "object",
+   "f": [
+    {
+     "w": "enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    },
+    {
+     "w": "head_sampling_rate",
+     "t": {
+      "k": "union",
+      "m": [
+       {
+        "k": "scalar",
+        "s": "number",
+        "n": "double"
+       },
+       {
+        "k": "scalar",
+        "s": "null"
+       }
+      ],
+      "excl": true
+     }
+    },
+    {
+     "w": "issues",
+     "t": {
+      "k": "ref",
+      "r": "workers_observability-2_issues"
+     }
+    },
+    {
+     "w": "logs",
+     "t": {
+      "k": "ref",
+      "r": "workers_observability-2_logs"
+     }
+    },
+    {
+     "w": "redact_query_string",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "traces",
+     "t": {
+      "k": "ref",
+      "r": "workers_observability-2_traces"
+     }
+    }
+   ]
+  },
+  "workers_observability-2_issues": {
+   "k": "union",
+   "m": [
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "enabled",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       }
+      }
+     ]
+    },
+    {
+     "k": "scalar",
+     "s": "null"
+    }
+   ],
+   "excl": true
+  },
+  "workers_observability-2_logs": {
+   "k": "union",
+   "m": [
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "destinations",
+       "t": {
+        "k": "array",
+        "e": {
+         "k": "scalar",
+         "s": "string"
+        }
+       }
+      },
+      {
+       "w": "enabled",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       },
+       "req": true
+      },
+      {
+       "w": "head_sampling_rate",
+       "t": {
+        "k": "union",
+        "m": [
+         {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         },
+         {
+          "k": "scalar",
+          "s": "null"
+         }
+        ],
+        "excl": true
+       }
+      },
+      {
+       "w": "invocation_logs",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       },
+       "req": true
+      },
+      {
+       "w": "persist",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       }
+      }
+     ]
+    },
+    {
+     "k": "scalar",
+     "s": "null"
+    }
+   ],
+   "excl": true
+  },
+  "workers_observability-2_traces": {
+   "k": "union",
+   "m": [
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "destinations",
+       "t": {
+        "k": "array",
+        "e": {
+         "k": "scalar",
+         "s": "string"
+        }
+       }
+      },
+      {
+       "w": "enabled",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       }
+      },
+      {
+       "w": "head_sampling_rate",
+       "t": {
+        "k": "union",
+        "m": [
+         {
+          "k": "scalar",
+          "s": "number",
+          "n": "double"
+         },
+         {
+          "k": "scalar",
+          "s": "null"
+         }
+        ],
+        "excl": true
+       }
+      },
+      {
+       "w": "persist",
+       "t": {
+        "k": "scalar",
+        "s": "boolean"
+       }
+      },
+      {
+       "w": "propagation_policy",
+       "t": {
+        "k": "union",
+        "m": [
+         {
+          "k": "enum",
+          "v": [
+           "authenticated",
+           "accept"
+          ]
+         },
+         {
+          "k": "scalar",
+          "s": "null"
+         }
+        ],
+        "excl": true
+       }
+      }
+     ]
+    },
+    {
+     "k": "scalar",
+     "s": "null"
+    }
+   ],
+   "excl": true
+  },
+  "workers_placement_info": {
+   "k": "all",
+   "m": [
+    {
+     "k": "union",
+     "m": [
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "mode",
+         "t": {
+          "k": "enum",
+          "v": [
+           "smart"
+          ]
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "region",
+         "t": {
+          "k": "scalar",
+          "s": "string"
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "hostname",
+         "t": {
+          "k": "scalar",
+          "s": "string"
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "host",
+         "t": {
+          "k": "scalar",
+          "s": "string"
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "mode",
+         "t": {
+          "k": "enum",
+          "v": [
+           "targeted"
+          ]
+         },
+         "req": true
+        },
+        {
+         "w": "region",
+         "t": {
+          "k": "scalar",
+          "s": "string"
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "hostname",
+         "t": {
+          "k": "scalar",
+          "s": "string"
+         },
+         "req": true
+        },
+        {
+         "w": "mode",
+         "t": {
+          "k": "enum",
+          "v": [
+           "targeted"
+          ]
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "host",
+         "t": {
+          "k": "scalar",
+          "s": "string"
+         },
+         "req": true
+        },
+        {
+         "w": "mode",
+         "t": {
+          "k": "enum",
+          "v": [
+           "targeted"
+          ]
+         },
+         "req": true
+        }
+       ]
+      },
+      {
+       "k": "object",
+       "f": [
+        {
+         "w": "mode",
+         "t": {
+          "k": "enum",
+          "v": [
+           "targeted"
+          ]
+         },
+         "req": true
+        },
+        {
+         "w": "target",
+         "t": {
+          "k": "array",
+          "e": {
+           "k": "ref",
+           "r": "workers_placement_target"
+          },
+          "min": 1,
+          "max": 1
+         },
+         "req": true
+        }
+       ]
+      }
+     ],
+     "excl": true
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "last_analyzed_at",
+       "t": {
+        "k": "scalar",
+        "s": "date-time"
+       }
+      },
+      {
+       "w": "status",
+       "t": {
+        "k": "ref",
+        "r": "workers_placement_status"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "workers_placement_info_no_status": {
+   "k": "union",
+   "m": [
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "mode",
+       "t": {
+        "k": "enum",
+        "v": [
+         "smart"
+        ]
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "region",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "hostname",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "host",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "mode",
+       "t": {
+        "k": "enum",
+        "v": [
+         "targeted"
+        ]
+       },
+       "req": true
+      },
+      {
+       "w": "region",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "hostname",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      },
+      {
+       "w": "mode",
+       "t": {
+        "k": "enum",
+        "v": [
+         "targeted"
+        ]
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "host",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      },
+      {
+       "w": "mode",
+       "t": {
+        "k": "enum",
+        "v": [
+         "targeted"
+        ]
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "mode",
+       "t": {
+        "k": "enum",
+        "v": [
+         "targeted"
+        ]
+       },
+       "req": true
+      },
+      {
+       "w": "target",
+       "t": {
+        "k": "array",
+        "e": {
+         "k": "ref",
+         "r": "workers_placement_target"
+        },
+        "min": 1,
+        "max": 1
+       },
+       "req": true
+      }
+     ]
+    }
+   ],
+   "excl": true
+  },
+  "workers_placement_mode": {
+   "k": "enum",
+   "v": [
+    "smart",
+    "targeted"
+   ]
+  },
+  "workers_placement_status": {
+   "k": "enum",
+   "v": [
+    "SUCCESS",
+    "UNSUPPORTED_APPLICATION",
+    "INSUFFICIENT_INVOCATIONS"
+   ]
+  },
+  "workers_placement_target": {
+   "k": "union",
+   "m": [
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "region",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "hostname",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    },
+    {
+     "k": "object",
+     "f": [
+      {
+       "w": "host",
+       "t": {
+        "k": "scalar",
+        "s": "string"
+       },
+       "req": true
+      }
+     ]
+    }
+   ],
+   "excl": true
+  },
+  "workers_route": {
+   "k": "object",
+   "f": [
+    {
+     "w": "id",
+     "t": {
+      "k": "ref",
+      "r": "workers_identifier"
+     },
+     "req": true
+    },
+    {
+     "w": "pattern",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "script",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_script-and-version-settings-item": {
+   "k": "object",
+   "f": [
+    {
+     "w": "annotations",
+     "t": {
+      "k": "ref",
+      "r": "workers_script-and-version-settings-item_annotations"
+     }
+    },
+    {
+     "w": "bindings",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_bindings"
+       },
+       {
+        "k": "array",
+        "e": {
+         "k": "ref",
+         "r": "workers_binding_item"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "w": "cache_options",
+     "t": {
+      "k": "ref",
+      "r": "workers_cache_options"
+     }
+    },
+    {
+     "w": "compatibility_date",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_compatibility_date"
+       },
+       {
+        "k": "scalar",
+        "s": "string"
+       }
+      ]
+     }
+    },
+    {
+     "w": "compatibility_flags",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_compatibility_flags"
+       },
+       {
+        "k": "array",
+        "e": {
+         "k": "scalar",
+         "s": "string"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "w": "exports",
+     "t": {
+      "k": "ref",
+      "r": "workers_exports_config_map"
+     }
+    },
+    {
+     "w": "exports_reconciliation",
+     "t": {
+      "k": "ref",
+      "r": "workers_exports_reconciliation_result"
+     }
+    },
+    {
+     "w": "limits",
+     "t": {
+      "k": "ref",
+      "r": "workers_limits"
+     }
+    },
+    {
+     "w": "logpush",
+     "t": {
+      "k": "ref",
+      "r": "workers_logpush"
+     }
+    },
+    {
+     "w": "migrations",
+     "t": {
+      "k": "ref",
+      "r": "workers_script-and-version-settings-item_migrations"
+     }
+    },
+    {
+     "w": "observability",
+     "t": {
+      "k": "ref",
+      "r": "workers_observability-2"
+     }
+    },
+    {
+     "w": "placement",
+     "t": {
+      "k": "ref",
+      "r": "workers_placement_info_no_status"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_tags"
+       },
+       {
+        "k": "array",
+        "e": {
+         "k": "scalar",
+         "s": "string"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "w": "tail_consumers",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_tail_consumers"
+       },
+       {
+        "k": "array",
+        "e": {
+         "k": "ref",
+         "r": "workers_tail_consumers_script"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "w": "usage_model",
+     "t": {
+      "k": "ref",
+      "r": "workers_usage_model"
+     }
+    }
+   ]
+  },
+  "workers_script-and-version-settings-item_annotations": {
+   "k": "object",
+   "f": [
+    {
+     "w": "workers/message",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "workers/tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "workers/triggered_by",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_script-and-version-settings-item_migrations": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "workers_single_step_migrations"
+    },
+    {
+     "k": "ref",
+     "r": "workers_multiple_step_migrations"
+    }
+   ],
+   "excl": true
+  },
+  "workers_script-response": {
+   "k": "object",
+   "f": [
+    {
+     "w": "cache_options",
+     "t": {
+      "k": "ref",
+      "r": "workers_cache_options"
+     }
+    },
+    {
+     "w": "compatibility_date",
+     "t": {
+      "k": "ref",
+      "r": "workers_compatibility_date"
+     }
+    },
+    {
+     "w": "compatibility_flags",
+     "t": {
+      "k": "ref",
+      "r": "workers_compatibility_flags"
+     }
+    },
+    {
+     "w": "created_on",
+     "t": {
+      "k": "ref",
+      "r": "workers_created_on"
+     }
+    },
+    {
+     "w": "etag",
+     "t": {
+      "k": "ref",
+      "r": "workers_etag"
+     }
+    },
+    {
+     "w": "exports",
+     "t": {
+      "k": "ref",
+      "r": "workers_exports_config_map"
+     }
+    },
+    {
+     "w": "handlers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "has_assets",
+     "t": {
+      "k": "ref",
+      "r": "workers_has_assets"
+     }
+    },
+    {
+     "w": "has_modules",
+     "t": {
+      "k": "ref",
+      "r": "workers_has_modules"
+     }
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "last_deployed_from",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "logpush",
+     "t": {
+      "k": "ref",
+      "r": "workers_logpush"
+     }
+    },
+    {
+     "w": "migration_tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "modified_on",
+     "t": {
+      "k": "ref",
+      "r": "workers_modified_on"
+     }
+    },
+    {
+     "w": "named_handlers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "ref",
+       "r": "workers_script-response_named_handlersItem"
+      }
+     }
+    },
+    {
+     "w": "observability",
+     "t": {
+      "k": "ref",
+      "r": "workers_observability-2"
+     }
+    },
+    {
+     "w": "placement",
+     "t": {
+      "k": "ref",
+      "r": "workers_placement_info"
+     }
+    },
+    {
+     "w": "placement_mode",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_placement_mode"
+       },
+       {
+        "k": "scalar",
+        "s": "string"
+       }
+      ]
+     }
+    },
+    {
+     "w": "placement_status",
+     "t": {
+      "k": "all",
+      "m": [
+       {
+        "k": "ref",
+        "r": "workers_placement_status"
+       },
+       {
+        "k": "scalar",
+        "s": "string"
+       }
+      ]
+     }
+    },
+    {
+     "w": "tag",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "tags",
+     "t": {
+      "k": "ref",
+      "r": "workers_tags"
+     }
+    },
+    {
+     "w": "tail_consumers",
+     "t": {
+      "k": "ref",
+      "r": "workers_tail_consumers"
+     }
+    },
+    {
+     "w": "usage_model",
+     "t": {
+      "k": "ref",
+      "r": "workers_usage_model"
+     }
+    }
+   ]
+  },
+  "workers_script-response_named_handlersItem": {
+   "k": "object",
+   "f": [
+    {
+     "w": "handlers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "workers_secret": {
+   "k": "union",
+   "m": [
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_secret_text"
+    },
+    {
+     "k": "ref",
+     "r": "workers_binding_kind_secret_key"
+    }
+   ],
+   "excl": true,
+   "d": {
+    "w": "type",
+    "c": {
+     "secret_key": {
+      "k": "ref",
+      "r": "workers_binding_kind_secret_key"
+     },
+     "secret_text": {
+      "k": "ref",
+      "r": "workers_binding_kind_secret_text"
+     }
+    }
+   }
+  },
+  "workers_single_step_migrations": {
+   "k": "all",
+   "m": [
+    {
+     "k": "ref",
+     "r": "workers_migration_tag_conditions"
+    },
+    {
+     "k": "ref",
+     "r": "workers_migration_step"
+    }
+   ]
+  },
+  "workers_subdomain": {
+   "k": "object",
+   "f": [
+    {
+     "w": "enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    },
+    {
+     "w": "previews_enabled",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_tag": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "workers_tags": {
+   "k": "union",
+   "m": [
+    {
+     "k": "array",
+     "e": {
+      "k": "ref",
+      "r": "workers_tag"
+     },
+     "max": 10
+    },
+    {
+     "k": "scalar",
+     "s": "null"
+    }
+   ],
+   "excl": true
+  },
+  "workers_tail_consumers": {
+   "k": "union",
+   "m": [
+    {
+     "k": "array",
+     "e": {
+      "k": "ref",
+      "r": "workers_tail_consumers_script"
+     }
+    },
+    {
+     "k": "scalar",
+     "s": "null"
+    }
+   ],
+   "excl": true
+  },
+  "workers_tail_consumers_script": {
+   "k": "object",
+   "f": [
+    {
+     "w": "environment",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "namespace",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "service",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    }
+   ]
+  },
+  "workers_usage_model": {
+   "k": "enum",
+   "v": [
+    "standard",
+    "bundled",
+    "unbound"
+   ]
+  },
+  "workers_worker_export": {
+   "k": "object",
+   "f": [
+    {
+     "w": "cache",
+     "t": {
+      "k": "ref",
+      "r": "workers_entrypoint_cache_options"
+     }
+    },
+    {
+     "w": "state",
+     "t": {
+      "k": "enum",
+      "v": [
+       "created"
+      ]
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "enum",
+      "v": [
+       "worker"
+      ]
+     },
+     "req": true
+    }
+   ]
+  },
+  "zones_identifier": {
+   "k": "scalar",
+   "s": "string"
+  },
+  "zones_paused": {
+   "k": "scalar",
+   "s": "boolean"
+  },
+  "zones_result_info": {
+   "k": "object",
+   "f": [
+    {
+     "w": "count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "per_page",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "total_count",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    },
+    {
+     "w": "total_pages",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     }
+    }
+   ]
+  },
+  "zones_type": {
+   "k": "enum",
+   "v": [
+    "full",
+    "partial",
+    "secondary",
+    "internal"
+   ]
+  },
+  "zones_zone": {
+   "k": "object",
+   "f": [
+    {
+     "w": "account",
+     "t": {
+      "k": "ref",
+      "r": "zones_zone_account"
+     },
+     "req": true
+    },
+    {
+     "w": "activated_on",
+     "t": {
+      "k": "union",
+      "m": [
+       {
+        "k": "scalar",
+        "s": "date-time"
+       },
+       {
+        "k": "scalar",
+        "s": "null"
+       }
+      ],
+      "excl": true
+     },
+     "req": true
+    },
+    {
+     "w": "cname_suffix",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "created_on",
+     "t": {
+      "k": "scalar",
+      "s": "date-time"
+     },
+     "req": true
+    },
+    {
+     "w": "development_mode",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "double"
+     },
+     "req": true
+    },
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "meta",
+     "t": {
+      "k": "ref",
+      "r": "zones_zone_meta"
+     },
+     "req": true
+    },
+    {
+     "w": "modified_on",
+     "t": {
+      "k": "scalar",
+      "s": "date-time"
+     },
+     "req": true
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     },
+     "req": true
+    },
+    {
+     "w": "name_servers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     },
+     "req": true
+    },
+    {
+     "w": "original_dnshost",
+     "t": {
+      "k": "union",
+      "m": [
+       {
+        "k": "scalar",
+        "s": "string"
+       },
+       {
+        "k": "scalar",
+        "s": "null"
+       }
+      ],
+      "excl": true
+     },
+     "req": true
+    },
+    {
+     "w": "original_name_servers",
+     "t": {
+      "k": "union",
+      "m": [
+       {
+        "k": "array",
+        "e": {
+         "k": "scalar",
+         "s": "string"
+        }
+       },
+       {
+        "k": "scalar",
+        "s": "null"
+       }
+      ],
+      "excl": true
+     },
+     "req": true
+    },
+    {
+     "w": "original_registrar",
+     "t": {
+      "k": "union",
+      "m": [
+       {
+        "k": "scalar",
+        "s": "string"
+       },
+       {
+        "k": "scalar",
+        "s": "null"
+       }
+      ],
+      "excl": true
+     },
+     "req": true
+    },
+    {
+     "w": "owner",
+     "t": {
+      "k": "ref",
+      "r": "zones_zone_owner"
+     },
+     "req": true
+    },
+    {
+     "w": "paused",
+     "t": {
+      "k": "ref",
+      "r": "zones_paused"
+     }
+    },
+    {
+     "w": "permissions",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "plan",
+     "t": {
+      "k": "object",
+      "f": [
+       {
+        "w": "can_subscribe",
+        "t": {
+         "k": "scalar",
+         "s": "boolean"
+        }
+       },
+       {
+        "w": "currency",
+        "t": {
+         "k": "scalar",
+         "s": "string"
+        }
+       },
+       {
+        "w": "externally_managed",
+        "t": {
+         "k": "scalar",
+         "s": "boolean"
+        }
+       },
+       {
+        "w": "frequency",
+        "t": {
+         "k": "scalar",
+         "s": "string"
+        }
+       },
+       {
+        "w": "id",
+        "t": {
+         "k": "ref",
+         "r": "zones_identifier"
+        }
+       },
+       {
+        "w": "is_subscribed",
+        "t": {
+         "k": "scalar",
+         "s": "boolean"
+        }
+       },
+       {
+        "w": "legacy_discount",
+        "t": {
+         "k": "scalar",
+         "s": "boolean"
+        }
+       },
+       {
+        "w": "legacy_id",
+        "t": {
+         "k": "scalar",
+         "s": "string"
+        }
+       },
+       {
+        "w": "name",
+        "t": {
+         "k": "scalar",
+         "s": "string"
+        }
+       },
+       {
+        "w": "price",
+        "t": {
+         "k": "scalar",
+         "s": "number",
+         "n": "double"
+        }
+       }
+      ]
+     },
+     "req": true
+    },
+    {
+     "w": "status",
+     "t": {
+      "k": "enum",
+      "v": [
+       "initializing",
+       "pending",
+       "active",
+       "moved"
+      ]
+     }
+    },
+    {
+     "w": "tenant",
+     "t": {
+      "k": "object",
+      "f": [
+       {
+        "w": "id",
+        "t": {
+         "k": "ref",
+         "r": "zones_identifier"
+        }
+       },
+       {
+        "w": "name",
+        "t": {
+         "k": "scalar",
+         "s": "string"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "w": "tenant_unit",
+     "t": {
+      "k": "object",
+      "f": [
+       {
+        "w": "id",
+        "t": {
+         "k": "ref",
+         "r": "zones_identifier"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "ref",
+      "r": "zones_type"
+     }
+    },
+    {
+     "w": "vanity_name_servers",
+     "t": {
+      "k": "array",
+      "e": {
+       "k": "scalar",
+       "s": "string"
+      }
+     }
+    },
+    {
+     "w": "verification_key",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "zones_zone_account": {
+   "k": "object",
+   "f": [
+    {
+     "w": "id",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  },
+  "zones_zone_meta": {
+   "k": "object",
+   "f": [
+    {
+     "w": "cdn_only",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "custom_certificate_quota",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "w": "dns_only",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "foundation_dns",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "page_rule_quota",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    },
+    {
+     "w": "phishing_detected",
+     "t": {
+      "k": "scalar",
+      "s": "boolean"
+     }
+    },
+    {
+     "w": "step",
+     "t": {
+      "k": "scalar",
+      "s": "number",
+      "n": "int"
+     }
+    }
+   ]
+  },
+  "zones_zone_owner": {
+   "k": "object",
+   "f": [
+    {
+     "w": "id",
+     "t": {
+      "k": "ref",
+      "r": "zones_identifier"
+     }
+    },
+    {
+     "w": "name",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    },
+    {
+     "w": "type",
+     "t": {
+      "k": "scalar",
+      "s": "string"
+     }
+    }
+   ]
+  }
+ }
+}

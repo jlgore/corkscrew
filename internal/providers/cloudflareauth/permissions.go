@@ -25,22 +25,23 @@ var permissionBundles = []PermissionBundle{
 		Description: "Rulesets, transforms, and delivery policies",
 	},
 	{
-		Name:        "workers_read",
-		Services:    []string{"workers"},
-		Scopes:      []string{"account:read", "workers:read"},
-		Description: "Workers scripts, routes, and deployments",
+		Name:     "workers_read",
+		Services: []string{"workers"},
+		Scopes:   []string{"account:read", "workers:read"},
+		// Binding targets resolve with the storage and data scopes.
+		Description: "Workers scripts, settings, bindings, routes, and domains",
 	},
 	{
 		Name:        "storage_read",
 		Services:    []string{"storage"},
 		Scopes:      []string{"account:read", "workers.kv:read", "workers.queues:read", "workers.r2:read"},
-		Description: "R2, KV, queues, and secrets stores",
+		Description: "R2, KV, and queues",
 	},
 	{
 		Name:        "data_read",
 		Services:    []string{"data"},
-		Scopes:      []string{"account:read", "d1:read"},
-		Description: "D1 and other data-plane inventory",
+		Scopes:      []string{"account:read", "d1:read", "secrets_store:read", "workers:read"},
+		Description: "D1, Durable Objects, and Secrets Store",
 	},
 	{
 		Name:        "pages_read",

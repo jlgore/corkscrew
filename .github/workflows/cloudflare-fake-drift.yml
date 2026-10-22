@@ -1,0 +1,48 @@
+name: Cloudflare fake API drift
+
+# Regenerates the Cloudflare provider's fake API schema from the pinned Forge commit and spec
+# release, and fails if it differs from the committed file.
+on:
+  push:
+    paths:
+      - 'tools/forge-fakecf/**'
+      - 'plugins/cloudflare-provider/internal/fakecf/fakecf_gen.json'
+      - '.github/workflows/cloudflare-fake-drift.yml'
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'tools/forge-fakecf/**'
+      - 'plugins/cloudflare-provider/internal/fakecf/fakecf_gen.json'
+      - '.github/workflows/cloudflare-fake-drift.yml'
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      CORKSCREW_FORGE_CACHE: ${{ github.workspace }}/.forge-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Install pnpm
+        run: npm install --global pnpm@12.11.2
+
+      - name: Cache Forge build and spec
+        uses: actions/cache@v4
+        with:
+          path: .forge-cache
+          key: forge-${{ hashFiles('tools/forge-fakecf/FORGE_COMMIT', 'tools/forge-fakecf/SPEC_RELEASE') }}
+
+      - name: Regenerate
+        run: ./tools/forge-fakecf/gen.sh
+
+      - name: Check for drift
+        run: |
+          git diff --exit-code -- plugins/cloudflare-provider/internal/fakecf/fakecf_gen.json || {
+            echo "::error::fakecf_gen.json is stale: run make gen-cloudflare-fake and commit the result"
+            exit 1
+          }

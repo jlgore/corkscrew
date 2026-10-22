@@ -1,0 +1,220 @@
+apiVersion: v1
+kind: QueryPack
+metadata:
+  name: workers-bindings
+  namespace: cloudflare/workers-bindings
+  version: 1.0.0
+  description: "Least privilege for Cloudflare Worker bindings: what each Worker can reach, and who shares it."
+  author: Corkscrew
+  tags:
+    - cloudflare
+    - workers
+    - least-privilege
+  provider: cloudflare
+  resources:
+    - worker_binding
+    - worker_script
+    - r2_bucket
+    - kv_namespace
+    - d1_database
+    - queue
+    - secret_store_secret
+  min_engine_version: 1.0.0
+  labels:
+    category: security
+    domain: serverless
+  annotations:
+    requires: >-
+      A scan of the cloudflare workers service; CF.BND.03, CF.BND.04 and CF.BND.06 also use the
+      storage and data services, whose listings resolve binding targets. Bindings whose target
+      couldn't be checked aren't evaluated.
+    note: >-
+      Worker bindings have no read-only mode: an R2, KV, D1 or Queue binding grants full access.
+      Least privilege for bindings is about which Workers hold one, and how many.
+
+spec:
+  parameters:
+    - name: privileged_binding_kinds
+      description: Binding kinds that grant more than data access, reviewed by CF.BND.01.
+      type: list
+      default: [dispatch_namespace, mtls_certificate, vpc_service, vpc_network, hyperdrive, browser, send_email]
+    - name: privileged_binding_allowlist
+      description: >-
+        Privileged bindings that are approved, as "<script>:<kind>" (script name or Corkscrew
+        ID), for example "billing-cron:send_email".
+      type: list
+      default: []
+    - name: prod_name_pattern
+      description: >-
+        A regular expression matched against a binding target's name (for a Secrets Store
+        secret, "<store name>/<secret name>") to mark it as production.
+      type: string
+      default: '(?i)(^|[^a-z])prod(uction)?([^a-z]|$)'
+    - name: nonprod_name_pattern
+      description: A regular expression matched against a Worker's name to mark it as non-production.
+      type: string
+      default: '(?i)(^|[^a-z])(dev|development|staging|stage|test|testing|qa|preview|sandbox)([^a-z]|$)'
+    - name: max_binding_fan_in
+      description: Most Workers that may bind one R2 bucket, KV namespace, D1 database, or queue.
+      type: int
+      default: 3
+    - name: max_secret_fan_in
+      description: Most Workers that may bind one Secrets Store secret.
+      type: int
+      default: 2
+
+  queries:
+    - id: CF.BND.01
+      title: Worker holds an unreviewed privileged binding
+      description: |
+        The binding grants more than access to data: dispatching to other Workers, presenting
+        a client certificate, reaching a private network, opening database connections,
+        driving a browser, or sending email. Each one should be approved for the Worker that
+        holds it.
+      objective: Privileged bindings exist only where approved.
+      severity: MEDIUM
+      category: security
+      control_family: Access Control
+      tags: [least-privilege, bindings]
+      query_file: queries/privileged_bindings.sql
+      parameters: [privileged_binding_kinds, privileged_binding_allowlist]
+      control_mappings:
+        NIST_800_53: [AC-6, CM-7]
+      remediation:
+        description: Remove the binding, or approve it by adding it to privileged_binding_allowlist.
+        complexity: LOW
+        estimated_time: 15 minutes
+        steps:
+          - Confirm the Worker needs the binding. If not, remove it from the Wrangler configuration and redeploy.
+          - If it does, add "<script>:<kind>" to privileged_binding_allowlist.
+      references:
+        - name: Bindings
+          url: https://developers.cloudflare.com/workers/runtime-apis/bindings/
+          type: documentation
+      enabled: true
+
+    - id: CF.BND.02
+      title: Email binding can send to any verified address
+      description: |
+        A send_email binding with neither destination_address nor
+        allowed_destination_addresses can send to every verified destination address on the
+        account, so a compromised Worker can mail anyone the account can reach.
+      objective: Email bindings are limited to the addresses they need.
+      severity: MEDIUM
+      category: security
+      control_family: Access Control
+      tags: [least-privilege, email]
+      query_file: queries/unrestricted_email.sql
+      control_mappings:
+        NIST_800_53: [AC-6, SC-7]
+      remediation:
+        description: Restrict the binding's destinations.
+        complexity: LOW
+        estimated_time: 10 minutes
+        steps:
+          - Set `destination_address` for a single recipient, or `allowed_destination_addresses` for a list, on the send_email binding, then redeploy.
+      references:
+        - name: Send emails from Workers
+          url: https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/
+          type: documentation
+      enabled: true
+
+    - id: CF.BND.03
+      title: Non-production Worker binds a production resource
+      description: |
+        A Worker whose name marks it as non-production (dev, staging, test, and so on) holds a
+        binding to a resource whose name marks it as production. Non-production code gets full
+        access to production data or secrets.
+      objective: Environments don't share data or credentials.
+      severity: HIGH
+      category: security
+      control_family: Access Control
+      tags: [least-privilege, environments]
+      query_file: queries/cross_environment.sql
+      parameters: [prod_name_pattern, nonprod_name_pattern]
+      control_mappings:
+        NIST_800_53: [AC-6, SC-32]
+      remediation:
+        description: Bind the Worker to its environment's own resource.
+        complexity: MEDIUM
+        estimated_time: 1 hour
+        steps:
+          - Create, or reuse, the non-production equivalent of the resource.
+          - Point the binding at it in the Worker's environment-specific Wrangler configuration, and redeploy.
+      references:
+        - name: Environments
+          url: https://developers.cloudflare.com/workers/wrangler/environments/
+          type: documentation
+      enabled: true
+
+    - id: CF.BND.04
+      title: Too many Workers share one resource
+      description: |
+        More Workers bind the resource than the threshold allows. Every binding is full
+        access, so each extra Worker widens what a single compromised Worker can read or
+        change. The threshold for Secrets Store secrets is lower than for storage.
+      objective: Each resource is shared by as few Workers as possible.
+      severity: LOW
+      category: security
+      control_family: Access Control
+      tags: [least-privilege, blast-radius]
+      query_file: queries/fan_in.sql
+      parameters: [max_binding_fan_in, max_secret_fan_in]
+      control_mappings:
+        NIST_800_53: [AC-6]
+      remediation:
+        description: Narrow who holds the binding.
+        complexity: MEDIUM
+        estimated_time: 1 hour
+        steps:
+          - List the Workers in the finding's details and remove the binding from those that don't need it.
+          - For a secret, give each Worker its own secret where possible, so each can be rotated and revoked alone.
+      enabled: true
+
+    - id: CF.BND.05
+      title: Internal Worker is exposed on workers.dev
+      description: |
+        The Worker has no route or custom domain and is called through service bindings, so it
+        is internal. It is also on workers.dev, which makes it callable by anyone on the
+        internet, skipping the Workers that are supposed to front it.
+      objective: Internal Workers are reachable only through service bindings.
+      severity: HIGH
+      category: security
+      control_family: Boundary Protection
+      tags: [exposure, service-bindings]
+      query_file: queries/internal_exposed.sql
+      control_mappings:
+        NIST_800_53: [SC-7, AC-4]
+      remediation:
+        description: Turn off workers.dev for the Worker.
+        complexity: LOW
+        estimated_time: 5 minutes
+        steps:
+          - Set `workers_dev = false` (and `preview_urls = false`) in the Worker's Wrangler configuration and redeploy.
+      references:
+        - name: Service bindings
+          url: https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/
+          type: documentation
+      enabled: true
+
+    - id: CF.BND.06
+      title: Binding points to a resource that doesn't exist
+      description: |
+        The binding names a bucket, namespace, database, queue, Durable Object class, secret, or
+        Worker that the account's inventory doesn't have. The Worker fails when it uses it, and
+        whoever next creates a resource by that name inherits the Worker's access.
+      objective: Every binding reaches a resource that exists.
+      severity: MEDIUM
+      category: security
+      control_family: Configuration Management
+      tags: [bindings, hygiene]
+      query_file: queries/dangling_bindings.sql
+      control_mappings:
+        NIST_800_53: [CM-8]
+      remediation:
+        description: Remove the binding, or point it at the resource the Worker should use.
+        complexity: LOW
+        estimated_time: 15 minutes
+        steps:
+          - Remove or correct the binding in the Worker's Wrangler configuration and redeploy.
+      enabled: true

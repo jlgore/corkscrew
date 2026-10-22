@@ -9,9 +9,74 @@ Scans Cloudflare accounts for core edge inventory, DNS, Workers, storage, and th
 | `accounts` | `account` |
 | `zones` | `zone` |
 | `dns` | `dns_record` |
-| `workers` | `worker_script`, `worker_route`, `worker_domain` |
+| `workers` | `worker_script`, `worker_binding`, `worker_route`, `worker_domain` |
 | `storage` | `r2_bucket`, `kv_namespace`, `queue` |
 | `data` | `d1_database`, `durable_object_namespace`, `durable_object`, `secret_store`, `secret_store_secret` |
+
+Resource IDs that are only unique inside an account carry the account: an R2 bucket is
+`<account_id>/r2/<bucket>` and a worker script is `<account_id>/workers/<script>`. The
+`name` (and the `script_name` attribute) stays the bare script name.
+
+> **Identity change:** worker scripts used the bare script name as their ID before this. The first
+> scan after upgrading shows every worker script as removed and re-added, and findings keyed on
+> the old IDs resolve.
+
+## Workers, Bindings, and Secrets
+
+For every script, the workers scan fetches its settings and its workers.dev subdomain, so each
+script costs two requests beyond the list. Four scripts are fetched at a time, and the SDK backs
+off on 429s. Cloudflare allows 1,200 requests per five minutes per account.
+
+`worker_script` adds these attributes:
+
+- `workers_dev_enabled`, `previews_enabled`
+- `logpush`, `observability_enabled`, `observability_logs_enabled`: logs default to on with
+  observability when settings have no `logs` object
+- `tail_consumers`, `placement_mode`, `binding_count`
+- `has_route`, `has_custom_domain`
+
+An attribute whose request failed is **left out**, not set to `false`. The same applies to
+`has_route` and `has_custom_domain` when any route or domain listing failed.
+
+Each binding is a `worker_binding` (`<account>/workers/<script>/bindings/<name>`, parent: the
+script) with:
+
+- `kind`: the binding type, such as `kv_namespace`, `r2_bucket`, `secrets_store_secret`,
+  `service`, `plain_text`, or `send_email`.
+- `target_ref`: what the binding names, such as a bucket name, namespace ID, `<store>/<secret>`,
+  or `<script>#<class>`.
+- `target_type`, `target_service`, and `target_resolved`, for the kinds Corkscrew inventories
+  (R2, KV, D1, Queues, DO namespaces, Secrets Store secrets, other Workers):
+  - `"true"` comes with `target_id`.
+  - `"false"` means the listing succeeded and the target isn't in it: a dangling binding.
+  - No attribute means the target couldn't be checked: its listing was denied or failed, or
+    it's outside what the account listing shows.
+- `send_email`: `destination_restricted`.
+- `plain_text` and `json`: `looks_like_credential`, `credential_reason`, `value_length`.
+
+When the scan requests relationships, a worker script carries a `binds` edge to each resolved
+target. Resolving targets uses the R2, KV, Queues, D1, DO-namespace, and Secrets Store listings.
+A scan shares one listing of each between binding resolution and the storage and data scans. A
+token without those scopes still scans Workers: the targets stay unknown, and each denied listing
+is a coverage notice.
+
+### Binding values are never stored
+
+Corkscrew never persists a binding's value: not plain_text or secret_text `text`, not `json`,
+and not secret_key material. `raw_data` for a binding keeps only an allowlist of reference fields
+(names, IDs, bucket and queue names, and so on). Any field a new binding kind adds is dropped by
+default. For `plain_text` and `json`, the provider records only derived signals:
+
+- `looks_like_credential`
+- `credential_reason`: a pattern name such as `prefix:aws_access_key` or `entropy`, or for JSON
+  a path such as `json:$.primary.url:prefix:url_credentials`. Never the value.
+- `value_length`
+
+A test puts a sentinel in every value field and fails if it appears anywhere in the scan
+response.
+
+The compliance packs that use all of this are documented in
+[docs/packs/cloudflare-workers.md](../../docs/packs/cloudflare-workers.md).
 
 ## Auth
 
@@ -109,12 +174,18 @@ corkscrew plugin build cloudflare
 go test ./...
 ```
 
-The current tests focus on:
+Scanners run end to end against **`internal/fakecf`**, a fake Cloudflare API generated from
+Cloudflare's Forge spec (`openapi.forge.json`). Tests seed it with fixtures, and every fixture
+and every response is checked against the spec. A request no operation matches, an unknown query
+parameter, or a write fails the test. It can inject 403, 429, 5xx, delays, and repeated pages.
 
-- auth config parsing and permission planning
-- resolver chain (OAuth, API token, API key, auto-detection)
-- token expiry and refresh hooks
-- token validation (live HTTP mocked)
-- graceful fallback logic
-- normalized resource shaping
-- list cache stability
+- `testdata/fakeapi/baseline.json` is the fixture account: Workers that are routed, internal, on
+  and off workers.dev, staging, and cron, with bindings of most kinds, plus the storage and data
+  resources they reach. Its good and bad cases feed the compliance packs' tests.
+- `TestGoldenScan` scans the fixture account and compares the result with
+  `internal/packtest/testdata/cloudflare/golden-scan.json`. The core module loads that file into
+  DuckDB to test the packs. After a deliberate change to a scanner or fixture, run
+  `go test -run TestGoldenScan -update` and review the diff.
+- When the provider starts calling a new endpoint, add its operation to
+  `tools/forge-fakecf/operations.ts` and run `make gen-cloudflare-fake`. See
+  `tools/forge-fakecf/README.md` for the pins and how to keep up with Forge.

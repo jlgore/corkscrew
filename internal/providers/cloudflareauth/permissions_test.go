@@ -91,3 +91,21 @@ func TestVerifyResolvedAuthTokenNonStrict(t *testing.T) {
 		t.Fatalf("result.MissingScopes = %#v, want none", result.MissingScopes)
 	}
 }
+
+// The data scan lists D1, Durable Object namespaces, and Secrets Store; a token built from the
+// plan must be able to read all three.
+func TestPlanDataCoversSecretsStoreAndDurableObjects(t *testing.T) {
+	plan, err := (&StaticPermissionPlanner{}).Plan([]string{"data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"d1:read", "secrets_store:read", "workers:read"} {
+		found := false
+		for _, scope := range plan.Scopes {
+			found = found || scope == want
+		}
+		if !found {
+			t.Errorf("plan for data = %v, missing %s", plan.Scopes, want)
+		}
+	}
+}

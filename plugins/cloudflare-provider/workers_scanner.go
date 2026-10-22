@@ -23,32 +23,72 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 		errs = append(errs, fmt.Sprintf("zones list failed: %v", zoneErr))
 	}
 
-	for _, accountID := range accountIDs {
-		scripts, err := p.listWorkerScripts(ctx, accountID)
+	// Routes and custom domains name the script they serve; collect them first so each script
+	// can say whether it is reachable through a zone.
+	exposure := map[string]*scriptExposure{} // workerScriptID -> exposure
+	exposed := func(accountID, script string) *scriptExposure {
+		id := workerScriptID(accountID, script)
+		if exposure[id] == nil {
+			exposure[id] = &scriptExposure{}
+		}
+		return exposure[id]
+	}
+	routesComplete := zoneErr == nil
+	for _, zone := range zonesList {
+		routes, err := p.listWorkerRoutes(ctx, zone.ID)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, err))
+			routesComplete = false
+			errs = append(errs,
+				fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
 		}
-		for _, script := range scripts {
-			resources = append(resources, p.workerScriptResource(accountID, script))
+		for _, route := range routes {
+			resources = append(resources, p.workerRouteResource(zone.Account.ID, zone.ID,
+				zone.Name, route.ID, route.Pattern, route.Script, route))
+			if route.Script != "" && zone.Account.ID != "" {
+				exposed(zone.Account.ID, route.Script).route = true
+			}
 		}
+	}
 
+	for _, accountID := range accountIDs {
 		domains, err := p.listWorkerDomains(ctx, accountID)
+		domainsComplete := err == nil
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("workers domains list failed for account %s: %v", accountID, err))
 		}
 		for _, domain := range domains {
 			resources = append(resources, p.workerDomainResource(accountID, domain.ID, domain.Hostname, domain.Service, domain.ZoneID, domain.ZoneName, domain.Environment, domain.CERTID, domain))
+			if domain.Service != "" {
+				exposed(accountID, domain.Service).customDomain = true
+			}
 		}
-	}
 
-	for _, zone := range zonesList {
-		routes, err := p.listWorkerRoutes(ctx, zone.ID)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("workers routes list failed for zone %s: %v", zone.Name, err))
+		scripts, scriptsErr := p.listWorkerScripts(ctx, accountID)
+		if scriptsErr != nil {
+			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v",
+				accountID, scriptsErr))
 		}
-		for _, route := range routes {
-			resources = append(resources, p.workerRouteResource(zone.ID, zone.Name, route.ID, route.Pattern, route.Script, route))
+		targets := p.newBindingTargets(ctx, accountID, scripts, scriptsErr)
+		details, detailErrs := p.scriptDetails(ctx, accountID, scripts)
+		errs = append(errs, detailErrs...)
+		for i, script := range scripts {
+			detail := details[i]
+			if e := exposure[workerScriptID(accountID, script.ID)]; e != nil {
+				detail.exposure = *e
+			}
+			// Without every route and domain listed, "no route" can't be told from "not seen".
+			detail.exposure.known = routesComplete && domainsComplete
+			scriptResource := p.workerScriptResource(accountID, script, detail)
+			resources = append(resources, scriptResource)
+			if detail.settings != nil {
+				bindings, bindingErrs := p.workerBindingResources(
+					accountID, script.ID, detail.settings, targets)
+				scriptResource.Relationships = bindingRelationships(bindings)
+				resources = append(resources, bindings...)
+				errs = append(errs, bindingErrs...)
+			}
 		}
+		errs = append(errs, targets.errors()...)
 	}
 
 	return resources, errs
@@ -81,10 +121,28 @@ func (p *CloudflareProvider) listWorkerRoutes(ctx context.Context, zoneID string
 	return collectAutoPaging(iter)
 }
 
-func (p *CloudflareProvider) workerScriptResource(accountID string, script workers.ScriptListResponse) *pb.Resource {
+// workerScriptID is a worker script's resource ID. Script names are unique only within an
+// account, so the ID carries the account, in the same shape as an R2 bucket's.
+func workerScriptID(accountID, scriptName string) string {
+	return accountID + "/workers/" + scriptName
+}
+
+// scriptNameFromID returns the script name in a workerScriptID, or id unchanged when it isn't
+// one (a bare script name, the ID before it was account-scoped).
+func scriptNameFromID(id string) string {
+	if _, name, ok := strings.Cut(id, "/workers/"); ok {
+		return name
+	}
+	return id
+}
+
+func (p *CloudflareProvider) workerScriptResource(
+	accountID string, script workers.ScriptListResponse, detail scriptDetail,
+) *pb.Resource {
 	attrs := map[string]string{
 		"account_id":            accountID,
 		"script_id":             script.ID,
+		"script_name":           script.ID,
 		"compatibility_date":    script.CompatibilityDate,
 		"etag":                  script.Etag,
 		"has_assets":            fmt.Sprintf("%t", script.HasAssets),
@@ -104,7 +162,9 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 	if len(script.Tags) > 0 {
 		attrs["tags"] = strings.Join(script.Tags, ",")
 	}
-	resource := p.resource("workers", "worker_script", script.ID, script.ID, accountID, script, attrs)
+	detail.addAttributes(attrs)
+	id := workerScriptID(accountID, script.ID)
+	resource := p.resource("workers", "worker_script", id, script.ID, accountID, script, attrs)
 	if !script.CreatedOn.IsZero() {
 		resource.CreatedAt = timestamppb.New(script.CreatedOn)
 	}
@@ -114,14 +174,21 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 	return resource
 }
 
-func (p *CloudflareProvider) workerRouteResource(zoneID, zoneName, routeID, pattern, script string, raw interface{}) *pb.Resource {
+// workerRouteResource is a zone's route. accountID is the zone's account, which owns the script
+// the route names; it falls back to the zone ID when the zone's account is unknown, as DNS
+// records do.
+func (p *CloudflareProvider) workerRouteResource(
+	accountID, zoneID, zoneName, routeID, pattern, script string, raw interface{},
+) *pb.Resource {
 	attrs := map[string]string{
-		"zone_id":   zoneID,
-		"zone_name": zoneName,
-		"pattern":   pattern,
-		"script":    script,
+		"account_id": accountID,
+		"zone_id":    zoneID,
+		"zone_name":  zoneName,
+		"pattern":    pattern,
+		"script":     script,
 	}
-	resource := p.resource("workers", "worker_route", routeID, pattern, zoneID, raw, attrs)
+	owner := firstNonEmpty(accountID, zoneID)
+	resource := p.resource("workers", "worker_route", routeID, pattern, owner, raw, attrs)
 	resource.ParentId = zoneID
 	return resource
 }

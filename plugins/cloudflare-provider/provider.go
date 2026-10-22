@@ -125,6 +125,7 @@ func (p *CloudflareProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	if service == "" {
 		service = "zones"
 	}
+	ctx = withListMemo(ctx)
 
 	var (
 		resources []*pb.Resource
@@ -149,6 +150,11 @@ func (p *CloudflareProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	}
 
 	resources = compactResources(resources)
+	if !req.GetIncludeRelationships() {
+		for _, resource := range resources {
+			resource.Relationships = nil
+		}
+	}
 	return &pb.ScanServiceResponse{
 		Service:   service,
 		Resources: resources,
@@ -190,12 +196,15 @@ func (p *CloudflareProvider) BatchScan(ctx context.Context, req *pb.BatchScanReq
 	if len(services) == 0 {
 		services = cloudflareauth.CanonicalServices
 	}
-	return batchScanServices(ctx, services, p.ScanService), nil
+	includeRelationships := req.GetIncludeRelationships()
+	return batchScanServices(withListMemo(ctx), services, includeRelationships, p.ScanService), nil
 }
 
 type scanServiceFunc func(context.Context, *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error)
 
-func batchScanServices(ctx context.Context, services []string, scan scanServiceFunc) *pb.BatchScanResponse {
+func batchScanServices(
+	ctx context.Context, services []string, includeRelationships bool, scan scanServiceFunc,
+) *pb.BatchScanResponse {
 	start := time.Now()
 	response := &pb.BatchScanResponse{
 		Stats: &pb.ScanStats{
@@ -205,7 +214,10 @@ func batchScanServices(ctx context.Context, services []string, scan scanServiceF
 	}
 
 	for _, service := range services {
-		serviceResponse, err := scan(ctx, &pb.ScanServiceRequest{Service: service})
+		request := &pb.ScanServiceRequest{
+			Service: service, IncludeRelationships: includeRelationships,
+		}
+		serviceResponse, err := scan(ctx, request)
 		if err != nil {
 			response.Errors = append(response.Errors, fmt.Sprintf("service %s: %v", service, err))
 			response.Stats.FailedResources++
@@ -355,7 +367,7 @@ func supportedResourcesForService(service string) []string {
 	case "storage":
 		return []string{"r2_bucket", "kv_namespace", "queue"}
 	case "workers":
-		return []string{"worker_script", "worker_route", "worker_domain"}
+		return []string{"worker_script", "worker_binding", "worker_route", "worker_domain"}
 	case "zones":
 		return []string{"zone"}
 	default:

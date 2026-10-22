@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/d1"
@@ -65,13 +66,19 @@ func (p *CloudflareProvider) scanData(ctx context.Context) ([]*pb.Resource, []st
 }
 
 func (p *CloudflareProvider) listD1Databases(ctx context.Context, accountID string) ([]d1.DatabaseListResponse, error) {
-	iter := p.client.D1.Database.ListAutoPaging(ctx, d1.DatabaseListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "d1/"+accountID, func() ([]d1.DatabaseListResponse, error) {
+		params := d1.DatabaseListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.D1.Database.ListAutoPaging(ctx, params)
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listDurableObjectNamespaces(ctx context.Context, accountID string) ([]durable_objects.Namespace, error) {
-	iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "do/"+accountID, func() ([]durable_objects.Namespace, error) {
+		params := durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, params)
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listDurableObjects(ctx context.Context, accountID, namespaceID string) ([]durable_objects.DurableObject, error) {
@@ -80,13 +87,21 @@ func (p *CloudflareProvider) listDurableObjects(ctx context.Context, accountID, 
 }
 
 func (p *CloudflareProvider) listSecretStores(ctx context.Context, accountID string) ([]secrets_store.StoreListResponse, error) {
-	iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	type store = secrets_store.StoreListResponse
+	return memoizedList(ctx, "stores/"+accountID, func() ([]store, error) {
+		params := secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, params)
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listSecretStoreSecrets(ctx context.Context, accountID, storeID string) ([]secrets_store.StoreSecretListResponse, error) {
-	iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	type secret = secrets_store.StoreSecretListResponse
+	return memoizedList(ctx, "stores/"+accountID+"/"+storeID, func() ([]secret, error) {
+		params := secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)}
+		iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, params)
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) d1DatabaseResource(accountID string, database d1.DatabaseListResponse) *pb.Resource {
@@ -170,6 +185,7 @@ func (p *CloudflareProvider) secretStoreSecretListResource(accountID, storeID, s
 		"status":     string(secret.Status),
 		"comment":    secret.Comment,
 	}
+	addSecretTimes(attrs, secret.Created, secret.Modified)
 	if len(secret.Scopes) > 0 {
 		attrs["scopes"] = strings.Join(secret.Scopes, ",")
 	}
@@ -193,6 +209,7 @@ func (p *CloudflareProvider) secretStoreSecretResource(accountID, storeID, store
 		"status":     string(secret.Status),
 		"comment":    secret.Comment,
 	}
+	addSecretTimes(attrs, secret.Created, secret.Modified)
 	if len(secret.Scopes) > 0 {
 		attrs["scopes"] = strings.Join(secret.Scopes, ",")
 	}
@@ -205,4 +222,15 @@ func (p *CloudflareProvider) secretStoreSecretResource(accountID, storeID, store
 		resource.ModifiedAt = timestamppb.New(secret.Modified)
 	}
 	return resource
+}
+
+// addSecretTimes records when a secret was created and last modified (its last rotation) as
+// attributes. Storage writes created_at and modified_at as scan times, so packs read these.
+func addSecretTimes(attrs map[string]string, created, modified time.Time) {
+	if !created.IsZero() {
+		attrs["created_on"] = created.UTC().Format(time.RFC3339)
+	}
+	if !modified.IsZero() {
+		attrs["modified_on"] = modified.UTC().Format(time.RFC3339)
+	}
 }

@@ -191,6 +191,12 @@ generate-registry:
 	REPO=$${GITHUB_REPOSITORY:-"jlgore/corkscrew"}; \
 	./scripts/generate-plugin-registry.sh "$$VERSION" "$$REPO" "plugins/registry.json"
 
+# Regenerate the Cloudflare provider's fake API schema from Cloudflare's Forge spec (pinned in
+# tools/forge-fakecf). Needs cargo, node and pnpm; see tools/forge-fakecf/gen.sh.
+.PHONY: gen-cloudflare-fake
+gen-cloudflare-fake:
+	@./tools/forge-fakecf/gen.sh
+
 # =============================================================================
 # PROTOBUF GENERATION
 # =============================================================================

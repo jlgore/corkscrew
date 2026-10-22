@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -267,7 +268,7 @@ func (l *PackLoader) loadPackInternal(ctx context.Context, namespace string, loa
 	if err != nil {
 		return nil, LoaderError{
 			PackName: namespace,
-			Message:  "manifest not found",
+			Message:  "manifest unavailable",
 			Cause:    err,
 		}
 	}
@@ -329,22 +330,31 @@ func (l *PackLoader) findPackManifest(ctx context.Context, namespace string) (*P
 		return manifest, manifest.LoadedFrom, nil
 	}
 
-	// Search in filesystem paths
+	// Search in filesystem paths. A manifest that exists but can't be read or parsed is an
+	// error, not a miss: reporting "not found" would hide the reason from the pack's author.
 	for _, searchPath := range l.searchPaths {
 		manifestPath := l.getManifestPath(searchPath, namespace)
-		if manifest, err := l.loadManifestFromFile(manifestPath); err == nil {
+		manifest, err := l.loadManifestFromFile(manifestPath)
+		if err == nil {
 			l.manifestCache[namespace] = manifest
 			return manifest, manifestPath, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, "", fmt.Errorf("load manifest %s: %w", manifestPath, err)
 		}
 	}
 
 	// Search in embedded packs
 	if l.enableEmbeddedPacks {
-		embeddedPath := fmt.Sprintf("packs/%s/manifest.yaml", strings.ReplaceAll(namespace, "/", "/"))
-		if manifest, err := l.loadManifestFromEmbedded(embeddedPath); err == nil {
+		embeddedPath := fmt.Sprintf("packs/%s/manifest.yaml", namespace)
+		manifest, err := l.loadManifestFromEmbedded(embeddedPath)
+		if err == nil {
 			manifest.LoadedFrom = embeddedPath
 			l.manifestCache[namespace] = manifest
 			return manifest, embeddedPath, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, "", fmt.Errorf("load embedded manifest %s: %w", embeddedPath, err)
 		}
 	}
 
