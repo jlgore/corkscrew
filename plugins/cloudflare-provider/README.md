@@ -13,6 +13,14 @@ Scans Cloudflare accounts for core edge inventory, DNS, Workers, storage, and th
 | `storage` | `r2_bucket`, `kv_namespace`, `queue` |
 | `data` | `d1_database`, `durable_object_namespace`, `durable_object`, `secret_store`, `secret_store_secret` |
 
+Resource IDs that are only unique inside an account carry the account: an R2 bucket is
+`<account_id>/r2/<bucket>` and a worker script is `<account_id>/workers/<script>`. The
+`name` (and the `script_name` attribute) stays the bare script name.
+
+> **Identity change:** worker scripts used the bare script name as their ID before this. The first
+> scan after upgrading shows every worker script as removed and re-added, and findings keyed on
+> the old IDs resolve.
+
 ## Auth
 
 Supported methods:

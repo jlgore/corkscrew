@@ -50,8 +50,8 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 		{"workers", []string{
 			"worker_domain dbe10b4bc17c295377eabd600e1787fd",
 			"worker_route 023e105f4ecef8ad9ca31a8372d0c354",
-			"worker_script api-gateway",
-			"worker_script internal-auth",
+			"worker_script " + fixtureAccountID + "/workers/api-gateway",
+			"worker_script " + fixtureAccountID + "/workers/internal-auth",
 		}},
 		{"storage", []string{
 			"kv_namespace 0f2ac74b498b48028cb68387c421e279",
@@ -93,8 +93,9 @@ func TestScanWorkersAttributesFromBaseline(t *testing.T) {
 	for _, r := range resp.Resources {
 		byID[r.Id] = decodeAttrs(r.Attributes)
 	}
-	script := byID["internal-auth"]
-	if script["account_id"] != fixtureAccountID || script["compatibility_date"] != "2023-05-18" {
+	script := byID[fixtureAccountID+"/workers/internal-auth"]
+	if script["account_id"] != fixtureAccountID || script["script_name"] != "internal-auth" ||
+		script["compatibility_date"] != "2023-05-18" {
 		t.Errorf("internal-auth attrs = %v", script)
 	}
 	route := byID["023e105f4ecef8ad9ca31a8372d0c354"]
@@ -143,3 +144,50 @@ func TestScanZonesRetriesTransientFailure(t *testing.T) {
 	}
 }
 
+// Two accounts may each have a worker with the same name; their IDs must differ.
+func TestWorkerScriptIDsAreAccountScoped(t *testing.T) {
+	srv := newFakeAPI(t)
+	const otherAccount = "1b1ba6e3c4b54e2e8f4c5a6b7c8d9e0f"
+	srv.SetList("GET /accounts", nil, map[string]any{"id": otherAccount, "name": "Acme Staging", "type": "standard"})
+	srv.SetList("GET /accounts/{account_id}/workers/scripts", fakecf.Params{"account_id": otherAccount},
+		map[string]any{"id": "api-gateway", "compatibility_date": "2025-09-01"})
+	p := newTestProvider(t, srv)
+
+	resp := scanService(t, p, "workers")
+	names := map[string]int{}
+	ids := map[string]bool{}
+	for _, r := range resp.Resources {
+		if r.Type != "worker_script" {
+			continue
+		}
+		names[r.Name]++
+		ids[r.Id] = true
+	}
+	if names["api-gateway"] != 2 {
+		t.Fatalf("api-gateway scripts = %d, want one per account", names["api-gateway"])
+	}
+	for _, want := range []string{
+		fixtureAccountID + "/workers/api-gateway",
+		otherAccount + "/workers/api-gateway",
+	} {
+		if !ids[want] {
+			t.Errorf("no worker_script %s in %v", want, ids)
+		}
+	}
+}
+
+// Describe finds a script from its account-scoped ID, and from a bare name (the old ID form).
+func TestDescribeWorkerScriptByIDForms(t *testing.T) {
+	p := newTestProvider(t, newFakeAPI(t))
+	for _, id := range []string{fixtureAccountID + "/workers/internal-auth", "internal-auth"} {
+		got, err := p.describeByType(context.Background(), &pb.ResourceRef{
+			Type: "worker_script", Id: id, AccountId: fixtureAccountID,
+		})
+		if err != nil {
+			t.Fatalf("describe %s: %v", id, err)
+		}
+		if got.Id != fixtureAccountID+"/workers/internal-auth" || got.Name != "internal-auth" {
+			t.Errorf("describe %s = %s (%s)", id, got.Id, got.Name)
+		}
+	}
+}

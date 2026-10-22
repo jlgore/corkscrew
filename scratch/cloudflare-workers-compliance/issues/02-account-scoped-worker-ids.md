@@ -1,6 +1,6 @@
 # Account-scoped worker script IDs
 
-Status: ready-for-agent
+Status: complete
 Depends on: —
 
 `workerScriptResource` uses `script.ID`, the script name, as the resource ID.
@@ -22,3 +22,10 @@ contract, or whether the schema lifecycle needs a migration that rewrites the ol
 old IDs. Drift across the change shows Workers as re-added, and findings keyed on the old IDs
 resolve. Call this out in the release notes.
 
+2026-10-22: Implemented on `feat/cloudflare-forge-fake`. `workerScriptID(accountID, name)` in
+`workers_scanner.go` builds the ID. `name` and a new `script_name` attribute keep the bare name.
+`describe` resolves the script from the `script_name` attribute, the name part of an
+account-scoped ID, or a bare name, so refs saved before the change still describe. The identity
+change is noted in the provider README, since there's no changelog. Tests:
+`TestWorkerScriptIDsAreAccountScoped` (the same name in two accounts gives two IDs) and
+`TestDescribeWorkerScriptByIDForms`.

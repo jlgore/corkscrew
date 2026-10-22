@@ -166,7 +166,7 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
 | # | Issue | Depends on | Status |
 |---|---|---|---|
 | 01 | [Forge-generated fake Cloudflare API](issues/01-fake-cloudflare-api-harness.md) | — | complete |
-| 02 | [Account-scoped worker script IDs](issues/02-account-scoped-worker-ids.md) | — | ready-for-agent |
+| 02 | [Account-scoped worker script IDs](issues/02-account-scoped-worker-ids.md) | — | complete |
 | 03 | [Script settings and exposure enrichment](issues/03-script-settings-enrichment.md) | 01 | ready-for-agent |
 | 04 | [worker_binding resources and credential classifier](issues/04-worker-binding-resources.md) | 01, 02, 03 | ready-for-agent |
 | 05 | [Binding relationships and target resolution](issues/05-binding-relationships.md) | 04 | ready-for-agent |

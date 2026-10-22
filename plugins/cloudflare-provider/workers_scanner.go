@@ -81,10 +81,26 @@ func (p *CloudflareProvider) listWorkerRoutes(ctx context.Context, zoneID string
 	return collectAutoPaging(iter)
 }
 
+// workerScriptID is a worker script's resource ID. Script names are unique only within an
+// account, so the ID carries the account, in the same shape as an R2 bucket's.
+func workerScriptID(accountID, scriptName string) string {
+	return accountID + "/workers/" + scriptName
+}
+
+// scriptNameFromID returns the script name in a workerScriptID, or id unchanged when it isn't
+// one (a bare script name, the ID before it was account-scoped).
+func scriptNameFromID(id string) string {
+	if _, name, ok := strings.Cut(id, "/workers/"); ok {
+		return name
+	}
+	return id
+}
+
 func (p *CloudflareProvider) workerScriptResource(accountID string, script workers.ScriptListResponse) *pb.Resource {
 	attrs := map[string]string{
 		"account_id":            accountID,
 		"script_id":             script.ID,
+		"script_name":           script.ID,
 		"compatibility_date":    script.CompatibilityDate,
 		"etag":                  script.Etag,
 		"has_assets":            fmt.Sprintf("%t", script.HasAssets),
@@ -104,7 +120,7 @@ func (p *CloudflareProvider) workerScriptResource(accountID string, script worke
 	if len(script.Tags) > 0 {
 		attrs["tags"] = strings.Join(script.Tags, ",")
 	}
-	resource := p.resource("workers", "worker_script", script.ID, script.ID, accountID, script, attrs)
+	resource := p.resource("workers", "worker_script", workerScriptID(accountID, script.ID), script.ID, accountID, script, attrs)
 	if !script.CreatedOn.IsZero() {
 		resource.CreatedAt = timestamppb.New(script.CreatedOn)
 	}

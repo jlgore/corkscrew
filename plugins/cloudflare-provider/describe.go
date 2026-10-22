@@ -150,8 +150,9 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 		if err != nil {
 			return nil, fmt.Errorf("list worker scripts for account %s: %w", accountID, err)
 		}
+		scriptName := firstNonEmpty(ref.GetBasicAttributes()["script_name"], scriptNameFromID(ref.GetId()), ref.GetName())
 		for _, script := range scripts {
-			if script.ID == ref.GetId() || script.ID == ref.GetName() {
+			if script.ID == scriptName {
 				return p.workerScriptResource(accountID, script), nil
 			}
 		}
