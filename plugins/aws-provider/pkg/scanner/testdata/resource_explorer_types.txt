@@ -1,0 +1,142 @@
+# Resource Explorer resource type strings and the CloudFormation type each should map to.
+#
+# Format: <resource explorer type> <cloudformation type | ->
+# "-" means the type has no Cloud Control (CloudFormation registry) equivalent, so the scanner
+# reports it once as an unsupported_type notice and skips its resources.
+#
+# Source: the "Resource types you can search for with Resource Explorer" table of the AWS
+# Resource Explorer User Guide (the same list `aws resource-explorer-2
+# list-supported-resource-types` returns), transcribed by hand as a subset covering the
+# commonly scanned services, Oct 2026. It is not the full list. To refresh it, run
+#
+#   aws resource-explorer-2 list-supported-resource-types \
+#     --query 'ResourceTypes[].ResourceType' --output text | tr '\t' '\n'
+#
+# and give each new line its CloudFormation type, or "-". TestExplorerTypeFixture logs every
+# type that does not map, so new gaps are visible.
+
+access-analyzer:analyzer                    AWS::AccessAnalyzer::Analyzer
+acm:certificate                             AWS::CertificateManager::Certificate
+acm-pca:certificate-authority               AWS::ACMPCA::CertificateAuthority
+airflow:environment                         AWS::MWAA::Environment
+amplify:apps                                AWS::Amplify::App
+apigateway:restapis                         AWS::ApiGateway::RestApi
+apigateway:apis                             AWS::ApiGatewayV2::Api
+app-integrations:event-integration          AWS::AppIntegrations::EventIntegration
+apprunner:service                           AWS::AppRunner::Service
+athena:datacatalog                          AWS::Athena::DataCatalog
+athena:workgroup                            AWS::Athena::WorkGroup
+autoscaling:autoScalingGroup                AWS::AutoScaling::AutoScalingGroup
+backup:backup-plan                          AWS::Backup::BackupPlan
+backup:backup-vault                         AWS::Backup::BackupVault
+batch:compute-environment                   AWS::Batch::ComputeEnvironment
+batch:job-queue                             AWS::Batch::JobQueue
+cloudformation:stack                        AWS::CloudFormation::Stack
+cloudfront:distribution                     AWS::CloudFront::Distribution
+cloudtrail:trail                            AWS::CloudTrail::Trail
+cloudwatch:alarm                            AWS::CloudWatch::Alarm
+cloudwatch:dashboard                        AWS::CloudWatch::Dashboard
+codebuild:project                           AWS::CodeBuild::Project
+codecommit:repository                       AWS::CodeCommit::Repository
+codepipeline:pipeline                       AWS::CodePipeline::Pipeline
+dynamodb:table                              AWS::DynamoDB::Table
+ec2:capacity-reservation                    AWS::EC2::CapacityReservation
+ec2:customer-gateway                        AWS::EC2::CustomerGateway
+ec2:dhcp-options                            AWS::EC2::DHCPOptions
+ec2:elastic-ip                              AWS::EC2::EIP
+ec2:fleet                                   AWS::EC2::EC2Fleet
+ec2:flow-log                                AWS::EC2::FlowLog
+ec2:host                                    AWS::EC2::Host
+ec2:image                                   -
+ec2:instance                                AWS::EC2::Instance
+ec2:internet-gateway                        AWS::EC2::InternetGateway
+ec2:key-pair                                AWS::EC2::KeyPair
+ec2:launch-template                         AWS::EC2::LaunchTemplate
+ec2:natgateway                              AWS::EC2::NatGateway
+ec2:network-acl                             AWS::EC2::NetworkAcl
+ec2:network-interface                       AWS::EC2::NetworkInterface
+ec2:placement-group                         AWS::EC2::PlacementGroup
+ec2:prefix-list                             AWS::EC2::PrefixList
+ec2:route-table                             AWS::EC2::RouteTable
+ec2:security-group                          AWS::EC2::SecurityGroup
+ec2:security-group-rule                     -
+ec2:snapshot                                -
+ec2:subnet                                  AWS::EC2::Subnet
+ec2:transit-gateway                         AWS::EC2::TransitGateway
+ec2:volume                                  AWS::EC2::Volume
+ec2:vpc                                     AWS::EC2::VPC
+ec2:vpc-endpoint                            AWS::EC2::VPCEndpoint
+ec2:vpc-peering-connection                  AWS::EC2::VPCPeeringConnection
+ec2:vpn-connection                          AWS::EC2::VPNConnection
+ec2:vpn-gateway                             AWS::EC2::VPNGateway
+ecr:repository                              AWS::ECR::Repository
+ecs:cluster                                 AWS::ECS::Cluster
+ecs:container-instance                      -
+ecs:service                                 AWS::ECS::Service
+ecs:task-definition                         AWS::ECS::TaskDefinition
+eks:cluster                                 AWS::EKS::Cluster
+eks:nodegroup                               AWS::EKS::Nodegroup
+elasticache:cluster                         AWS::ElastiCache::CacheCluster
+elasticache:parametergroup                  AWS::ElastiCache::ParameterGroup
+elasticache:replicationgroup                AWS::ElastiCache::ReplicationGroup
+elasticache:subnetgroup                     AWS::ElastiCache::SubnetGroup
+elasticache:user                            AWS::ElastiCache::User
+elasticache:usergroup                       AWS::ElastiCache::UserGroup
+elasticfilesystem:access-point              AWS::EFS::AccessPoint
+elasticfilesystem:file-system               AWS::EFS::FileSystem
+elasticloadbalancing:listener               AWS::ElasticLoadBalancingV2::Listener
+elasticloadbalancing:listener/app           AWS::ElasticLoadBalancingV2::Listener
+elasticloadbalancing:listener/gwy           AWS::ElasticLoadBalancingV2::Listener
+elasticloadbalancing:listener/net           AWS::ElasticLoadBalancingV2::Listener
+elasticloadbalancing:listener-rule          AWS::ElasticLoadBalancingV2::ListenerRule
+elasticloadbalancing:listener-rule/app      AWS::ElasticLoadBalancingV2::ListenerRule
+elasticloadbalancing:listener-rule/net      AWS::ElasticLoadBalancingV2::ListenerRule
+elasticloadbalancing:loadbalancer           -
+elasticloadbalancing:loadbalancer/app       AWS::ElasticLoadBalancingV2::LoadBalancer
+elasticloadbalancing:loadbalancer/gwy       AWS::ElasticLoadBalancingV2::LoadBalancer
+elasticloadbalancing:loadbalancer/net       AWS::ElasticLoadBalancingV2::LoadBalancer
+elasticloadbalancing:targetgroup            AWS::ElasticLoadBalancingV2::TargetGroup
+elasticloadbalancing:truststore             AWS::ElasticLoadBalancingV2::TrustStore
+es:domain                                   AWS::OpenSearchService::Domain
+events:event-bus                            AWS::Events::EventBus
+events:rule                                 AWS::Events::Rule
+firehose:deliverystream                     AWS::KinesisFirehose::DeliveryStream
+glue:crawler                                AWS::Glue::Crawler
+glue:database                               AWS::Glue::Database
+glue:job                                    AWS::Glue::Job
+glue:table                                  AWS::Glue::Table
+iam:group                                   AWS::IAM::Group
+iam:instance-profile                        AWS::IAM::InstanceProfile
+iam:oidc-provider                           AWS::IAM::OIDCProvider
+iam:policy                                  AWS::IAM::ManagedPolicy
+iam:role                                    AWS::IAM::Role
+iam:saml-provider                           AWS::IAM::SAMLProvider
+iam:server-certificate                      AWS::IAM::ServerCertificate
+iam:user                                    AWS::IAM::User
+iam:virtual-mfa-device                      AWS::IAM::VirtualMFADevice
+kinesis:stream                              AWS::Kinesis::Stream
+kms:key                                     AWS::KMS::Key
+lambda:function                             AWS::Lambda::Function
+logs:log-group                              AWS::Logs::LogGroup
+rds:cluster                                 AWS::RDS::DBCluster
+rds:cluster-pg                              AWS::RDS::DBClusterParameterGroup
+rds:cluster-snapshot                        -
+rds:db                                      AWS::RDS::DBInstance
+rds:es                                      AWS::RDS::EventSubscription
+rds:og                                      AWS::RDS::OptionGroup
+rds:pg                                      AWS::RDS::DBParameterGroup
+rds:snapshot                                -
+rds:subgrp                                  AWS::RDS::DBSubnetGroup
+route53:hostedzone                          AWS::Route53::HostedZone
+s3:bucket                                   AWS::S3::Bucket
+sagemaker:endpoint                          AWS::SageMaker::Endpoint
+sagemaker:model                             AWS::SageMaker::Model
+sagemaker:notebook-instance                 AWS::SageMaker::NotebookInstance
+secretsmanager:secret                       AWS::SecretsManager::Secret
+sns:topic                                   AWS::SNS::Topic
+sqs:queue                                   AWS::SQS::Queue
+ssm:document                                AWS::SSM::Document
+ssm:maintenancewindow                       AWS::SSM::MaintenanceWindow
+ssm:parameter                               AWS::SSM::Parameter
+states:activity                             AWS::StepFunctions::Activity
+states:stateMachine                         AWS::StepFunctions::StateMachine

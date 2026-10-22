@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -398,14 +399,22 @@ func (f *fakeExplorer) QueryByResourceType(context.Context, string) ([]*pb.Resou
 
 func (f *fakeExplorer) IsHealthy(context.Context) bool { return true }
 
-// discovered installs a successful type discovery with the given RE-to-CFN reverse map.
+// discovered installs a successful type discovery with the given RE-to-CFN reverse map; the
+// discovered types are the reverse map's CFN types.
 func discovered(t *testing.T, reverse map[string]string) {
 	t.Helper()
 	resetDiscovery(t)
+	types := map[string][]string{}
+	for _, cfnType := range reverse {
+		svc := serviceFromCFNType(cfnType)
+		types[svc] = append(types[svc], cfnType)
+	}
+	for svc := range types {
+		sort.Strings(types[svc])
+	}
 	discovery.mu.Lock()
 	defer discovery.mu.Unlock()
-	discovery.ok, discovery.reverse = true, reverse
-	discovery.types = map[string][]string{}
+	discovery.ok, discovery.reverse, discovery.types = true, reverse, types
 }
 
 const (
@@ -542,7 +551,9 @@ func (*throttledList) ListResources(
 // RE's iam:policy is a managed policy; mapping it to the inline AWS::IAM::Policy would send
 // every managed policy to the wrong type.
 func TestScanServiceViaExplorerMapsManagedPolicies(t *testing.T) {
-	discovered(t, map[string]string{"iam:policy": "AWS::IAM::Policy"})
+	discovered(t, map[string]string{
+		"iam:policy": "AWS::IAM::Policy", "iam:managedpolicy": "AWS::IAM::ManagedPolicy",
+	})
 	policyARN := "arn:aws:iam::111111111111:policy/deploy"
 	s, _, registry := bucketScanner()
 	registry.schemas["AWS::IAM::ManagedPolicy"] = `["/properties/PolicyArn"]`

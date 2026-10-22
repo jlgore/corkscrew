@@ -92,6 +92,13 @@ corkscrew scan --provider aws --services s3 2>&1 | grep unsupported_type:
 
 The matcher is in `pkg/scanner/cloudcontrol_scanner.go` (see `isUnsupportedTypeErr`).
 
+With a Resource Explorer view, each Resource Explorer type (`elasticloadbalancing:loadbalancer/app`,
+`ec2:security-group`, ...) is mapped to its CloudFormation type (see `explorerCFNType` and
+`explorerTypeOverrides`). A Resource Explorer type with no Cloud Control type, such as
+`ec2:image` or `rds:snapshot`, is reported once as an `unsupported_type:` notice and its
+resources are skipped, as Cloud Control listing would never return them either. The known
+mappings are checked by `pkg/scanner/testdata/resource_explorer_types.txt`.
+
 ## What it does, end to end
 
 1. **Initialize**: load AWS config, optionally check for a Resource Explorer
