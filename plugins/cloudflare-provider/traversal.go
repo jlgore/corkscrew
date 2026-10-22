@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,6 +17,9 @@ import (
 )
 
 func (p *CloudflareProvider) scanAccounts(ctx context.Context) ([]*pb.Resource, []string) {
+	if len(p.config.Scope.AccountIDs) > 0 {
+		return p.getScopedAccounts(ctx)
+	}
 	accountsList, err := p.listAccounts(ctx)
 	var errs []string
 	if err != nil {
@@ -23,6 +28,23 @@ func (p *CloudflareProvider) scanAccounts(ctx context.Context) ([]*pb.Resource, 
 	resources := make([]*pb.Resource, 0, len(accountsList))
 	for _, account := range accountsList {
 		resources = append(resources, p.accountResource(account))
+	}
+	return resources, errs
+}
+
+// getScopedAccounts fetches the configured accounts directly, rather than listing every account
+// the credential can see and filtering.
+func (p *CloudflareProvider) getScopedAccounts(ctx context.Context) ([]*pb.Resource, []string) {
+	resources := make([]*pb.Resource, 0, len(p.config.Scope.AccountIDs))
+	var errs []string
+	for _, accountID := range p.config.Scope.AccountIDs {
+		params := accounts.AccountGetParams{AccountID: cloudflare.F(accountID)}
+		account, err := p.client.Accounts.Get(ctx, params)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("account %s get failed: %v", accountID, err))
+			continue
+		}
+		resources = append(resources, p.accountResource(*account))
 	}
 	return resources, errs
 }
@@ -68,6 +90,15 @@ var listItemsMax = 100_000
 // errListItemCap means a listing reached listItemsMax; the items collected are incomplete.
 var errListItemCap = errors.New("listing reached item cap")
 
+// errListRepeated means a listing returned items it had already returned, with enough items that
+// later pages may exist that the server never served; the items collected may be incomplete.
+var errListRepeated = errors.New("listing repeated items; later pages may be missing")
+
+// repeatCompleteItemsMax is Cloudflare's smallest default page size. A listing that repeats
+// before returning this many items fit on one page: the server is serving that page again for
+// every page number (the accounts listing does this for account-owned tokens), so it is complete.
+const repeatCompleteItemsMax = 20
+
 // autoPager is the iteration surface shared by the SDK's ListAutoPaging pagers.
 type autoPager[T any] interface {
 	Next() bool
@@ -76,18 +107,41 @@ type autoPager[T any] interface {
 }
 
 // collectAutoPaging drains iter, stopping with errListItemCap once listItemsMax items have been
-// collected. Items gathered before an error are returned with it, so callers keep what they
-// observed and report the listing as incomplete.
+// collected. The SDK pagers stop only on an empty page, so it also stops when an item comes back
+// that it already returned: a server that ignores the page number would otherwise be paged until
+// the cap or the deadline. A repeat within the first repeatCompleteItemsMax items ends a complete
+// listing; a later one returns errListRepeated. Items gathered before an error are returned with
+// it, so callers keep what they observed and report the listing as incomplete.
 func collectAutoPaging[T any](iter autoPager[T]) ([]T, error) {
 	itemsMax := listItemsMax
 	results := make([]T, 0)
+	seen := map[[sha256.Size]byte]bool{}
 	for iter.Next() {
 		if len(results) >= itemsMax {
 			return results, fmt.Errorf("%w (%d items)", errListItemCap, itemsMax)
 		}
-		results = append(results, iter.Current())
+		item := iter.Current()
+		if key, ok := itemKey(item); ok {
+			if seen[key] {
+				if len(results) < repeatCompleteItemsMax {
+					return results, nil
+				}
+				return results, fmt.Errorf("%w (after %d items)", errListRepeated, len(results))
+			}
+			seen[key] = true
+		}
+		results = append(results, item)
 	}
 	return results, iter.Err()
+}
+
+// itemKey identifies an item by its content. An item that can't be encoded isn't tracked.
+func itemKey[T any](item T) ([sha256.Size]byte, bool) {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return [sha256.Size]byte{}, false
+	}
+	return sha256.Sum256(data), true
 }
 
 func (p *CloudflareProvider) listAccounts(ctx context.Context) ([]accounts.Account, error) {
