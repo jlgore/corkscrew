@@ -140,6 +140,7 @@ pub fn get_or_load_with(
         if guard.cap() != max_entries {
             guard.resize(max_entries);
         }
+        assert_cache_bounded(&guard);
     }
     if let Some(hit) = cached_fresh(&key, ttl) {
         return Ok(hit);
@@ -163,9 +164,33 @@ pub fn get_or_load_with(
     // Return it to this caller, but do not cache it for anyone else.
     let fingerprint_after = fingerprint_path(&key);
     if fingerprint_after == fingerprint_before {
-        lock(cache()).put(key, Arc::clone(&loaded));
+        let mut guard = lock(cache());
+        guard.put(key, Arc::clone(&loaded));
+        assert_cache_bounded(&guard);
     }
     Ok(loaded)
+}
+
+/// Each entry is a whole graph, so the entry count is the cache's memory bound:
+/// at most its capacity, which `cache_max_entries` clamps to `CACHE_ENTRIES_MAX`.
+fn assert_cache_bounded(cache: &LruCache<String, Arc<LoadedGraph>>) {
+    assert!(
+        cache.cap().get() <= CACHE_ENTRIES_MAX,
+        "graph cache capacity is within CACHE_ENTRIES_MAX"
+    );
+    assert!(
+        cache.len() <= cache.cap().get(),
+        "graph cache entries are within its capacity"
+    );
+}
+
+/// Number of graphs currently cached.
+// Only corkscrew-graph-tests calls this, to check the entry bound.
+#[allow(dead_code)]
+pub fn cached_entry_count() -> usize {
+    let guard = lock(cache());
+    assert_cache_bounded(&guard);
+    guard.len()
 }
 
 pub fn invalidate(db_path: &str) {
