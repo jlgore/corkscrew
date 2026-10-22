@@ -112,6 +112,11 @@ The matcher is in `pkg/scanner/cloudcontrol_scanner.go` (see `isUnsupportedTypeE
    `access_denied:` notice.
 4. **Enrich**: for each resource ref, call `cloudcontrol.GetResource` and store
    the full JSON config as `raw_data`. Extract Arn and Tags into typed columns.
+   A resource whose `GetResource` fails is still stored, without its
+   configuration, and the failures are reported once per service and type
+   (`describe failed for N of M AWS::X::Y, first: ...`). That makes the scan
+   partial, so it resolves no findings (ADR 0023). A denied `GetResource` is an
+   `access_denied:` notice instead and leaves the scan complete.
 5. **Persist**: write to DuckDB. Global resources (S3, IAM, Route53, etc.) are
    marked with `region=""` so they aren't double-counted across regions.
 

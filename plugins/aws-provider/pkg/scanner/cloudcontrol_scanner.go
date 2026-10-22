@@ -496,7 +496,12 @@ func (s *CloudControlScanner) getProperties(
 	if err == nil {
 		err = errors.New("no resource description")
 	}
-	return "", fmt.Errorf("GetResource(%s, %s): %w", typeName, identifier, err)
+	err = fmt.Errorf("GetResource(%s, %s): %w", typeName, identifier, err)
+	if isAccessDeniedErr(err) {
+		// The credential's scope, not a broken scan: the provider reports it as a notice.
+		return "", &AccessDeniedError{Type: typeName, Err: err}
+	}
+	return "", err
 }
 
 // checkDescribedARN fails when arn is set and the described properties name a different Arn.
