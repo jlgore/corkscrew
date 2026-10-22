@@ -60,6 +60,18 @@ var bindingTargetRefs = map[string]func(f bindingFields, script string) string{
 	"ai_search":          func(f bindingFields, _ string) string { return f.str("instance_name") },
 }
 
+// bindingTargetTypes are the Corkscrew type and service of each kind's target, for the kinds
+// Corkscrew inventories and so can resolve.
+var bindingTargetTypes = map[string][2]string{
+	"r2_bucket":                {"r2_bucket", "storage"},
+	"kv_namespace":             {"kv_namespace", "storage"},
+	"queue":                    {"queue", "storage"},
+	"d1":                       {"d1_database", "data"},
+	"durable_object_namespace": {"durable_object_namespace", "data"},
+	"secrets_store_secret":     {"secret_store_secret", "data"},
+	"service":                  {"worker_script", "workers"},
+}
+
 // bindingFields is one binding as the API returned it, decoded with UseNumber.
 type bindingFields map[string]any
 
@@ -76,7 +88,8 @@ func workerBindingID(accountID, scriptName, bindingName string) string {
 
 // workerBindingResources returns a worker_binding for each of a script's bindings. A binding
 // that can't be decoded is reported in errs: it was observed but dropped.
-func (p *CloudflareProvider) workerBindingResources(accountID, scriptName string, settings *workers.ScriptScriptAndVersionSettingGetResponse) ([]*pb.Resource, []string) {
+// targets resolves each binding's target, or is nil to leave targets unresolved.
+func (p *CloudflareProvider) workerBindingResources(accountID, scriptName string, settings *workers.ScriptScriptAndVersionSettingGetResponse, targets *bindingTargets) ([]*pb.Resource, []string) {
 	resources := make([]*pb.Resource, 0, len(settings.Bindings))
 	var errs []string
 	for i, binding := range settings.Bindings {
@@ -85,7 +98,7 @@ func (p *CloudflareProvider) workerBindingResources(accountID, scriptName string
 			errs = append(errs, fmt.Sprintf("workers binding %d of %s/%s unreadable: %v", i, accountID, scriptName, err))
 			continue
 		}
-		resources = append(resources, p.workerBindingResource(accountID, scriptName, fields))
+		resources = append(resources, p.workerBindingResource(accountID, scriptName, fields, targets))
 	}
 	return resources, errs
 }
@@ -100,7 +113,7 @@ func decodeBinding(raw string) (bindingFields, error) {
 	return fields, nil
 }
 
-func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string, fields bindingFields) *pb.Resource {
+func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string, fields bindingFields, targets *bindingTargets) *pb.Resource {
 	name, kind := fields.str("name"), fields.str("type")
 	attrs := map[string]string{
 		"account_id":   accountID,
@@ -113,6 +126,7 @@ func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string,
 		attrs["target_ref"] = targetRef(fields, scriptName)
 	}
 	addBindingKindAttributes(kind, fields, attrs)
+	addBindingTargetAttributes(kind, fields, scriptName, targets, attrs)
 
 	stored := make(map[string]any, len(fields))
 	for key, value := range fields {
@@ -123,6 +137,30 @@ func (p *CloudflareProvider) workerBindingResource(accountID, scriptName string,
 	resource := p.resource("workers", "worker_binding", workerBindingID(accountID, scriptName, name), name, accountID, stored, attrs)
 	resource.ParentId = workerScriptID(accountID, scriptName)
 	return resource
+}
+
+// addBindingTargetAttributes records the target's type and service for kinds Corkscrew
+// inventories and, when the target could be checked, whether it exists (target_resolved) and
+// its ID. A target that couldn't be checked gets no target_resolved, so it never reads as
+// dangling.
+func addBindingTargetAttributes(kind string, fields bindingFields, scriptName string, targets *bindingTargets, attrs map[string]string) {
+	typeAndService, ok := bindingTargetTypes[kind]
+	if !ok {
+		return
+	}
+	attrs["target_type"], attrs["target_service"] = typeAndService[0], typeAndService[1]
+	if targets == nil {
+		return
+	}
+	target, status := targets.resolve(kind, fields, scriptName)
+	switch status {
+	case targetFound:
+		attrs["target_id"] = target.id
+		attrs["target_resolved"] = "true"
+	case targetMissing:
+		attrs["target_resolved"] = "false"
+	case targetUnknown:
+	}
 }
 
 // addBindingKindAttributes adds what one kind of binding says about its risk. For value-bearing

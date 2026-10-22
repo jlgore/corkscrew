@@ -169,7 +169,9 @@ func (p *CloudflareProvider) describeByType(ctx context.Context, ref *pb.Resourc
 		if err != nil {
 			return nil, fmt.Errorf("get worker settings %s/%s: %w", accountID, scriptName, err)
 		}
-		bindings, _ := p.workerBindingResources(accountID, scriptName, settings)
+		scripts, scriptsErr := p.listWorkerScripts(ctx, accountID)
+		targets := p.newBindingTargets(withListMemo(ctx), accountID, scripts, scriptsErr)
+		bindings, _ := p.workerBindingResources(accountID, scriptName, settings, targets)
 		for _, binding := range bindings {
 			if binding.Name == bindingName {
 				return binding, nil

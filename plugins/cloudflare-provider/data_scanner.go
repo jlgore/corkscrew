@@ -65,13 +65,17 @@ func (p *CloudflareProvider) scanData(ctx context.Context) ([]*pb.Resource, []st
 }
 
 func (p *CloudflareProvider) listD1Databases(ctx context.Context, accountID string) ([]d1.DatabaseListResponse, error) {
-	iter := p.client.D1.Database.ListAutoPaging(ctx, d1.DatabaseListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "d1/"+accountID, func() ([]d1.DatabaseListResponse, error) {
+		iter := p.client.D1.Database.ListAutoPaging(ctx, d1.DatabaseListParams{AccountID: cloudflare.F(accountID)})
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listDurableObjectNamespaces(ctx context.Context, accountID string) ([]durable_objects.Namespace, error) {
-	iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "do/"+accountID, func() ([]durable_objects.Namespace, error) {
+		iter := p.client.DurableObjects.Namespaces.ListAutoPaging(ctx, durable_objects.NamespaceListParams{AccountID: cloudflare.F(accountID)})
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listDurableObjects(ctx context.Context, accountID, namespaceID string) ([]durable_objects.DurableObject, error) {
@@ -80,13 +84,17 @@ func (p *CloudflareProvider) listDurableObjects(ctx context.Context, accountID, 
 }
 
 func (p *CloudflareProvider) listSecretStores(ctx context.Context, accountID string) ([]secrets_store.StoreListResponse, error) {
-	iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "stores/"+accountID, func() ([]secrets_store.StoreListResponse, error) {
+		iter := p.client.SecretsStore.Stores.ListAutoPaging(ctx, secrets_store.StoreListParams{AccountID: cloudflare.F(accountID)})
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listSecretStoreSecrets(ctx context.Context, accountID, storeID string) ([]secrets_store.StoreSecretListResponse, error) {
-	iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "stores/"+accountID+"/"+storeID, func() ([]secrets_store.StoreSecretListResponse, error) {
+		iter := p.client.SecretsStore.Stores.Secrets.ListAutoPaging(ctx, storeID, secrets_store.StoreSecretListParams{AccountID: cloudflare.F(accountID)})
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) d1DatabaseResource(accountID string, database d1.DatabaseListResponse) *pb.Resource {

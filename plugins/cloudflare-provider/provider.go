@@ -125,6 +125,7 @@ func (p *CloudflareProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	if service == "" {
 		service = "zones"
 	}
+	ctx = withListMemo(ctx)
 
 	var (
 		resources []*pb.Resource
@@ -149,6 +150,11 @@ func (p *CloudflareProvider) ScanService(ctx context.Context, req *pb.ScanServic
 	}
 
 	resources = compactResources(resources)
+	if !req.GetIncludeRelationships() {
+		for _, resource := range resources {
+			resource.Relationships = nil
+		}
+	}
 	return &pb.ScanServiceResponse{
 		Service:   service,
 		Resources: resources,
@@ -190,12 +196,12 @@ func (p *CloudflareProvider) BatchScan(ctx context.Context, req *pb.BatchScanReq
 	if len(services) == 0 {
 		services = cloudflareauth.CanonicalServices
 	}
-	return batchScanServices(ctx, services, p.ScanService), nil
+	return batchScanServices(withListMemo(ctx), services, req.GetIncludeRelationships(), p.ScanService), nil
 }
 
 type scanServiceFunc func(context.Context, *pb.ScanServiceRequest) (*pb.ScanServiceResponse, error)
 
-func batchScanServices(ctx context.Context, services []string, scan scanServiceFunc) *pb.BatchScanResponse {
+func batchScanServices(ctx context.Context, services []string, includeRelationships bool, scan scanServiceFunc) *pb.BatchScanResponse {
 	start := time.Now()
 	response := &pb.BatchScanResponse{
 		Stats: &pb.ScanStats{
@@ -205,7 +211,7 @@ func batchScanServices(ctx context.Context, services []string, scan scanServiceF
 	}
 
 	for _, service := range services {
-		serviceResponse, err := scan(ctx, &pb.ScanServiceRequest{Service: service})
+		serviceResponse, err := scan(ctx, &pb.ScanServiceRequest{Service: service, IncludeRelationships: includeRelationships})
 		if err != nil {
 			response.Errors = append(response.Errors, fmt.Sprintf("service %s: %v", service, err))
 			response.Stats.FailedResources++

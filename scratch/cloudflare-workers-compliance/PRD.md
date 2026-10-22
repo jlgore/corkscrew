@@ -169,7 +169,7 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
 | 02 | [Account-scoped worker script IDs](issues/02-account-scoped-worker-ids.md) | — | complete |
 | 03 | [Script settings and exposure enrichment](issues/03-script-settings-enrichment.md) | 01 | complete |
 | 04 | [worker_binding resources and credential classifier](issues/04-worker-binding-resources.md) | 01, 02, 03 | complete |
-| 05 | [Binding relationships and target resolution](issues/05-binding-relationships.md) | 04 | ready-for-agent |
+| 05 | [Binding relationships and target resolution](issues/05-binding-relationships.md) | 04 | complete |
 | 06 | [Golden scan and real-SQL pack test harness](issues/06-golden-scan-pack-harness.md) | 05 | ready-for-agent |
 | 07 | [Pack: cloudflare/workers-baseline](issues/07-pack-workers-baseline.md) | 06 | ready-for-agent |
 | 08 | [Pack: cloudflare/workers-bindings](issues/08-pack-workers-bindings.md) | 06 | ready-for-agent |

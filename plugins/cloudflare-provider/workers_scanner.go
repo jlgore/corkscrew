@@ -61,10 +61,11 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 			}
 		}
 
-		scripts, err := p.listWorkerScripts(ctx, accountID)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, err))
+		scripts, scriptsErr := p.listWorkerScripts(ctx, accountID)
+		if scriptsErr != nil {
+			errs = append(errs, fmt.Sprintf("workers scripts list failed for account %s: %v", accountID, scriptsErr))
 		}
+		targets := p.newBindingTargets(ctx, accountID, scripts, scriptsErr)
 		details, detailErrs := p.scriptDetails(ctx, accountID, scripts)
 		errs = append(errs, detailErrs...)
 		for i, script := range scripts {
@@ -74,13 +75,16 @@ func (p *CloudflareProvider) scanWorkers(ctx context.Context) ([]*pb.Resource, [
 			}
 			// Without every route and domain listed, "no route" can't be told from "not seen".
 			detail.exposure.known = routesComplete && domainsComplete
-			resources = append(resources, p.workerScriptResource(accountID, script, detail))
+			scriptResource := p.workerScriptResource(accountID, script, detail)
+			resources = append(resources, scriptResource)
 			if detail.settings != nil {
-				bindings, bindingErrs := p.workerBindingResources(accountID, script.ID, detail.settings)
+				bindings, bindingErrs := p.workerBindingResources(accountID, script.ID, detail.settings, targets)
+				scriptResource.Relationships = bindingRelationships(bindings)
 				resources = append(resources, bindings...)
 				errs = append(errs, bindingErrs...)
 			}
 		}
+		errs = append(errs, targets.errors()...)
 	}
 
 	return resources, errs

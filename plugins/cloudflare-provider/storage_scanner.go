@@ -51,24 +51,30 @@ func (p *CloudflareProvider) scanStorage(ctx context.Context) ([]*pb.Resource, [
 }
 
 func (p *CloudflareProvider) listR2Buckets(ctx context.Context, accountID string) ([]r2.Bucket, error) {
-	res, err := p.client.R2.Buckets.List(ctx, r2.BucketListParams{AccountID: cloudflare.F(accountID)})
-	if err != nil {
-		return nil, err
-	}
-	if res == nil {
-		return nil, nil
-	}
-	return append([]r2.Bucket(nil), res.Buckets...), nil
+	return memoizedList(ctx, "r2/"+accountID, func() ([]r2.Bucket, error) {
+		res, err := p.client.R2.Buckets.List(ctx, r2.BucketListParams{AccountID: cloudflare.F(accountID)})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil {
+			return nil, nil
+		}
+		return append([]r2.Bucket(nil), res.Buckets...), nil
+	})
 }
 
 func (p *CloudflareProvider) listKVNamespaces(ctx context.Context, accountID string) ([]kv.Namespace, error) {
-	iter := p.client.KV.Namespaces.ListAutoPaging(ctx, kv.NamespaceListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "kv/"+accountID, func() ([]kv.Namespace, error) {
+		iter := p.client.KV.Namespaces.ListAutoPaging(ctx, kv.NamespaceListParams{AccountID: cloudflare.F(accountID)})
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) listQueues(ctx context.Context, accountID string) ([]queues.Queue, error) {
-	iter := p.client.Queues.ListAutoPaging(ctx, queues.QueueListParams{AccountID: cloudflare.F(accountID)})
-	return collectAutoPaging(iter)
+	return memoizedList(ctx, "queues/"+accountID, func() ([]queues.Queue, error) {
+		iter := p.client.Queues.ListAutoPaging(ctx, queues.QueueListParams{AccountID: cloudflare.F(accountID)})
+		return collectAutoPaging(iter)
+	})
 }
 
 func (p *CloudflareProvider) r2BucketResource(accountID string, bucket r2.Bucket) *pb.Resource {
