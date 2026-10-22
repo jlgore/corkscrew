@@ -1,6 +1,6 @@
 # Cloudflare Workers compliance: bindings, least privilege, and secrets
 
-Status: needs-triage
+Status: in-progress (01–09 and 11 complete; 10 needs a live account; 12 and 13 need triage)
 
 ## Problem
 
@@ -175,6 +175,6 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
 | 08 | [Pack: cloudflare/workers-bindings](issues/08-pack-workers-bindings.md) | 06 | complete |
 | 09 | [Pack: cloudflare/workers-secrets](issues/09-pack-workers-secrets.md) | 06 | complete |
 | 10 | [Live smoke test and wrangler seed](issues/10-live-smoke-test.md) | 07, 08, 09 | ready-for-human |
-| 11 | [Docs](issues/11-docs.md) | 07, 08, 09 | ready-for-agent |
+| 11 | [Docs](issues/11-docs.md) | 07, 08, 09 | complete |
 | 12 | [Derive token scopes from the Forge spec](issues/12-token-scopes-from-forge-spec.md) | 01 | needs-triage |
 | 13 | [Resource created and modified times are lost in storage](issues/13-resource-timestamps-lost.md) | — | needs-triage |

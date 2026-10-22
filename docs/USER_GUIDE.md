@@ -1239,6 +1239,10 @@ corkscrew query --control aws/s3/encryption \
 corkscrew query --pack aws-cis --output csv > compliance_report.csv
 ```
 
+Corkscrew ships Cloudflare Workers packs (`cloudflare/workers-baseline`,
+`cloudflare/workers-bindings`, `cloudflare/workers-secrets`). See
+[packs/cloudflare-workers.md](packs/cloudflare-workers.md) for their controls and parameters.
+
 Pack SQL runs sandboxed, since packs can come from external git or OCI
 sources: it can read the corkscrew database but not host files or the network.
 Each query is cancelled after two minutes.
