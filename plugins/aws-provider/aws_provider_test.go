@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2/types"
+	"github.com/jlgore/corkscrew/internal/assert/asserttest"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/orgscan"
@@ -236,12 +237,41 @@ func TestBatchScanCountsAgreeForRepeatedService(t *testing.T) {
 }
 
 func TestAssertScanStatsPanicsOnMismatch(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("assertScanStats accepted a total that disagrees with its counts")
-		}
-	}()
-	assertScanStats(&pb.ScanStats{TotalResources: 1, ServiceCounts: map[string]int32{"kms": 2}})
+	asserttest.FailsWith(t, "scan stats agree", func() {
+		assertScanStats(&pb.ScanStats{TotalResources: 1, ServiceCounts: map[string]int32{"kms": 2}})
+	})
+}
+
+// Every launched describe sends exactly one resource, failed describes included, so a drain
+// that comes up short has lost a resource discovery found.
+func TestDrainDescribedAssertsOneResultPerLaunchedDescribe(t *testing.T) {
+	results := make(chan *pb.Resource, 2)
+	results <- &pb.Resource{Id: "a"}
+	close(results)
+	asserttest.FailsWith(t, "one result per launched describe", func() {
+		drainDescribed(results, 2)
+	})
+
+	results = make(chan *pb.Resource, 2)
+	results <- &pb.Resource{Id: "a"}
+	results <- &pb.Resource{Id: "b"}
+	close(results)
+	if got := drainDescribed(results, 2); len(got) != 2 {
+		t.Fatalf("drained %d resources, want 2", len(got))
+	}
+}
+
+// Without cancellation every ref is described: len(results) == len(refs).
+func TestDescribeAllReturnsOneResourcePerRef(t *testing.T) {
+	refs := []*pb.ResourceRef{
+		{Service: "kms", Type: "AWS::KMS::Key", Id: "k1"},
+		{Service: "kms", Type: "AWS::KMS::Key", Id: "k2"},
+		{Service: "kms", Type: "AWS::KMS::Key", Id: "k3"},
+	}
+	got, err := describeAll(context.Background(), &fakeScanner{}, refs)
+	if err != nil || len(got) != len(refs) {
+		t.Fatalf("describeAll = %d resources, err %v; want %d", len(got), err, len(refs))
+	}
 }
 
 func TestUnenrichedResourceFallsBackToTheRef(t *testing.T) {
