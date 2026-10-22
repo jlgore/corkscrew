@@ -60,15 +60,16 @@ golangci-lint run --new-from-rev=origin/main ./...
 `new-from-rev` counts uncommitted changes too, so you can lint before you commit. Run
 `git fetch origin main` first if your `origin/main` is stale.
 
-## Rust: Clippy
+## Rust: rustfmt and Clippy
 
-Both graph crates are checked with:
+Both graph crates must be `cargo fmt` clean (`make fmt` formats them; CI runs
+`cargo fmt --check`) and are checked with:
 
 ```sh
 cargo clippy --all-targets -- -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::unwrap_used
 ```
 
-`make lint-rust` runs it in `extensions/corkscrew-graph` and `extensions/corkscrew-graph-tests`.
+`make lint-rust` runs the format check and Clippy in `extensions/corkscrew-graph` and `extensions/corkscrew-graph-tests`.
 `make lint` runs both the Go and Rust checks. CI pins the Rust toolchain (`RUST_TOOLCHAIN` in the
 workflow) so a new Clippy release cannot fail unrelated PRs.
 

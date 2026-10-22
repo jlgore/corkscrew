@@ -62,6 +62,16 @@ func NewAssetInventoryClient(ctx context.Context, opts ...option.ClientOption) (
 	}, nil
 }
 
+// Close releases the client's gRPC connection. It is idempotent.
+func (aic *AssetInventoryClient) Close() error {
+	if aic.client == nil {
+		return nil
+	}
+	err := aic.client.Close()
+	aic.client = nil
+	return err
+}
+
 // SetScope configures the scanning scope
 func (aic *AssetInventoryClient) SetScope(scope string, projectIDs []string, orgID, folderID string) {
 	aic.scope = scope

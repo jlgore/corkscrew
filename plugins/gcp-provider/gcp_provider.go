@@ -76,10 +76,33 @@ func NewGCPProvider() *GCPProvider {
 }
 
 // Close stops the background work the provider owns for its lifetime, the
-// cache cleanup goroutines and their tickers. It is idempotent.
+// cache cleanup goroutines and their tickers, and closes its API clients. It is idempotent.
 func (p *GCPProvider) Close() {
 	assert.That(p.cache != nil, "gcp: provider has a cache; construct it with NewGCPProvider")
 	p.cache.Stop()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.initialized.Store(false)
+	p.releaseClientsLocked()
+}
+
+// releaseClientsLocked closes the Asset Inventory connection and the client factory's cached
+// clients, and forgets both. Initialize calls it so a re-initialize does not leak the previous
+// connections. The caller holds p.mu.
+func (p *GCPProvider) releaseClientsLocked() {
+	if p.assetInventory != nil {
+		if err := p.assetInventory.Close(); err != nil {
+			log.Printf("gcp: closing Asset Inventory client: %v", err)
+		}
+		p.assetInventory = nil
+	}
+	if p.clientFactory != nil {
+		if err := p.clientFactory.Close(); err != nil {
+			log.Printf("gcp: closing client factory: %v", err)
+		}
+		p.clientFactory = nil
+	}
 }
 
 // Initialize sets up the GCP provider with credentials and configuration
@@ -90,6 +113,7 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 	log.Printf("Initializing GCP Provider")
 
 	// Initialize client factory with ADC or configured secret engine credentials.
+	p.releaseClientsLocked()
 	p.clientFactory = NewClientFactory()
 	authMethod, err := p.clientFactory.InitializeFromConfig(ctx, req.GetConfig())
 	if err != nil {
@@ -144,6 +168,9 @@ func (p *GCPProvider) Initialize(ctx context.Context, req *pb.InitializeRequest)
 			assetInventoryEnabled = true
 		} else {
 			log.Printf("Cloud Asset Inventory test failed, will use API scanning")
+			if err := assetClient.Close(); err != nil {
+				log.Printf("gcp: closing unused Asset Inventory client: %v", err)
+			}
 		}
 	}
 
