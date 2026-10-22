@@ -31,8 +31,8 @@ func TestCloudflareGoldenPersists(t *testing.T) {
 		`SELECT count(*) FROM cloudflare_resources WHERE type = 'worker_binding'`).Scan(&bindings); err != nil {
 		t.Fatal(err)
 	}
-	if bindings != 19 {
-		t.Errorf("%d worker_binding rows, want 19", bindings)
+	if bindings != 24 {
+		t.Errorf("%d worker_binding rows, want 24", bindings)
 	}
 
 	rows, err := session.QueryContext(context.Background(),

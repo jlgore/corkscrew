@@ -13,7 +13,8 @@
     {"id": "api-gateway", "compatibility_date": "2025-09-01", "created_on": "2024-02-01T10:00:00Z", "modified_on": "2025-09-10T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27a", "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
     {"id": "internal-auth", "compatibility_date": "2023-05-18", "created_on": "2023-05-18T10:00:00Z", "modified_on": "2023-05-18T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27b", "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
     {"id": "billing-cron", "compatibility_date": "2025-06-01", "created_on": "2025-06-01T10:00:00Z", "modified_on": "2025-06-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27c", "handlers": ["scheduled"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"},
-    {"id": "www-site", "compatibility_date": "2025-12-01", "created_on": "2025-12-01T10:00:00Z", "modified_on": "2025-12-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27d", "handlers": ["fetch"], "has_assets": true, "has_modules": true, "logpush": false, "usage_model": "standard"}
+    {"id": "www-site", "compatibility_date": "2025-12-01", "created_on": "2025-12-01T10:00:00Z", "modified_on": "2025-12-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27d", "handlers": ["fetch"], "has_assets": true, "has_modules": true, "logpush": false, "usage_model": "standard"},
+    {"id": "checkout-staging", "compatibility_date": "2025-11-01", "created_on": "2025-11-01T10:00:00Z", "modified_on": "2025-11-01T10:00:00Z", "etag": "ea95132c15732412d22c1476fa83f27e", "handlers": ["fetch"], "has_assets": false, "has_modules": true, "logpush": false, "usage_model": "standard"}
   ]},
   {"op": "GET /accounts/{account_id}/workers/domains", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
     {"id": "dbe10b4bc17c295377eabd600e1787fd", "hostname": "api.example.com", "service": "api-gateway", "environment": "production", "enabled": true, "previews_enabled": false, "zone_id": "023e105f4ecef8ad9ca31a8372d0c353", "zone_name": "example.com", "cert_id": "9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f08"}
@@ -27,7 +28,8 @@
     {"buckets": [{"name": "uploads", "creation_date": "2024-03-01T10:00:00Z", "location": "wnam", "jurisdiction": "default", "storage_class": "Standard"}]}
   },
   {"op": "GET /accounts/{account_id}/storage/kv/namespaces", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
-    {"id": "0f2ac74b498b48028cb68387c421e279", "title": "sessions", "supports_url_encoding": true}
+    {"id": "0f2ac74b498b48028cb68387c421e279", "title": "sessions", "supports_url_encoding": true},
+    {"id": "2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f", "title": "staging-sessions", "supports_url_encoding": true}
   ]},
   {"op": "GET /accounts/{account_id}/queues", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac"}, "items": [
     {"queue_id": "023e105f4ecef8ad9ca31a8372d0c355", "queue_name": "audit-events", "created_on": "2024-03-01T10:00:00Z", "modified_on": "2024-03-01T10:00:00Z", "producers_total_count": 1, "consumers_total_count": 0, "producers": [], "consumers": [], "settings": {"delivery_delay": 0, "message_retention_period": 345600}}
@@ -49,7 +51,7 @@
     {"id": "3fd85f74b32742f1bff64a85009dda08", "store_id": "023e105f4ecef8ad9ca31a8372d0c356", "name": "LEGACY_WEBHOOK_SECRET", "status": "active", "comment": "", "scopes": ["workers", "ai_gateway"], "created": "2023-01-01T10:00:00Z", "modified": "2023-01-01T10:00:00Z"}
   ]},
   {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/settings", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "api-gateway"}, "result":
-    {"compatibility_date": "2025-09-01", "logpush": true, "bindings": [{"type": "kv_namespace", "name": "SESSIONS", "namespace_id": "0f2ac74b498b48028cb68387c421e279"}, {"type": "r2_bucket", "name": "UPLOADS", "bucket_name": "uploads"}, {"type": "d1", "name": "DB", "database_id": "c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e"}, {"type": "queue", "name": "AUDIT", "queue_name": "audit-events"}, {"type": "durable_object_namespace", "name": "RATE_LIMITER", "class_name": "RateLimiter"}, {"type": "service", "name": "AUTH", "service": "internal-auth", "environment": "production"}, {"type": "secrets_store_secret", "name": "STRIPE", "store_id": "023e105f4ecef8ad9ca31a8372d0c356", "secret_name": "STRIPE_KEY"}, {"type": "secret_text", "name": "SESSION_SIGNING_KEY", "text": "not-returned-by-the-api"}, {"type": "plain_text", "name": "API_BASE_URL", "text": "https://api.example.com/v1"}, {"type": "plain_text", "name": "LEGACY_AWS_ACCESS_KEY", "text": "AKIAIOSFODNN7EXAMPLE"}, {"type": "json", "name": "UPSTREAMS", "json": {"region": "us", "primary": {"url": "postgres://app:hunter2@db.example.com:5432/app"}}}, {"type": "send_email", "name": "NOTIFY"}], "observability": {"enabled": true, "head_sampling_rate": 1, "logs": {"enabled": true, "invocation_logs": true}}, "tail_consumers": [{"service": "log-shipper"}], "placement": {"mode": "smart"}, "usage_model": "standard"}
+    {"compatibility_date": "2025-09-01", "logpush": true, "bindings": [{"type": "kv_namespace", "name": "SESSIONS", "namespace_id": "0f2ac74b498b48028cb68387c421e279"}, {"type": "r2_bucket", "name": "UPLOADS", "bucket_name": "uploads"}, {"type": "d1", "name": "DB", "database_id": "c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e"}, {"type": "queue", "name": "AUDIT", "queue_name": "audit-events"}, {"type": "durable_object_namespace", "name": "RATE_LIMITER", "class_name": "RateLimiter"}, {"type": "service", "name": "AUTH", "service": "internal-auth", "environment": "production"}, {"type": "secrets_store_secret", "name": "STRIPE", "store_id": "023e105f4ecef8ad9ca31a8372d0c356", "secret_name": "STRIPE_KEY"}, {"type": "secret_text", "name": "SESSION_SIGNING_KEY", "text": "not-returned-by-the-api"}, {"type": "plain_text", "name": "API_BASE_URL", "text": "https://api.example.com/v1"}, {"type": "plain_text", "name": "LEGACY_AWS_ACCESS_KEY", "text": "AKIAIOSFODNN7EXAMPLE"}, {"type": "json", "name": "UPSTREAMS", "json": {"region": "us", "primary": {"url": "postgres://app:hunter2@db.example.com:5432/app"}}}, {"type": "send_email", "name": "NOTIFY"}, {"type": "mtls_certificate", "name": "UPSTREAM_CERT", "certificate_id": "9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f09"}], "observability": {"enabled": true, "head_sampling_rate": 1, "logs": {"enabled": true, "invocation_logs": true}}, "tail_consumers": [{"service": "log-shipper"}], "placement": {"mode": "smart"}, "usage_model": "standard"}
   },
   {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/subdomain", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "api-gateway"}, "result":
     {"enabled": true, "previews_enabled": false}
@@ -67,9 +69,15 @@
     {"enabled": false, "previews_enabled": false}
   },
   {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/settings", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "www-site"}, "result":
-    {"compatibility_date": "2025-12-01", "logpush": false, "bindings": [], "observability": {"enabled": true}, "usage_model": "standard"}
+    {"compatibility_date": "2025-12-01", "logpush": false, "bindings": [{"type": "secrets_store_secret", "name": "STRIPE", "store_id": "023e105f4ecef8ad9ca31a8372d0c356", "secret_name": "STRIPE_KEY"}, {"type": "service", "name": "BILLING", "service": "billing-cron"}], "observability": {"enabled": true}, "usage_model": "standard"}
   },
   {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/subdomain", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "www-site"}, "result":
     {"enabled": false, "previews_enabled": true}
+  },
+  {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/settings", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "checkout-staging"}, "result":
+    {"compatibility_date": "2025-11-01", "logpush": false, "observability": {"enabled": true}, "usage_model": "standard", "bindings": [{"type": "secrets_store_secret", "name": "STRIPE", "store_id": "023e105f4ecef8ad9ca31a8372d0c356", "secret_name": "STRIPE_KEY"}, {"type": "kv_namespace", "name": "SESSIONS", "namespace_id": "2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f"}]}
+  },
+  {"op": "GET /accounts/{account_id}/workers/scripts/{script_name}/subdomain", "params": {"account_id": "9a7806061c88ada191ed06f989cc3dac", "script_name": "checkout-staging"}, "result":
+    {"enabled": false, "previews_enabled": false}
   }
 ]

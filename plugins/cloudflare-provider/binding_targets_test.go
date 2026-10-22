@@ -94,6 +94,14 @@ func TestBindingEdgesOnlyWhenRequested(t *testing.T) {
 		"billing-cron": {
 			"binds d1_database c5a6d4b0-6b39-4f62-9b7d-2f7a1a2c3d4e",
 		},
+		"www-site": {
+			"binds secret_store_secret 3fd85f74b32742f1bff64a85009dda07",
+			"binds worker_script " + fixtureAccountID + "/workers/billing-cron",
+		},
+		"checkout-staging": {
+			"binds secret_store_secret 3fd85f74b32742f1bff64a85009dda07",
+			"binds kv_namespace 2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f",
+		},
 	}
 	for _, list := range want {
 		sort.Strings(list)
@@ -157,7 +165,7 @@ func TestBatchScanSharesListingsAndRelationships(t *testing.T) {
 	for _, r := range resp.Resources {
 		edges += len(r.Relationships)
 	}
-	if edges != 10 {
-		t.Errorf("%d edges in the batch, want 10", edges)
+	if edges != 14 {
+		t.Errorf("%d edges in the batch, want 14", edges)
 	}
 }

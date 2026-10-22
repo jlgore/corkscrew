@@ -64,11 +64,13 @@ func TestScanServicesAgainstBaseline(t *testing.T) {
 			"worker_route 023e105f4ecef8ad9ca31a8372d0c358",
 			"worker_script " + fixtureAccountID + "/workers/api-gateway",
 			"worker_script " + fixtureAccountID + "/workers/billing-cron",
+			"worker_script " + fixtureAccountID + "/workers/checkout-staging",
 			"worker_script " + fixtureAccountID + "/workers/internal-auth",
 			"worker_script " + fixtureAccountID + "/workers/www-site",
 		}},
 		{"storage", []string{
 			"kv_namespace 0f2ac74b498b48028cb68387c421e279",
+			"kv_namespace 2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f",
 			"queue 023e105f4ecef8ad9ca31a8372d0c355",
 			"r2_bucket " + fixtureAccountID + "/r2/uploads",
 		}},

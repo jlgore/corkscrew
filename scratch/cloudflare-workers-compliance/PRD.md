@@ -121,7 +121,7 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
 |---|---|---|
 | CF.BND.01 | A binding of a privileged kind (`dispatch_namespace`, `mtls_certificate`, `vpc_service`, `vpc_network`, `hyperdrive`, `browser`, `send_email`) isn't in `privileged_binding_allowlist` (`script:kind`) | MEDIUM |
 | CF.BND.02 | A `send_email` binding has no `destination_address` and no `allowed_destination_addresses` | MEDIUM |
-| CF.BND.03 | A non-production Worker binds a production resource. Production is matched by name regex `prod_name_pattern` | HIGH |
+| CF.BND.03 | A non-production Worker (name matches `nonprod_name_pattern`) binds a production resource (name, or `<store>/<secret>`, matches `prod_name_pattern`) | HIGH |
 | CF.BND.04 | More than `max_binding_fan_in` Workers (default 3) bind one storage resource (R2, KV, D1, Queue), or more than `max_secret_fan_in` Workers (default 2) bind one Secrets Store secret | LOW (MEDIUM for secrets) |
 | CF.BND.05 | A Worker reached only through service bindings (no route, no domain) is exposed on workers.dev | HIGH |
 | CF.BND.06 | A dangling binding: the target isn't in the inventory. Evaluated only when the target's service was scanned | MEDIUM |
@@ -172,7 +172,7 @@ least-privilege review looks at *which* Workers hold a binding and *how many* do
 | 05 | [Binding relationships and target resolution](issues/05-binding-relationships.md) | 04 | complete |
 | 06 | [Golden scan and real-SQL pack test harness](issues/06-golden-scan-pack-harness.md) | 05 | complete |
 | 07 | [Pack: cloudflare/workers-baseline](issues/07-pack-workers-baseline.md) | 06 | complete |
-| 08 | [Pack: cloudflare/workers-bindings](issues/08-pack-workers-bindings.md) | 06 | ready-for-agent |
+| 08 | [Pack: cloudflare/workers-bindings](issues/08-pack-workers-bindings.md) | 06 | complete |
 | 09 | [Pack: cloudflare/workers-secrets](issues/09-pack-workers-secrets.md) | 06 | ready-for-agent |
 | 10 | [Live smoke test and wrangler seed](issues/10-live-smoke-test.md) | 07, 08, 09 | ready-for-human |
 | 11 | [Docs](issues/11-docs.md) | 07, 08, 09 | ready-for-agent |

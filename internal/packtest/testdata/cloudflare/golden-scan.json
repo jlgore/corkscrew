@@ -90,6 +90,16 @@
   {
    "provider": "cloudflare",
    "service": "storage",
+   "type": "kv_namespace",
+   "id": "2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f",
+   "name": "staging-sessions",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "raw_data": "{\"id\":\"2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f\",\"title\":\"staging-sessions\",\"supports_url_encoding\":true}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"namespace_id\":\"2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f\",\"supports_url_encoding\":\"true\",\"title\":\"staging-sessions\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "storage",
    "type": "queue",
    "id": "023e105f4ecef8ad9ca31a8372d0c355",
    "name": "audit-events",
@@ -284,6 +294,17 @@
    "provider": "cloudflare",
    "service": "workers",
    "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway/bindings/UPSTREAM_CERT",
+   "name": "UPSTREAM_CERT",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/api-gateway",
+   "raw_data": "{\"certificate_id\":\"9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f09\",\"name\":\"UPSTREAM_CERT\",\"type\":\"mtls_certificate\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"UPSTREAM_CERT\",\"kind\":\"mtls_certificate\",\"script\":\"api-gateway\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/api-gateway\",\"target_ref\":\"9d42ab5c-a4ba-4ac2-bd4b-7d5c5a9e5f09\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
    "id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron/bindings/DB",
    "name": "DB",
    "account_id": "9a7806061c88ada191ed06f989cc3dac",
@@ -312,6 +333,28 @@
    "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron",
    "raw_data": "{\"name\":\"STAGING_CACHE\",\"namespace_id\":\"7d0c3c4b0f1e4c8e9a2b3c4d5e6f7a8b\",\"type\":\"kv_namespace\"}",
    "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"STAGING_CACHE\",\"kind\":\"kv_namespace\",\"script\":\"billing-cron\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/billing-cron\",\"target_ref\":\"7d0c3c4b0f1e4c8e9a2b3c4d5e6f7a8b\",\"target_resolved\":\"false\",\"target_service\":\"storage\",\"target_type\":\"kv_namespace\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging/bindings/SESSIONS",
+   "name": "SESSIONS",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging",
+   "raw_data": "{\"name\":\"SESSIONS\",\"namespace_id\":\"2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f\",\"type\":\"kv_namespace\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"SESSIONS\",\"kind\":\"kv_namespace\",\"script\":\"checkout-staging\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging\",\"target_id\":\"2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f\",\"target_ref\":\"2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f\",\"target_resolved\":\"true\",\"target_service\":\"storage\",\"target_type\":\"kv_namespace\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging/bindings/STRIPE",
+   "name": "STRIPE",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging",
+   "raw_data": "{\"name\":\"STRIPE\",\"secret_name\":\"STRIPE_KEY\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"type\":\"secrets_store_secret\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"STRIPE\",\"kind\":\"secrets_store_secret\",\"script\":\"checkout-staging\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging\",\"target_id\":\"3fd85f74b32742f1bff64a85009dda07\",\"target_ref\":\"023e105f4ecef8ad9ca31a8372d0c356/STRIPE_KEY\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"secret_store_secret\"}"
   },
   {
    "provider": "cloudflare",
@@ -356,6 +399,28 @@
    "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/internal-auth",
    "raw_data": "{\"name\":\"WEBHOOK\",\"secret_name\":\"LEGACY_WEBHOOK_SECRET\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"type\":\"secrets_store_secret\"}",
    "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"WEBHOOK\",\"kind\":\"secrets_store_secret\",\"script\":\"internal-auth\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/internal-auth\",\"target_id\":\"3fd85f74b32742f1bff64a85009dda08\",\"target_ref\":\"023e105f4ecef8ad9ca31a8372d0c356/LEGACY_WEBHOOK_SECRET\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"secret_store_secret\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/www-site/bindings/BILLING",
+   "name": "BILLING",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/www-site",
+   "raw_data": "{\"name\":\"BILLING\",\"service\":\"billing-cron\",\"type\":\"service\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"BILLING\",\"entrypoint\":\"\",\"environment\":\"\",\"kind\":\"service\",\"script\":\"www-site\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/www-site\",\"target_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/billing-cron\",\"target_ref\":\"billing-cron\",\"target_resolved\":\"true\",\"target_service\":\"workers\",\"target_type\":\"worker_script\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_binding",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/www-site/bindings/STRIPE",
+   "name": "STRIPE",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "parent_id": "9a7806061c88ada191ed06f989cc3dac/workers/www-site",
+   "raw_data": "{\"name\":\"STRIPE\",\"secret_name\":\"STRIPE_KEY\",\"store_id\":\"023e105f4ecef8ad9ca31a8372d0c356\",\"type\":\"secrets_store_secret\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_name\":\"STRIPE\",\"kind\":\"secrets_store_secret\",\"script\":\"www-site\",\"script_id\":\"9a7806061c88ada191ed06f989cc3dac/workers/www-site\",\"target_id\":\"3fd85f74b32742f1bff64a85009dda07\",\"target_ref\":\"023e105f4ecef8ad9ca31a8372d0c356/STRIPE_KEY\",\"target_resolved\":\"true\",\"target_service\":\"data\",\"target_type\":\"secret_store_secret\"}"
   },
   {
    "provider": "cloudflare",
@@ -483,7 +548,7 @@
     }
    ],
    "raw_data": "{\"id\":\"api-gateway\",\"compatibility_date\":\"2025-09-01\",\"compatibility_flags\":null,\"created_on\":\"2024-02-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27a\",\"handlers\":[\"fetch\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-09-10T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
-   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"12\",\"compatibility_date\":\"2025-09-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27a\",\"handlers\":\"fetch\",\"has_assets\":\"false\",\"has_custom_domain\":\"true\",\"has_modules\":\"true\",\"has_route\":\"true\",\"last_deployed_from\":\"\",\"logpush\":\"true\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"smart\",\"previews_enabled\":\"false\",\"script_id\":\"api-gateway\",\"script_name\":\"api-gateway\",\"tail_consumers\":\"log-shipper\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"true\"}"
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"13\",\"compatibility_date\":\"2025-09-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27a\",\"handlers\":\"fetch\",\"has_assets\":\"false\",\"has_custom_domain\":\"true\",\"has_modules\":\"true\",\"has_route\":\"true\",\"last_deployed_from\":\"\",\"logpush\":\"true\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"smart\",\"previews_enabled\":\"false\",\"script_id\":\"api-gateway\",\"script_name\":\"api-gateway\",\"tail_consumers\":\"log-shipper\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"true\"}"
   },
   {
    "provider": "cloudflare",
@@ -508,6 +573,40 @@
    ],
    "raw_data": "{\"id\":\"billing-cron\",\"compatibility_date\":\"2025-06-01\",\"compatibility_flags\":null,\"created_on\":\"2025-06-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27c\",\"handlers\":[\"scheduled\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-06-01T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
    "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"3\",\"compatibility_date\":\"2025-06-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27c\",\"handlers\":\"scheduled\",\"has_assets\":\"false\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"false\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"false\",\"placement_mode\":\"\",\"previews_enabled\":\"false\",\"script_id\":\"billing-cron\",\"script_name\":\"billing-cron\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"false\"}"
+  },
+  {
+   "provider": "cloudflare",
+   "service": "workers",
+   "type": "worker_script",
+   "id": "9a7806061c88ada191ed06f989cc3dac/workers/checkout-staging",
+   "name": "checkout-staging",
+   "account_id": "9a7806061c88ada191ed06f989cc3dac",
+   "created_at": "2025-11-01T10:00:00Z",
+   "modified_at": "2025-11-01T10:00:00Z",
+   "relationships": [
+    {
+     "target_id": "2c1d5e8f9a0b4c3d8e7f6a5b4c3d2e1f",
+     "target_type": "kv_namespace",
+     "target_service": "storage",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "SESSIONS",
+      "kind": "kv_namespace"
+     }
+    },
+    {
+     "target_id": "3fd85f74b32742f1bff64a85009dda07",
+     "target_type": "secret_store_secret",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "STRIPE",
+      "kind": "secrets_store_secret"
+     }
+    }
+   ],
+   "raw_data": "{\"id\":\"checkout-staging\",\"compatibility_date\":\"2025-11-01\",\"compatibility_flags\":null,\"created_on\":\"2025-11-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27e\",\"handlers\":[\"fetch\"],\"has_assets\":false,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-11-01T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"2\",\"compatibility_date\":\"2025-11-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27e\",\"handlers\":\"fetch\",\"has_assets\":\"false\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"false\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"\",\"previews_enabled\":\"false\",\"script_id\":\"checkout-staging\",\"script_name\":\"checkout-staging\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"false\"}"
   },
   {
    "provider": "cloudflare",
@@ -552,8 +651,30 @@
    "account_id": "9a7806061c88ada191ed06f989cc3dac",
    "created_at": "2025-12-01T10:00:00Z",
    "modified_at": "2025-12-01T10:00:00Z",
+   "relationships": [
+    {
+     "target_id": "3fd85f74b32742f1bff64a85009dda07",
+     "target_type": "secret_store_secret",
+     "target_service": "data",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "STRIPE",
+      "kind": "secrets_store_secret"
+     }
+    },
+    {
+     "target_id": "9a7806061c88ada191ed06f989cc3dac/workers/billing-cron",
+     "target_type": "worker_script",
+     "target_service": "workers",
+     "relationship_type": "binds",
+     "properties": {
+      "binding_name": "BILLING",
+      "kind": "service"
+     }
+    }
+   ],
    "raw_data": "{\"id\":\"www-site\",\"compatibility_date\":\"2025-12-01\",\"compatibility_flags\":null,\"created_on\":\"2025-12-01T10:00:00Z\",\"etag\":\"ea95132c15732412d22c1476fa83f27d\",\"handlers\":[\"fetch\"],\"has_assets\":true,\"has_modules\":true,\"last_deployed_from\":\"\",\"logpush\":false,\"migration_tag\":\"\",\"modified_on\":\"2025-12-01T10:00:00Z\",\"named_handlers\":null,\"observability\":{\"enabled\":false,\"head_sampling_rate\":0,\"logs\":{\"enabled\":false,\"invocation_logs\":false,\"destinations\":null,\"head_sampling_rate\":0,\"persist\":false},\"traces\":{\"destinations\":null,\"enabled\":false,\"head_sampling_rate\":0,\"persist\":false}},\"placement\":{\"host\":\"\",\"hostname\":\"\",\"last_analyzed_at\":\"0001-01-01T00:00:00Z\",\"mode\":\"\",\"region\":\"\",\"status\":\"\",\"target\":null},\"placement_mode\":\"\",\"placement_status\":\"\",\"routes\":null,\"tag\":\"\",\"tags\":null,\"tail_consumers\":null,\"usage_model\":\"standard\"}",
-   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"0\",\"compatibility_date\":\"2025-12-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27d\",\"handlers\":\"fetch\",\"has_assets\":\"true\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"true\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"\",\"previews_enabled\":\"true\",\"script_id\":\"www-site\",\"script_name\":\"www-site\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"false\"}"
+   "attributes": "{\"account_id\":\"9a7806061c88ada191ed06f989cc3dac\",\"binding_count\":\"2\",\"compatibility_date\":\"2025-12-01\",\"etag\":\"ea95132c15732412d22c1476fa83f27d\",\"handlers\":\"fetch\",\"has_assets\":\"true\",\"has_custom_domain\":\"false\",\"has_modules\":\"true\",\"has_route\":\"true\",\"last_deployed_from\":\"\",\"logpush\":\"false\",\"migration_tag\":\"\",\"observability_enabled\":\"true\",\"observability_logs_enabled\":\"true\",\"placement_mode\":\"\",\"previews_enabled\":\"true\",\"script_id\":\"www-site\",\"script_name\":\"www-site\",\"tail_consumers\":\"\",\"usage_model\":\"standard\",\"workers_dev_enabled\":\"false\"}"
   },
   {
    "provider": "cloudflare",
