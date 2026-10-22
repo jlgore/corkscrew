@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/google/go-github/v71/github"
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/jlgore/corkscrew/internal/shared/paging"
@@ -284,9 +285,7 @@ func (p *GitHubProvider) listRepos(ctx context.Context) ([]*github.Repository, [
 	if cache.reposListed {
 		return cache.repos, nil
 	}
-	if cache.repos != nil {
-		panic("github: repository cache holds repositories it never listed")
-	}
+	assert.That(cache.repos == nil, "github: repository cache holds only repositories it listed")
 	repos, errors := p.listReposUncached(ctx)
 	if len(errors) == 0 {
 		cache.repos = repos
@@ -504,9 +503,7 @@ type alertCacheKey struct {
 func (p *GitHubProvider) cachedAlerts(
 	ctx context.Context, source alertSource, owner, repo string, errors *[]string,
 ) []alertItem {
-	if source.endpoint == "" {
-		panic("github: alert source has no endpoint")
-	}
+	assert.That(source.endpoint != "", "github: alert source has an endpoint")
 	cache := scanCacheFrom(ctx)
 	key := alertCacheKey{endpoint: source.endpoint, repo: owner + "/" + repo}
 	if cache != nil {

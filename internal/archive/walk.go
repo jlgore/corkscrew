@@ -33,15 +33,19 @@ func walk(format Format, archivePath string, limits Limits, visit visitFunc) err
 	if err := limits.validate(); err != nil {
 		return err
 	}
-	b := &budget{remaining: limits.BytesMax, entryMax: limits.EntryBytesMax}
+	b := newBudget(limits)
+	var err error
 	switch format {
 	case FormatTarGz:
-		return walkTarGz(archivePath, limits.EntryCountMax, b, visit)
+		err = walkTarGz(archivePath, limits.EntryCountMax, b, visit)
 	case FormatZip:
-		return walkZip(archivePath, limits.EntryCountMax, b, visit)
+		err = walkZip(archivePath, limits.EntryCountMax, b, visit)
 	default:
 		return fmt.Errorf("archive: unknown format %d", format)
 	}
+	// Limit failures return before charging, so the books balance on every path.
+	b.assertBalanced()
+	return err
 }
 
 func walkTarGz(archivePath string, entryCountMax int, b *budget, visit visitFunc) error {

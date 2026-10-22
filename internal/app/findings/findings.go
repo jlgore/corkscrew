@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jlgore/corkscrew/internal/assert"
 	dataaccess "github.com/jlgore/corkscrew/internal/data"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/pkg/query/compliance"
@@ -128,31 +129,8 @@ func Evaluate(ctx context.Context, request EvaluateRequest) (Evaluation, error) 
 
 	evaluation := Evaluation{ID: uuid.NewString(), ScanID: scan.ID, Status: "completed"}
 	started := time.Now().UTC()
-	successfulControls := 0
-	failedControls := 0
-	for _, result := range results {
-		if result.Error != nil {
-			failedControls++
-			evaluation.Error = result.Error.Error()
-			continue
-		}
-		successfulControls++
-		observed, err := recordResult(ctx, tx, &evaluation, scan, result)
-		if err != nil {
-			return Evaluation{}, err
-		}
-		resolved, err := resolveAbsent(ctx, tx, result.PackRef, result.ControlID, scan, observed)
-		if err != nil {
-			return Evaluation{}, err
-		}
-		evaluation.Resolved += resolved
-	}
-	if failedControls > 0 {
-		if successfulControls == 0 {
-			evaluation.Status = "failed"
-		} else {
-			evaluation.Status = "partial"
-		}
+	if err := recordResults(ctx, tx, &evaluation, scan, results); err != nil {
+		return Evaluation{}, err
 	}
 	ended := time.Now().UTC()
 	packRef := request.PackName
@@ -170,6 +148,53 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, evaluation.ID, scan.ID, packRef, request.Co
 	}
 	sort.Slice(evaluation.Findings, func(i, j int) bool { return evaluation.Findings[i].Fingerprint < evaluation.Findings[j].Fingerprint })
 	return evaluation, nil
+}
+
+// recordResults records every successful control result, resolves the findings each one no
+// longer observes, and sets the evaluation status from the failed-control count. The totals
+// are final when it returns.
+func recordResults(ctx context.Context, tx *sql.Tx, evaluation *Evaluation,
+	scan dataaccess.ScanRecord, results []compliance.SimpleQueryResult) error {
+	successfulControls := 0
+	failedControls := 0
+	for _, result := range results {
+		if result.Error != nil {
+			failedControls++
+			evaluation.Error = result.Error.Error()
+			continue
+		}
+		successfulControls++
+		observed, err := recordResult(ctx, tx, evaluation, scan, result)
+		if err != nil {
+			return err
+		}
+		resolved, err := resolveAbsent(ctx, tx, result.PackRef, result.ControlID, scan, observed)
+		if err != nil {
+			return err
+		}
+		evaluation.Resolved += resolved
+	}
+	assert.That(successfulControls+failedControls == len(results),
+		"every control result is either successful or failed")
+	if failedControls > 0 {
+		if successfulControls == 0 {
+			evaluation.Status = "failed"
+		} else {
+			evaluation.Status = "partial"
+		}
+	}
+	assertEvaluationTotals(*evaluation)
+	return nil
+}
+
+// assertEvaluationTotals checks that every reported failing row was counted exactly once:
+// as the first sighting of a new fingerprint (Opened) or as a repeat (Recurred).
+func assertEvaluationTotals(evaluation Evaluation) {
+	assert.That(evaluation.Opened >= 0, "Opened is not negative")
+	assert.That(evaluation.Recurred >= 0, "Recurred is not negative")
+	assert.Thatf(evaluation.Opened+evaluation.Recurred == len(evaluation.Findings),
+		"Opened + Recurred equals the findings reported: %d + %d != %d",
+		evaluation.Opened, evaluation.Recurred, len(evaluation.Findings))
 }
 
 func hydrateSnapshot(ctx context.Context, target string, scan dataaccess.ScanRecord, observations []dataaccess.Observation, relationships []dataaccess.RelationshipObservation) error {
@@ -239,9 +264,7 @@ type findingRecord struct {
 // before that result's resolveAbsent, so ordering matches the per-row loop.
 func recordResult(ctx context.Context, tx *sql.Tx, evaluation *Evaluation,
 	scan dataaccess.ScanRecord, result compliance.SimpleQueryResult) (map[string]bool, error) {
-	if result.Error != nil {
-		panic("findings: recordResult called for a failed control")
-	}
+	assert.That(result.Error == nil, "findings: recordResult runs only for a successful control")
 	records, order := foldFailingRows(evaluation, scan, result)
 	existing := make(map[string]bool, len(order))
 	for start := 0; start < len(order); start += findingBatchCountMax {
@@ -270,9 +293,7 @@ func recordResult(ctx context.Context, tx *sql.Tx, evaluation *Evaluation,
 			return nil, err
 		}
 	}
-	if len(observed) != len(records) {
-		panic("findings: observed set disagrees with folded records")
-	}
+	assert.That(len(observed) == len(records), "findings: observed set matches folded records")
 	return observed, nil
 }
 
@@ -310,9 +331,7 @@ func foldFailingRows(evaluation *Evaluation, scan dataaccess.ScanRecord,
 			occurrenceFirst: finding, rowCount: 1}
 		order = append(order, fingerprint)
 	}
-	if len(order) != len(records) {
-		panic("findings: fingerprint order disagrees with folded records")
-	}
+	assert.That(len(order) == len(records), "findings: fingerprint order matches folded records")
 	return records, order
 }
 
@@ -330,9 +349,8 @@ func existingFingerprints(ctx context.Context, q rowsQuerier, fingerprints []str
 	if len(fingerprints) == 0 {
 		return nil
 	}
-	if len(fingerprints) > findingBatchCountMax {
-		panic("findings: existence query exceeds findingBatchCountMax")
-	}
+	assert.That(len(fingerprints) <= findingBatchCountMax,
+		"findings: existence query fits in findingBatchCountMax")
 	args := make([]any, len(fingerprints))
 	for index, fingerprint := range fingerprints {
 		args[index] = fingerprint
@@ -359,12 +377,8 @@ func existingFingerprints(ctx context.Context, q rowsQuerier, fingerprints []str
 // placeholders returns count comma-separated groups of width "?" markers,
 // such as "(?, ?), (?, ?)" for count 2 and width 2, or "?, ?" for width 1.
 func placeholders(count, width int) string {
-	if count <= 0 {
-		panic("findings: placeholders needs a positive count")
-	}
-	if width <= 0 {
-		panic("findings: placeholders needs a positive width")
-	}
+	assert.That(count > 0, "findings: placeholders needs a positive count")
+	assert.That(width > 0, "findings: placeholders needs a positive width")
 	group := strings.TrimSuffix(strings.Repeat("?, ", width), ", ")
 	if width > 1 {
 		group = "(" + group + ")"
@@ -386,15 +400,13 @@ func decodeJSONColumn(raw string, dst any) error {
 // matching the per-row upserts that added one each.
 func upsertFindings(ctx context.Context, tx *sql.Tx, records map[string]*findingRecord,
 	chunk []string) error {
-	if len(chunk) == 0 || len(chunk) > findingBatchCountMax {
-		panic("findings: upsert chunk outside 1..findingBatchCountMax")
-	}
+	assert.That(len(chunk) > 0, "findings: upsert chunk is not empty")
+	assert.That(len(chunk) <= findingBatchCountMax,
+		"findings: upsert chunk fits in findingBatchCountMax")
 	args := make([]any, 0, len(chunk)*16)
 	for _, fingerprint := range chunk {
 		record := records[fingerprint]
-		if record.rowCount <= 0 {
-			panic("findings: folded record without rows")
-		}
+		assert.That(record.rowCount > 0, "findings: every folded record has rows")
 		finding := record.finding
 		args = append(args, finding.Fingerprint, finding.PackRef, finding.ControlID,
 			finding.Provider, finding.ResourceID, finding.ScopeKey, finding.Title,
@@ -422,12 +434,10 @@ WHERE excluded.last_seen_at >= findings.last_seen_at`, args...)
 // first row, as the per-row inserts kept the first and ignored the rest.
 func insertOccurrences(ctx context.Context, tx *sql.Tx, evaluationID string,
 	scan dataaccess.ScanRecord, records map[string]*findingRecord, chunk []string) error {
-	if len(chunk) == 0 || len(chunk) > findingBatchCountMax {
-		panic("findings: occurrence chunk outside 1..findingBatchCountMax")
-	}
-	if evaluationID == "" {
-		panic("findings: occurrences need an evaluation id")
-	}
+	assert.That(len(chunk) > 0, "findings: occurrence chunk is not empty")
+	assert.That(len(chunk) <= findingBatchCountMax,
+		"findings: occurrence chunk fits in findingBatchCountMax")
+	assert.That(evaluationID != "", "findings: occurrences have an evaluation id")
 	args := make([]any, 0, len(chunk)*7)
 	for _, fingerprint := range chunk {
 		record := records[fingerprint]

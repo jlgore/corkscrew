@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/resourceexplorer2"
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"github.com/jlgore/corkscrew/plugins/aws-provider/orgscan"
@@ -454,7 +455,7 @@ func unsupportedNotices(s activeScanner) []string {
 	return notices
 }
 
-// assertScanStats panics when the counts disagree: every resource is counted
+// assertScanStats asserts that the counts agree: every resource is counted
 // once by service and once by type, so a mismatch is a programmer error that
 // would report a different inventory size than was returned.
 func assertScanStats(stats *pb.ScanStats) {
@@ -466,10 +467,9 @@ func assertScanStats(stats *pb.ScanStats) {
 		byType += int64(n)
 	}
 	total := int64(stats.TotalResources)
-	if byService != total || byType != total {
-		panic(fmt.Sprintf("aws: scan stats disagree: total %d, by service %d, by type %d",
-			total, byService, byType))
-	}
+	assert.Thatf(byService == total, "aws: scan stats agree: total %d, by service %d",
+		total, byService)
+	assert.Thatf(byType == total, "aws: scan stats agree: total %d, by type %d", total, byType)
 }
 
 // describeConcurrency caps in-flight GetResource calls. Empirically 20 is
@@ -485,6 +485,7 @@ func describeAll(ctx context.Context, s activeScanner, refs []*pb.ResourceRef) (
 	sem := make(chan struct{}, describeConcurrency)
 	var wg sync.WaitGroup
 	var cancelled error
+	launched := 0
 refLoop:
 	for _, ref := range refs {
 		select {
@@ -493,6 +494,7 @@ refLoop:
 			cancelled = ctx.Err()
 			break refLoop
 		}
+		launched++
 		wg.Add(1)
 		go func(r *pb.ResourceRef) {
 			defer wg.Done()
@@ -512,11 +514,31 @@ refLoop:
 	wg.Wait()
 	close(results)
 
-	out := make([]*pb.Resource, 0, len(refs))
-	for res := range results {
-		out = append(out, res)
+	assert.That(launched <= len(refs), "aws: describes launched are at most the refs")
+	if cancelled == nil {
+		assert.That(launched == len(refs), "aws: without cancellation every ref is described")
+	}
+	out := drainDescribed(results, launched)
+	if cancelled == nil {
+		assert.Thatf(len(out) == len(refs),
+			"aws: len(results) == len(refs) after draining: %d results, %d refs", len(out),
+			len(refs))
 	}
 	return out, cancelled
+}
+
+// drainDescribed collects the closed results channel. Every launched describe sends exactly
+// one resource, failed describes included (as unenrichedResource), so anything else means a
+// discovered resource was lost.
+func drainDescribed(results <-chan *pb.Resource, launched int) []*pb.Resource {
+	out := make([]*pb.Resource, 0, launched)
+	for res := range results {
+		assert.That(res != nil, "aws: every describe yields a resource")
+		out = append(out, res)
+	}
+	assert.Thatf(len(out) == launched,
+		"aws: one result per launched describe: %d results, %d launched", len(out), launched)
+	return out
 }
 
 func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {

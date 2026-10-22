@@ -675,6 +675,8 @@ export CORKSCREW_DEBUG=1
 - Add comprehensive tests for new features
 - Document all public APIs
 - Include examples in documentation
+- Assert programmer errors with `internal/assert` (never disabled); return operating errors or
+  record them in a scan's `Errors`. See [Assertions and errors](docs/contributing/assertions.md)
 
 ## Docker Support
 

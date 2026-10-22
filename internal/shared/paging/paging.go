@@ -8,6 +8,8 @@ package paging
 import (
 	"errors"
 	"fmt"
+
+	"github.com/jlgore/corkscrew/internal/assert"
 )
 
 // PagesMax is the default page limit. At typical page sizes of 100-1000 items it allows
@@ -33,20 +35,22 @@ type Guard struct {
 
 // New returns a Guard for the listing named label (used in errors), allowing pagesMax pages.
 func New(label string, pagesMax int) *Guard {
-	if pagesMax <= 0 {
-		panic(fmt.Sprintf("paging: pagesMax must be positive, got %d", pagesMax))
-	}
+	assert.Thatf(pagesMax > 0, "paging: pagesMax is positive, got %d", pagesMax)
 	return &Guard{label: label, pagesMax: pagesMax}
 }
 
 // Next records that a page was received whose continuation token is token. Call it only when
 // another page will be requested, i.e. token is non-empty. It returns ErrPageLimit once
 // pagesMax pages have been received, and ErrTokenRepeated if token equals the previous one.
+// The loop must stop on either error; calling Next again after ErrPageLimit is a bug.
 func (g *Guard) Next(token string) error {
-	if token == "" {
-		panic("paging: Next called with an empty token; the loop should have stopped")
-	}
+	assert.That(token != "",
+		"paging: Next takes a non-empty token; the loop should have stopped on an empty one")
+	assert.Thatf(g.pages < g.pagesMax,
+		"paging: %s pages stay within pagesMax %d; Next was called after ErrPageLimit",
+		g.label, g.pagesMax)
 	g.pages++
+	assert.That(g.pages <= g.pagesMax, "paging: page count is at most pagesMax")
 	if g.pages >= g.pagesMax {
 		return fmt.Errorf("%s: %w (%d pages)", g.label, ErrPageLimit, g.pagesMax)
 	}

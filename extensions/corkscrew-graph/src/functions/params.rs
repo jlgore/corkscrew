@@ -20,6 +20,13 @@ pub type BoxError = Box<dyn std::error::Error>;
 pub const HOPS_MAX: usize = 4096;
 const _: () = assert!(HOPS_MAX <= i32::MAX as usize);
 
+// Runtime `assert!`s in vtab callbacks rely on `guard` catching the unwind. Under
+// `panic = "abort"` a failed assertion would abort DuckDB instead of failing the query.
+const _: () = assert!(
+    cfg!(panic = "unwind"),
+    "corkscrew-graph must build with panic = \"unwind\" so guard can contain assertions"
+);
+
 // Static guard: `raw_duckdb_value` reinterprets `&Value` as its only field.
 // If duckdb-rs ever adds fields to `Value`, this fails the build instead of
 // silently reading the wrong bytes.
@@ -102,11 +109,12 @@ pub fn param_hops(bind: &BindInfo, index: u64, name: &str) -> Result<usize, BoxE
 }
 
 /// Converts a BFS depth to the SQL INTEGER hop column. Callers bound depth by
-/// `max_hops`, which bind limits to `HOPS_MAX`, so saturation is unreachable
-/// from SQL; it only keeps direct Rust callers from wrapping.
+/// `max_hops`, which bind limits to `HOPS_MAX` and `clamp_hops` clamps again,
+/// so a larger depth is a programmer error. The assertion stays on in release
+/// builds; `guard` turns it into a query error.
 pub fn hops_to_i32(hops: usize) -> i32 {
-    debug_assert!(hops <= HOPS_MAX);
-    i32::try_from(hops).unwrap_or(i32::MAX)
+    assert!(hops <= HOPS_MAX, "BFS depth {hops} is within HOPS_MAX");
+    i32::try_from(hops).expect("HOPS_MAX fits in i32")
 }
 
 /// Returns the bind data for vtab `V`. Taking `V` (not a free `T`) ties the

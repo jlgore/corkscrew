@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jlgore/corkscrew/internal/assert"
 	appconfig "github.com/jlgore/corkscrew/internal/config"
 	"github.com/jlgore/corkscrew/internal/data"
 	"github.com/jlgore/corkscrew/internal/tui/views"
@@ -110,15 +111,16 @@ func (r *ViewRouter) pushHistory(viewType ViewType) {
 		r.history = r.history[:len(r.history)-1]
 	}
 	r.history = append(r.history, viewType)
+	assert.Thatf(len(r.history) <= maxRouterHistory,
+		"tui: history of %d entries is within maxRouterHistory %d", len(r.history),
+		maxRouterHistory)
 }
 
 // mustCurrentView returns the current view. Views are never removed and SwitchView only moves to
 // views it has created, so a missing current view is a router bug, not an operating condition.
 func (r *ViewRouter) mustCurrentView() views.BaseView {
 	view, exists := r.views[r.currentView]
-	if !exists {
-		panic(fmt.Sprintf("tui: router current view %v has no view instance", r.currentView))
-	}
+	assert.Thatf(exists, "tui: router current view %v has a view instance", r.currentView)
 	return view
 }
 

@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"cloud.google.com/go/resourcemanager/apiv3"
+	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"cloud.google.com/go/resourcemanager/apiv3/resourcemanagerpb"
+	"github.com/jlgore/corkscrew/internal/assert"
 	pb "github.com/jlgore/corkscrew/internal/proto"
 	"github.com/jlgore/corkscrew/internal/shared"
 	"golang.org/x/time/rate"
@@ -77,9 +78,7 @@ func NewGCPProvider() *GCPProvider {
 // Close stops the background work the provider owns for its lifetime, the
 // cache cleanup goroutines and their tickers. It is idempotent.
 func (p *GCPProvider) Close() {
-	if p.cache == nil {
-		panic("gcp: provider has no cache; construct it with NewGCPProvider")
-	}
+	assert.That(p.cache != nil, "gcp: provider has a cache; construct it with NewGCPProvider")
 	p.cache.Stop()
 }
 
