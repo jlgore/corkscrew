@@ -13,8 +13,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -24,7 +24,14 @@ func packTarball(t *testing.T, files map[string]string) []byte {
 	var buf bytes.Buffer
 	gzw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gzw)
-	for name, body := range files {
+	// Sorted, so the same files always produce the same bytes and the same hash.
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		body := files[name]
 		header := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)),
 			Typeflag: tar.TypeReg}
 		if err := tw.WriteHeader(header); err != nil {
@@ -47,36 +54,10 @@ func registryWithPack(serverURL, checksum string) *RegistryClient {
 	client := NewRegistryClient()
 	client.registryCache = &RegistryCache{Packs: map[string]PackInfo{
 		"acme": {Namespace: "acme", Versions: []RegistryPackVersion{{
-			Version: "1.0.0", TarballURL: serverURL, Checksum: checksum,
+			Version: "1.0.0", DownloadURL: serverURL, Checksum: checksum,
 		}}},
 	}}
 	return client
-}
-
-// Registry versions carry no checksum yet (scratch issue 19), so a missing one must not block
-// the install, but it must be announced.
-func TestDownloadPackWarnsWithoutChecksum(t *testing.T) {
-	tarball := packTarball(t, map[string]string{"root/manifest.yaml": "name: acme"})
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		_, _ = w.Write(tarball)
-	}))
-	defer server.Close()
-
-	var warnings bytes.Buffer
-	client := registryWithPack(server.URL, "")
-	client.warnings = &warnings
-	_, err := client.DownloadPack(context.Background(), "acme", "", t.TempDir())
-	if err != nil && strings.Contains(err.Error(), "verify") {
-		t.Fatalf("err = %v, want no verification failure without a checksum", err)
-	}
-	if requests.Load() != 1 {
-		t.Fatalf("made %d requests, want the download to proceed", requests.Load())
-	}
-	if !strings.Contains(warnings.String(), "UNVERIFIED") {
-		t.Fatalf("warnings = %q, want an unverified-download warning", warnings.String())
-	}
 }
 
 func TestDownloadPackRejectsChecksumMismatch(t *testing.T) {

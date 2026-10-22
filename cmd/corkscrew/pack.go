@@ -72,6 +72,12 @@ func printPackUsage() {
 	fmt.Println("  corkscrew pack install jlgore/cfi-ccc")
 	fmt.Println("  corkscrew pack install jlgore/aws-security")
 	fmt.Println()
+	fmt.Println("  # Install a version whose release publishes no checksum (warns)")
+	fmt.Println("  corkscrew pack install --allow-unverified jlgore/cfi-ccc")
+	fmt.Println()
+	fmt.Println("  # Accept a new hash for a version pinned in corkscrew-lock.json")
+	fmt.Println("  corkscrew pack install --force --repin --version v1.0.0 jlgore/cfi-ccc")
+	fmt.Println()
 	fmt.Println("  # Install pack directly from GitHub")
 	fmt.Println("  corkscrew pack install github.com/company/security-packs")
 	fmt.Println()
@@ -251,117 +257,144 @@ func displaySearchResults(result *compliance.SearchResult, verbose bool) {
 	}
 }
 
+// packInstallOptions are the parsed `pack install` flags. --force and --repin are separate on
+// purpose: reinstalling over a directory never also accepts a changed hash for a pinned version.
+type packInstallOptions struct {
+	packRef         string
+	version         string
+	destDir         string
+	force           bool
+	dryRun          bool
+	installDeps     bool
+	verbose         bool
+	allowUnverified bool
+	repin           bool
+}
+
+// parsePackInstallFlags parses `pack install` arguments.
+func parsePackInstallFlags(args []string) (packInstallOptions, error) {
+	var opts packInstallOptions
+	fs := flag.NewFlagSet("pack install", flag.ContinueOnError)
+	fs.StringVar(&opts.version, "version", "latest", "Specific version to install")
+	fs.BoolVar(&opts.force, "force", false,
+		"Reinstall even if the pack exists (does not accept a changed hash; see --repin)")
+	fs.BoolVar(&opts.dryRun, "dry-run", false,
+		"Show what would be installed without actually installing")
+	fs.BoolVar(&opts.installDeps, "deps", true, "Install dependencies automatically")
+	fs.StringVar(&opts.destDir, "dest", "",
+		"Custom installation directory (defaults to ~/.corkscrew/query-packs)")
+	fs.BoolVar(&opts.verbose, "verbose", false, "Verbose output")
+	fs.BoolVar(&opts.allowUnverified, "allow-unverified", false,
+		"Install a version whose release publishes no checksum (warns; never skips a mismatch)")
+	fs.BoolVar(&opts.repin, "repin", false,
+		"Accept a new hash for a version already pinned in corkscrew-lock.json")
+	if err := fs.Parse(args); err != nil {
+		return packInstallOptions{}, err
+	}
+	if fs.NArg() == 0 {
+		return packInstallOptions{}, errors.New("pack name/namespace is required")
+	}
+	opts.packRef = fs.Arg(0)
+	return opts, nil
+}
+
 // runPackInstall installs a compliance pack
 func runPackInstall(ctx context.Context, args []string) {
-	fs := flag.NewFlagSet("pack install", flag.ExitOnError)
-
-	version := fs.String("version", "latest", "Specific version to install")
-	force := fs.Bool("force", false, "Force reinstall even if pack exists")
-	dryRun := fs.Bool("dry-run", false, "Show what would be installed without actually installing")
-	installDeps := fs.Bool("deps", true, "Install dependencies automatically")
-	destDir := fs.String("dest", "", "Custom installation directory (defaults to ~/.corkscrew/query-packs)")
-	verbose := fs.Bool("verbose", false, "Verbose output")
-
-	fs.Parse(args)
-
-	if len(fs.Args()) == 0 {
-		fmt.Fprintf(os.Stderr, "❌ Pack name/namespace is required\n")
+	opts, err := parsePackInstallFlags(args)
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		fmt.Fprintf(os.Stderr, "💡 Examples:\n")
 		fmt.Fprintf(os.Stderr, "  corkscrew pack install jlgore/cfi-ccc\n")
 		fmt.Fprintf(os.Stderr, "  corkscrew pack install github.com/company/security-packs\n")
 		os.Exit(1)
 	}
 
-	packRef := fs.Args()[0]
-
-	if *verbose {
-		fmt.Printf("📦 Installing compliance pack: %s\n", packRef)
-		if *version != "latest" {
-			fmt.Printf("  Version: %s\n", *version)
+	if opts.verbose {
+		fmt.Printf("📦 Installing compliance pack: %s\n", opts.packRef)
+		if opts.version != "latest" {
+			fmt.Printf("  Version: %s\n", opts.version)
 		}
-		if !*installDeps {
+		if !opts.installDeps {
 			fmt.Printf("  Dependencies: disabled\n")
 		}
 		fmt.Println()
 	}
 
-	// Determine destination directory
-	var installDir string
-	if *destDir != "" {
-		installDir = *destDir
-	} else {
+	if opts.destDir == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to get home directory: %v\n", err)
 			os.Exit(1)
 		}
-		installDir = filepath.Join(homeDir, ".corkscrew", "query-packs")
+		opts.destDir = filepath.Join(homeDir, ".corkscrew", "query-packs")
 	}
 
-	// Ensure destination directory exists
-	if err := os.MkdirAll(installDir, 0755); err != nil {
+	if err := os.MkdirAll(opts.destDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create install directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	var err error
-	if isGitHubPackRef(packRef) {
-		err = installFromGitHub(ctx, packRef, *version, installDir, *force, *dryRun, *verbose)
+	if isGitHubPackRef(opts.packRef) {
+		err = installFromGitHub(opts)
 	} else {
-		err = installFromRegistry(ctx, packRef, *version, installDir, *force, *dryRun,
-			*installDeps, *verbose)
+		err = installFromRegistry(ctx, opts)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Installation failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	if !*dryRun {
-		fmt.Printf("✅ Pack '%s' installed successfully!\n", packRef)
-		fmt.Printf("📍 Location: %s\n", installDir)
+	if !opts.dryRun {
+		fmt.Printf("✅ Pack '%s' installed successfully!\n", opts.packRef)
+		fmt.Printf("📍 Location: %s\n", opts.destDir)
 
-		if *verbose {
+		if opts.verbose {
 			fmt.Printf("\n💡 You can now use this pack with:\n")
-			fmt.Printf("  corkscrew query --pack %s\n", packRef)
+			fmt.Printf("  corkscrew query --pack %s\n", opts.packRef)
 		}
 	}
 }
 
 // installFromRegistry installs a pack from the central registry
-func installFromRegistry(ctx context.Context, packRef, version, installDir string, force, dryRun, installDeps, verbose bool) error {
-	registryClient := compliance.NewRegistryClient()
+func installFromRegistry(ctx context.Context, opts packInstallOptions) error {
+	registryClient := compliance.NewRegistryClient().
+		WithAllowUnverified(opts.allowUnverified).
+		WithRepin(opts.repin)
 
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		registryClient = registryClient.WithGitHubToken(token)
 	}
 
-	if verbose {
-		fmt.Printf("🔍 Searching registry for pack: %s\n", packRef)
+	if opts.verbose {
+		fmt.Printf("🔍 Searching registry for pack: %s\n", opts.packRef)
 	}
 
 	// Update registry if needed
 	if err := registryClient.UpdateRegistry(ctx, false); err != nil {
-		if verbose {
+		if opts.verbose {
 			fmt.Printf("⚠️  Warning: Failed to update registry: %v\n", err)
 		}
 	}
 
-	if err := checkExistingPack(filepath.Join(installDir, packRef), force); err != nil {
+	if err := checkExistingPack(filepath.Join(opts.destDir, opts.packRef), opts.force); err != nil {
 		return err
 	}
 
-	if dryRun {
-		fmt.Printf("🔍 [DRY-RUN] Would install pack '%s' version '%s' to '%s'\n", packRef, version, installDir)
+	if opts.dryRun {
+		fmt.Printf("🔍 [DRY-RUN] Would install pack '%s' version '%s' to '%s'\n",
+			opts.packRef, opts.version, opts.destDir)
 		return nil
 	}
 
-	// Download and install the pack
-	pack, err := registryClient.DownloadPack(ctx, packRef, version, installDir)
+	pack, err := registryClient.DownloadPack(ctx, opts.packRef, opts.version, opts.destDir)
 	if err != nil {
 		return fmt.Errorf("failed to download pack: %w", err)
 	}
 
-	if verbose {
+	if opts.verbose {
 		fmt.Printf("✅ Downloaded pack: %s v%s\n", pack.Metadata.Name, pack.Metadata.Version)
 		fmt.Printf("📊 Queries: %d\n", len(pack.Queries))
 		if len(pack.DependsOn) > 0 {
@@ -398,13 +431,14 @@ func checkExistingPack(dir string, force bool) error {
 }
 
 // installFromGitHub installs a pack directly from GitHub
-func installFromGitHub(ctx context.Context, packRef, version, installDir string, force, dryRun, verbose bool) error {
-	if verbose {
-		fmt.Printf("🐙 Installing from GitHub: %s\n", packRef)
+func installFromGitHub(opts packInstallOptions) error {
+	if opts.verbose {
+		fmt.Printf("🐙 Installing from GitHub: %s\n", opts.packRef)
 	}
 
-	if dryRun {
-		fmt.Printf("🔍 [DRY-RUN] Would clone repository '%s' to '%s'\n", packRef, installDir)
+	if opts.dryRun {
+		fmt.Printf("🔍 [DRY-RUN] Would clone repository '%s' to '%s'\n", opts.packRef,
+			opts.destDir)
 		return nil
 	}
 

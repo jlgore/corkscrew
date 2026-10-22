@@ -1243,6 +1243,30 @@ Pack SQL runs sandboxed, since packs can come from external git or OCI
 sources: it can read the corkscrew database but not host files or the network.
 Each query is cancelled after two minutes.
 
+#### Installing Packs and Verification
+
+`corkscrew pack install <namespace/pack>` downloads the pack's release asset and checks it
+against the SHA-256 that the release publishes (`checksums.txt` or `<asset>.sha256`). Pack
+authors can find the release format in [PACK_PUBLISHING.md](PACK_PUBLISHING.md).
+
+- **No published checksum.** The install fails. To install anyway, pass `--allow-unverified`.
+  Corkscrew prints a warning and installs the pack.
+- **Checksum mismatch or malformed checksum file.** The install always fails.
+- **Pinning.** Each installed version's SHA-256 is recorded in `corkscrew-lock.json`, in the
+  pack directory (`~/.corkscrew/query-packs/` or `--dest`). The file is keyed by source
+  (`github.com/<owner>/<repo>`), then by version. A later download of a pinned version that
+  hashes differently fails, even with `--allow-unverified`.
+- **Re-pinning.** `--force` only reinstalls over an existing pack directory. It never accepts a
+  changed hash. If a publisher re-released a version on purpose and you trust the change, re-pin
+  it explicitly:
+
+  ```bash
+  corkscrew pack install --force --repin --version v1.0.0 jlgore/cfi-ccc
+  ```
+
+  Corkscrew prints the old and new hashes when it re-pins. Deleting `corkscrew-lock.json`
+  drops every pin in that directory.
+
 #### Writing Custom Compliance Queries
 
 Compliance queries must return specific columns:
