@@ -4,6 +4,8 @@ import (
 	"container/heap"
 	"sync"
 	"time"
+
+	"github.com/jlgore/corkscrew/internal/assert"
 )
 
 // Per-level entry caps. The provider caches a handful of service lists per
@@ -69,12 +71,8 @@ func (h *expiryHeap) Pop() any {
 // NewCache creates a new cache with the specified TTL duration that holds at
 // most entriesMax entries.
 func NewCache(duration time.Duration, entriesMax int) *Cache {
-	if duration <= 0 {
-		panic("gcp: cache TTL must be positive")
-	}
-	if entriesMax <= 0 {
-		panic("gcp: cache entriesMax must be positive")
-	}
+	assert.That(duration > 0, "gcp: cache TTL is positive")
+	assert.That(entriesMax > 0, "gcp: cache entriesMax is positive")
 	return &Cache{
 		entries:    make(map[string]cacheEntry),
 		duration:   duration,
@@ -120,15 +118,9 @@ func (c *Cache) SetWithTTL(key string, value interface{}, ttl time.Duration) {
 	c.entries[key] = entry
 	heap.Push(&c.order, expiryItem{expiry: entry.expiry, key: key, generation: entry.generation})
 	c.compactOrderLocked()
-	if len(c.entries) > c.entriesMax {
-		panic("gcp: cache grew past entriesMax")
-	}
-	if len(c.order) < len(c.entries) {
-		panic("gcp: cache expiry index is missing entries")
-	}
-	if len(c.order) > 2*c.entriesMax {
-		panic("gcp: cache expiry index grew past its bound")
-	}
+	assert.That(len(c.entries) <= c.entriesMax, "gcp: cache entries are at most entriesMax")
+	assert.That(len(c.order) >= len(c.entries), "gcp: cache expiry index covers every entry")
+	assert.That(len(c.order) <= 2*c.entriesMax, "gcp: cache expiry index is at most 2*entriesMax")
 }
 
 // makeRoomLocked frees one slot when the cache is full: it drops every
@@ -150,9 +142,7 @@ func (c *Cache) makeRoomLocked(now time.Time) {
 			break
 		}
 	}
-	if len(c.entries) >= c.entriesMax {
-		panic("gcp: cache eviction freed no slot")
-	}
+	assert.That(len(c.entries) < c.entriesMax, "gcp: cache eviction freed a slot")
 }
 
 // liveLocked reports whether item is the current index item of its key rather
@@ -176,9 +166,7 @@ func (c *Cache) compactOrderLocked() {
 			expiryItem{expiry: entry.expiry, key: key, generation: entry.generation})
 	}
 	heap.Init(&c.order)
-	if len(c.order) != len(c.entries) {
-		panic("gcp: compacted expiry index disagrees with entries")
-	}
+	assert.That(len(c.order) == len(c.entries), "gcp: compacted expiry index matches entries")
 }
 
 // Delete removes a value from the cache. Its index item goes stale and is
@@ -229,17 +217,13 @@ func (c *Cache) cleanExpiredLocked(now time.Time) {
 		}
 		heap.Pop(&c.order)
 	}
-	if len(c.order) < len(c.entries) {
-		panic("gcp: cache expiry index is missing entries")
-	}
+	assert.That(len(c.order) >= len(c.entries), "gcp: cache expiry index covers every entry")
 }
 
 // StartCleanupTimer starts a background goroutine that periodically cleans
 // expired entries until Stop is called.
 func (c *Cache) StartCleanupTimer(interval time.Duration) {
-	if interval <= 0 {
-		panic("gcp: cache cleanup interval must be positive")
-	}
+	assert.That(interval > 0, "gcp: cache cleanup interval is positive")
 	ticker := time.NewTicker(interval)
 	c.cleanupDone.Add(1)
 	go func() {
