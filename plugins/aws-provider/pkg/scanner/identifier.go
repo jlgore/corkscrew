@@ -427,9 +427,9 @@ func (s *CloudControlScanner) stampIdentifiers(
 }
 
 // listInsteadOfExplorer lists each of listTypes through Cloud Control and replaces the RE
-// refs the listing covers: every ref of a global service's type, else the refs in the
-// scanner's region. RE refs of other regions are kept as they are. A type whose listing
-// fails keeps all its RE refs.
+// refs of those types. Listing has the scope ownExplorerRefs already kept the RE refs to
+// (the scanner's region, or every region for a global service), so the listing covers every
+// RE ref of its type. A type whose listing fails keeps all its RE refs.
 func (s *CloudControlScanner) listInsteadOfExplorer(
 	ctx context.Context, serviceName string, refs []*pb.ResourceRef, listTypes []string,
 ) ([]*pb.ResourceRef, error) {
@@ -449,11 +449,13 @@ func (s *CloudControlScanner) listInsteadOfExplorer(
 		listed = append(listed, typeRefs...)
 	}
 
-	global := globalServices[strings.ToLower(serviceName)]
 	out := make([]*pb.ResourceRef, 0, len(refs)+len(listed))
 	for _, r := range refs {
-		covered := replaced[r.BasicAttributes["cfn_type"]] && explorerARN(r) != "" &&
-			(global || r.Region == s.cfg.Region)
+		if explorerARN(r) != "" {
+			assert.Thatf(r.Region == "" || r.Region == s.cfg.Region,
+				"scanner: RE ref %s is in the scanner's scope", r.Id)
+		}
+		covered := replaced[r.BasicAttributes["cfn_type"]] && explorerARN(r) != ""
 		if !covered {
 			out = append(out, r)
 		}

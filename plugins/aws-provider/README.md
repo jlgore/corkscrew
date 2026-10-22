@@ -92,6 +92,13 @@ corkscrew scan --provider aws --services s3 2>&1 | grep unsupported_type:
 
 The matcher is in `pkg/scanner/cloudcontrol_scanner.go` (see `isUnsupportedTypeErr`).
 
+With a Resource Explorer view, each Resource Explorer type (`elasticloadbalancing:loadbalancer/app`,
+`ec2:security-group`, ...) is mapped to its CloudFormation type (see `explorerCFNType` and
+`explorerTypeOverrides`). A Resource Explorer type with no Cloud Control type, such as
+`ec2:image` or `rds:snapshot`, is reported once as an `unsupported_type:` notice and its
+resources are skipped, as Cloud Control listing would never return them either. The known
+mappings are checked by `pkg/scanner/testdata/resource_explorer_types.txt`.
+
 ## What it does, end to end
 
 1. **Initialize**: load AWS config, optionally check for a Resource Explorer
@@ -108,12 +115,37 @@ The matcher is in `pkg/scanner/cloudcontrol_scanner.go` (see `isUnsupportedTypeE
    (`pkg/scanner/identifier.go`). A type whose identifier cannot be derived
    (composite identifiers, ambiguous ARNs, a failed `DescribeType`) is listed
    with `cloudcontrol.ListResources` instead, replacing its Resource Explorer
-   results in the scanned region. A denied `DescribeType` is reported as an
-   `access_denied:` notice.
+   results. A denied `DescribeType` is reported as an `access_denied:` notice.
+   See [Resource Explorer and regions](#resource-explorer-and-regions) for which
+   results each region's scan keeps.
 4. **Enrich**: for each resource ref, call `cloudcontrol.GetResource` and store
    the full JSON config as `raw_data`. Extract Arn and Tags into typed columns.
+   A resource whose `GetResource` fails is still stored, without its
+   configuration, and the failures are reported once per service and type
+   (`describe failed for N of M AWS::X::Y, first: ...`). That makes the scan
+   partial, so it resolves no findings (ADR 0023). A denied `GetResource` is an
+   `access_denied:` notice instead and leaves the scan complete.
 5. **Persist**: write to DuckDB. Global resources (S3, IAM, Route53, etc.) are
    marked with `region=""` so they aren't double-counted across regions.
+
+## Resource Explorer and regions
+
+Each region is scanned by its own scanner, which uses that region's default
+Resource Explorer view and that region's Cloud Control endpoint. When the
+account has an aggregator index, a search returns resources from every indexed
+region, but a regional scanner keeps only:
+
+- the resources in its own region, and
+- every resource of a global service (IAM, S3, Route 53, CloudFront,
+  Organizations, ...; `globalServices` in `pkg/scanner/cloudcontrol_scanner.go`)
+  and every resource Resource Explorer reports in region `global`, with
+  `region=""`.
+
+That is the same scope as listing with `cloudcontrol.ListResources` in the
+region, so a scan sees the same resources with or without Resource Explorer.
+Resources of other regions are left to those regions' scans: include their
+regions in the scan to cover them. Each resource is described in the region
+that owns it, and a scan of several regions emits each regional resource once.
 
 ## Permissions
 

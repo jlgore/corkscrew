@@ -16,13 +16,16 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// fakeScanner discovers the refs it is given and fails every describe,
-// returning the partial resource CloudControlScanner returns on error.
-// scanErrs makes ScanService of a service also return that error, and
-// unsupported and discoveryErr are reported as given.
+// fakeScanner discovers the refs it is given. A describe of a ref whose Id is in
+// describeErrs fails with that error, returning the partial resource
+// CloudControlScanner returns on error; failAll fails every describe. scanErrs makes
+// ScanService of a service also return that error, and unsupported and discoveryErr are
+// reported as given.
 type fakeScanner struct {
 	refs         []*pb.ResourceRef
 	scanErrs     map[string]error
+	describeErrs map[string]error
+	failAll      bool
 	unsupported  map[string]string
 	discoveryErr error
 }
@@ -43,7 +46,15 @@ func (f *fakeScanner) ScanService(
 }
 
 func (f *fakeScanner) DescribeResource(_ context.Context, ref *pb.ResourceRef) (*pb.Resource, error) {
-	return &pb.Resource{Provider: "aws", Type: ref.Type, Id: ref.Id, Region: ref.Region}, errors.New("GetResource failed")
+	res := &pb.Resource{Provider: "aws", Type: ref.Type, Id: ref.Id, Region: ref.Region}
+	if err := f.describeErrs[ref.Id]; err != nil {
+		return res, err
+	}
+	if f.failAll {
+		return res, errors.New("GetResource failed")
+	}
+	res.RawData = "{}"
+	return res, nil
 }
 
 func (f *fakeScanner) UnsupportedTypes() map[string]string { return f.unsupported }
@@ -132,7 +143,7 @@ func TestDescribeAllStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	got, err := describeAll(ctx, &fakeScanner{}, refs)
+	got, _, err := describeAll(ctx, &fakeScanner{failAll: true}, refs)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -148,7 +159,7 @@ func TestDescribeAllStopsOnCancel(t *testing.T) {
 func TestBatchScanKeepsResourcesWhoseDescribeFails(t *testing.T) {
 	arn := "arn:aws:kms:ap-east-1:123456789012:key/0c722e12-fa65-4f4f-af22-7361f6845317"
 	var wired []string
-	p := testProvider(&fakeScanner{refs: []*pb.ResourceRef{
+	p := testProvider(&fakeScanner{failAll: true, refs: []*pb.ResourceRef{
 		{Service: "kms", Type: "kms:key", Id: arn, Region: "ap-east-1"},
 	}}, &wired)
 
@@ -242,22 +253,17 @@ func TestAssertScanStatsPanicsOnMismatch(t *testing.T) {
 	})
 }
 
-// Every launched describe sends exactly one resource, failed describes included, so a drain
-// that comes up short has lost a resource discovery found.
-func TestDrainDescribedAssertsOneResultPerLaunchedDescribe(t *testing.T) {
-	results := make(chan *pb.Resource, 2)
-	results <- &pb.Resource{Id: "a"}
-	close(results)
-	asserttest.FailsWith(t, "one result per launched describe", func() {
-		drainDescribed(results, 2)
+// Every launched describe yields exactly one resource, failed describes included, so a
+// launched slot without one has lost a resource discovery found.
+func TestLaunchedResourcesAssertsOneResultPerLaunchedDescribe(t *testing.T) {
+	asserttest.FailsWith(t, "every launched describe yields a resource", func() {
+		launchedResources([]*pb.Resource{{Id: "a"}, nil}, 2)
 	})
-
-	results = make(chan *pb.Resource, 2)
-	results <- &pb.Resource{Id: "a"}
-	results <- &pb.Resource{Id: "b"}
-	close(results)
-	if got := drainDescribed(results, 2); len(got) != 2 {
-		t.Fatalf("drained %d resources, want 2", len(got))
+	asserttest.FailsWith(t, "no resource past the launched describes", func() {
+		launchedResources([]*pb.Resource{{Id: "a"}, {Id: "b"}}, 1)
+	})
+	if got := launchedResources([]*pb.Resource{{Id: "a"}, {Id: "b"}, nil}, 2); len(got) != 2 {
+		t.Fatalf("got %d resources, want 2", len(got))
 	}
 }
 
@@ -268,8 +274,8 @@ func TestDescribeAllReturnsOneResourcePerRef(t *testing.T) {
 		{Service: "kms", Type: "AWS::KMS::Key", Id: "k2"},
 		{Service: "kms", Type: "AWS::KMS::Key", Id: "k3"},
 	}
-	got, err := describeAll(context.Background(), &fakeScanner{}, refs)
-	if err != nil || len(got) != len(refs) {
+	got, errs, err := describeAll(context.Background(), &fakeScanner{}, refs)
+	if err != nil || len(got) != len(refs) || len(errs) != len(refs) {
 		t.Fatalf("describeAll = %d resources, err %v; want %d", len(got), err, len(refs))
 	}
 }

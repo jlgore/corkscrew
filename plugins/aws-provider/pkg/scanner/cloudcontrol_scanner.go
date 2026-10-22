@@ -202,7 +202,8 @@ func (s *CloudControlScanner) SetResourceExplorer(re ResourceExplorer) {
 
 // ScanService lists every resource of every CFN type known for the service.
 // When a Resource Explorer is wired, prefer RE for discovery (one indexed
-// search across regions) and use CC.GetResource only for the type lookup.
+// search, kept to the scanner's region and global resources) and use
+// CC.GetResource only for the type lookup.
 //
 // It returns the refs it observed even when it also returns an error: the
 // error joins one entry per type that failed, so the caller can report the
@@ -496,7 +497,12 @@ func (s *CloudControlScanner) getProperties(
 	if err == nil {
 		err = errors.New("no resource description")
 	}
-	return "", fmt.Errorf("GetResource(%s, %s): %w", typeName, identifier, err)
+	err = fmt.Errorf("GetResource(%s, %s): %w", typeName, identifier, err)
+	if isAccessDeniedErr(err) {
+		// The credential's scope, not a broken scan: the provider reports it as a notice.
+		return "", &AccessDeniedError{Type: typeName, Err: err}
+	}
+	return "", err
 }
 
 // checkDescribedARN fails when arn is set and the described properties name a different Arn.
@@ -646,14 +652,7 @@ func (s *CloudControlScanner) discoverTypes(
 				if !strings.HasPrefix(name, "AWS::") {
 					continue // skip third-party types
 				}
-				svc := serviceFromCFNType(name)
-				if svc == "" {
-					continue
-				}
-				out[svc] = append(out[svc], name)
-				if k := reFormatKey(name); k != "" {
-					reverse[k] = name
-				}
+				addDiscoveredType(out, reverse, name)
 			}
 			if resp.NextToken == nil || *resp.NextToken == "" {
 				break
@@ -671,13 +670,25 @@ func (s *CloudControlScanner) discoverTypes(
 	return out, reverse, nil
 }
 
-// scanServiceViaRE queries Resource Explorer for the service, then looks up
-// each result's CFN type via the reverse map. Resources whose CFN type can't
-// be resolved are returned anyway (with whatever Type the RE result had);
-// the caller can still enrich by passing them to DescribeResource, which
-// falls back to the type already on the ref. Refs with a CFN type then get
-// their Cloud Control identifier, or their type is listed through Cloud
-// Control instead (resolveExplorerRefs).
+// addDiscoveredType adds the CFN type name to the discovered service map and the reverse map
+// for RE-driven enrichment, unless it is not of the AWS::Service::Resource shape.
+func addDiscoveredType(types map[string][]string, reverse map[string]string, name string) {
+	svc := serviceFromCFNType(name)
+	if svc == "" {
+		return
+	}
+	types[svc] = append(types[svc], name)
+	if k := reFormatKey(name); k != "" {
+		reverse[k] = name
+	}
+}
+
+// scanServiceViaRE queries Resource Explorer for the service, keeps the refs
+// this scanner owns (ownExplorerRefs), then looks up each result's CFN type
+// (mapExplorerTypes). A type with no Cloud Control type is reported as
+// unsupported and its refs skipped. Refs with a CFN type then get their
+// Cloud Control identifier, or their type is listed through Cloud Control
+// instead (resolveExplorerRefs).
 //
 // A failed query returns the refs from the pages before the failure along
 // with the error, as listType does.
@@ -687,33 +698,8 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 	if err != nil {
 		err = fmt.Errorf("ResourceExplorer.QueryByService(%s): %w", serviceName, err)
 	}
-
-	discovery.mu.Lock()
-	reverse := discovery.reverse
-	discovery.mu.Unlock()
-	accountID := s.getAccountID()
-
-	for _, r := range refs {
-		if r.BasicAttributes == nil {
-			r.BasicAttributes = map[string]string{}
-		}
-		// RE returns ResourceType in "service:resource" format. If we recognize
-		// it, stash the canonical CFN type on the ref so DescribeResource can
-		// hit Cloud Control directly.
-		key := strings.ToLower(r.Type)
-		if cfnType, ok := explorerTypeOverrides[key]; ok {
-			r.BasicAttributes["cfn_type"] = cfnType
-		} else if reverse != nil {
-			if cfnType, ok := reverse[key]; ok {
-				r.BasicAttributes["cfn_type"] = cfnType
-			}
-		}
-		// Normalize Service: RE may set it to upper-case shorthand.
-		r.Service = strings.ToLower(r.Service)
-		if r.AccountId == "" {
-			r.AccountId = accountID
-		}
-	}
+	refs = s.ownExplorerRefs(serviceName, refs)
+	refs = s.mapExplorerTypes(refs)
 	// Resolve identifiers only for a query that completed: a failed one is
 	// already reported, and listing types for a partial result could not
 	// say which RE refs it replaced.
@@ -723,11 +709,176 @@ func (s *CloudControlScanner) scanServiceViaRE(ctx context.Context, serviceName 
 	return s.resolveExplorerRefs(ctx, serviceName, refs)
 }
 
-// explorerTypeOverrides maps Resource Explorer types whose "service:resource"
-// name matches the wrong CFN type. RE's iam:policy is a managed policy, which
-// is AWS::IAM::ManagedPolicy; AWS::IAM::Policy is an inline policy.
+// explorerRegionGlobal is the region Resource Explorer reports for resources that belong to
+// no region, such as IAM roles.
+const explorerRegionGlobal = "global"
+
+// ownExplorerRefs keeps the Resource Explorer refs this scanner owns. With an aggregator
+// index a search returns every indexed region, but the scanner describes through its own
+// region's Cloud Control client, and when several regions are scanned each region's scanner
+// owns its refs. It keeps the scope Cloud Control listing has: every ref of a global service
+// (whichever region RE indexed it in, as S3 buckets are indexed in their home region), and
+// every ref RE marks global, both stamped Region "" as listType does so scans of several
+// regions dedupe them, and otherwise the refs of the scanner's region.
+//
+// It filters the results rather than adding region: to the query because a region filter
+// cannot express the global-service scope: an S3 bucket outside the scanner's region would
+// be lost to every scanner.
+func (s *CloudControlScanner) ownExplorerRefs(
+	serviceName string, refs []*pb.ResourceRef,
+) []*pb.ResourceRef {
+	global := globalServices[strings.ToLower(serviceName)]
+	own := make([]*pb.ResourceRef, 0, len(refs))
+	for _, r := range refs {
+		if global || r.Region == "" || r.Region == explorerRegionGlobal {
+			r.Region = ""
+			own = append(own, r)
+		} else if r.Region == s.cfg.Region {
+			own = append(own, r)
+		}
+	}
+	if dropped := len(refs) - len(own); dropped > 0 {
+		log.Printf("CloudControl: %s: left %d Resource Explorer refs of other regions to "+
+			"their regions' scans", serviceName, dropped)
+	}
+	assert.That(len(own) <= len(refs), "scanner: keeping own RE refs keeps at most every ref")
+	return own
+}
+
+// explorerUnsupportedReason is the unsupported_type reason for a Resource Explorer type that
+// has no Cloud Control type.
+const explorerUnsupportedReason = "Resource Explorer type has no Cloud Control " +
+	"(CloudFormation registry) type"
+
+// mapExplorerTypes stamps each RE ref with the CFN type of its Resource Explorer type as
+// cfn_type, so DescribeResource can call Cloud Control, and fills in its account. A ref whose
+// type has no Cloud Control type cannot be described: like a type Cloud Control cannot list,
+// it is skipped and its type reported once as unsupported. Until discovery has succeeded
+// there is no reverse map to tell which types Cloud Control supports, so only the overrides
+// are applied and every ref is kept; the failed discovery already makes the scan partial.
+func (s *CloudControlScanner) mapExplorerTypes(refs []*pb.ResourceRef) []*pb.ResourceRef {
+	discovery.mu.Lock()
+	reverse, types := discovery.reverse, discovery.types
+	discovery.mu.Unlock()
+	accountID := s.getAccountID()
+
+	kept := make([]*pb.ResourceRef, 0, len(refs))
+	for _, r := range refs {
+		if r.BasicAttributes == nil {
+			r.BasicAttributes = map[string]string{}
+		}
+		// Normalize Service: RE may set it to upper-case shorthand.
+		r.Service = strings.ToLower(r.Service)
+		if r.AccountId == "" {
+			r.AccountId = accountID
+		}
+		if reverse == nil {
+			if cfnType, ok := explorerTypeOverrides[strings.ToLower(r.Type)]; ok {
+				r.BasicAttributes["cfn_type"] = cfnType
+			}
+			kept = append(kept, r)
+			continue
+		}
+		cfnType, ok := explorerCFNType(r.Type, reverse, types)
+		if !ok {
+			s.unsupportedTypes.Store(r.Type, explorerUnsupportedReason)
+			continue
+		}
+		r.BasicAttributes["cfn_type"] = cfnType
+		kept = append(kept, r)
+	}
+	assert.That(len(kept) <= len(refs), "scanner: mapping RE types keeps at most every ref")
+	if reverse == nil {
+		assert.That(len(kept) == len(refs), "scanner: without discovery every RE ref is kept")
+	}
+	return kept
+}
+
+// explorerCFNType returns the CloudFormation type of a Resource Explorer type ("service:
+// resource", as RE's ResourceType reports it) and whether Cloud Control supports it. It
+// tries, in order:
+//
+//   - explorerTypeOverrides, for RE types whose name does not lead to the CFN type: subtypes
+//     (elasticloadbalancing:loadbalancer/app), ARN service names that differ from the CFN
+//     service (rds:db, es:domain), and names that match the wrong type (iam:policy).
+//   - the reverse map, built from CFN names by reFormatKey (kms:key).
+//   - the reverse map with hyphens removed: RE names resources as their ARNs do
+//     (ec2:security-group), while CFN names have none (ec2:securitygroup).
+//
+// A CFN type is supported only if discovery found it, since an override can name a type
+// Cloud Control has no handlers for.
+func explorerCFNType(
+	explorerType string, reverse map[string]string, types map[string][]string,
+) (string, bool) {
+	key := strings.ToLower(explorerType)
+	cfnType, ok := explorerTypeOverrides[key]
+	if !ok {
+		cfnType, ok = reverse[key]
+	}
+	if !ok {
+		cfnType, ok = reverse[strings.ReplaceAll(key, "-", "")]
+	}
+	if !ok {
+		return "", false
+	}
+	assert.That(strings.HasPrefix(cfnType, "AWS::"), "scanner: RE types map to AWS:: types")
+	return cfnType, discoveredType(types, cfnType)
+}
+
+// discoveredType reports whether discovery found cfnType. Each service's types are sorted.
+func discoveredType(types map[string][]string, cfnType string) bool {
+	serviceTypes := types[serviceFromCFNType(cfnType)]
+	index := sort.SearchStrings(serviceTypes, cfnType)
+	return index < len(serviceTypes) && serviceTypes[index] == cfnType
+}
+
+// explorerTypeOverrides maps the lowercase Resource Explorer types whose "service:resource"
+// name does not lead to their CFN type through the reverse map (see explorerCFNType). The RE
+// names are those of RE's supported resource types; testdata/resource_explorer_types.txt
+// checks them against the reverse map.
 var explorerTypeOverrides = map[string]string{
+	// RE's iam:policy is a managed policy, which is AWS::IAM::ManagedPolicy;
+	// AWS::IAM::Policy is an inline policy.
 	"iam:policy": "AWS::IAM::ManagedPolicy",
+
+	// ELBv2 resources carry the ARN service elasticloadbalancing, shared with the classic
+	// load balancer (RE's bare elasticloadbalancing:loadbalancer), and RE splits load
+	// balancers, listeners and rules by their ARN's subtype: app, net or gwy.
+	"elasticloadbalancing:loadbalancer/app":  "AWS::ElasticLoadBalancingV2::LoadBalancer",
+	"elasticloadbalancing:loadbalancer/net":  "AWS::ElasticLoadBalancingV2::LoadBalancer",
+	"elasticloadbalancing:loadbalancer/gwy":  "AWS::ElasticLoadBalancingV2::LoadBalancer",
+	"elasticloadbalancing:targetgroup":       "AWS::ElasticLoadBalancingV2::TargetGroup",
+	"elasticloadbalancing:listener":          "AWS::ElasticLoadBalancingV2::Listener",
+	"elasticloadbalancing:listener/app":      "AWS::ElasticLoadBalancingV2::Listener",
+	"elasticloadbalancing:listener/net":      "AWS::ElasticLoadBalancingV2::Listener",
+	"elasticloadbalancing:listener/gwy":      "AWS::ElasticLoadBalancingV2::Listener",
+	"elasticloadbalancing:listener-rule":     "AWS::ElasticLoadBalancingV2::ListenerRule",
+	"elasticloadbalancing:listener-rule/app": "AWS::ElasticLoadBalancingV2::ListenerRule",
+	"elasticloadbalancing:listener-rule/net": "AWS::ElasticLoadBalancingV2::ListenerRule",
+	"elasticloadbalancing:truststore":        "AWS::ElasticLoadBalancingV2::TrustStore",
+
+	// RE types named after the ARN, whose service or resource differs from the CFN name.
+	"acm:certificate":                "AWS::CertificateManager::Certificate",
+	"airflow:environment":            "AWS::MWAA::Environment",
+	"amplify:apps":                   "AWS::Amplify::App",
+	"apigateway:apis":                "AWS::ApiGatewayV2::Api",
+	"apigateway:restapis":            "AWS::ApiGateway::RestApi",
+	"ec2:elastic-ip":                 "AWS::EC2::EIP",
+	"ec2:fleet":                      "AWS::EC2::EC2Fleet",
+	"elasticache:cluster":            "AWS::ElastiCache::CacheCluster",
+	"elasticfilesystem:access-point": "AWS::EFS::AccessPoint",
+	"elasticfilesystem:file-system":  "AWS::EFS::FileSystem",
+	"es:domain":                      "AWS::OpenSearchService::Domain",
+	"firehose:deliverystream":        "AWS::KinesisFirehose::DeliveryStream",
+	"rds:cluster":                    "AWS::RDS::DBCluster",
+	"rds:cluster-pg":                 "AWS::RDS::DBClusterParameterGroup",
+	"rds:db":                         "AWS::RDS::DBInstance",
+	"rds:es":                         "AWS::RDS::EventSubscription",
+	"rds:og":                         "AWS::RDS::OptionGroup",
+	"rds:pg":                         "AWS::RDS::DBParameterGroup",
+	"rds:subgrp":                     "AWS::RDS::DBSubnetGroup",
+	"states:activity":                "AWS::StepFunctions::Activity",
+	"states:statemachine":            "AWS::StepFunctions::StateMachine",
 }
 
 // reFormatKey converts a CFN type name into the lowercase "service:resource"

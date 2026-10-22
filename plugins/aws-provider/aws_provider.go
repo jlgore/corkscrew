@@ -431,12 +431,18 @@ func batchScanService(
 	// one failed type or account does not drop the rest of the service.
 	refs, scanErr := s.ScanService(ctx, svc)
 	entries := serviceErrorEntries(svc, scanErr)
-	described, describeErr := describeAll(ctx, s, refs)
-	if describeErr != nil {
-		entries = append(entries, shared.ServiceScanError(svc, describeErr))
+	described, describeErrs, cancelled := describeAll(ctx, s, refs)
+	assert.That(len(described) == len(describeErrs), "aws: one describe outcome per resource")
+	tally := newDescribeTally()
+	for index, err := range describeErrs {
+		tally.add(refs[index], err)
 	}
-	tracker.CompleteService(svc, len(described), errors.Join(scanErr, describeErr))
-	return described, entries, describeErr != nil
+	entries = append(entries, tally.entries(svc)...)
+	if cancelled != nil {
+		entries = append(entries, shared.ServiceScanError(svc, cancelled))
+	}
+	tracker.CompleteService(svc, len(described), entriesError(entries))
+	return described, entries, cancelled != nil
 }
 
 // unsupportedNotices reports the types the scanner could not list as notices,
@@ -477,17 +483,22 @@ func assertScanStats(stats *pb.ScanStats) {
 // fan out a 1000-resource service in seconds rather than minutes.
 const describeConcurrency = 20
 
-// describeAll enriches refs with bounded parallelism. When ctx is cancelled
-// it stops starting describes, waits for the ones in flight, and returns
-// what they produced together with ctx's error.
-func describeAll(ctx context.Context, s activeScanner, refs []*pb.ResourceRef) ([]*pb.Resource, error) {
-	results := make(chan *pb.Resource, len(refs))
+// describeAll enriches refs with bounded parallelism. It returns resources[i] and errs[i] for
+// refs[i]: a failed describe still yields the unenriched resource, with its error, so the
+// caller can report the scan as partial without losing what discovery found. When ctx is
+// cancelled it stops starting describes, waits for the ones in flight, and returns the
+// launched prefix together with ctx's error.
+func describeAll(
+	ctx context.Context, s activeScanner, refs []*pb.ResourceRef,
+) ([]*pb.Resource, []error, error) {
+	resources := make([]*pb.Resource, len(refs))
+	errs := make([]error, len(refs))
 	sem := make(chan struct{}, describeConcurrency)
 	var wg sync.WaitGroup
 	var cancelled error
 	launched := 0
 refLoop:
-	for _, ref := range refs {
+	for index, ref := range refs {
 		select {
 		case sem <- struct{}{}:
 		case <-ctx.Done():
@@ -496,49 +507,136 @@ refLoop:
 		}
 		launched++
 		wg.Add(1)
-		go func(r *pb.ResourceRef) {
+		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			res, derr := s.DescribeResource(ctx, r)
-			if derr != nil {
-				log.Printf("Describe %s/%s failed: %v", r.Type, r.Id, derr)
+			res, err := s.DescribeResource(ctx, ref)
+			if err != nil {
+				log.Printf("Describe %s/%s failed: %v", ref.Type, ref.Id, err)
 				// Discovery already found the resource; losing it
 				// because enrichment failed would make the inventory
-				// silently incomplete. Keep what the ref knows, as
-				// ScanService does.
-				res = unenrichedResource(r, res)
+				// incomplete. Keep what the ref knows, as ScanService does,
+				// and return the error so the scan is reported partial.
+				res = unenrichedResource(ref, res)
 			}
-			results <- res
-		}(ref)
+			// Each goroutine writes only its own index, so the slices need no lock.
+			resources[index], errs[index] = res, err
+		}()
 	}
 	wg.Wait()
-	close(results)
 
 	assert.That(launched <= len(refs), "aws: describes launched are at most the refs")
 	if cancelled == nil {
 		assert.That(launched == len(refs), "aws: without cancellation every ref is described")
 	}
-	out := drainDescribed(results, launched)
-	if cancelled == nil {
-		assert.Thatf(len(out) == len(refs),
-			"aws: len(results) == len(refs) after draining: %d results, %d refs", len(out),
-			len(refs))
-	}
-	return out, cancelled
+	return launchedResources(resources, launched), errs[:launched], cancelled
 }
 
-// drainDescribed collects the closed results channel. Every launched describe sends exactly
-// one resource, failed describes included (as unenrichedResource), so anything else means a
-// discovered resource was lost.
-func drainDescribed(results <-chan *pb.Resource, launched int) []*pb.Resource {
-	out := make([]*pb.Resource, 0, launched)
-	for res := range results {
-		assert.That(res != nil, "aws: every describe yields a resource")
-		out = append(out, res)
+// launchedResources returns the resources of the launched describes. Describes launch in ref
+// order, and every launched one yields a resource, failed describes included (as
+// unenrichedResource), so a gap means a discovered resource was lost.
+func launchedResources(resources []*pb.Resource, launched int) []*pb.Resource {
+	assert.Thatf(launched <= len(resources), "aws: launched %d of %d describes", launched,
+		len(resources))
+	for index, res := range resources {
+		if index < launched {
+			assert.That(res != nil, "aws: every launched describe yields a resource")
+		} else {
+			assert.That(res == nil, "aws: no resource past the launched describes")
+		}
 	}
-	assert.Thatf(len(out) == launched,
-		"aws: one result per launched describe: %d results, %d launched", len(out), launched)
-	return out
+	return resources[:launched]
+}
+
+// describeTally counts one service's describe outcomes per resource type, so a scan reports
+// one entry per failing type ("describe failed for N of M <type>, first: ...") rather than
+// one per resource, as the Azure provider does.
+type describeTally struct {
+	order  []string
+	byType map[string]*describeCount
+}
+
+// describeCount is one type's describe outcomes. denied counts access denials, which are the
+// credential's scope (a notice); failed counts every other failure (an error).
+type describeCount struct {
+	total       int
+	failed      int
+	denied      int
+	firstFailed error
+	firstDenied error
+}
+
+func newDescribeTally() *describeTally {
+	return &describeTally{byType: map[string]*describeCount{}}
+}
+
+// add records the outcome of describing ref; err is nil for a successful describe.
+func (t *describeTally) add(ref *pb.ResourceRef, err error) {
+	typeName := describeTypeName(ref)
+	count := t.byType[typeName]
+	if count == nil {
+		count = &describeCount{}
+		t.byType[typeName] = count
+		t.order = append(t.order, typeName)
+	}
+	count.total++
+	if err == nil {
+		return
+	}
+	var denied *scanner.AccessDeniedError
+	if errors.As(err, &denied) {
+		count.denied++
+		if count.firstDenied == nil {
+			// The notice already names the type; keep only the denial's cause.
+			count.firstDenied = denied.Err
+		}
+		return
+	}
+	count.failed++
+	if count.firstFailed == nil {
+		count.firstFailed = err
+	}
+}
+
+// entries returns the Errors entries for service: per type, an access_denied notice for its
+// denials and a service error for its other failures. Types are in first-seen order.
+func (t *describeTally) entries(service string) []string {
+	assert.That(len(t.order) == len(t.byType), "aws: each described type is tallied once")
+	var entries []string
+	for _, typeName := range t.order {
+		count := t.byType[typeName]
+		assert.Thatf(count.failed+count.denied <= count.total,
+			"aws: %s describe failures %d+%d within %d", typeName, count.failed, count.denied,
+			count.total)
+		if count.denied > 0 {
+			err := fmt.Errorf("describe denied for %d of %d, first: %w", count.denied,
+				count.total, count.firstDenied)
+			entries = append(entries, shared.AccessDeniedNotice(typeName, err))
+		}
+		if count.failed > 0 {
+			err := fmt.Errorf("describe failed for %d of %d %s, first: %w", count.failed,
+				count.total, typeName, count.firstFailed)
+			entries = append(entries, shared.ServiceScanError(service, err))
+		}
+	}
+	return entries
+}
+
+// describeTypeName is the type a ref is described as: the CloudFormation type Resource
+// Explorer refs carry as cfn_type, else the ref's own type.
+func describeTypeName(ref *pb.ResourceRef) string {
+	if typeName := ref.BasicAttributes["cfn_type"]; typeName != "" {
+		return typeName
+	}
+	return ref.Type
+}
+
+// entriesError joins Errors entries into one error for the progress tracker, or nil.
+func entriesError(entries []string) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(entries, "; "))
 }
 
 func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvider_StreamScanServer) error {
@@ -559,38 +657,54 @@ func (p *AWSProvider) StreamScan(req *pb.StreamScanRequest, stream pb.CloudProvi
 	for _, svc := range services {
 		refs, err := regional.ScanService(ctx, svc)
 		errs = append(errs, serviceErrorEntries(svc, err)...)
-		if err := streamResources(ctx, regional, refs, stream); err != nil {
+		entries, err := streamResources(ctx, regional, svc, refs, stream)
+		if err != nil {
 			return err
 		}
+		errs = append(errs, entries...)
 		if ctx.Err() != nil {
 			break
 		}
 	}
-	// A stream has no Errors field: it is complete only if it ends cleanly
-	// (ADR 0023), so any failure must end it with an error after sending
-	// everything that was observed.
+	return endStream(errs)
+}
+
+// endStream ends a stream after everything observed was sent. A stream has no Errors field:
+// it is complete only if it ends cleanly (ADR 0023), so any error entry ends it with an
+// error. Notices (access denials, unsupported types) leave the scope complete, as they do in
+// BatchScan, so they are only logged.
+func endStream(entries []string) error {
+	errs, notices := shared.SplitScanErrors(entries)
+	assert.That(len(errs)+len(notices) == len(entries), "aws: every entry is an error or notice")
+	if len(notices) > 0 {
+		log.Printf("aws stream scan: %d notices: %s", len(notices), strings.Join(notices, "; "))
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("aws stream scan incomplete: %s", strings.Join(errs, "; "))
 	}
 	return nil
 }
 
-// streamResources describes and sends each ref. A ref whose describe fails is
-// sent unenriched, as BatchScan does, rather than dropped from the stream.
+// streamResources describes and sends each ref of service. A ref whose describe fails is
+// sent unenriched, as BatchScan does, rather than dropped from the stream, and the failures
+// are returned as Errors entries for the caller to end the stream with. The error is a
+// failed Send.
 func streamResources(
-	ctx context.Context, s activeScanner, refs []*pb.ResourceRef,
+	ctx context.Context, s activeScanner, service string, refs []*pb.ResourceRef,
 	stream pb.CloudProvider_StreamScanServer,
-) error {
+) ([]string, error) {
+	tally := newDescribeTally()
 	for _, ref := range refs {
 		res, err := s.DescribeResource(ctx, ref)
+		tally.add(ref, err)
 		if err != nil {
 			res = unenrichedResource(ref, res)
 		}
 		if err := stream.Send(res); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return tally.entries(service), nil
 }
 
 func (p *AWSProvider) GetSchemas(ctx context.Context, req *pb.GetSchemasRequest) (*pb.SchemaResponse, error) {
@@ -636,13 +750,16 @@ func (p *AWSProvider) ScanService(ctx context.Context, req *pb.ScanServiceReques
 	errs := append(discoveryErrorEntries(regional), serviceErrorEntries(req.Service, scanErr)...)
 	var resources []*pb.Resource
 	if req.IncludeRelationships {
+		tally := newDescribeTally()
 		for _, ref := range refs {
 			res, err := regional.DescribeResource(ctx, ref)
+			tally.add(ref, err)
 			if err != nil {
 				res = unenrichedResource(ref, res)
 			}
 			resources = append(resources, res)
 		}
+		errs = append(errs, tally.entries(req.Service)...)
 	}
 	return &pb.ScanServiceResponse{
 		Service:   req.Service,
@@ -676,14 +793,13 @@ func (p *AWSProvider) StreamScanService(req *pb.ScanServiceRequest, stream pb.Cl
 	// Send what was observed before reporting the failure: the stream's
 	// error already marks it incomplete, and the refs are still real.
 	refs, scanErr := regional.ScanService(ctx, req.Service)
-	if err := streamResources(ctx, regional, refs, stream); err != nil {
+	entries, err := streamResources(ctx, regional, req.Service, refs, stream)
+	if err != nil {
 		return err
 	}
 	errs := append(discoveryErrorEntries(regional), serviceErrorEntries(req.Service, scanErr)...)
-	if len(errs) > 0 {
-		return fmt.Errorf("aws stream scan incomplete: %s", strings.Join(errs, "; "))
-	}
-	return nil
+	errs = append(errs, entries...)
+	return endStream(errs)
 }
 
 // The following gRPC methods backed code-generation and analysis pipelines
