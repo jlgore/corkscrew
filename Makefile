@@ -287,6 +287,7 @@ dev: install
 fmt:
 	@echo "🎨 Formatting code..."
 	@go fmt ./...
+	@set -e; for crate in $(CLIPPY_CRATES); do (cd $$crate && cargo fmt); done
 	@echo "✅ Code formatted"
 
 # Lint guardrails (docs/contributing/lint.md). Keep GOLANGCI_LINT_VERSION in
@@ -316,8 +317,8 @@ lint-go:
 .PHONY: lint-rust
 lint-rust:
 	@set -e; for crate in $(CLIPPY_CRATES); do \
-		echo "🔍 clippy $$crate"; \
-		(cd $$crate && cargo clippy --all-targets -- $(CLIPPY_FLAGS)); \
+		echo "🔍 rustfmt + clippy $$crate"; \
+		(cd $$crate && cargo fmt --check && cargo clippy --all-targets -- $(CLIPPY_FLAGS)); \
 	done
 
 .PHONY: check
