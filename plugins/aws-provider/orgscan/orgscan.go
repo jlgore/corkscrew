@@ -420,7 +420,8 @@ func (o *OrgScanner) targetAccounts(ctx context.Context) ([]string, error) {
 			if id == "" {
 				// Skipping it would scan a truncated account list; trusting it would
 				// reach accountScanner with no account to assume into.
-				return nil, fmt.Errorf("organizations.ListAccounts returned an account without an ID")
+				return nil, fmt.Errorf(
+					"organizations.ListAccounts returned an account without an ID")
 			}
 			if len(include) > 0 && !include[id] {
 				continue

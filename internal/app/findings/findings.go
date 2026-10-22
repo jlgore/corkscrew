@@ -139,14 +139,17 @@ func Evaluate(ctx context.Context, request EvaluateRequest) (Evaluation, error) 
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO finding_evaluations
 (id, scan_id, pack_ref, control_selector, scope_key, started_at, ended_at, status, error_message)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, evaluation.ID, scan.ID, packRef, request.ControlID, scan.ScopeKey,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		evaluation.ID, scan.ID, packRef, request.ControlID, scan.ScopeKey,
 		started, ended, evaluation.Status, nullString(evaluation.Error)); err != nil {
 		return Evaluation{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return Evaluation{}, err
 	}
-	sort.Slice(evaluation.Findings, func(i, j int) bool { return evaluation.Findings[i].Fingerprint < evaluation.Findings[j].Fingerprint })
+	sort.Slice(evaluation.Findings, func(i, j int) bool {
+		return evaluation.Findings[i].Fingerprint < evaluation.Findings[j].Fingerprint
+	})
 	return evaluation, nil
 }
 

@@ -44,7 +44,8 @@ spec:
       query_file: q.sql
       enabled: true
 `, index, index, dependsOn, index)
-	if err := os.WriteFile(filepath.Join(dir, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+	manifestPath := filepath.Join(dir, "manifest.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "q.sql"), []byte("SELECT 1;"), 0o644); err != nil {
