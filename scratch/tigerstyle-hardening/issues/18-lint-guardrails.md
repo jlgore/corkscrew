@@ -1,6 +1,6 @@
 # Lint guardrails for new code (no big-bang reformat)
 
-Status: ready-for-human
+Status: ready-for-agent
 Phase: P5
 
 Baseline today: 111 Go functions over 70 lines (most are generator templates), 1,590 lines over 100
@@ -27,3 +27,18 @@ columns, and 6 Clippy warnings.
   - Cloudflare's `describeByType` (163)
 
 Why human: choosing the linters and the CI gate policy is a maintainer call.
+
+## Comments
+
+2026-10-21: Maintainer decisions.
+
+- Go linters: the set above (`funlen` 70 lines, `lll` 100 columns, `errcheck`, `contextcheck`,
+  `noctx`, `bodyclose`) plus golangci-lint's defaults, with `new-from-rev: origin/main`.
+- Gate: lint failures block PRs. Only new and changed lines are checked, so existing debt
+  never blocks.
+- Workflow: a new `.github/workflows/lint.yml` on every PR: golangci-lint for the root and each
+  `plugins/*` module (matrix), and Clippy for the graph extension.
+- Clippy: `-D warnings -W clippy::undocumented_unsafe_blocks -W clippy::unwrap_used`, `#[allow]`
+  only with a reason. Fix the existing warnings first.
+- Sequencing: start after issue 17 merges into `hardening/p5`, since 17 also edits the graph
+  extension and its new code must pass these lints.
