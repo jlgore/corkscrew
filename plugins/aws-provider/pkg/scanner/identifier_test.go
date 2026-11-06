@@ -244,6 +244,9 @@ func TestExplorerIdentifierDoesNotGuess(t *testing.T) {
 		{"AWS::IAM::Role", []string{"RoleId"}, "arn:aws:iam::111111111111:role/path/admin"},
 		// An SQS ARN of an unknown partition has no known URL.
 		{"AWS::SQS::Queue", []string{"QueueUrl"}, "arn:aws-iso:sqs:us-iso-east-1:1:jobs"},
+		// A key pair's ARN carries its id, Cloud Control wants its name.
+		{"AWS::EC2::KeyPair", []string{"KeyName"},
+			"arn:aws:ec2:us-east-1:111111111111:key-pair/key-06e49c7009628b592"},
 		// Not an ARN.
 		{"AWS::S3::Bucket", []string{"BucketName"}, "my-bucket"},
 		{"AWS::S3::Bucket", []string{"BucketName"}, "arn:aws:s3:::"},
@@ -568,5 +571,61 @@ func TestScanServiceViaExplorerMapsManagedPolicies(t *testing.T) {
 	attrs := refs[0].BasicAttributes
 	if attrs["cfn_type"] != "AWS::IAM::ManagedPolicy" || attrs[ccIdentifierAttribute] != policyARN {
 		t.Fatalf("attributes = %v, want AWS::IAM::ManagedPolicy identified by its ARN", attrs)
+	}
+}
+
+// Cloud Control describes a log group with the ARN that ends in ":*"; Resource Explorer
+// reports it without. That is the same resource, and its configuration must be kept.
+func TestDescribeResourceAcceptsLogGroupARNWithWildcard(t *testing.T) {
+	const arn = "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/handler"
+	cc := &strictCloudControl{resources: map[string]map[string]string{
+		"AWS::Logs::LogGroup": {"/aws/lambda/handler": `{"LogGroupName":"/aws/lambda/handler",` +
+			`"Arn":"` + arn + `:*"}`},
+	}}
+	registry := &schemaRegistry{schemas: map[string]string{
+		"AWS::Logs::LogGroup": `["/properties/LogGroupName"]`,
+	}}
+	s := &CloudControlScanner{client: cc, cfn: registry, cfg: aws.Config{Region: "us-east-1"}}
+	ref := explorerRef("logs", "logs:log-group", "AWS::Logs::LogGroup", arn)
+
+	res, err := s.DescribeResource(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("DescribeResource: %v", err)
+	}
+	if res.RawData == "" {
+		t.Fatal("RawData is empty, want the log group's configuration")
+	}
+}
+
+// A key pair found by Resource Explorer is listed through Cloud Control, which names it by
+// KeyName, instead of being described by the id in its ARN, which Cloud Control rejects.
+func TestScanServiceViaExplorerListsKeyPairs(t *testing.T) {
+	const arn = "arn:aws:ec2:us-east-1:111111111111:key-pair/key-06e49c7009628b592"
+	cc := &strictCloudControl{
+		resources: map[string]map[string]string{
+			"AWS::EC2::KeyPair": {"discoverTest": `{"KeyName":"discoverTest",` +
+				`"KeyPairId":"key-06e49c7009628b592"}`},
+		},
+		listed: map[string]bool{"AWS::EC2::KeyPair": true},
+	}
+	registry := &schemaRegistry{schemas: map[string]string{
+		"AWS::EC2::KeyPair": `["/properties/KeyName"]`,
+	}}
+	s := &CloudControlScanner{
+		client: cc, cfn: registry,
+		identity: fakeIdentity{account: "111111111111"},
+		cfg:      aws.Config{Region: "us-east-1"},
+	}
+	refs := []*pb.ResourceRef{explorerRef("ec2", "ec2:key-pair", "AWS::EC2::KeyPair", arn)}
+
+	out, err := s.resolveExplorerRefs(context.Background(), "ec2", refs)
+	if err != nil {
+		t.Fatalf("resolveExplorerRefs: %v", err)
+	}
+	if len(out) != 1 || out[0].Id != "discoverTest" {
+		t.Fatalf("refs = %v, want the key pair listed by name", refIDs(out))
+	}
+	if _, err := s.DescribeResource(context.Background(), out[0]); err != nil {
+		t.Fatalf("DescribeResource: %v", err)
 	}
 }

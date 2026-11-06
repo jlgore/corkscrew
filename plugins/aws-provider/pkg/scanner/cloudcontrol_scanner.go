@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"sort"
 	"strings"
 	"sync"
@@ -39,6 +40,8 @@ type CloudControlScanner struct {
 
 	// getResourceTimeoutOverride replaces getResourceTimeout when positive.
 	getResourceTimeoutOverride time.Duration
+	// handlerThrottleBackoffOverride replaces handlerThrottleBackoff when positive.
+	handlerThrottleBackoffOverride time.Duration
 
 	mu        sync.RWMutex
 	accountID string
@@ -471,13 +474,7 @@ func (s *CloudControlScanner) getProperties(
 	assert.That(identifier != "", "scanner: GetResource is sent an identifier")
 	// The deadline spans all SDK retries of this one call, so it is sized to
 	// the retryer (see getResourceTimeout) rather than to a single attempt.
-	s.getCalls.Add(1)
-	callCtx, cancel := context.WithTimeout(ctx, s.describeTimeout())
-	out, err := s.client.GetResource(callCtx, &cloudcontrol.GetResourceInput{
-		TypeName:   aws.String(typeName),
-		Identifier: aws.String(identifier),
-	})
-	cancel()
+	out, err := s.getResource(ctx, typeName, identifier)
 
 	if err == nil && out.ResourceDescription != nil {
 		properties := aws.ToString(out.ResourceDescription.Properties)
@@ -505,17 +502,76 @@ func (s *CloudControlScanner) getProperties(
 	return "", err
 }
 
+// getResource calls GetResource, retrying a call the resource handler reports throttled.
+// The SDK retries a throttled Cloud Control request itself, but a handler that is throttled
+// by the service behind it (CloudFormation's DescribeStacks under 20 concurrent describes)
+// fails the call with a GeneralServiceException the SDK does not retry. Each attempt has its
+// own describeTimeout deadline.
+func (s *CloudControlScanner) getResource(
+	ctx context.Context, typeName, identifier string,
+) (*cloudcontrol.GetResourceOutput, error) {
+	for attempt := 0; ; attempt++ {
+		s.getCalls.Add(1)
+		callCtx, cancel := context.WithTimeout(ctx, s.describeTimeout())
+		out, err := s.client.GetResource(callCtx, &cloudcontrol.GetResourceInput{
+			TypeName:   aws.String(typeName),
+			Identifier: aws.String(identifier),
+		})
+		cancel()
+		if err == nil || attempt >= handlerThrottleRetries || !isHandlerThrottleErr(err) {
+			return out, err
+		}
+		wait := s.handlerThrottleDelay(attempt)
+		log.Printf("CloudControl: GetResource(%s, %s) throttled by its handler; retrying in %s",
+			typeName, identifier, wait.Round(time.Millisecond))
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return out, err
+		case <-timer.C:
+		}
+	}
+}
+
+// isHandlerThrottleErr reports a GetResource failure that is the resource handler being
+// throttled by the service it calls, rather than Cloud Control itself.
+func isHandlerThrottleErr(err error) bool {
+	if errContainsAny(err, "HandlerErrorCode: Throttling") {
+		return true
+	}
+	return errContainsAny(err, "GeneralServiceException") &&
+		errContainsAny(err, "Rate exceeded", "Throttling", "TooManyRequests")
+}
+
+// handlerThrottleDelay is the wait before retry attempt+1: exponential from
+// handlerThrottleBackoff, with jitter so the describes throttled together spread out.
+func (s *CloudControlScanner) handlerThrottleDelay(attempt int) time.Duration {
+	base := handlerThrottleBackoff
+	if s.handlerThrottleBackoffOverride > 0 {
+		base = s.handlerThrottleBackoffOverride
+	}
+	full := base << attempt
+	return full/2 + time.Duration(rand.Int64N(int64(full/2)+1))
+}
+
 // checkDescribedARN fails when arn is set and the described properties name a different Arn.
+// A trailing ":*" is ignored on both sides: Cloud Control describes a log group with the
+// ARN that ends in ":*", Resource Explorer reports it without.
 func checkDescribedARN(properties, arn string) error {
 	if arn == "" {
 		return nil
 	}
 	props, _ := parseCloudControlProperties(properties)
 	described, ok := props["Arn"].(string)
-	if !ok || described == "" || described == arn {
+	if !ok || described == "" || sameARN(described, arn) {
 		return nil
 	}
 	return fmt.Errorf("described resource has Arn %s, want %s", described, arn)
+}
+
+func sameARN(a, b string) bool {
+	return strings.TrimSuffix(a, ":*") == strings.TrimSuffix(b, ":*")
 }
 
 // GetMetrics implements the UnifiedScannerProvider interface.
@@ -548,6 +604,10 @@ const (
 	// holds one slot for 45s instead of the whole scope, and the resource
 	// falls back to what ListResources returned.
 	getResourceTimeout = 45 * time.Second
+	// handlerThrottleRetries and handlerThrottleBackoff bound the retries of a GetResource
+	// whose handler was throttled (see getResource): waits of about 2s, 4s and 8s.
+	handlerThrottleRetries = 3
+	handlerThrottleBackoff = 2 * time.Second
 )
 
 // describeTimeout returns the GetResource deadline. Tests set
