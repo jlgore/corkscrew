@@ -261,6 +261,14 @@ var identifierOverrides = map[string]identifierOverride{
 	"AWS::Logs::LogGroup":                {"LogGroupName", logGroupName},
 	"AWS::AutoScaling::AutoScalingGroup": {"AutoScalingGroupName", autoScalingGroupName},
 	"AWS::SSM::Parameter":                {"Name", ssmParameterName},
+	// A key pair's ARN ends in its id (key-pair/key-0abc), but Cloud Control identifies it by
+	// KeyName, which the ARN does not carry: the type is listed instead.
+	"AWS::EC2::KeyPair": {"KeyName", notInARN},
+}
+
+// notInARN is for types whose primary identifier the ARN does not carry at all.
+func notInARN(arnParts) (string, bool) {
+	return "", false
 }
 
 var instanceProfileName = lastPathSegment("instance-profile/")
